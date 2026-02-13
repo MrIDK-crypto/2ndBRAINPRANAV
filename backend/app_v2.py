@@ -30,30 +30,53 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(32))
 # Session cookie configuration for OAuth redirects
 # SameSite=Lax allows cookies to be sent on OAuth redirects (top-level navigation)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production' or 'render.com' in os.getenv('RENDER_EXTERNAL_URL', '')
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = 600  # 10 minutes for OAuth flow
 
-# CORS configuration
+# CORS configuration - use CORS_ORIGINS env var or defaults
+_cors_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+_cors_origins.extend([
+    "http://localhost:3000",
+    "http://localhost:3006",
+    "https://use2ndbrain.com",
+    "https://www.use2ndbrain.com",
+    "https://api.use2ndbrain.com",
+])
 CORS(app,
      supports_credentials=True,
      resources={
          r"/api/*": {
-             "origins": [
-                 "http://localhost:3000",
-                 "http://localhost:3001",
-                 "http://localhost:3002",
-                 "http://localhost:3006",
-                 "http://localhost:3007",
-                 "https://twondbrain-frontend.onrender.com",
-                 "https://2ndbrain.onrender.com",
-                 "https://secondbrain-frontend.onrender.com",
-                 "https://twondbrain-frontend-docker.onrender.com"
-             ],
+             "origins": list(set(_cors_origins)),
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": ["Content-Type", "Authorization"]
          }
      })
+
+# ============================================================================
+# GLOBAL ERROR LOGGING
+# ============================================================================
+
+from utils.logger import setup_logger, log_error, log_info, log_warning
+
+_app_logger = setup_logger("app")
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Global exception handler - logs all unhandled errors."""
+    log_error("app", f"Unhandled exception on {request.method} {request.path}", error=e)
+    return jsonify({"error": "Internal server error", "message": str(e)}), 500
+
+@app.errorhandler(404)
+def handle_404(e):
+    return jsonify({"error": "Not found", "path": request.path}), 404
+
+@app.after_request
+def log_response(response):
+    """Log non-2xx responses for debugging."""
+    if response.status_code >= 400:
+        log_warning("app", f"{request.method} {request.path} -> {response.status_code}")
+    return response
 
 # ============================================================================
 # DATABASE INITIALIZATION

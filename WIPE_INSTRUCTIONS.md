@@ -70,7 +70,7 @@ Expected output:
 
 After the wipe:
 
-1. Go to https://twondbrain-frontend.onrender.com
+1. Go to https://use2ndbrain.com
 2. Sign up with a **new account** (old credentials won't work)
 3. Connect your integrations:
    - Gmail

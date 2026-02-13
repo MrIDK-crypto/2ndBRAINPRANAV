@@ -77,6 +77,11 @@ class SyncProgressService:
         # Cleanup old syncs after this duration (seconds)
         self._cleanup_age = 3600  # 1 hour
 
+        # Start periodic cleanup thread
+        import threading
+        self._cleanup_thread = threading.Thread(target=self._periodic_cleanup, daemon=True)
+        self._cleanup_thread.start()
+
     def start_sync(
         self,
         tenant_id: str,
@@ -300,6 +305,16 @@ class SyncProgressService:
                     q.put_nowait(event)
                 except queue.Full:
                     print(f"[SyncProgress] Queue full for subscriber, skipping event")
+
+    def _periodic_cleanup(self):
+        """Periodically clean up old syncs to prevent memory leaks"""
+        import time
+        while True:
+            time.sleep(300)  # Every 5 minutes
+            try:
+                self.cleanup_old_syncs()
+            except Exception as e:
+                print(f"[SyncProgress] Cleanup error: {e}")
 
     def cleanup_old_syncs(self, max_age_seconds: int = 3600):
         """Remove syncs older than max_age_seconds"""

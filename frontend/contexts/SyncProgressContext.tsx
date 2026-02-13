@@ -146,6 +146,8 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
         sendEmailNotification(syncId, connectorType)
       }
       // Auto-remove after delay
+      if (pollInterval) clearInterval(pollInterval)
+      if (pollTimeout) clearTimeout(pollTimeout)
       setTimeout(() => {
         es.close()
         eventSourcesRef.current.delete(syncId)
@@ -160,54 +162,57 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
     eventSourcesRef.current.set(syncId, es)
 
-    // Also start polling as fallback
+    // Only start polling as fallback if SSE connection fails
     let pollInterval: NodeJS.Timeout | null = null
-    const poll = async () => {
-      try {
-        const response = await fetch(
-          `${API_BASE}/integrations/${connectorType}/sync/status`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success && data.status) {
-            setActiveSyncs(prev => {
-              const next = new Map(prev)
-              const existing = next.get(syncId)
-              if (existing) {
-                const status = data.status.status === 'completed' ? 'complete' : data.status.status
-                next.set(syncId, {
-                  ...existing,
-                  status,
-                  stage: data.status.current_file || data.status.status || 'Processing...',
-                  totalItems: data.status.documents_found || existing.totalItems,
-                  processedItems: data.status.documents_parsed || existing.processedItems,
-                  percentComplete: data.status.progress || existing.percentComplete
-                })
-              }
-              return next
-            })
+    let pollTimeout: NodeJS.Timeout | null = null
 
-            if (data.status.status === 'completed' || data.status.status === 'error') {
-              if (pollInterval) clearInterval(pollInterval)
-              // Send email on completion
-              const sync = activeSyncs.get(syncId)
-              if (data.status.status === 'completed' && sync?.emailWhenDone) {
-                sendEmailNotification(syncId, connectorType)
+    es.onerror = () => {
+      // SSE failed - start polling fallback (but only if not already polling)
+      if (pollInterval) return
+      console.log('[GlobalSync] SSE connection lost, starting polling fallback')
+
+      const poll = async () => {
+        try {
+          const response = await fetch(
+            `${API_BASE}/integrations/${connectorType}/sync/status`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
+          if (response.ok) {
+            const data = await response.json()
+            if (data.success && data.status) {
+              setActiveSyncs(prev => {
+                const next = new Map(prev)
+                const existing = next.get(syncId)
+                if (existing) {
+                  const status = data.status.status === 'completed' ? 'complete' : data.status.status
+                  next.set(syncId, {
+                    ...existing,
+                    status,
+                    stage: data.status.current_file || data.status.status || 'Processing...',
+                    totalItems: data.status.documents_found || existing.totalItems,
+                    processedItems: data.status.documents_parsed || existing.processedItems,
+                    percentComplete: data.status.progress || existing.percentComplete
+                  })
+                }
+                return next
+              })
+
+              if (data.status.status === 'completed' || data.status.status === 'error') {
+                if (pollInterval) clearInterval(pollInterval)
+                pollInterval = null
               }
             }
           }
+        } catch (err) {
+          console.error('[GlobalSync] Poll error:', err)
         }
-      } catch (err) {
-        console.error('[GlobalSync] Poll error:', err)
       }
-    }
 
-    // Start polling after 3 seconds
-    setTimeout(() => {
-      poll()
-      pollInterval = setInterval(poll, 2000)
-    }, 3000)
+      pollTimeout = setTimeout(() => {
+        poll()
+        pollInterval = setInterval(poll, 5000) // Poll every 5s, not 2s
+      }, 3000)
+    }
 
   }, [activeSyncs, sendEmailNotification])
 

@@ -247,7 +247,7 @@ def print_summary(user_credentials):
     print("="*70)
     print("LOGIN INSTRUCTIONS")
     print("="*70)
-    print("\n1. Go to your frontend: https://twondbrain-frontend.onrender.com")
+    print("\n1. Go to your frontend: https://use2ndbrain.com")
     print("2. Click 'Login'")
     print("3. Use any email/password combination above")
     print("\nRECOMMENDED TEST ACCOUNTS:")

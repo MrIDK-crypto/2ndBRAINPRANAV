@@ -1,0 +1,95 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-2
+  ECR_BACKEND: 923028187100.dkr.ecr.us-east-2.amazonaws.com/secondbrain-backend
+  ECR_FRONTEND: 923028187100.dkr.ecr.us-east-2.amazonaws.com/secondbrain-frontend
+  ECS_CLUSTER: secondbrain-cluster
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  deploy-backend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend image
+        run: |
+          cd backend
+          docker build -t $ECR_BACKEND:latest -t $ECR_BACKEND:${{ github.sha }} .
+          docker push $ECR_BACKEND:latest
+          docker push $ECR_BACKEND:${{ github.sha }}
+
+      - name: Deploy backend service
+        run: |
+          aws ecs update-service --cluster $ECS_CLUSTER --service secondbrain-backend --force-new-deployment
+          aws ecs update-service --cluster $ECS_CLUSTER --service secondbrain-celery --force-new-deployment
+
+      - name: Wait for backend stability
+        run: |
+          aws ecs wait services-stable --cluster $ECS_CLUSTER --services secondbrain-backend
+          echo "Backend deployed successfully"
+
+  deploy-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push frontend image
+        run: |
+          cd frontend
+          docker build -t $ECR_FRONTEND:latest -t $ECR_FRONTEND:${{ github.sha }} .
+          docker push $ECR_FRONTEND:latest
+          docker push $ECR_FRONTEND:${{ github.sha }}
+
+      - name: Deploy frontend service
+        run: |
+          aws ecs update-service --cluster $ECS_CLUSTER --service secondbrain-frontend --force-new-deployment
+
+      - name: Wait for frontend stability
+        run: |
+          aws ecs wait services-stable --cluster $ECS_CLUSTER --services secondbrain-frontend
+          echo "Frontend deployed successfully"

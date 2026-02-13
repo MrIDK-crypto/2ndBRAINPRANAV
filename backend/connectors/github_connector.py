@@ -128,7 +128,8 @@ class GitHubConnector(BaseConnector):
                 'client_secret': self.client_secret,
                 'code': code,
                 'redirect_uri': self.redirect_uri
-            }
+            },
+            timeout=15
         )
 
         response.raise_for_status()
@@ -160,7 +161,8 @@ class GitHubConnector(BaseConnector):
         """
         response = requests.get(
             f'{self.base_url}/user',
-            headers=self.headers
+            headers=self.headers,
+            timeout=15
         )
         response.raise_for_status()
         return response.json()
@@ -192,7 +194,8 @@ class GitHubConnector(BaseConnector):
                     'page': page,
                     'sort': 'updated',
                     'affiliation': 'owner,collaborator,organization_member'
-                }
+                },
+                timeout=15
             )
             response.raise_for_status()
 
@@ -266,7 +269,8 @@ class GitHubConnector(BaseConnector):
             response = requests.get(
                 f'{self.base_url}/repos/{owner}/{repo}/git/trees/{branch}',
                 headers=self.headers,
-                params={'recursive': '1'}
+                params={'recursive': '1'},
+                timeout=15
             )
             response.raise_for_status()
 
@@ -279,7 +283,8 @@ class GitHubConnector(BaseConnector):
                 response = requests.get(
                     f'{self.base_url}/repos/{owner}/{repo}/git/trees/master',
                     headers=self.headers,
-                    params={'recursive': '1'}
+                    params={'recursive': '1'},
+                    timeout=15
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -362,7 +367,8 @@ class GitHubConnector(BaseConnector):
         try:
             response = requests.get(
                 f'{self.base_url}/repos/{owner}/{repo}/contents/{path}',
-                headers=self.headers
+                headers=self.headers,
+                timeout=15
             )
             response.raise_for_status()
 
@@ -503,7 +509,8 @@ class GitHubConnector(BaseConnector):
         """
         response = requests.get(
             f'{self.base_url}/rate_limit',
-            headers=self.headers
+            headers=self.headers,
+            timeout=15
         )
         response.raise_for_status()
 

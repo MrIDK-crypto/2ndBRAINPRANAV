@@ -79,6 +79,14 @@ kombu==5.3.4
 spacy==3.7.2
 # Note: en_core_web_sm model is downloaded in Dockerfile, not via pip
 
+# Topic Modeling & Advanced NLP
+bertopic
+rank-bm25
+sentence-transformers
+transformers
+hdbscan
+umap-learn
+
 # Web Scraper - Self-hosted (requests + BeautifulSoup + OCR)
 html2text>=2024.2.26
 pytesseract>=0.3.10

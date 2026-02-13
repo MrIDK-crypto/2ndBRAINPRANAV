@@ -4,7 +4,8 @@ REST endpoints for document management and classification.
 """
 
 from flask import Blueprint, request, jsonify, g
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 
 from database.models import (
     SessionLocal, Document, Connector, DeletedDocument,
@@ -81,7 +82,9 @@ def list_documents():
             order = request.args.get('order', 'desc')
 
             # Build query
-            query = db.query(Document).filter(
+            query = db.query(Document).options(
+                joinedload(Document.connector)
+            ).filter(
                 Document.tenant_id == getattr(g, 'tenant_id', 'local-tenant'),
                 Document.is_deleted == False
             )
@@ -117,9 +120,8 @@ def list_documents():
             if search:
                 search_pattern = f"%{search}%"
                 query = query.filter(
-                    db.or_(
+                    or_(
                         Document.title.ilike(search_pattern),
-                        Document.content.ilike(search_pattern),
                         Document.sender.ilike(search_pattern)
                     )
                 )
@@ -807,35 +809,41 @@ def upload_and_embed():
 
             db.commit()
 
-            # Synchronously embed documents (blocking)
+            # Queue embedding via Celery for non-blocking processing
             embed_success = False
             try:
-                embedding_service = get_embedding_service()
-                embed_result = embedding_service.embed_documents(
-                    documents=docs_to_embed,
-                    tenant_id=getattr(g, 'tenant_id', 'local-tenant'),
-                    db=db,
-                    force_reembed=True
-                )
-
-                if embed_result.get('success'):
-                    embed_success = True
-                    for doc_info in documents_created:
-                        doc_info['status'] = 'embedded'
-                    print(f"[UploadEmbed] Successfully embedded {len(docs_to_embed)} documents")
-                else:
+                from tasks.embedding_tasks import embed_documents_task
+                doc_ids = [doc.id for doc in docs_to_embed]
+                tenant_id = getattr(g, 'tenant_id', 'local-tenant')
+                embed_documents_task.delay(doc_ids, tenant_id)
+                embed_success = True
+                for doc_info in documents_created:
+                    doc_info['status'] = 'embedding_queued'
+                print(f"[UploadEmbed] Queued {len(docs_to_embed)} documents for async embedding")
+            except Exception as e:
+                print(f"[UploadEmbed] Celery not available, trying synchronous: {e}")
+                # Fallback to synchronous if Celery unavailable
+                try:
+                    embedding_service = get_embedding_service()
+                    embed_result = embedding_service.embed_documents(
+                        documents=docs_to_embed,
+                        tenant_id=getattr(g, 'tenant_id', 'local-tenant'),
+                        db=db,
+                        force_reembed=True
+                    )
+                    if embed_result.get('success'):
+                        embed_success = True
+                        for doc_info in documents_created:
+                            doc_info['status'] = 'embedded'
+                    else:
+                        for doc_info in documents_created:
+                            doc_info['status'] = 'embed_failed'
+                            doc_info['error'] = embed_result.get('error', 'Unknown embedding error')
+                except Exception as fallback_err:
+                    print(f"[UploadEmbed] Synchronous embedding also failed: {fallback_err}")
                     for doc_info in documents_created:
                         doc_info['status'] = 'embed_failed'
-                        doc_info['error'] = embed_result.get('error', 'Unknown embedding error')
-                    print(f"[UploadEmbed] Embedding failed: {embed_result.get('error')}")
-
-            except Exception as e:
-                print(f"[UploadEmbed] Embedding error: {e}")
-                import traceback
-                traceback.print_exc()
-                for doc_info in documents_created:
-                    doc_info['status'] = 'embed_failed'
-                    doc_info['error'] = str(e)
+                        doc_info['error'] = str(fallback_err)
 
             embedding_time = time.time() - start_time
 

@@ -2,19 +2,39 @@
 Centralized logging configuration.
 Uses Python's built-in logging (no external services required).
 
-Logs are automatically captured by Render for viewing in the dashboard.
+Logs are automatically captured by AWS CloudWatch via ECS awslogs driver.
 """
 
 import logging
+import os
 import sys
-from datetime import datetime
+import json
+import traceback
+from datetime import datetime, timezone
+
+
+class CloudWatchFormatter(logging.Formatter):
+    """JSON formatter for structured CloudWatch logs."""
+
+    def format(self, record):
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "module": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[0]:
+            log_entry["exception"] = traceback.format_exception(*record.exc_info)
+        if hasattr(record, 'extra_data'):
+            log_entry["data"] = record.extra_data
+        return json.dumps(log_entry)
 
 
 def setup_logger(name: str = "secondbrain") -> logging.Logger:
     """
     Set up structured logger with consistent formatting.
 
-    Logs are captured by Render automatically (no Papertrail needed).
+    Logs are captured by AWS CloudWatch via ECS awslogs driver.
 
     Args:
         name: Logger name (typically module name)
@@ -28,18 +48,22 @@ def setup_logger(name: str = "secondbrain") -> logging.Logger:
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.INFO)
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    # Console handler (captured by Render)
+    # Console handler (captured by CloudWatch)
     handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
+    handler.setLevel(getattr(logging, log_level, logging.INFO))
 
-    # Structured format: [TIMESTAMP] [LEVEL] [MODULE] message
-    formatter = logging.Formatter(
-        '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    handler.setFormatter(formatter)
+    # Use JSON format in production, readable format in dev
+    if os.getenv("FLASK_ENV") == "production":
+        handler.setFormatter(CloudWatchFormatter())
+    else:
+        formatter = logging.Formatter(
+            '[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        handler.setFormatter(formatter)
 
     logger.addHandler(handler)
     logger.propagate = False  # Don't propagate to root logger

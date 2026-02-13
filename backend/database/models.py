@@ -1143,7 +1143,7 @@ class AuditLog(Base):
 # DATABASE ENGINE & SESSION
 # ============================================================================
 
-# Create engine with resilient pool settings for Render PostgreSQL
+# Create engine with resilient pool settings for AWS RDS PostgreSQL
 _db_url = get_database_url()
 _is_postgres = _db_url.startswith('postgresql')
 
@@ -1151,10 +1151,10 @@ engine = create_engine(
     _db_url,
     echo=False,  # Set to True for SQL debugging
     pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=300,  # Recycle connections every 5 min (Render drops idle connections)
+    pool_recycle=300,  # Recycle connections every 5 min
     **({
-        'pool_size': 5,  # Base pool connections
-        'max_overflow': 10,  # Extra connections under load
+        'pool_size': 10,  # Base pool connections (4 workers x 2-3 concurrent)
+        'max_overflow': 20,  # Extra connections under load
         'pool_timeout': 30,  # Wait up to 30s for a connection
     } if _is_postgres else {})
 )

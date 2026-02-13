@@ -19,7 +19,10 @@ ALLOWED_ORIGINS = [
     'https://twondbrain-frontend.onrender.com',
     'https://2ndbrain.onrender.com',
     'https://twondbrain-frontend-docker.onrender.com',
-    'https://secondbrain-frontend.onrender.com'
+    'https://secondbrain-frontend.onrender.com',
+    'https://use2ndbrain.com',
+    'https://api.use2ndbrain.com',
+    'https://www.use2ndbrain.com'
 ]
 
 
@@ -412,7 +415,6 @@ def start_test_sync():
     Body: { "connector_type": "github" }
     """
     import threading
-    import time
 
     data = request.get_json() or {}
     connector_type = data.get('connector_type', 'github')
@@ -426,11 +428,12 @@ def start_test_sync():
 
     # Simulate sync progress in background thread
     def simulate_sync():
-        time.sleep(1)
+        import gevent
+        gevent.sleep(1)
         service.update_progress(sync_id, status='syncing', stage='Analyzing repository...', total_items=10)
 
         for i in range(1, 11):
-            time.sleep(1)
+            gevent.sleep(1)
             service.update_progress(
                 sync_id,
                 status='syncing',
@@ -439,7 +442,7 @@ def start_test_sync():
                 current_item=f'file_{i}.py'
             )
 
-        time.sleep(1)
+        gevent.sleep(1)
         service.update_progress(sync_id, status='complete', stage='Sync complete')
 
     thread = threading.Thread(target=simulate_sync, daemon=True)

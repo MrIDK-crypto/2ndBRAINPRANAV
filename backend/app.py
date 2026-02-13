@@ -18,10 +18,10 @@ app = Flask(__name__)
 from config.config import Config
 
 # Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT = "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com"
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com")
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_API_VERSION = "2025-01-01-preview"
-AZURE_CHAT_DEPLOYMENT = "gpt-5-chat"
+AZURE_API_VERSION = os.getenv("AZURE_API_VERSION", "2025-01-01-preview")
+AZURE_CHAT_DEPLOYMENT = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4.1")
 
 
 # Initialize OpenAI

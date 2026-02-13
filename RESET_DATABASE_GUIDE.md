@@ -124,7 +124,7 @@ RECOMMENDED TEST ACCOUNTS:
 
 ### **Test 1: Login as Acme User**
 
-1. Go to: https://twondbrain-frontend.onrender.com
+1. Go to: https://use2ndbrain.com
 2. Click **"Login"**
 3. Login with: **admin@acme.com** / **admin123**
 4. You should be logged in as "Alice Admin" from Acme Corporation
@@ -144,14 +144,14 @@ Try to access another tenant's data via API:
 
 ```bash
 # Login as Acme admin
-curl -X POST https://twondbrain-backend-docker.onrender.com/api/auth/login \
+curl -X POST https://api.use2ndbrain.com/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "admin@acme.com", "password": "admin123"}'
 
 # Copy the access_token from response
 
 # Try to list documents (should only see Acme's documents)
-curl -X GET https://twondbrain-backend-docker.onrender.com/api/documents \
+curl -X GET https://api.use2ndbrain.com/api/documents \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
 # Should return only documents for Acme tenant

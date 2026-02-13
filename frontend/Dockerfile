@@ -20,7 +20,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Accept build argument for API URL
-ARG NEXT_PUBLIC_API_URL=https://twondbrain-backend-docker.onrender.com
+ARG NEXT_PUBLIC_API_URL=https://api.use2ndbrain.com
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Set environment variables for build

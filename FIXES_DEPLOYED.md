@@ -70,7 +70,7 @@ if (sourceType === 'webscraper' || sourceType === 'webscraper_enhanced') {
 
 1. **Close ALL browser tabs** with your site right now
 2. Wait for Render deployment to complete
-3. Open fresh tab → https://twondbrain-frontend.onrender.com
+3. Open fresh tab → https://use2ndbrain.com
 4. Start a webscraper sync
 5. **Click the X button** or **Minimize** → Polling STOPS
 6. Check browser Network tab → No more 440-byte requests

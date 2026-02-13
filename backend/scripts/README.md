@@ -280,7 +280,7 @@ SEED DATA SUMMARY
 LOGIN INSTRUCTIONS
 ========================================================================
 
-1. Go to your frontend: https://twondbrain-frontend.onrender.com
+1. Go to your frontend: https://use2ndbrain.com
 2. Click 'Login'
 3. Use any email/password combination above
 

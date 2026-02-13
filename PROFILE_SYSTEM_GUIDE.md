@@ -47,7 +47,7 @@ I've created a comprehensive user profile system with:
 
 ## API Endpoints
 
-Base URL: `https://twondbrain-backend-docker.onrender.com`
+Base URL: `https://api.use2ndbrain.com`
 
 All endpoints require JWT authentication via `Authorization: Bearer {token}` header.
 
@@ -59,7 +59,7 @@ Get current user's complete profile.
 
 **Request:**
 ```bash
-curl -X GET https://twondbrain-backend-docker.onrender.com/api/profile \
+curl -X GET https://api.use2ndbrain.com/api/profile \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -104,7 +104,7 @@ Update user profile fields.
 
 **Request:**
 ```bash
-curl -X PUT https://twondbrain-backend-docker.onrender.com/api/profile \
+curl -X PUT https://api.use2ndbrain.com/api/profile \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -151,7 +151,7 @@ Upload user avatar image.
 
 **Request:**
 ```bash
-curl -X POST https://twondbrain-backend-docker.onrender.com/api/profile/avatar \
+curl -X POST https://api.use2ndbrain.com/api/profile/avatar \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -F "avatar=@/path/to/image.jpg"
 ```
@@ -181,7 +181,7 @@ Delete user avatar.
 
 **Request:**
 ```bash
-curl -X DELETE https://twondbrain-backend-docker.onrender.com/api/profile/avatar \
+curl -X DELETE https://api.use2ndbrain.com/api/profile/avatar \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -205,7 +205,7 @@ Change user password.
 
 **Request:**
 ```bash
-curl -X PUT https://twondbrain-backend-docker.onrender.com/api/profile/password \
+curl -X PUT https://api.use2ndbrain.com/api/profile/password \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -240,7 +240,7 @@ Get user preferences.
 
 **Request:**
 ```bash
-curl -X GET https://twondbrain-backend-docker.onrender.com/api/profile/preferences \
+curl -X GET https://api.use2ndbrain.com/api/profile/preferences \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -267,7 +267,7 @@ Update user preferences (merged with existing).
 
 **Request:**
 ```bash
-curl -X PUT https://twondbrain-backend-docker.onrender.com/api/profile/preferences \
+curl -X PUT https://api.use2ndbrain.com/api/profile/preferences \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -306,7 +306,7 @@ Delete user account (soft delete).
 
 **Request:**
 ```bash
-curl -X POST https://twondbrain-backend-docker.onrender.com/api/profile/delete-account \
+curl -X POST https://api.use2ndbrain.com/api/profile/delete-account \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

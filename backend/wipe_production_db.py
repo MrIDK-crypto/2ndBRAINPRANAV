@@ -223,7 +223,7 @@ def main():
     print("✅ ALL DATABASES WIPED SUCCESSFULLY")
     print("=" * 60)
     print("\nNext steps:")
-    print("  1. Go to https://twondbrain-frontend.onrender.com")
+    print("  1. Go to https://use2ndbrain.com")
     print("  2. Sign up with a new account")
     print("  3. Connect your integrations")
     print("  4. Start syncing fresh data")

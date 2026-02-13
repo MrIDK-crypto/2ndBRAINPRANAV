@@ -2800,8 +2800,8 @@ export default function Integrations() {
       }
     }
 
-    // Poll every 3 seconds
-    const interval = setInterval(pollBackgroundSyncs, 3000)
+    // Poll every 10 seconds (background syncs don't need aggressive polling)
+    const interval = setInterval(pollBackgroundSyncs, 10000)
     // Also poll immediately
     pollBackgroundSyncs()
 
@@ -3595,7 +3595,7 @@ export default function Integrations() {
           })
           setShowSyncProgress(true)
           setSyncStatus(null)
-          syncPollingInterval.current = setInterval(() => pollSyncStatus(integrationId), 2000)
+          syncPollingInterval.current = setInterval(() => pollSyncStatus(integrationId), 5000)
           console.log('[Polling] Using old polling-based progress')
         }
       } else {

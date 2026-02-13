@@ -1,4 +1,4 @@
-# Backend Dockerfile for Render/Cloud Run
+# Backend Dockerfile for AWS ECS Fargate
 FROM python:3.12-slim
 
 # Cache buster - change this value to force rebuild: v2
@@ -37,15 +37,15 @@ RUN mkdir -p /app/data
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_ENV=production
-ENV PORT=5003
+ENV PORT=5002
 
 # Expose port
-EXPOSE 5003
+EXPOSE 5002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5003/api/health || exit 1
+    CMD curl -f http://localhost:5002/api/health || exit 1
 
 # Run the application with gunicorn for production
 # Using gevent for async non-blocking I/O - best for API/database operations
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --timeout 600 --graceful-timeout 30 app_v2:app
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 4 --worker-class gevent --timeout 120 --graceful-timeout 30 app_v2:app
