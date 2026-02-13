@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fetched Emails - Documents</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: white;
+            color: black;
+        }
+
+        .header {
+            border-bottom: 2px solid black;
+            padding: 30px 40px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        .stats {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            font-weight: 300;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+
+        .email-card {
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+            padding: 30px;
+            transition: border-color 0.2s;
+        }
+
+        .email-card:hover {
+            border-color: black;
+        }
+
+        .email-subject {
+            font-size: 18px;
+            font-weight: 400;
+            margin-bottom: 10px;
+            color: black;
+        }
+
+        .email-from {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 15px;
+            font-weight: 300;
+        }
+
+        .email-body {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+            font-weight: 300;
+            white-space: pre-wrap;
+        }
+
+        .email-time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 15px;
+            font-weight: 300;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 100px;
+            color: #999;
+            font-weight: 300;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 100px;
+            color: #666;
+        }
+
+        .empty-title {
+            font-size: 24px;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        .empty-text {
+            font-size: 14px;
+            color: #999;
+            font-weight: 300;
+        }
+
+        button {
+            border: 2px solid black;
+            background: white;
+            color: black;
+            padding: 12px 30px;
+            font-size: 13px;
+            font-weight: 300;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background: black;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>DOCUMENTS</h1>
+        <div class="stats" id="stats">Loading...</div>
+        <button onclick="refresh()">REFRESH</button>
+    </div>
+
+    <div class="container">
+        <div id="emails" class="loading">Loading emails...</div>
+    </div>
+
+    <script>
+        async function loadEmails() {
+            const emailsDiv = document.getElementById('emails');
+            const statsDiv = document.getElementById('stats');
+
+            try {
+                const response = await fetch('http://localhost:5003/api/email-forwarding/documents');
+                const data = await response.json();
+
+                if (data.success && data.emails && data.emails.length > 0) {
+                    statsDiv.textContent = `${data.total} emails fetched`;
+
+                    emailsDiv.innerHTML = data.emails.map(email => `
+                        <div class="email-card">
+                            <div class="email-subject">${escapeHtml(email.subject || 'No Subject')}</div>
+                            <div class="email-from">From: ${escapeHtml(email.from || 'Unknown')}</div>
+                            <div class="email-body">${escapeHtml(email.body || '')}</div>
+                            <div class="email-time">Fetched: ${new Date(email.fetched_at).toLocaleString()}</div>
+                        </div>
+                    `).reverse().join('');
+                } else {
+                    statsDiv.textContent = '0 emails';
+                    emailsDiv.innerHTML = `
+                        <div class="empty">
+                            <div class="empty-title">No emails yet</div>
+                            <div class="empty-text">Fetch some emails to see them here</div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                emailsDiv.innerHTML = `
+                    <div class="empty">
+                        <div class="empty-title">Error loading emails</div>
+                        <div class="empty-text">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function refresh() {
+            document.getElementById('emails').className = 'loading';
+            document.getElementById('emails').textContent = 'Loading emails...';
+            loadEmails();
+        }
+
+        // Load on page load
+        loadEmails();
+
+        // Auto-refresh every 10 seconds
+        setInterval(loadEmails, 10000);
+    </script>
+</body>
+</html>

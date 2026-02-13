@@ -1,0 +1,106 @@
+# Render Blueprint - Second Brain Deployment
+
+services:
+  # Backend API (Flask)
+  - type: web
+    name: secondbrain-backend
+    runtime: python
+    region: oregon
+    plan: starter  # Paid plan - always running, no cold starts
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python -m spacy download en_core_web_sm
+    startCommand: gunicorn app_v2:app --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --timeout 600 --graceful-timeout 30
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
+      - key: DATABASE_TYPE
+        value: postgresql
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: secondbrain-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: secondbrain-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: secondbrain-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: secondbrain-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: secondbrain-db
+          property: password
+      - key: DATABASE_URL
+        fromDatabase:
+          name: secondbrain-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_API_VERSION
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        sync: false
+      - key: BOX_CLIENT_ID
+        sync: false
+      - key: BOX_CLIENT_SECRET
+        sync: false
+      - key: SLACK_CLIENT_ID
+        sync: false
+      - key: SLACK_CLIENT_SECRET
+        sync: false
+      - key: LLAMA_CLOUD_API_KEY
+        sync: false
+      # Email configuration for verification emails
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      # Email forwarding configuration
+      - key: FORWARD_EMAIL_ADDRESS
+        sync: false
+      - key: FORWARD_EMAIL_PASSWORD
+        sync: false
+      # GitHub OAuth configuration
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_REDIRECT_URI
+        sync: false
+
+  # Frontend (Next.js)
+  - type: web
+    name: secondbrain-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+
+# PostgreSQL Database
+databases:
+  - name: secondbrain-db
+    plan: starter  # Paid plan - always available, no spin-down
+    region: oregon
+    databaseName: secondbrain
+    user: secondbrain

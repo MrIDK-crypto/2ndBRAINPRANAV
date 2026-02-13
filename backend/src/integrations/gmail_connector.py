@@ -1,0 +1,403 @@
+"""
+Gmail Connector
+Connects to Gmail API to extract emails for knowledge capture.
+"""
+
+import base64
+import re
+from datetime import datetime
+from typing import List, Dict, Optional, Any
+from email.utils import parsedate_to_datetime
+
+from .base_connector import BaseConnector, ConnectorConfig, ConnectorStatus, Document
+
+# Note: These imports require google-auth and google-api-python-client
+# pip install google-auth google-auth-oauthlib google-api-python-client
+
+try:
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import Flow
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    GMAIL_AVAILABLE = True
+except ImportError:
+    GMAIL_AVAILABLE = False
+
+
+class GmailConnector(BaseConnector):
+    """
+    Gmail connector for extracting emails.
+
+    Extracts:
+    - Email content (subject + body)
+    - Sender/recipient information
+    - Thread context
+    - Attachments metadata
+    - Labels/folders
+    """
+
+    CONNECTOR_TYPE = "gmail"
+    REQUIRED_CREDENTIALS = ["access_token", "refresh_token"]
+    OPTIONAL_SETTINGS = {
+        "max_results": 100,  # Max emails per sync
+        "labels": ["INBOX", "SENT"],  # Labels to sync
+        "include_attachments": False,
+        "include_spam": False,
+        "query": ""  # Gmail search query
+    }
+
+    # Gmail API scopes
+    SCOPES = [
+        'https://www.googleapis.com/auth/gmail.readonly'
+    ]
+
+    # OAuth client config - loaded from environment variables
+    @classmethod
+    def _get_client_config(cls) -> Dict:
+        import os
+        return {
+            "web": {
+                "client_id": os.getenv("GOOGLE_CLIENT_ID", "YOUR_CLIENT_ID.apps.googleusercontent.com"),
+                "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", "YOUR_CLIENT_SECRET"),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:5003/api/connectors/gmail/callback")]
+            }
+        }
+
+    # Legacy attribute for compatibility
+    CLIENT_CONFIG = {
+        "web": {
+            "client_id": "LOADED_FROM_ENV",
+            "client_secret": "LOADED_FROM_ENV",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost:5003/api/connectors/gmail/callback"]
+        }
+    }
+
+    def __init__(self, config: ConnectorConfig):
+        super().__init__(config)
+        self.service = None
+
+    async def connect(self) -> bool:
+        """Connect to Gmail API"""
+        if not GMAIL_AVAILABLE:
+            self._set_error("Gmail dependencies not installed. Run: pip install google-auth google-auth-oauthlib google-api-python-client")
+            return False
+
+        try:
+            self.status = ConnectorStatus.CONNECTING
+
+            # Create credentials from stored tokens
+            client_config = self._get_client_config()
+            credentials = Credentials(
+                token=self.config.credentials.get("access_token"),
+                refresh_token=self.config.credentials.get("refresh_token"),
+                token_uri=client_config["web"]["token_uri"],
+                client_id=client_config["web"]["client_id"],
+                client_secret=client_config["web"]["client_secret"],
+                scopes=self.SCOPES
+            )
+
+            # Build Gmail service
+            self.service = build('gmail', 'v1', credentials=credentials)
+
+            # Test connection
+            self.service.users().labels().list(userId='me').execute()
+
+            self.status = ConnectorStatus.CONNECTED
+            self._clear_error()
+            return True
+
+        except Exception as e:
+            self._set_error(f"Failed to connect: {str(e)}")
+            return False
+
+    async def disconnect(self) -> bool:
+        """Disconnect from Gmail API"""
+        self.service = None
+        self.status = ConnectorStatus.DISCONNECTED
+        return True
+
+    async def test_connection(self) -> bool:
+        """Test Gmail connection"""
+        if not self.service:
+            return False
+
+        try:
+            self.service.users().labels().list(userId='me').execute()
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def get_auth_url(cls, redirect_uri: str, state: str) -> str:
+        """Get Gmail OAuth authorization URL"""
+        if not GMAIL_AVAILABLE:
+            raise ImportError("Gmail dependencies not installed")
+
+        flow = Flow.from_client_config(
+            cls._get_client_config(),
+            scopes=cls.SCOPES,
+            redirect_uri=redirect_uri
+        )
+
+        auth_url, _ = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            state=state,
+            prompt='consent'
+        )
+
+        return auth_url
+
+    @classmethod
+    async def exchange_code(cls, code: str, redirect_uri: str) -> Dict[str, Any]:
+        """Exchange authorization code for tokens"""
+        if not GMAIL_AVAILABLE:
+            raise ImportError("Gmail dependencies not installed")
+
+        flow = Flow.from_client_config(
+            cls._get_client_config(),
+            scopes=cls.SCOPES,
+            redirect_uri=redirect_uri
+        )
+
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+
+        return {
+            "access_token": credentials.token,
+            "refresh_token": credentials.refresh_token,
+            "expiry": credentials.expiry.isoformat() if credentials.expiry else None
+        }
+
+    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+        """Sync emails from Gmail"""
+        if not self.service:
+            await self.connect()
+
+        if self.status != ConnectorStatus.CONNECTED:
+            return []
+
+        self.status = ConnectorStatus.SYNCING
+        documents = []
+
+        try:
+            # Build query
+            query_parts = []
+
+            if since:
+                date_str = since.strftime("%Y/%m/%d")
+                query_parts.append(f"after:{date_str}")
+
+            if self.config.settings.get("query"):
+                query_parts.append(self.config.settings["query"])
+
+            if not self.config.settings.get("include_spam", False):
+                query_parts.append("-in:spam")
+
+            query = " ".join(query_parts) if query_parts else None
+
+            # Get labels to sync
+            labels = self.config.settings.get("labels", ["INBOX", "SENT"])
+
+            for label in labels:
+                # List messages
+                results = self.service.users().messages().list(
+                    userId='me',
+                    labelIds=[label],
+                    q=query,
+                    maxResults=self.config.settings.get("max_results", 100)
+                ).execute()
+
+                messages = results.get('messages', [])
+
+                for msg_info in messages:
+                    msg = self.service.users().messages().get(
+                        userId='me',
+                        id=msg_info['id'],
+                        format='full'
+                    ).execute()
+
+                    doc = self._message_to_document(msg, label)
+                    if doc:
+                        documents.append(doc)
+
+            # Update stats
+            self.sync_stats = {
+                "documents_synced": len(documents),
+                "labels_synced": labels,
+                "sync_time": datetime.now().isoformat()
+            }
+
+            self.config.last_sync = datetime.now()
+            self.status = ConnectorStatus.CONNECTED
+
+        except Exception as e:
+            self._set_error(f"Sync failed: {str(e)}")
+
+        return documents
+
+    async def get_document(self, doc_id: str) -> Optional[Document]:
+        """Get a specific email by message ID"""
+        if not self.service:
+            await self.connect()
+
+        try:
+            # Extract Gmail message ID from doc_id
+            msg_id = doc_id.replace("gmail_", "")
+
+            msg = self.service.users().messages().get(
+                userId='me',
+                id=msg_id,
+                format='full'
+            ).execute()
+
+            return self._message_to_document(msg)
+
+        except Exception as e:
+            self._set_error(f"Failed to get document: {str(e)}")
+            return None
+
+    def _message_to_document(self, message: Dict, label: str = None) -> Optional[Document]:
+        """Convert Gmail message to Document"""
+        try:
+            headers = {h['name'].lower(): h['value'] for h in message['payload']['headers']}
+
+            # Extract basic info
+            subject = headers.get('subject', '(No Subject)')
+            sender = headers.get('from', 'Unknown')
+            recipient = headers.get('to', 'Unknown')
+            date_str = headers.get('date', '')
+
+            # Parse date
+            timestamp = None
+            if date_str:
+                try:
+                    timestamp = parsedate_to_datetime(date_str)
+                except Exception:
+                    pass
+
+            # Extract body
+            body = self._extract_body(message['payload'])
+
+            # Clean up body
+            body = self._clean_email_body(body)
+
+            # Create content
+            content = f"""Subject: {subject}
+From: {sender}
+To: {recipient}
+Date: {date_str}
+
+{body}"""
+
+            # Extract sender name
+            author = self._extract_name_from_email(sender)
+
+            return Document(
+                doc_id=f"gmail_{message['id']}",
+                source="gmail",
+                content=content,
+                title=subject,
+                metadata={
+                    "message_id": message['id'],
+                    "thread_id": message.get('threadId'),
+                    "label": label,
+                    "from": sender,
+                    "to": recipient,
+                    "snippet": message.get('snippet', '')[:200]
+                },
+                timestamp=timestamp,
+                author=author,
+                doc_type="email"
+            )
+
+        except Exception as e:
+            print(f"Error converting message: {e}")
+            return None
+
+    def _extract_body(self, payload: Dict) -> str:
+        """Extract email body from payload"""
+        body = ""
+
+        if 'body' in payload and payload['body'].get('data'):
+            body = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8', errors='ignore')
+
+        elif 'parts' in payload:
+            for part in payload['parts']:
+                mime_type = part.get('mimeType', '')
+
+                if mime_type == 'text/plain':
+                    if part['body'].get('data'):
+                        body = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                        break
+
+                elif mime_type == 'text/html' and not body:
+                    if part['body'].get('data'):
+                        html = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                        body = self._html_to_text(html)
+
+                elif mime_type.startswith('multipart/'):
+                    body = self._extract_body(part)
+                    if body:
+                        break
+
+        return body
+
+    def _html_to_text(self, html: str) -> str:
+        """Convert HTML to plain text"""
+        # Remove script and style tags
+        html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
+
+        # Replace common tags
+        html = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
+        html = re.sub(r'<p[^>]*>', '\n', html, flags=re.IGNORECASE)
+        html = re.sub(r'</p>', '\n', html, flags=re.IGNORECASE)
+        html = re.sub(r'<div[^>]*>', '\n', html, flags=re.IGNORECASE)
+
+        # Remove remaining tags
+        html = re.sub(r'<[^>]+>', '', html)
+
+        # Decode entities
+        html = html.replace('&nbsp;', ' ')
+        html = html.replace('&amp;', '&')
+        html = html.replace('&lt;', '<')
+        html = html.replace('&gt;', '>')
+        html = html.replace('&quot;', '"')
+
+        # Clean up whitespace
+        html = re.sub(r'\n\s*\n', '\n\n', html)
+        html = html.strip()
+
+        return html
+
+    def _clean_email_body(self, body: str) -> str:
+        """Clean up email body"""
+        # Remove quoted content (previous emails in thread)
+        lines = body.split('\n')
+        cleaned_lines = []
+
+        for line in lines:
+            # Skip quoted lines
+            if line.strip().startswith('>'):
+                continue
+            # Skip "On X wrote:" lines
+            if re.match(r'^On .+ wrote:$', line.strip()):
+                break
+            # Skip forwarded message headers
+            if '---------- Forwarded message ----------' in line:
+                break
+            cleaned_lines.append(line)
+
+        return '\n'.join(cleaned_lines).strip()
+
+    def _extract_name_from_email(self, email_header: str) -> str:
+        """Extract name from email header like 'John Smith <john@example.com>'"""
+        match = re.match(r'^"?([^"<]+)"?\s*<', email_header)
+        if match:
+            return match.group(1).strip()
+        return email_header.split('@')[0] if '@' in email_header else email_header

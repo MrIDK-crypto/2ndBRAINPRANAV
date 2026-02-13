@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+venv_new/
+venv312/
+venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.local
+
+# Build
+.next/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+*.log
+
+# Data files (large)
+*.pkl
+*.pickle
+club_data/
+data/
+*.db
+*.sqlite
+*.sqlite3
+tenant_data/
+
+# Credentials
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!next.config.js
+credentials/
+test_azure_quick.py

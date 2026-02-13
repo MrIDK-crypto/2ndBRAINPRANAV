@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Forwarding Test - No Auth Required</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 700px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status-box {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .status-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .status-box p {
+            color: #555;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .status-box code {
+            background: #e0e7ff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .info-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .info-card h4 {
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .info-card p {
+            color: #666;
+            font-size: 13px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-bottom: 15px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .result.success {
+            background: #d1fae5;
+            border: 1px solid #10b981;
+            color: #065f46;
+        }
+
+        .result.error {
+            background: #fee2e2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .instructions {
+            background: #fff7ed;
+            border: 1px solid #fb923c;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .instructions h3 {
+            color: #ea580c;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .instructions li {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📧 Email Forwarding Test</h1>
+        <p class="subtitle">No authentication required - Test API directly</p>
+
+        <div class="status-box">
+            <h3>📍 Email Forwarding Address</h3>
+            <p>Forward any email to: <code id="forwardingEmail">Loading...</code></p>
+            <p style="margin-top: 10px;">Status: <span id="configStatus" class="badge badge-warning">Checking...</span></p>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-card">
+                <h4>🔌 Backend</h4>
+                <p id="backendStatus">Checking...</p>
+            </div>
+            <div class="info-card">
+                <h4>📨 Last Fetch</h4>
+                <p id="lastFetch">Not run yet</p>
+            </div>
+        </div>
+
+        <button onclick="checkStatus()" id="checkBtn">
+            🔄 Check Configuration
+        </button>
+
+        <button onclick="fetchEmails()" id="fetchBtn" disabled>
+            📥 Fetch New Emails
+        </button>
+
+        <div id="result" class="result"></div>
+
+        <div class="instructions">
+            <h3>📝 How to Test:</h3>
+            <ol>
+                <li>Click "Check Configuration" to verify email is set up</li>
+                <li>Send a test email to <strong>beatatucla@gmail.com</strong> from any email account</li>
+                <li>Wait 10 seconds for the email to arrive</li>
+                <li>Click "Fetch New Emails" to import it</li>
+                <li>Check the response to see if it was processed successfully</li>
+            </ol>
+            <p style="margin-top: 15px; font-size: 12px; color: #666;">
+                <strong>Note:</strong> This page bypasses authentication for testing. Make sure the backend .env file has <code>FORWARD_EMAIL_PASSWORD</code> set with a real Gmail app password.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5003/api';
+
+        async function checkStatus() {
+            const btn = document.getElementById('checkBtn');
+            const result = document.getElementById('result');
+            const backendStatus = document.getElementById('backendStatus');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Checking...';
+            result.className = 'result';
+
+            try {
+                const response = await fetch(`${API_BASE}/email-forwarding/status`);
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('forwardingEmail').textContent = data.forwarding_address;
+
+                    if (data.configured) {
+                        document.getElementById('configStatus').className = 'badge badge-success';
+                        document.getElementById('configStatus').textContent = 'Configured ✓';
+                        document.getElementById('fetchBtn').disabled = false;
+
+                        result.className = 'result success show';
+                        result.innerHTML = `
+                            <h3 style="margin-bottom: 10px;">✅ Configuration Valid!</h3>
+                            <p>Email forwarding is properly configured.</p>
+                            <p style="margin-top: 10px;">You can now click "Fetch New Emails" to test importing.</p>
+                        `;
+                    } else {
+                        document.getElementById('configStatus').className = 'badge badge-warning';
+                        document.getElementById('configStatus').textContent = 'Not Configured';
+
+                        result.className = 'result error show';
+                        result.innerHTML = `
+                            <h3 style="margin-bottom: 10px;">⚠️ Configuration Required</h3>
+                            <p>Email forwarding is not properly configured.</p>
+                            <p style="margin-top: 10px;"><strong>Fix:</strong></p>
+                            <ol style="margin-left: 20px; margin-top: 5px;">
+                                <li>Get Gmail App Password from <a href="https://myaccount.google.com/apppasswords" target="_blank">Google Account</a></li>
+                                <li>Add to backend/.env file: <code>FORWARD_EMAIL_PASSWORD=your_password</code></li>
+                                <li>Restart backend server</li>
+                                <li>Refresh this page</li>
+                            </ol>
+                        `;
+                    }
+
+                    backendStatus.textContent = '✅ Connected';
+                }
+            } catch (error) {
+                result.className = 'result error show';
+                result.innerHTML = `
+                    <h3 style="margin-bottom: 10px;">❌ Connection Error</h3>
+                    <p>${error.message}</p>
+                    <p style="margin-top: 10px;">Make sure the backend is running on <code>http://localhost:5003</code></p>
+                `;
+                backendStatus.textContent = '❌ Disconnected';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🔄 Check Configuration';
+            }
+        }
+
+        async function fetchEmails() {
+            const btn = document.getElementById('fetchBtn');
+            const result = document.getElementById('result');
+            const lastFetch = document.getElementById('lastFetch');
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Fetching emails...';
+            result.className = 'result';
+
+            try {
+                // Note: In production, this would need authentication
+                // For testing, we're calling the endpoint without auth
+                const response = await fetch(`${API_BASE}/email-forwarding/fetch`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const now = new Date().toLocaleTimeString();
+                    lastFetch.textContent = `${now} - ${data.processed} emails`;
+
+                    result.className = 'result success show';
+                    result.innerHTML = `
+                        <h3 style="margin-bottom: 10px;">✅ Fetch Complete!</h3>
+                        <p><strong>Processed:</strong> ${data.processed} of ${data.total} emails</p>
+                        ${data.errors && data.errors.length > 0 ?
+                            `<p style="color: #d97706; margin-top: 10px;"><strong>Errors:</strong> ${data.errors.length}</p>` :
+                            ''}
+                        <p style="margin-top: 10px; font-size: 13px;">
+                            Emails have been imported and should now appear in the Documents page.
+                        </p>
+                    `;
+                } else {
+                    result.className = 'result error show';
+                    result.innerHTML = `
+                        <h3 style="margin-bottom: 10px;">❌ Fetch Failed</h3>
+                        <p>${data.error || 'Unknown error occurred'}</p>
+                    `;
+                }
+            } catch (error) {
+                result.className = 'result error show';
+                result.innerHTML = `
+                    <h3 style="margin-bottom: 10px;">❌ Error</h3>
+                    <p>${error.message}</p>
+                    <p style="margin-top: 10px;">This might be due to authentication requirements. Check backend logs for details.</p>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '📥 Fetch New Emails';
+            }
+        }
+
+        // Auto-check status on page load
+        window.addEventListener('load', () => {
+            checkStatus();
+        });
+    </script>
+</body>
+</html>

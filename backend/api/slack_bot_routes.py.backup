@@ -1,0 +1,320 @@
+"""
+Slack Bot API Routes
+Webhook endpoints for Slack bot events, slash commands, and interactions.
+"""
+
+import os
+import hmac
+import hashlib
+import time
+from flask import Blueprint, request, jsonify
+
+from database.models import SessionLocal, Connector, ConnectorType
+from services.slack_bot_service import (
+    SlackBotService,
+    get_tenant_for_workspace,
+    get_bot_token_for_workspace,
+    register_slack_workspace
+)
+
+
+# Create blueprint
+slack_bot_bp = Blueprint('slack_bot', __name__, url_prefix='/api/slack')
+
+
+# Slack signing secret for request verification
+SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET', '')
+
+
+def verify_slack_request(request_data: bytes, timestamp: str, signature: str) -> bool:
+    """
+    Verify Slack request signature.
+
+    Args:
+        request_data: Raw request body
+        timestamp: X-Slack-Request-Timestamp header
+        signature: X-Slack-Signature header
+
+    Returns:
+        bool: True if signature is valid
+    """
+    if not SLACK_SIGNING_SECRET:
+        print("[SlackBot] WARNING: SLACK_SIGNING_SECRET not set - skipping verification", flush=True)
+        return True  # Allow in dev, but log warning
+
+    # Check timestamp to prevent replay attacks
+    if abs(time.time() - int(timestamp)) > 60 * 5:
+        return False
+
+    # Compute signature
+    sig_basestring = f'v0:{timestamp}:{request_data.decode("utf-8")}'
+    my_signature = 'v0=' + hmac.new(
+        SLACK_SIGNING_SECRET.encode(),
+        sig_basestring.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    # Compare signatures (constant-time to prevent timing attacks)
+    return hmac.compare_digest(my_signature, signature)
+
+
+def get_tenant_id_from_team(team_id: str) -> str:
+    """
+    Get tenant ID for a Slack team ID.
+    First checks in-memory cache, then database.
+
+    Args:
+        team_id: Slack team/workspace ID
+
+    Returns:
+        str: Tenant ID or None
+    """
+    # Check in-memory cache first
+    tenant_id = get_tenant_for_workspace(team_id)
+    if tenant_id:
+        return tenant_id
+
+    # Check database
+    db = SessionLocal()
+    try:
+        connector = db.query(Connector).filter(
+            Connector.connector_type == ConnectorType.SLACK,
+            Connector.settings['team_id'].astext == team_id,
+            Connector.is_active == True
+        ).first()
+
+        if connector:
+            # Cache it for next time
+            tenant_id = connector.tenant_id
+
+            # Get bot token from credentials
+            bot_token = connector.credentials.get('access_token')
+            if bot_token:
+                register_slack_workspace(team_id, tenant_id, bot_token)
+
+            return tenant_id
+
+        return None
+    finally:
+        db.close()
+
+
+def get_bot_service(team_id: str) -> SlackBotService:
+    """
+    Get SlackBotService instance for a team.
+
+    Args:
+        team_id: Slack team ID
+
+    Returns:
+        SlackBotService instance
+    """
+    # Get bot token
+    bot_token = get_bot_token_for_workspace(team_id)
+
+    if not bot_token:
+        # Try to fetch from database
+        db = SessionLocal()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.connector_type == ConnectorType.SLACK,
+                Connector.settings['team_id'].astext == team_id,
+                Connector.is_active == True
+            ).first()
+
+            if connector:
+                bot_token = connector.credentials.get('access_token')
+        finally:
+            db.close()
+
+    if not bot_token:
+        raise ValueError(f"No bot token found for team {team_id}")
+
+    return SlackBotService(bot_token)
+
+
+# ============================================================================
+# SLACK EVENT SUBSCRIPTIONS
+# ============================================================================
+
+@slack_bot_bp.route('/events', methods=['POST'])
+def slack_events():
+    """
+    Handle Slack Events API.
+
+    Receives:
+    - app_mention: When bot is @mentioned
+    - message.im: Direct messages to bot
+    - Other events as needed
+    """
+    # Verify request signature
+    timestamp = request.headers.get('X-Slack-Request-Timestamp', '')
+    signature = request.headers.get('X-Slack-Signature', '')
+
+    if not verify_slack_request(request.get_data(), timestamp, signature):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    data = request.json
+
+    # URL verification challenge (Slack setup)
+    if data.get('type') == 'url_verification':
+        return jsonify({'challenge': data.get('challenge')})
+
+    # Handle event
+    if data.get('type') == 'event_callback':
+        event = data.get('event', {})
+        event_type = event.get('type')
+        team_id = data.get('team_id')
+
+        # Get tenant ID for this workspace
+        tenant_id = get_tenant_id_from_team(team_id)
+        if not tenant_id:
+            print(f"[SlackBot] No tenant found for team {team_id}", flush=True)
+            return jsonify({'error': 'Workspace not connected'}), 404
+
+        try:
+            bot_service = get_bot_service(team_id)
+
+            # Handle app mention
+            if event_type == 'app_mention':
+                bot_service.handle_app_mention(tenant_id, event)
+                return jsonify({'ok': True})
+
+            # Handle direct message
+            elif event_type == 'message':
+                # Ignore bot messages and message changes
+                if event.get('subtype') in [None, 'bot_message', 'message_changed']:
+                    if event.get('subtype') is None:  # Only handle regular messages
+                        bot_service.handle_message(tenant_id, event)
+                return jsonify({'ok': True})
+
+            else:
+                print(f"[SlackBot] Unhandled event type: {event_type}", flush=True)
+                return jsonify({'ok': True})
+
+        except Exception as e:
+            print(f"[SlackBot] Error handling event: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    return jsonify({'ok': True})
+
+
+# ============================================================================
+# SLACK SLASH COMMANDS
+# ============================================================================
+
+@slack_bot_bp.route('/commands/ask', methods=['POST'])
+def slash_command_ask():
+    """
+    Handle /ask slash command.
+
+    Usage: /ask What is our pricing model?
+    """
+    # Verify request signature
+    timestamp = request.headers.get('X-Slack-Request-Timestamp', '')
+    signature = request.headers.get('X-Slack-Signature', '')
+
+    if not verify_slack_request(request.get_data(), timestamp, signature):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    # Parse form data (Slack sends as form-encoded)
+    team_id = request.form.get('team_id')
+    user_id = request.form.get('user_id')
+    channel_id = request.form.get('channel_id')
+    text = request.form.get('text', '').strip()
+    response_url = request.form.get('response_url')
+
+    if not text:
+        return jsonify({
+            'response_type': 'ephemeral',
+            'text': '❌ Usage: `/ask <your question>`\n\nExample: `/ask What is our pricing model?`'
+        })
+
+    # Get tenant ID
+    tenant_id = get_tenant_id_from_team(team_id)
+    if not tenant_id:
+        return jsonify({
+            'response_type': 'ephemeral',
+            'text': '❌ Your workspace is not connected to 2nd Brain.\n\nPlease connect at: https://app.2ndbrain.io/integrations'
+        })
+
+    try:
+        bot_service = get_bot_service(team_id)
+
+        # Handle command
+        response = bot_service.handle_ask_command(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            channel_id=channel_id,
+            query=text,
+            response_url=response_url
+        )
+
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"[SlackBot] Error handling /ask: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'response_type': 'ephemeral',
+            'text': f'❌ Error: {str(e)}'
+        })
+
+
+# ============================================================================
+# SLACK INTERACTIVITY (Buttons, Menus, etc.)
+# ============================================================================
+
+@slack_bot_bp.route('/interactive', methods=['POST'])
+def slack_interactive():
+    """
+    Handle Slack interactive components (buttons, select menus, etc.).
+    """
+    # Verify request signature
+    timestamp = request.headers.get('X-Slack-Request-Timestamp', '')
+    signature = request.headers.get('X-Slack-Signature', '')
+
+    if not verify_slack_request(request.get_data(), timestamp, signature):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    # Parse payload (Slack sends as form-encoded JSON)
+    import json
+    payload = json.loads(request.form.get('payload', '{}'))
+
+    # Handle different interaction types
+    interaction_type = payload.get('type')
+
+    if interaction_type == 'block_actions':
+        # Handle button clicks, menu selections, etc.
+        # TODO: Implement based on your UI needs
+        return jsonify({'ok': True})
+
+    elif interaction_type == 'view_submission':
+        # Handle modal submissions
+        # TODO: Implement based on your UI needs
+        return jsonify({'ok': True})
+
+    else:
+        print(f"[SlackBot] Unhandled interaction type: {interaction_type}", flush=True)
+        return jsonify({'ok': True})
+
+
+# ============================================================================
+# HEALTH CHECK
+# ============================================================================
+
+@slack_bot_bp.route('/health', methods=['GET'])
+def health_check():
+    """Health check for Slack bot endpoints"""
+    return jsonify({
+        'status': 'healthy',
+        'bot_enabled': bool(SLACK_SIGNING_SECRET),
+        'endpoints': {
+            'events': '/api/slack/events',
+            'slash_commands': '/api/slack/commands/ask',
+            'interactive': '/api/slack/interactive'
+        }
+    })

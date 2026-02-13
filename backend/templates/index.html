@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KnowledgeVault - Enron Knowledge Base</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🧠 KnowledgeVault</h1>
+            <p class="tagline">Enterprise Knowledge Management & RAG System</p>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value">{{ stats.total_documents|default(0)|int|format_number }}</div>
+                    <div class="stat-label">Documents</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ stats.total_employees|default(0) }}</div>
+                    <div class="stat-label">Employees</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ stats.total_projects|default(0) }}</div>
+                    <div class="stat-label">Projects</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Search Section -->
+            <div class="search-section">
+                <h2>Ask the Knowledge Base</h2>
+                <div class="search-box">
+                    <textarea
+                        id="query-input"
+                        placeholder="Ask a question about Enron's operations, projects, or employee activities...
+Examples:
+- What projects did employee beck-s work on?
+- What were the main energy trading activities?
+- Tell me about the California energy crisis"
+                        rows="4"
+                    ></textarea>
+                    <button id="search-btn" onclick="search()">
+                        <span id="btn-text">🔍 Search Knowledge Base</span>
+                        <span id="loading-spinner" style="display: none;">⏳ Searching...</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" style="display: none;">
+                <!-- Answer Card -->
+                <div class="answer-card">
+                    <h3>📝 Answer</h3>
+                    <div id="answer-content" class="answer-content"></div>
+                </div>
+
+                <!-- Sources Section -->
+                <div class="sources-section">
+                    <h3>📚 Source Documents (<span id="source-count">0</span>)</h3>
+                    <div id="sources-list" class="sources-list"></div>
+                </div>
+            </div>
+
+            <!-- Employee Browser -->
+            <div class="employee-browser">
+                <h2>📁 Browse by Employee</h2>
+                <button onclick="loadEmployees()" class="load-employees-btn">
+                    Load Employee Directory
+                </button>
+                <div id="employees-list" class="employees-list"></div>
+            </div>
+
+            <!-- Sample Queries -->
+            <div class="sample-queries">
+                <h3>💡 Try These Queries:</h3>
+                <div class="query-tags">
+                    <button class="query-tag" onclick="setQuery(this.textContent)">
+                        What were the main projects at Enron?
+                    </button>
+                    <button class="query-tag" onclick="setQuery(this.textContent)">
+                        Who were the key executives in energy trading?
+                    </button>
+                    <button class="query-tag" onclick="setQuery(this.textContent)">
+                        Tell me about the California energy market
+                    </button>
+                    <button class="query-tag" onclick="setQuery(this.textContent)">
+                        What was discussed in meetings about risk management?
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>KnowledgeVault - Hierarchical RAG System | Powered by GPT-4o-mini & TF-IDF</p>
+            <p class="tech-note">Data: Enron Email Dataset | Technology: Flask, Python 3.14, OpenAI</p>
+        </footer>
+    </div>
+
+    <script>
+        // Search function
+        async function search() {
+            const query = document.getElementById('query-input').value.trim();
+            if (!query) {
+                alert('Please enter a question');
+                return;
+            }
+
+            // Show loading state
+            document.getElementById('btn-text').style.display = 'none';
+            document.getElementById('loading-spinner').style.display = 'inline';
+            document.getElementById('search-btn').disabled = true;
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await response.json();
+
+                // Display results
+                document.getElementById('results-section').style.display = 'block';
+                document.getElementById('answer-content').innerHTML = formatAnswer(data.answer);
+                document.getElementById('source-count').textContent = data.num_sources;
+                document.getElementById('sources-list').innerHTML = formatSources(data.sources);
+
+                // Scroll to results
+                document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                // Reset button
+                document.getElementById('btn-text').style.display = 'inline';
+                document.getElementById('loading-spinner').style.display = 'none';
+                document.getElementById('search-btn').disabled = false;
+            }
+        }
+
+        // Format answer text
+        function formatAnswer(text) {
+            // Convert newlines to <br>
+            text = text.replace(/\n/g, '<br>');
+            // Highlight document citations
+            text = text.replace(/\[?Document (\d+)\]?/g, '<span class="citation">[Document $1]</span>');
+            return text;
+        }
+
+        // Format sources list
+        function formatSources(sources) {
+            if (!sources || sources.length === 0) {
+                return '<p class="no-sources">No sources found</p>';
+            }
+
+            return sources.map((source, index) => `
+                <div class="source-card">
+                    <div class="source-header">
+                        <span class="source-number">[${index + 1}]</span>
+                        <span class="source-score">Relevance: ${(source.score * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="source-subject">${escapeHtml(source.subject)}</div>
+                    <div class="source-meta">
+                        <span>👤 ${escapeHtml(source.employee)}</span>
+                        <span>📅 ${formatDate(source.timestamp)}</span>
+                        <span>📂 ${escapeHtml(source.cluster)}</span>
+                    </div>
+                    <div class="source-content">
+                        ${escapeHtml(source.content).substring(0, 300)}...
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Load employees
+        async function loadEmployees() {
+            try {
+                const response = await fetch('/api/employees');
+                const data = await response.json();
+
+                const list = document.getElementById('employees-list');
+                list.innerHTML = data.employees.map(emp => `
+                    <div class="employee-card">
+                        <div class="employee-name">👤 ${escapeHtml(emp.name)}</div>
+                        <div class="employee-summary">${escapeHtml(emp.summary)}</div>
+                        <div class="employee-stats">
+                            📧 ${emp.total_emails} emails | 📁 ${emp.projects} projects
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                alert('Error loading employees: ' + error.message);
+            }
+        }
+
+        // Helper functions
+        function setQuery(text) {
+            document.getElementById('query-input').value = text;
+            search();
+        }
+
+        function formatDate(timestamp) {
+            if (!timestamp) return 'Unknown date';
+            try {
+                return new Date(timestamp).toLocaleDateString();
+            } catch {
+                return timestamp.substring(0, 10);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // Enter key to search
+        document.getElementById('query-input').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                search();
+            }
+        });
+    </script>
+</body>
+</html>

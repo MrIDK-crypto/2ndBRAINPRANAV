@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KnowledgeVault - Complete Methodology</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin: 30px 0;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab {
+            padding: 15px 30px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-bottom: none;
+            border-radius: 10px 10px 0 0;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .tab:hover {
+            background: #f8f9fa;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.5s;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .methodology-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .gap-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+        }
+        .question-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 15px 0;
+        }
+        .priority-high {
+            border-left: 4px solid #dc3545;
+        }
+        .priority-medium {
+            border-left: 4px solid #ffc107;
+        }
+        .priority-low {
+            border-left: 4px solid #28a745;
+        }
+        .project-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .project-card-mini {
+            background: white;
+            border: 2px solid #e0e0e0;
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2em;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🧠 KnowledgeVault</h1>
+            <p class="tagline">Complete Methodology Results - All 517K Emails Processed</p>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value">{{ stats.total_documents|default(0)|int|format_number }}</div>
+                    <div class="stat-label">Documents</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ stats.total_employees|default(0) }}</div>
+                    <div class="stat-label">Employees</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ stats.total_projects|default(0) }}</div>
+                    <div class="stat-label">Projects</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Tabs -->
+            <div class="tabs">
+                <div class="tab active" onclick="showTab('rag')">
+                    🔍 RAG Search
+                </div>
+                <div class="tab" onclick="showTab('projects')">
+                    📁 AI Project Clusters
+                </div>
+                <div class="tab" onclick="showTab('gaps')">
+                    🎯 Knowledge Gaps
+                </div>
+                <div class="tab" onclick="showTab('questions')">
+                    ❓ AI Questions
+                </div>
+                <div class="tab" onclick="showTab('employees')">
+                    👥 Employee Summaries
+                </div>
+            </div>
+
+            <!-- TAB 1: RAG Search -->
+            <div id="rag-content" class="tab-content active">
+                <div class="methodology-section">
+                    <h2>Ask the Knowledge Base</h2>
+                    <div class="search-box">
+                        <textarea
+                            id="query-input"
+                            placeholder="Ask a question about Enron's operations, projects, or employee activities..."
+                            rows="4"
+                        ></textarea>
+                        <button id="search-btn" onclick="search()">
+                            <span id="btn-text">🔍 Search Knowledge Base</span>
+                            <span id="loading-spinner" style="display: none;">⏳ Searching...</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="results-section" style="display: none;">
+                    <div class="answer-card">
+                        <h3>📝 Answer</h3>
+                        <div id="answer-content" class="answer-content"></div>
+                    </div>
+
+                    <div class="sources-section">
+                        <h3>📚 Source Documents (<span id="source-count">0</span>)</h3>
+                        <div id="sources-list" class="sources-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: Project Clusters -->
+            <div id="projects-content" class="tab-content">
+                <div class="methodology-section">
+                    <h2>🤖 AI-Discovered Project Clusters</h2>
+                    <p>The AI automatically analyzed all emails and grouped them into projects for each employee.</p>
+                    <button onclick="loadProjects()" class="load-employees-btn">
+                        Load Project Clusters
+                    </button>
+                    <div id="projects-list"></div>
+                </div>
+            </div>
+
+            <!-- TAB 3: Knowledge Gaps -->
+            <div id="gaps-content" class="tab-content">
+                <div class="methodology-section">
+                    <h2>🎯 Knowledge Gap Analysis</h2>
+                    <p>Select an employee to see AI-identified knowledge gaps:</p>
+
+                    <button onclick="loadEmployeeSelectors()" class="load-employees-btn" style="margin-bottom: 15px;">
+                        Load Employee List
+                    </button>
+
+                    <select id="employee-select" onchange="loadGaps(this.value)" style="display: none;">
+                        <option value="">-- Select Employee --</option>
+                    </select>
+
+                    <div id="gaps-display"></div>
+                </div>
+            </div>
+
+            <!-- TAB 4: AI Questions -->
+            <div id="questions-content" class="tab-content">
+                <div class="methodology-section">
+                    <h2>❓ AI-Generated Questions</h2>
+                    <p>These questions help fill knowledge gaps and capture tacit knowledge:</p>
+
+                    <button onclick="loadEmployeeSelectors()" class="load-employees-btn" style="margin-bottom: 15px;">
+                        Load Employee List
+                    </button>
+
+                    <select id="employee-select-q" onchange="loadQuestions(this.value)" style="display: none;">
+                        <option value="">-- Select Employee --</option>
+                    </select>
+
+                    <div id="questions-display"></div>
+                </div>
+            </div>
+
+            <!-- TAB 5: Employee Summaries -->
+            <div id="employees-content" class="tab-content">
+                <div class="methodology-section">
+                    <h2>👥 AI-Generated Employee Summaries</h2>
+                    <button onclick="loadEmployees()" class="load-employees-btn">
+                        Load Employee Directory
+                    </button>
+                    <div id="employees-list" class="employees-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>KnowledgeVault - Complete Methodology | Powered by GPT-4o-mini & TF-IDF</p>
+            <p class="tech-note">517,401 Enron Emails Analyzed | 150 Employees | 750+ Projects Discovered</p>
+        </footer>
+    </div>
+
+    <script>
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName + '-content').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // RAG Search
+        async function search() {
+            const query = document.getElementById('query-input').value.trim();
+            if (!query) {
+                alert('Please enter a question');
+                return;
+            }
+
+            document.getElementById('btn-text').style.display = 'none';
+            document.getElementById('loading-spinner').style.display = 'inline';
+            document.getElementById('search-btn').disabled = true;
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ query: query })
+                });
+
+                const data = await response.json();
+
+                document.getElementById('results-section').style.display = 'block';
+                document.getElementById('answer-content').innerHTML = formatAnswer(data.answer);
+                document.getElementById('source-count').textContent = data.num_sources;
+                document.getElementById('sources-list').innerHTML = formatSources(data.sources);
+
+                document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                document.getElementById('btn-text').style.display = 'inline';
+                document.getElementById('loading-spinner').style.display = 'none';
+                document.getElementById('search-btn').disabled = false;
+            }
+        }
+
+        function formatAnswer(text) {
+            text = text.replace(/\n/g, '<br>');
+            text = text.replace(/\[?Document (\d+)\]?/g, '<span class="citation">[Document $1]</span>');
+            return text;
+        }
+
+        function formatSources(sources) {
+            if (!sources || sources.length === 0) {
+                return '<p>No sources found</p>';
+            }
+
+            return sources.map((source, index) => `
+                <div class="source-card">
+                    <div class="source-header">
+                        <span class="source-number">[${index + 1}]</span>
+                        <span class="source-score">Relevance: ${(source.score * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="source-subject">${escapeHtml(source.subject)}</div>
+                    <div class="source-meta">
+                        <span>👤 ${escapeHtml(source.employee)}</span>
+                        <span>📅 ${formatDate(source.timestamp)}</span>
+                        <span>📂 ${escapeHtml(source.cluster)}</span>
+                    </div>
+                    <div class="source-content">
+                        ${escapeHtml(source.content).substring(0, 300)}...
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Load Projects
+        async function loadProjects() {
+            const list = document.getElementById('projects-list');
+            list.innerHTML = '<div class="loading">⏳ Loading project clusters...</div>';
+
+            try {
+                const response = await fetch('/api/projects');
+                const data = await response.json();
+
+                list.innerHTML = `
+                    <h3>Found ${data.projects.length} Project Clusters</h3>
+                    <div class="project-grid">
+                        ${data.projects.map(proj => `
+                            <div class="project-card-mini">
+                                <div style="font-weight: 600; color: #667eea;">📁 ${proj.project_id}</div>
+                                <div style="margin-top: 10px;">
+                                    <strong>Employee:</strong> ${proj.employee}<br>
+                                    <strong>Documents:</strong> ${proj.document_count.toLocaleString()}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (error) {
+                list.innerHTML = '<p>Error loading projects: ' + error.message + '</p>';
+            }
+        }
+
+        // Load Gap Analysis
+        async function loadGaps(employee) {
+            if (!employee) return;
+
+            const display = document.getElementById('gaps-display');
+            display.innerHTML = '<div class="loading">⏳ Running AI gap analysis...</div>';
+
+            try {
+                const response = await fetch(`/api/employee/${employee}/gaps`);
+                const gaps = await response.json();
+
+                let html = '<h3>📊 Gap Analysis Results</h3>';
+
+                // Missing document types
+                if (gaps.missing_document_types && gaps.missing_document_types.length > 0) {
+                    html += '<div class="gap-card">';
+                    html += '<h4>Missing Document Types:</h4><ul>';
+                    gaps.missing_document_types.forEach(type => {
+                        html += `<li>${type}</li>`;
+                    });
+                    html += '</ul></div>';
+                }
+
+                // Knowledge gaps
+                if (gaps.knowledge_gaps && gaps.knowledge_gaps.length > 0) {
+                    html += '<div class="gap-card">';
+                    html += '<h4>Knowledge Gaps:</h4><ol>';
+                    gaps.knowledge_gaps.forEach(gap => {
+                        html += `<li>${gap}</li>`;
+                    });
+                    html += '</ol></div>';
+                }
+
+                // Context gaps
+                if (gaps.context_gaps && gaps.context_gaps.length > 0) {
+                    html += '<div class="gap-card">';
+                    html += '<h4>Context Gaps:</h4><ol>';
+                    gaps.context_gaps.forEach(gap => {
+                        html += `<li>${gap}</li>`;
+                    });
+                    html += '</ol></div>';
+                }
+
+                display.innerHTML = html;
+            } catch (error) {
+                display.innerHTML = '<p>Error loading gaps: ' + error.message + '</p>';
+            }
+        }
+
+        // Load Questions
+        async function loadQuestions(employee) {
+            if (!employee) return;
+
+            const display = document.getElementById('questions-display');
+            display.innerHTML = '<div class="loading">⏳ Loading AI-generated questions...</div>';
+
+            try {
+                const response = await fetch(`/api/employee/${employee}/gaps`);
+                const data = await response.json();
+
+                if (!data.questions || data.questions.length === 0) {
+                    display.innerHTML = '<p>No questions generated yet.</p>';
+                    return;
+                }
+
+                let html = `<h3>Generated ${data.questions.length} Questions for ${employee}</h3>`;
+
+                data.questions.forEach((q, index) => {
+                    const priorityClass = `priority-${q.priority || 'medium'}`;
+                    html += `
+                        <div class="question-card ${priorityClass}">
+                            <h4>Question ${index + 1}: ${q.question}</h4>
+                            <div style="margin-top: 10px;">
+                                <strong>Category:</strong> ${q.category || 'N/A'}<br>
+                                <strong>Priority:</strong> <span style="text-transform: uppercase;">${q.priority || 'medium'}</span><br>
+                                <strong>Reasoning:</strong> ${q.reasoning || 'N/A'}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                display.innerHTML = html;
+            } catch (error) {
+                display.innerHTML = '<p>Error loading questions: ' + error.message + '</p>';
+            }
+        }
+
+        // Load Employee Selectors for Gaps and Questions tabs
+        async function loadEmployeeSelectors() {
+            try {
+                const response = await fetch('/api/employees');
+                const data = await response.json();
+
+                // Populate gap analysis dropdown
+                const gapSelect = document.getElementById('employee-select');
+                const questionSelect = document.getElementById('employee-select-q');
+
+                // Clear existing options except first
+                gapSelect.innerHTML = '<option value="">-- Select Employee --</option>';
+                questionSelect.innerHTML = '<option value="">-- Select Employee --</option>';
+
+                // Add employee options
+                data.employees.forEach(emp => {
+                    const gapOption = document.createElement('option');
+                    gapOption.value = emp.name;
+                    gapOption.textContent = `${emp.name} (${emp.total_emails.toLocaleString()} messages)`;
+                    gapSelect.appendChild(gapOption);
+
+                    const qOption = document.createElement('option');
+                    qOption.value = emp.name;
+                    qOption.textContent = emp.name;
+                    questionSelect.appendChild(qOption);
+                });
+
+                // Show the dropdowns
+                gapSelect.style.display = 'block';
+                questionSelect.style.display = 'block';
+
+            } catch (error) {
+                alert('Error loading employees: ' + error.message);
+            }
+        }
+
+        // Load Employees
+        async function loadEmployees() {
+            const list = document.getElementById('employees-list');
+            list.innerHTML = '<div class="loading">⏳ Loading employees...</div>';
+
+            try {
+                const response = await fetch('/api/employees');
+                const data = await response.json();
+
+                list.innerHTML = data.employees.map(emp => `
+                    <div class="employee-card">
+                        <div class="employee-name">👤 ${escapeHtml(emp.name)}</div>
+                        <div class="employee-summary">${escapeHtml(emp.summary)}</div>
+                        <div class="employee-stats">
+                            📧 ${emp.total_emails.toLocaleString()} emails | 📁 ${emp.projects} projects
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                list.innerHTML = '<p>Error loading employees: ' + error.message + '</p>';
+            }
+        }
+
+        // Helper functions
+        function formatDate(timestamp) {
+            if (!timestamp) return 'Unknown date';
+            try {
+                return new Date(timestamp).toLocaleDateString();
+            } catch {
+                return timestamp.substring(0, 10);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // Enter key to search
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('query-input').addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    search();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

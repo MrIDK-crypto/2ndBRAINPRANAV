@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Forwarding Test - No Login Required</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .info-box {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .info-box p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+        .info-box code {
+            background: #e0e7ff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #5145cd;
+        }
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        button {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(72, 187, 120, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .result {
+            background: #f9fafb;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+        .result.show {
+            display: block;
+        }
+        .result.success {
+            background: #f0fdf4;
+            border: 2px solid #48bb78;
+        }
+        .result.error {
+            background: #fef2f2;
+            border: 2px solid #f56565;
+        }
+        .result h3 {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        .result.success h3 {
+            color: #38a169;
+        }
+        .result.error h3 {
+            color: #e53e3e;
+        }
+        .result pre {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.6;
+            border: 1px solid #e2e8f0;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        .status-badge.configured {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+        .status-badge.not-configured {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📧 Email Forwarding Test</h1>
+        <p class="subtitle">No login required - Direct API testing</p>
+
+        <div class="info-box">
+            <h3>How to use this:</h3>
+            <p><strong>1.</strong> Forward any email to <code>beatatucla@gmail.com</code></p>
+            <p><strong>2.</strong> Click "Check Status" to verify configuration</p>
+            <p><strong>3.</strong> Click "Fetch Emails" to import forwarded emails</p>
+            <p><strong>4.</strong> Check the console logs for detailed results</p>
+        </div>
+
+        <div id="status-container"></div>
+
+        <div class="button-group">
+            <button class="btn-secondary" onclick="checkStatus()">
+                Check Status
+            </button>
+            <button class="btn-primary" onclick="fetchEmails()" id="fetchBtn">
+                Fetch Emails
+            </button>
+        </div>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:5003';
+
+        async function checkStatus() {
+            const resultDiv = document.getElementById('result');
+            const statusDiv = document.getElementById('status-container');
+
+            resultDiv.className = 'result';
+            resultDiv.innerHTML = '<div class="loading"></div> Checking status...';
+            resultDiv.classList.add('show');
+
+            try {
+                const response = await fetch(`${API_URL}/api/email-forwarding/status-public`);
+                const data = await response.json();
+
+                console.log('Status response:', data);
+
+                if (data.success) {
+                    // Show status badge
+                    const badge = data.configured
+                        ? '<span class="status-badge configured">✓ Configured</span>'
+                        : '<span class="status-badge not-configured">⚠ Not Configured</span>';
+
+                    statusDiv.innerHTML = badge;
+
+                    resultDiv.className = 'result success show';
+                    resultDiv.innerHTML = `
+                        <h3>✓ Status Check Successful</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.className = 'result error show';
+                    resultDiv.innerHTML = `
+                        <h3>✗ Status Check Failed</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = `
+                    <h3>✗ Connection Error</h3>
+                    <pre>Error: ${error.message}
+
+Make sure backend is running:
+  cd /Users/badri/2ndBrainFINAL/backend
+  python app_v2.py</pre>
+                `;
+            }
+        }
+
+        async function fetchEmails() {
+            const resultDiv = document.getElementById('result');
+            const fetchBtn = document.getElementById('fetchBtn');
+
+            fetchBtn.disabled = true;
+            resultDiv.className = 'result';
+            resultDiv.innerHTML = '<div class="loading"></div> Fetching emails from beatatucla@gmail.com...';
+            resultDiv.classList.add('show');
+
+            try {
+                const response = await fetch(`${API_URL}/api/email-forwarding/fetch-public`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+                console.log('Fetch response:', data);
+
+                if (data.success) {
+                    resultDiv.className = 'result success show';
+                    resultDiv.innerHTML = `
+                        <h3>✓ Email Fetch Successful!</h3>
+                        <p><strong>Processed:</strong> ${data.processed} emails</p>
+                        <p><strong>Total:</strong> ${data.total} emails found</p>
+                        ${data.errors && data.errors.length > 0 ? `<p><strong>Errors:</strong> ${data.errors.length}</p>` : ''}
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.className = 'result error show';
+                    resultDiv.innerHTML = `
+                        <h3>✗ Email Fetch Failed</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = `
+                    <h3>✗ Connection Error</h3>
+                    <pre>Error: ${error.message}
+
+Possible issues:
+1. Backend not running
+2. Email password not configured in .env
+3. CORS issues
+
+Check backend logs for details.</pre>
+                `;
+            } finally {
+                fetchBtn.disabled = false;
+            }
+        }
+
+        // Auto-check status on load
+        window.addEventListener('load', () => {
+            setTimeout(checkStatus, 500);
+        });
+    </script>
+</body>
+</html>

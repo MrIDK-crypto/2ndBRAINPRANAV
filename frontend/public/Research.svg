@@ -1,0 +1,9 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Research - Lightbulb with sparkles -->
+  <path d="M9 21h6M12 3a6 6 0 0 0-4 10.472V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-3.528A6 6 0 0 0 12 3z" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <line x1="12" y1="18" x2="12" y2="21" stroke="#2563EB" stroke-width="2" stroke-linecap="round"/>
+  <!-- Sparkles -->
+  <circle cx="20" cy="5" r="1.5" fill="#2563EB"/>
+  <circle cx="4" cy="8" r="1" fill="#2563EB"/>
+  <circle cx="21" cy="12" r="1" fill="#2563EB"/>
+</svg>

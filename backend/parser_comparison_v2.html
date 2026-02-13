@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Parser Comparison Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+        }
+
+        .container { max-width: 1600px; margin: 0 auto; }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .header h1 { color: #667eea; font-size: 32px; margin-bottom: 10px; }
+        .header .subtitle { color: #666; }
+
+        .document-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .document-card h2 { color: #333; margin-bottom: 15px; }
+
+        .parsers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .parser-box {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            background: #fafafa;
+            position: relative;
+        }
+
+        .parser-box.success { border-color: #4caf50; background: #f1f8f4; }
+        .parser-box.error { border-color: #f44336; background: #fff3f3; }
+
+        .parser-box h3 {
+            color: #333;
+            font-size: 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .badge.success { background: #4caf50; color: white; }
+        .badge.error { background: #f44336; color: white; }
+        .badge.winner { background: gold; color: #333; }
+
+        .stats {
+            margin: 10px 0;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .stats div { margin: 4px 0; }
+
+        .content-preview {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 12px;
+            margin-top: 10px;
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+
+        .error-msg {
+            background: #ffebee;
+            border: 1px solid #f44336;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 10px;
+            color: #c62828;
+            font-size: 12px;
+        }
+
+        .summary-table {
+            width: 100%;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            margin-bottom: 25px;
+        }
+
+        .summary-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .summary-table th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .summary-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .summary-table tr:hover { background: #f5f5f5; }
+
+        .chart-bar {
+            background: linear-gradient(90deg, #4caf50, #81c784);
+            height: 25px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Parser Comparison Report v2</h1>
+            <p class="subtitle">Generated on November 15, 2025 at 09:26 PM</p>
+        </div>
+
+        <div class="summary-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Parser</th>
+                        <th>Success Rate</th>
+                        <th>Total Characters</th>
+                        <th>Avg Time</th>
+                        <th>Performance</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td><strong>Unstructured</strong></td>
+                        <td>20% (1/5)</td>
+                        <td>15,176,728 chars</td>
+                        <td>7.81s</td>
+                        <td>
+                            <div class="chart-bar" style="width: 100.0%">
+                                15,176,728
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Current Parser</strong></td>
+                        <td>80% (4/5)</td>
+                        <td>37,248 chars</td>
+                        <td>0.18s</td>
+                        <td>
+                            <div class="chart-bar" style="width: 0.2454283953695421%">
+                                37,248
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>PyMuPDF</strong></td>
+                        <td>20% (1/5)</td>
+                        <td>2,184 chars</td>
+                        <td>0.01s</td>
+                        <td>
+                            <div class="chart-bar" style="width: 0.014390453594477019%">
+                                2,184
+                            </div>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>Tesseract OCR</strong></td>
+                        <td>20% (1/5)</td>
+                        <td>1,243 chars</td>
+                        <td>0.11s</td>
+                        <td>
+                            <div class="chart-bar" style="width: 0.00819017116205812%">
+                                1,243
+                            </div>
+                        </td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div class="document-card">
+            <h2>📄 File-BEAT x UCLA Health Business Plan Presenta.pptx</h2>
+            <p style="color: #888; font-size: 14px; margin-bottom: 10px;">File type: .pptx</p>
+
+            <div class="parsers-grid">
+
+                <div class="parser-box success">
+                    <h3>
+                        Current Parser
+                        <span class="badge success">
+                            ✅ SUCCESS
+                        </span>
+                        <span class="badge winner">🏆 WINNER</span>
+                    </h3>
+
+                    <div class="stats">
+                        <div><strong>Characters:</strong> 11,012</div>
+                        <div><strong>Duration:</strong> 0.33s</div>
+                        <div><strong>Metadata:</strong> {"slides": 23, "file_type": "pptx"}</div>
+                    </div>
+                    <div class="content-preview">[Slide 1]
+FDU Relocation Business Plan
+X
+
+[Slide 2]
+Meet the team
+Project Manager
+Pranav Reddy
+2
+Rishit Jain
+Healthcare Consultant
+Eric Yang
+Badri Mishra
+Business Consultant
+Pranav Reddy
+Healthcare Consultant
+Business Economics and Psychobiology at UCLA
+Experienced in market research and corporate development
+Current intern at Fox Corporation
+Aspiring Consultant
+Neuroscience at UCLA
+Experienced in healthcare/medicine-based research
+Current research associate under UCLA Health
+Aspiring Physician
+Business Economics and Data Science at UCLA
+Experienced in market research and corporate development
+Current intern at Sattva Consulting
+Aspiring Consultant
+MCDB at UCLA
+Experienced in healthcare, medicine and innovation
+Biological Chemistry Department research 
+Working on ML models
+Aspiring Orthopedician
+
+[Slide 3]
+Project Name
+Project Lead: Rishit Jain 
+Project Sponsor: Patricia Bojakowski
+Business Plan Lead: Alan Tran
+Service Line: Women's and Children's
+Why UCLA Health is positioned to pursue this initiative:
+Over-capacity in NICU & L&D Spaces/Beds
+Enhanced brand perception/competitiveness with patients/families against Cedars-Sinai and CHLA
+Boost physician/nurse/healthcare worker satisfaction/morale
+Improve patient safety, care quality, and satisfaction
+Increase in transfer volume in either NICU-status patients or high-acuity Ob/Gyn patients
+Assessing two options for service expansion to replace the existing FDU into either a NICU Step-Down unit or an OB-ED and Triage unit. An ini...</div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Unstructured
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> 
+                    </div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        PyMuPDF
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles PDFs
+                    </div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Tesseract OCR
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles images
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+        <div class="document-card">
+            <h2>📄 File-BEAT Charter Template.docx</h2>
+            <p style="color: #888; font-size: 14px; margin-bottom: 10px;">File type: .docx</p>
+
+            <div class="parsers-grid">
+
+                <div class="parser-box success">
+                    <h3>
+                        Current Parser
+                        <span class="badge success">
+                            ✅ SUCCESS
+                        </span>
+                        <span class="badge winner">🏆 WINNER</span>
+                    </h3>
+
+                    <div class="stats">
+                        <div><strong>Characters:</strong> 2,281</div>
+                        <div><strong>Duration:</strong> 0.01s</div>
+                        <div><strong>Metadata:</strong> {"paragraphs": 13, "tables": 3, "file_type": "docx"}</div>
+                    </div>
+                    <div class="content-preview">Lupus Automimmune Cell Therapy Business Strategy
+
+Project Charter - March 7, 2025
+
+Project Team:
+
+Project Overview:
+
+Project Scope:
+
+Project Schedule:
+
+Vision Statement: | Alleviate pediatric bed saturation and enhance neonatal patient management through value-based care. | Alleviate pediatric bed saturation and enhance neonatal patient management through value-based care.
+
+Problem Statement: | The occupancy of General Pediatric beds by low-acuity NICU patients leads to extended NICU stays for neonates, deteriorating their health and compelling the hospital to turn away critical pediatric and neonatal cases. | The occupancy of General Pediatric beds by low-acuity NICU patients leads to extended NICU stays for neonates, deteriorating their health and compelling the hospital to turn away critical pediatric and neonatal cases.
+
+Objective Statement: | Establish a NICU step-down unit to admit more patients, ease occupancy on general pediatric beds, and transition low-acuity NICU patients to lower-intensity care. | Criteria For Evaluation:
+Bed Turnover Rate, Length of Stay, Revenue Cost Savings for UCLA Health, Patient Experience.
+
+Boundaries: | Neuro-Psychiatric Beds, Santa Monica UCLA Health Facility, Emergency Department (ED) | Neuro-Psychiatric Beds, Santa Monica UCLA Health Facility, Emergency Department (ED)
+
+Scope: | In-Scope: Mattel’s Children's Hospital, Medical Plaza (MP) 200, Fetal Diagnostics (FD) & Triage. | Out of Scope: Other UCLA Health Operations, Labor & Delivery ...</div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Unstructured
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> 
+                    </div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        PyMuPDF
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles PDFs
+                    </div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Tesseract OCR
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles images
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+        <div class="document-card">
+            <h2>📄 File-image(1).png</h2>
+            <p style="color: #888; font-size: 14px; margin-bottom: 10px;">File type: .png</p>
+
+            <div class="parsers-grid">
+
+                <div class="parser-box error">
+                    <h3>
+                        Current Parser
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> No content extracted
+                    </div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Unstructured
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> partition_image() is not available because one or more dependencies are not installed. Use: pip inst
+                    </div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        PyMuPDF
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles PDFs
+                    </div>
+
+                </div>
+
+                <div class="parser-box success">
+                    <h3>
+                        Tesseract OCR
+                        <span class="badge success">
+                            ✅ SUCCESS
+                        </span>
+                        <span class="badge winner">🏆 WINNER</span>
+                    </h3>
+
+                    <div class="stats">
+                        <div><strong>Characters:</strong> 1,243</div>
+                        <div><strong>Duration:</strong> 0.53s</div>
+                        <div><strong>Metadata:</strong> {"size": [960, 540]}</div>
+                    </div>
+                    <div class="content-preview">Background/ Current Current Financials
+
+Currently Dr. Ginn charges based on meeting times, as opposed to the alternative complexity route. This
+opens up a gap to potentially increase profits if done correctly
+
+Time Based vs. Complexity Why Consider this change?
+
+. . @ © e * According to guidelines, the
+Time based charging aa method of charging does not
+Time thresholds are separated into 15 minute have to be determined before the
+increments to determine charges. meeting. Either can be used for
+Complexity based charging (MDM) any given consultation, but only
+‘MDM considers 3 factors: number of problems addressed, one.
+
+‘mount of data reviewed, and risks of complications. Based . ;
+on this, it can be separated into different MDM levels in order a What matters most is what was
+
+to determine the complexity, and thus the charge. done during the meeting, and
+clearly documenting the outcome
+- in order to back up the rating that
+Current Charging system — is given if MDM is chosen to be
+
+Due to current abilities, there is difficulty in differentiating the billing process.
+between complexity levels, and thus the opportunity o charge
+
+based on complexity is completely avoided, which can
+‘seemingly be Solved with a simple guide
+
+a BEAT
+</div>
+
+                </div>
+
+            </div>
+        </div>
+
+        <div class="document-card">
+            <h2>📄 File-ED Encounter Data V2.xlsx</h2>
+            <p style="color: #888; font-size: 14px; margin-bottom: 10px;">File type: .xlsx</p>
+
+            <div class="parsers-grid">
+
+                <div class="parser-box success">
+                    <h3>
+                        Current Parser
+                        <span class="badge success">
+                            ✅ SUCCESS
+                        </span>
+                        
+                    </h3>
+
+                    <div class="stats">
+                        <div><strong>Characters:</strong> 21,931</div>
+                        <div><strong>Duration:</strong> 0.52s</div>
+                        <div><strong>Metadata:</strong> {"sheets": 2, "file_type": "xlsx"}</div>
+                    </div>
+                    <div class="content-preview">[Sheet: ED Encounters]
+PatientEncounterCSNID | PatientID | EncounterEffectiveDate | HospitalDepartmentID | HospitalAccountID | IsPregnant | Diagnosis_Name_1 | Diagnosis_Name_2 | Diagnosis_Name_3
+90214815031 | Z3982761 | 2024-09-09 00:00:00 | 10034 | 25835860 | NULL | NULL | NULL | NULL
+90214815366 | Z6954977 | 2024-09-09 00:00:00 | 10034 | 25835868 | NULL | NULL | NULL | NULL
+90214799182 | Z6105034 | 2024-09-08 00:00:00 | 10034 | 25835297 | NULL | NULL | NULL | NULL
+90214799537 | Z6936857 | 2024-09-08 00:00:00 | 10034 | 25835304 | NULL | NULL | NULL | NULL
+90214799624 | Z6954727 | 2024-09-08 00:00:00 | 10034 | 25835305 | NULL | NULL | NULL | NULL
+90214799676 | Z3386857 | 2024-09-08 00:00:00 | 10034 | 25835306 | NULL | NULL | NULL | NULL
+90214799844 | Z5995434 | 2024-09-08 00:00:00 | 10034 | 25835310 | NULL | NULL | NULL | NULL
+90214799890 | Z6954731 | 2024-09-08 00:00:00 | 10034 | 25835312 | NULL | NULL | NULL | NULL
+90214799960 | Z1651039 | 2024-09-08 00:00:00 | 10034 | 25835313 | NULL | NULL | NULL | NULL
+90214799965 | Z3913619 | 2024-09-08 00:00:00 | 10034 | 25835314 | NULL | NULL | NULL | NULL
+90214799969 | Z4452354 | 2024-09-08 00:00:00 | 10034 | 25835315 | NULL | NULL | NULL | NULL
+90214799977 | Z5125175 | 2024-09-08 00:00:00 | 10034 | 25835316 | NULL | NULL | NULL | NULL
+90214800032 | Z6260977 | 2024-09-08 00:00:00 | 10034 | 25835320 | NULL | NULL | NULL | NULL
+90214800140 | Z5925564 | 2024-09-08 00:00:00 | 10034 | 25835324 | NULL | NULL | NULL | NULL
+90214800168 | Z69...</div>
+
+                </div>
+
+                <div class="parser-box success">
+                    <h3>
+                        Unstructured
+                        <span class="badge success">
+                            ✅ SUCCESS
+                        </span>
+                        <span class="badge winner">🏆 WINNER</span>
+                    </h3>
+
+                    <div class="stats">
+                        <div><strong>Characters:</strong> 15,176,728</div>
+                        <div><strong>Duration:</strong> 36.83s</div>
+                        <div><strong>Metadata:</strong> {"elements": 2, "types": ["Table"]}</div>
+                    </div>
+                    <div class="content-preview">PatientEncounterCSNID PatientID EncounterEffectiveDate HospitalDepartmentID HospitalAccountID IsPregnant Diagnosis_Name_1 Diagnosis_Name_2 Diagnosis_Name_3 90214815031 Z3982761 2024-09-09 00:00:00 10034 25835860 90214815366 Z6954977 2024-09-09 00:00:00 10034 25835868 90214799182 Z6105034 2024-09-08 00:00:00 10034 25835297 90214799537 Z6936857 2024-09-08 00:00:00 10034 25835304 90214799624 Z6954727 2024-09-08 00:00:00 10034 25835305 90214799676 Z3386857 2024-09-08 00:00:00 10034 25835306 90214799844 Z5995434 2024-09-08 00:00:00 10034 25835310 90214799890 Z6954731 2024-09-08 00:00:00 10034 25835312 90214799960 Z1651039 2024-09-08 00:00:00 10034 25835313 90214799965 Z3913619 2024-09-08 00:00:00 10034 25835314 90214799969 Z4452354 2024-09-08 00:00:00 10034 25835315 90214799977 Z5125175 2024-09-08 00:00:00 10034 25835316 90214800032 Z6260977 2024-09-08 00:00:00 10034 25835320 90214800140 Z5925564 2024-09-08 00:00:00 10034 25835324 90214800168 Z6954733 2024-09-08 00:00:00 10034 25835328 90214800360 Z6904773 2024-09-08 00:00:00 10034 25835333 90214800368 Z2024493 2024-09-08 00:00:00 10034 25835335 90214800441 Z6954767 2024-09-08 00:00:00 10034 25835337 90214800476 Z4622603 2024-09-08 00:00:00 10034 25835339 90214800512 Z6954771 2024-09-08 00:00:00 10034 25835341 90214800527 Z2228745 2024-09-08 00:00:00 10034 25835342 90214800737 Z6954773 2024-09-08 00:00:00 10034 25835345 90214800741 Z6489050 2024-09-08 00:00:00 10034 25835346 90214800758 Z3002069 2024-09-08 00:00:00 10034 25835347 ...</div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        PyMuPDF
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles PDFs
+                    </div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Tesseract OCR
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles images
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+        <div class="document-card">
+            <h2>📄 File-BEAT Healthcare Consulting Project Charter(3).pdf</h2>
+            <p style="color: #888; font-size: 14px; margin-bottom: 10px;">File type: .pdf</p>
+
+            <div class="parsers-grid">
+
+                <div class="parser-box success">
+                    <h3>
+                        Current Parser
+                        <span class="badge success">
+                            ✅ SUCCESS
+                        </span>
+                        
+                    </h3>
+
+                    <div class="stats">
+                        <div><strong>Characters:</strong> 2,024</div>
+                        <div><strong>Duration:</strong> 0.02s</div>
+                        <div><strong>Metadata:</strong> {"pages": 1, "file_type": "pdf"}</div>
+                    </div>
+                    <div class="content-preview">Women’sandChildren’sServiceLineStrategyProjectCharter-April30,2024
+Your
+Organization,
+Your
+Mission,
+Our
+Goal.
+Project
+Team
+TeamLeader:RishitJain
+Advisor:AlanTran,JanaLim
+TeamMembers:BadriVinayakMishra,EricYang,PranavReddyMogathala,StewartFang
+Sponsors:PatriciaBojakowski
+Project
+Overview
+VisionStatement:Alleviatepediatricbedsaturationandenhanceneonatalpatientmanagementthroughvalue-basedcare.
+ProblemStatement:TheoccupancyofGeneralPediatricbedsbylow-acuityNICUpatientsleadstoextendedNICUstaysforneonates,deterioratingtheirhealthandcompellingthehospitaltoturnawaycriticalpediatricandneonatalcases.
+ObjectiveStatement:EstablishaNICUstep-downunittoadmitmorepatients,easeoccupancyongeneralpediatricbeds,andtransitionlow-acuityNICUpatientstolower-intensitycare.CriteriaForEvaluation:BedTurnoverRate,LengthofStay,RevenueCostSavings,PatientExperience,Etc.
+Project
+Scope
+Project
+Schedule
+(Tentative)TeamLeaderRole(s):Managesteammembers.
+AdvisorRole(s):Ensuresavailabilityofresources.
+TeamMembersRole(s):Participateinprojectasrequestedbyteamleaderandfacilitator
+SponsorsRole(s):Providefeedbackonprojectdirection.
+Boundaries:Neuro-PsychiatricBeds,SantaMonicaUCLAHealthFacility,EmergencyDepartment(ED)
+Scope:In-Scope:Mattel’sChildren'sHospital,MedicalPlaza(MP)200,FetalDiagnostics(FD)&Triage.OutofScope:OtherUCLAHealthOperations,Labor&DeliveryUnits,OB-ED.
+ProjectDeliverables:ProjectPlan&Charter,BusinessPlan,Data&FinancialAnalysis,CompetitorAnalysis.
+03/04/2024InitialMeeting
+04/01/2024EngagementSTART
+Current...</div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Unstructured
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> partition_pdf() is not available because one or more dependencies are not installed. Use: pip instal
+                    </div>
+
+                </div>
+
+                <div class="parser-box success">
+                    <h3>
+                        PyMuPDF
+                        <span class="badge success">
+                            ✅ SUCCESS
+                        </span>
+                        <span class="badge winner">🏆 WINNER</span>
+                    </h3>
+
+                    <div class="stats">
+                        <div><strong>Characters:</strong> 2,184</div>
+                        <div><strong>Duration:</strong> 0.07s</div>
+                        <div><strong>Metadata:</strong> {"pages": 1}</div>
+                    </div>
+                    <div class="content-preview">Women’s and Children’s Service Line Strategy
+Project Charter - April 30, 2024
+Your Organization, Your Mission, Our Goal.
+Project Team
+Team Leader:
+Rishit Jain
+Advisor:
+Alan Tran, Jana Lim
+Team Members:
+Badri Vinayak Mishra, Eric Yang,
+Pranav Reddy Mogathala, Stewart Fang
+Sponsors:
+Patricia Bojakowski
+Project Overview
+Vision Statement:
+Alleviate pediatric bed saturation and enhance neonatal patient management through value-based care.
+Problem Statement:
+The occupancy of General Pediatric beds by low-acuity NICU patients leads to extended NICU stays for neonates,
+deteriorating their health and compelling the hospital to turn away critical pediatric and neonatal cases.
+Objective
+Statement:
+Establish a NICU step-down unit to admit more patients, ease
+occupancy on general pediatric beds, and transition low-acuity NICU
+patients to lower-intensity care.
+Criteria For Evaluation:
+Bed Turnover Rate, Length of Stay, Revenue
+Cost Savings, Patient Experience, Etc.
+Project Scope
+Project Schedule (Tentative)
+Team Leader Role(s):
+Manages team members.
+Advisor Role(s):
+Ensures availability of resources.
+Team Members
+Role(s):
+Participate in project as requested by
+team leader and facilitator
+Sponsors Role(s):
+Provide feedback on project direction.
+Boundaries:
+Neuro-Psychiatric Beds, Santa Monica UCLA Health Facility, Emergency Department (ED)
+Scope:
+In-Scope: Mattel’s Children's Hospital, Medical Plaza (MP) 200,
+Fetal Diagnostics (FD) & Triage.
+Out of Scope: Other UCLA Health Operations, Labor...</div>
+
+                </div>
+
+                <div class="parser-box error">
+                    <h3>
+                        Tesseract OCR
+                        <span class="badge error">
+                            ❌ FAILED
+                        </span>
+                        
+                    </h3>
+
+                    <div class="error-msg">
+                        <strong>Error:</strong> Only handles images
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>

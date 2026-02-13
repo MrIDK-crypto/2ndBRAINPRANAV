@@ -1,0 +1,163 @@
+# Presentation: NICU Step-Down Unit - Optimizing Pediatric Bed Utilization at UCLA Health
+
+---
+
+## 1. Introduction
+
+**Title:** NICU Step-Down Unit - Optimizing Pediatric Bed Utilization at UCLA Health
+
+**Executive Summary:**
+The UCLA Health NICU Step-Down Unit project aims to optimize pediatric bed utilization, alleviate overcapacity, enhance patient outcomes, and improve financial performance by efficiently managing patient flow from NICU to step-down and general pediatric care.
+
+---
+
+## 2. Problem Statement
+
+### Challenges:
+- Low-acuity NICU patients occupying general pediatric beds.
+- Extended NICU stays leading to health deterioration.
+- Hospital declines high-acuity cases due to capacity constraints.
+- Inefficient utilization leads to revenue loss and patient care issues.
+
+---
+
+## 3. Project Goal
+
+### Objectives:
+- Optimize bed utilization in Pediatrics.
+- Improve patient outcomes and efficiency.
+- Enhance revenue through better resource allocation.
+- Develop effective patient flow protocols.
+
+---
+
+## 4. Key Insight - NICU Overflow Analysis
+
+### Observations:
+- Shorter length of stay in NICU Overflow compared to other NICU units.
+- Patients during peak seasons often low-acuity; need an alternative to full NICU care.
+
+**Opportunity:** Convert NICU Overflow Unit into NICU Step-Down Unit.
+
+---
+
+## 5. Project Scope
+
+### In Scope:
+- UCLA Floor 5: Fetal Diagnostics + Triage
+- MP 200 Building at Ronald Reagan Hospital
+- NICU Overflow Unit conversion
+- NICU → Step-Down → General Pediatrics transfer processes
+
+### Out of Scope:
+- OBED
+- Other UCLA Ronald Reagan Floors
+- Santa Monica Facilities
+- Labor & Delivery Beds
+
+---
+
+## 6. Deliverables
+
+1. Project Charter
+2. Business Plan
+3. Revenue Analysis
+4. Service Demand Evaluation
+5. Risk Assessment
+6. Brand Perception Study
+7. Operational Protocols
+
+---
+
+## 7. Stakeholders
+
+### Internal:
+- Alan (Project Sponsor)
+- NICU Clinical Director
+- Pediatrics Department Leadership
+- Nursing Staff
+
+### Project Team:
+- Badri Vinayak Mishra (Lead Analyst)
+- Rishit Jain (Data Analysis & Revenue Modeling)
+- Eric Yang (Clinical Liaison)
+- Pranav Reddy Mogathala (Operations Analysis)
+
+---
+
+## 8. Timeline
+
+- **April 2024:** Problem identification and data analysis
+- **April 26, 2024:** Scope definition
+- **May-June 2024:** NICU patient flow and stay analysis
+- **July 26, 2024:** Stakeholder meetings
+- **July 29, 2024:** Key meeting with Alan and NICU Clinical Director
+- **August 29, 2024:** Follow-up meeting
+
+---
+
+## 9. Key Data Points
+
+- NICU Overflow has a shorter length of stay.
+- Patient volume peaks seasonally.
+- Transfer metrics: NICU → General Pediatrics.
+- Age-based care levels: NICU → PICU.
+
+---
+
+## 10. Patient Flow Logic
+
+- Transition neonates from NICU to Step-Down if they improve but aren't ready for general care.
+- Prevents premature discharges and optimizes capacity.
+
+---
+
+## 11. Financial Impact
+
+- **Increased Revenue:** Higher intake of high-acuity NICU patients.
+- **Cost Efficiency:** Reduced bed blocking.
+- **Operational Efficiency:** Optimal care placements.
+- **Competitive Edge** in neonatal care.
+
+---
+
+## 12. Clinical Benefits
+
+- Better health outcomes with appropriate care levels.
+- Reduced health risks from long NICU stays.
+- Improved family and nursing staff experience.
+
+---
+
+## 13. Implementation Strategy
+
+1. Relocate Fetal Diagnostic Center to MP 200
+2. Convert NICU Overflow into Step-Down Unit
+3. Develop clinical protocols and staffing models
+4. Train staff on new care standards
+5. Establish seamless transfer protocols
+6. Continuously monitor and optimize operations
+
+---
+
+## 14. Success Metrics
+
+- High-acuity NICU acceptance rate improvement
+- Reduction in general pediatric bed blocking
+- Length of stay optimization
+- Revenue per bed metrics
+- Increased patient satisfaction scores
+- Enhanced clinical outcomes
+
+---
+
+## Conclusion
+
+**Call to Action:** 
+The NICU Step-Down Unit project promises improved patient outcomes, optimized resource utilization, and financial growth. Support and collaboration from all stakeholders is vital to its success. 
+
+---
+
+**Thank You!**
+
+Please direct any questions or feedback to the project team.
