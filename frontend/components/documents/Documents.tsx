@@ -62,6 +62,7 @@ interface Document {
   quickSummary?: string
   score?: number
   classificationConfidence?: number
+  embedded_at?: string | null
 }
 
 interface FullDocument {
@@ -85,7 +86,7 @@ const getStatusInfo = (classification?: string, sourceType?: string) => {
   if (classification === 'work') return { label: 'Active', color: colors.statusActive }
   if (classification === 'personal') return { label: 'Personal', color: colors.statusPending }
   if (classification === 'spam') return { label: 'Archived', color: colors.statusArchived }
-  if (sourceType === 'webscraper') return { label: 'Scraped', color: colors.statusBlue }
+  if (sourceType === 'webscraper' || sourceType === 'firecrawl') return { label: 'Scraped', color: colors.statusBlue }
   if (sourceType === 'github') return { label: 'Code', color: colors.statusAccent }
   return { label: 'Pending', color: colors.textMuted }
 }
@@ -192,7 +193,7 @@ export default function Documents() {
           const folderPath = doc.metadata?.folder_path?.toLowerCase() || ''
 
           // Categorization logic
-          if (sourceType === 'webscraper' || sourceType?.includes('webscraper')) {
+          if (sourceType === 'webscraper' || sourceType === 'firecrawl' || sourceType?.includes('webscraper') || sourceType?.includes('firecrawl')) {
             category = 'Web Scraper'
           } else if (sourceType === 'github' || sourceType?.includes('code') || /\.(js|ts|py|jsx|tsx|java|cpp|go|rs)$/i.test(title)) {
             category = 'Code'
@@ -235,7 +236,7 @@ export default function Documents() {
           // Document type
           let docType = 'Document'
           if (sourceType === 'github') docType = 'Code'
-          else if (sourceType === 'webscraper') docType = 'Web Page'
+          else if (sourceType === 'webscraper' || sourceType === 'firecrawl') docType = 'Web Page'
           else if (sourceType === 'email') docType = 'Email'
           else if (sourceType === 'box') docType = 'Box File'
 
@@ -271,7 +272,8 @@ export default function Documents() {
             summary: doc.summary,
             quickSummary,
             score: workScore,
-            classificationConfidence: doc.classification_confidence
+            classificationConfidence: doc.classification_confidence,
+            embedded_at: doc.embedded_at || null
           }
         })
         setDocuments(docs)
@@ -1311,7 +1313,7 @@ export default function Documents() {
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '24px 2fr 1.2fr 1fr 1fr 140px 48px',
+                gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 100px 100px 48px',
                 gap: '16px',
                 padding: '12px 20px',
                 backgroundColor: colors.cardBg,
@@ -1331,6 +1333,7 @@ export default function Documents() {
                   { label: 'Source', field: 'source_type' },
                   { label: 'Date', field: 'created' },
                   { label: 'Work Score', field: 'score' },
+                  { label: 'Embedding', field: 'embedded_at' },
                 ].map((col) => (
                   <button
                     key={col.field}
@@ -1365,7 +1368,7 @@ export default function Documents() {
                       key={doc.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '24px 2fr 1.2fr 1fr 1fr 140px 48px',
+                        gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 100px 100px 48px',
                         gap: '16px',
                         padding: '16px 20px',
                         alignItems: 'center',
@@ -1443,6 +1446,23 @@ export default function Documents() {
 
                       {/* Work Score - higher = more likely work, lower = more likely personal */}
                       <ProgressBar value={doc.score ?? 50} />
+
+                      {/* Embedding Status */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          backgroundColor: doc.embedded_at ? '#22C55E' : '#F59E0B',
+                        }} />
+                        <span style={{
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          color: doc.embedded_at ? '#16A34A' : '#D97706',
+                        }}>
+                          {doc.embedded_at ? 'Ready' : 'Pending'}
+                        </span>
+                      </div>
 
                       {/* Actions */}
                       <div onClick={(e) => e.stopPropagation()}>

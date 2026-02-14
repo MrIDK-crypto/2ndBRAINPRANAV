@@ -773,6 +773,7 @@ class Document(Base):
             "project_id": self.project_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "is_deleted": self.is_deleted,
+            "embedded_at": self.embedded_at.isoformat() if self.embedded_at else None,
             "has_structured_summary": self.structured_summary is not None
         }
         if include_content:
