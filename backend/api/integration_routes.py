@@ -3921,10 +3921,17 @@ def cancel_sync(connector_type: str):
         # This prevents the "stuck syncing" state after failed/cancelled syncs
         db = None
         try:
+            # Convert string to enum for DB query
+            ct_map = _get_connector_type_map()
+            ct_enum = ct_map.get(connector_type)
+            if not ct_enum:
+                print(f"[Cancel] Unknown connector type: {connector_type}", flush=True)
+                return jsonify({"success": True, "message": f"Unknown connector type: {connector_type}"})
+
             db = get_db()
             connector = db.query(Connector).filter(
                 Connector.tenant_id == g.tenant_id,
-                Connector.connector_type == connector_type
+                Connector.connector_type == ct_enum
             ).first()
 
             if connector and connector.status == ConnectorStatus.SYNCING:
