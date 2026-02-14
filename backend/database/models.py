@@ -1318,19 +1318,23 @@ class DeletedDocument(Base):
 
 
 def _migrate_enum_values():
-    """Add any missing enum values to PostgreSQL enum types."""
+    """Add any missing enum values to PostgreSQL enum types.
+
+    ALTER TYPE ... ADD VALUE must run outside a transaction block,
+    so we use AUTOCOMMIT isolation level.
+    """
     new_connector_types = [
         'google_docs', 'google_sheets', 'google_slides', 'google_calendar'
     ]
-    with engine.connect() as conn:
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         for val in new_connector_types:
             try:
                 conn.execute(
                     text(f"ALTER TYPE connectortype ADD VALUE IF NOT EXISTS '{val}'")
                 )
-                conn.commit()
-            except Exception:
-                conn.rollback()
+                print(f"  ✓ Added enum value: {val}")
+            except Exception as e:
+                print(f"  - Enum value '{val}' already exists or error: {e}")
 
 
 def init_database():
