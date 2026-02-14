@@ -89,15 +89,13 @@ class FirecrawlConnector(BaseConnector):
             except Exception as e:
                 print(f"[Firecrawl] Progress callback error: {e}")
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """Test connection to Firecrawl API."""
         try:
             if not self.api_key:
                 self._set_error("FIRECRAWL_API_KEY not configured")
                 return False
 
-            # Test the API with a simple request
-            # Firecrawl doesn't have a dedicated health endpoint, so we check auth
             self.status = ConnectorStatus.CONNECTED
             self._clear_error()
             print("[Firecrawl] Connected successfully")
@@ -108,19 +106,18 @@ class FirecrawlConnector(BaseConnector):
             print(f"[Firecrawl] Connection failed: {e}")
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """Disconnect from Firecrawl."""
         self.status = ConnectorStatus.DISCONNECTED
         self._current_crawl_id = None
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """Test if Firecrawl API is reachable and authenticated."""
         try:
             if not self.api_key:
                 return False
 
-            # Do a minimal scrape to test auth
             test_url = "https://example.com"
             response = self.session.post(
                 f"{self.FIRECRAWL_API_V2_BASE}/scrape",
@@ -135,7 +132,6 @@ class FirecrawlConnector(BaseConnector):
                 self._set_error("Firecrawl account needs credits")
                 return False
             elif response.status_code == 429:
-                # Rate limited but auth works
                 return True
 
             return response.status_code == 200
@@ -144,7 +140,7 @@ class FirecrawlConnector(BaseConnector):
             self._set_error(str(e))
             return False
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a specific document by ID (not supported for crawled content)."""
         return None
 
@@ -407,7 +403,7 @@ class FirecrawlConnector(BaseConnector):
             print(f"[Firecrawl] Error converting page to document: {e}")
             return None
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """
         Crawl the website and return all documents.
 

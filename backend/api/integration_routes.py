@@ -327,8 +327,8 @@ def list_integrations():
             firecrawl = connector_map.get(ConnectorType.FIRECRAWL)
             integrations.append({
                 "type": "firecrawl",
-                "name": "Website Scraper",
-                "description": "Crawl entire websites with JS rendering, PDF extraction, and sitemap discovery",
+                "name": "Website Firecrawler",
+                "description": "Crawl entire websites with JS rendering, PDF extraction, and sitemap discovery. Powered by Firecrawl.",
                 "icon": "webscraper",
                 "auth_type": "config",
                 "status": firecrawl.status.value if firecrawl else "not_configured",
@@ -3264,7 +3264,7 @@ def _run_connector_sync(
                     documents = instance.sync(since)
                     print(f"[Sync] GDrive sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'firecrawl':
-                    # Firecrawl uses synchronous requests library internally (despite async def)
+                    # Firecrawl uses synchronous requests library - call directly
                     max_pages = instance.config.settings.get('max_pages', 100)
                     if sync_id:
                         progress_service.update_progress(
@@ -3273,19 +3273,8 @@ def _run_connector_sync(
                             stage='Crawling website with Firecrawl...',
                             total_items=max_pages
                         )
-                    print(f"[Sync] Calling firecrawl sync (synchronous under the hood)", flush=True)
-                    # Firecrawl's sync() is async but uses sync requests, so we need to run it properly
-                    import asyncio
-                    temp_loop = asyncio.new_event_loop()
-                    try:
-                        documents = temp_loop.run_until_complete(instance.sync(since))
-                    except Exception as fc_err:
-                        print(f"[Sync] FIRECRAWL ERROR: {type(fc_err).__name__}: {fc_err}", flush=True)
-                        import traceback
-                        traceback.print_exc()
-                        raise
-                    finally:
-                        temp_loop.close()
+                    print(f"[Sync] Calling firecrawl sync directly (synchronous)", flush=True)
+                    documents = instance.sync(since)
                     print(f"[Sync] Firecrawl sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'gdocs':
                     if sync_id:
