@@ -2349,6 +2349,15 @@ const integrations: Integration[] = [
     isOAuth: true
   },
   {
+    id: 'gcalendar',
+    name: 'Google Calendar',
+    logo: '/gcalendar.png',
+    description: 'Connect Google Calendar to import events and schedules into your knowledge base.',
+    category: 'Conversations',
+    connected: false,
+    isOAuth: true
+  },
+  {
     id: 'pubmed',
     name: 'PubMed',
     logo: '/pubmed.png',
@@ -2874,15 +2883,35 @@ export default function Integrations() {
       // Auto-start sync with progress for Notion
       setTimeout(() => startSyncWithProgress('notion'), 500)
     } else if (success === 'gdrive') {
-      // Mark Google Drive and all related G Suite apps as connected
       setIntegrationsState(prev =>
-        prev.map(int =>
-          ['gdrive', 'gdocs', 'gsheets', 'gslides'].includes(int.id) ? { ...int, connected: true } : int
-        )
+        prev.map(int => int.id === 'gdrive' ? { ...int, connected: true } : int)
       )
       window.history.replaceState({}, '', '/integrations')
-      // Auto-start sync with progress for Google Drive
       setTimeout(() => startSyncWithProgress('gdrive'), 500)
+    } else if (success === 'gdocs') {
+      setIntegrationsState(prev =>
+        prev.map(int => int.id === 'gdocs' ? { ...int, connected: true } : int)
+      )
+      window.history.replaceState({}, '', '/integrations')
+      setTimeout(() => startSyncWithProgress('gdocs'), 500)
+    } else if (success === 'gsheets') {
+      setIntegrationsState(prev =>
+        prev.map(int => int.id === 'gsheets' ? { ...int, connected: true } : int)
+      )
+      window.history.replaceState({}, '', '/integrations')
+      setTimeout(() => startSyncWithProgress('gsheets'), 500)
+    } else if (success === 'gslides') {
+      setIntegrationsState(prev =>
+        prev.map(int => int.id === 'gslides' ? { ...int, connected: true } : int)
+      )
+      window.history.replaceState({}, '', '/integrations')
+      setTimeout(() => startSyncWithProgress('gslides'), 500)
+    } else if (success === 'gcalendar') {
+      setIntegrationsState(prev =>
+        prev.map(int => int.id === 'gcalendar' ? { ...int, connected: true } : int)
+      )
+      window.history.replaceState({}, '', '/integrations')
+      setTimeout(() => startSyncWithProgress('gcalendar'), 500)
     } else if (success === 'zotero') {
       setSyncStatus('Zotero connected successfully! Starting library sync...')
       setIntegrationsState(prev =>
@@ -2939,9 +2968,10 @@ export default function Integrations() {
 
         setIntegrationsState(prev =>
           prev.map(int => {
-            // For G Suite apps, mirror gdrive connection status
-            if (['gdocs', 'gsheets', 'gslides'].includes(int.id)) {
-              return { ...int, connected: gdriveConnected }
+            // Each Google integration is now independent - check its own status
+            const ownStatus = apiIntegrations.find((a: any) => a.type === int.id)?.status
+            if (['gdocs', 'gsheets', 'gslides', 'gcalendar'].includes(int.id) && ownStatus) {
+              return { ...int, connected: ownStatus === 'connected' || ownStatus === 'syncing' }
             }
             // For Microsoft apps, mirror onedrive connection status
             if (['excel', 'powerpoint'].includes(int.id)) {
@@ -3824,9 +3854,8 @@ export default function Integrations() {
       try {
         const token = getAuthToken()
         // Determine the actual connector type for the API call
-        // (gdocs/gsheets/gslides use gdrive, excel/powerpoint use onedrive)
+        // (excel/powerpoint use onedrive)
         let cancelType = id
-        if (['gdocs', 'gsheets', 'gslides'].includes(id)) cancelType = 'gdrive'
         if (['excel', 'powerpoint'].includes(id)) cancelType = 'onedrive'
 
         await axios.post(
@@ -3920,12 +3949,12 @@ export default function Integrations() {
       return
     }
 
-    // Handle Google Docs, Sheets, Slides - use Google Drive OAuth
-    if (id === 'gdocs' || id === 'gsheets' || id === 'gslides') {
+    // Handle Google Docs, Sheets, Slides, Calendar - each has its own OAuth
+    if (id === 'gdocs' || id === 'gsheets' || id === 'gslides' || id === 'gcalendar') {
       if (integration?.connected) {
-        await disconnectIntegration('gdrive') // Disconnect from gdrive
+        await disconnectIntegration(id)
       } else {
-        await connectOAuth('gdrive') // Use gdrive OAuth
+        await connectOAuth(id)
       }
       return
     }

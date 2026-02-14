@@ -36,7 +36,11 @@ def _get_oauth_redirect_uri(connector_type: str) -> str:
     env_key = {
         'notion': 'NOTION_REDIRECT_URI',
         'gmail': 'GOOGLE_REDIRECT_URI',
-        'gdrive': 'GOOGLE_REDIRECT_URI',
+        'gdrive': 'GDRIVE_REDIRECT_URI',
+        'gdocs': 'GDOCS_REDIRECT_URI',
+        'gsheets': 'GSHEETS_REDIRECT_URI',
+        'gslides': 'GSLIDES_REDIRECT_URI',
+        'gcalendar': 'GCALENDAR_REDIRECT_URI',
         'slack': 'SLACK_REDIRECT_URI',
         'box': 'BOX_REDIRECT_URI',
         'github': 'GITHUB_REDIRECT_URI',
@@ -339,7 +343,7 @@ def list_integrations():
             integrations.append({
                 "type": "gdrive",
                 "name": "Google Drive",
-                "description": "Sync documents and files from Google Drive",
+                "description": "Sync files (PDF, DOCX, etc.) from Google Drive",
                 "icon": "gdrive",
                 "auth_type": "oauth",
                 "status": gdrive.status.value if gdrive else "not_configured",
@@ -347,6 +351,66 @@ def list_integrations():
                 "last_sync_at": gdrive.last_sync_at.isoformat() if gdrive and gdrive.last_sync_at else None,
                 "total_items_synced": gdrive.total_items_synced if gdrive else 0,
                 "error_message": gdrive.error_message if gdrive else None
+            })
+
+            # Google Docs
+            gdocs = connector_map.get(ConnectorType.GOOGLE_DOCS)
+            integrations.append({
+                "type": "gdocs",
+                "name": "Google Docs",
+                "description": "Sync Google Docs documents",
+                "icon": "gdocs",
+                "auth_type": "oauth",
+                "status": gdocs.status.value if gdocs else "not_configured",
+                "connector_id": gdocs.id if gdocs else None,
+                "last_sync_at": gdocs.last_sync_at.isoformat() if gdocs and gdocs.last_sync_at else None,
+                "total_items_synced": gdocs.total_items_synced if gdocs else 0,
+                "error_message": gdocs.error_message if gdocs else None
+            })
+
+            # Google Sheets
+            gsheets = connector_map.get(ConnectorType.GOOGLE_SHEETS)
+            integrations.append({
+                "type": "gsheets",
+                "name": "Google Sheets",
+                "description": "Sync Google Sheets spreadsheets",
+                "icon": "gsheets",
+                "auth_type": "oauth",
+                "status": gsheets.status.value if gsheets else "not_configured",
+                "connector_id": gsheets.id if gsheets else None,
+                "last_sync_at": gsheets.last_sync_at.isoformat() if gsheets and gsheets.last_sync_at else None,
+                "total_items_synced": gsheets.total_items_synced if gsheets else 0,
+                "error_message": gsheets.error_message if gsheets else None
+            })
+
+            # Google Slides
+            gslides = connector_map.get(ConnectorType.GOOGLE_SLIDES)
+            integrations.append({
+                "type": "gslides",
+                "name": "Google Slides",
+                "description": "Sync Google Slides presentations",
+                "icon": "gslides",
+                "auth_type": "oauth",
+                "status": gslides.status.value if gslides else "not_configured",
+                "connector_id": gslides.id if gslides else None,
+                "last_sync_at": gslides.last_sync_at.isoformat() if gslides and gslides.last_sync_at else None,
+                "total_items_synced": gslides.total_items_synced if gslides else 0,
+                "error_message": gslides.error_message if gslides else None
+            })
+
+            # Google Calendar
+            gcalendar = connector_map.get(ConnectorType.GOOGLE_CALENDAR)
+            integrations.append({
+                "type": "gcalendar",
+                "name": "Google Calendar",
+                "description": "Sync events from Google Calendar",
+                "icon": "gcalendar",
+                "auth_type": "oauth",
+                "status": gcalendar.status.value if gcalendar else "not_configured",
+                "connector_id": gcalendar.id if gcalendar else None,
+                "last_sync_at": gcalendar.last_sync_at.isoformat() if gcalendar and gcalendar.last_sync_at else None,
+                "total_items_synced": gcalendar.total_items_synced if gcalendar else 0,
+                "error_message": gcalendar.error_message if gcalendar else None
             })
 
             return jsonify({
@@ -1908,6 +1972,322 @@ def gdrive_callback():
 
 
 # ============================================================================
+# GOOGLE DOCS INTEGRATION
+# ============================================================================
+
+@integration_bp.route('/gdocs/auth', methods=['GET'])
+@require_auth
+def gdocs_auth():
+    """Start Google Docs OAuth flow."""
+    try:
+        from connectors.gdocs_connector import GDocsConnector
+        redirect_uri = os.getenv("GDOCS_REDIRECT_URI",
+            "http://localhost:5003/api/integrations/gdocs/callback")
+        state = create_oauth_state(
+            tenant_id=g.tenant_id, user_id=g.user_id,
+            connector_type="gdocs", extra_data={"redirect_uri": redirect_uri}
+        )
+        auth_url = GDocsConnector.get_auth_url(redirect_uri, state)
+        return jsonify({"success": True, "auth_url": auth_url, "state": state})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@integration_bp.route('/gdocs/callback', methods=['GET'])
+def gdocs_callback():
+    """Google Docs OAuth callback handler."""
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    try:
+        from connectors.gdocs_connector import GDocsConnector
+        code = request.args.get('code')
+        state = request.args.get('state')
+        error = request.args.get('error')
+        if error:
+            return redirect(f"{FRONTEND_URL}/integrations?error={error}")
+        if not code or not state:
+            return redirect(f"{FRONTEND_URL}/integrations?error=missing_params")
+
+        state_data, error = verify_oauth_state(state)
+        if error or not state_data or state_data.get("connector_type") != "gdocs":
+            return redirect(f"{FRONTEND_URL}/integrations?error=invalid_state")
+
+        redirect_uri = state_data.get("data", {}).get("redirect_uri")
+        tokens = GDocsConnector.exchange_code(code, redirect_uri)
+
+        db = get_db()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == state_data["tenant_id"],
+                Connector.connector_type == ConnectorType.GOOGLE_DOCS
+            ).first()
+            is_first = connector is None
+            if connector:
+                connector.access_token = tokens["access_token"]
+                connector.refresh_token = tokens.get("refresh_token")
+                connector.status = ConnectorStatus.CONNECTED
+                connector.is_active = True
+                connector.error_message = None
+                connector.updated_at = utc_now()
+            else:
+                connector = Connector(
+                    tenant_id=state_data["tenant_id"], user_id=state_data["user_id"],
+                    connector_type=ConnectorType.GOOGLE_DOCS, name="Google Docs",
+                    status=ConnectorStatus.CONNECTED,
+                    access_token=tokens["access_token"], refresh_token=tokens.get("refresh_token")
+                )
+                db.add(connector)
+            db.commit()
+            if is_first:
+                cid, tid, uid = connector.id, state_data["tenant_id"], state_data["user_id"]
+                def run_sync():
+                    _run_connector_sync(connector_id=cid, connector_type="gdocs", since=None, tenant_id=tid, user_id=uid, full_sync=True)
+                thread = threading.Thread(target=run_sync, daemon=True)
+                thread.start()
+            return redirect(f"{FRONTEND_URL}/integrations?success=gdocs")
+        finally:
+            db.close()
+    except Exception as e:
+        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+
+
+# ============================================================================
+# GOOGLE SHEETS INTEGRATION
+# ============================================================================
+
+@integration_bp.route('/gsheets/auth', methods=['GET'])
+@require_auth
+def gsheets_auth():
+    """Start Google Sheets OAuth flow."""
+    try:
+        from connectors.gsheets_connector import GSheetsConnector
+        redirect_uri = os.getenv("GSHEETS_REDIRECT_URI",
+            "http://localhost:5003/api/integrations/gsheets/callback")
+        state = create_oauth_state(
+            tenant_id=g.tenant_id, user_id=g.user_id,
+            connector_type="gsheets", extra_data={"redirect_uri": redirect_uri}
+        )
+        auth_url = GSheetsConnector.get_auth_url(redirect_uri, state)
+        return jsonify({"success": True, "auth_url": auth_url, "state": state})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@integration_bp.route('/gsheets/callback', methods=['GET'])
+def gsheets_callback():
+    """Google Sheets OAuth callback handler."""
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    try:
+        from connectors.gsheets_connector import GSheetsConnector
+        code = request.args.get('code')
+        state = request.args.get('state')
+        error = request.args.get('error')
+        if error:
+            return redirect(f"{FRONTEND_URL}/integrations?error={error}")
+        if not code or not state:
+            return redirect(f"{FRONTEND_URL}/integrations?error=missing_params")
+
+        state_data, error = verify_oauth_state(state)
+        if error or not state_data or state_data.get("connector_type") != "gsheets":
+            return redirect(f"{FRONTEND_URL}/integrations?error=invalid_state")
+
+        redirect_uri = state_data.get("data", {}).get("redirect_uri")
+        tokens = GSheetsConnector.exchange_code(code, redirect_uri)
+
+        db = get_db()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == state_data["tenant_id"],
+                Connector.connector_type == ConnectorType.GOOGLE_SHEETS
+            ).first()
+            is_first = connector is None
+            if connector:
+                connector.access_token = tokens["access_token"]
+                connector.refresh_token = tokens.get("refresh_token")
+                connector.status = ConnectorStatus.CONNECTED
+                connector.is_active = True
+                connector.error_message = None
+                connector.updated_at = utc_now()
+            else:
+                connector = Connector(
+                    tenant_id=state_data["tenant_id"], user_id=state_data["user_id"],
+                    connector_type=ConnectorType.GOOGLE_SHEETS, name="Google Sheets",
+                    status=ConnectorStatus.CONNECTED,
+                    access_token=tokens["access_token"], refresh_token=tokens.get("refresh_token")
+                )
+                db.add(connector)
+            db.commit()
+            if is_first:
+                cid, tid, uid = connector.id, state_data["tenant_id"], state_data["user_id"]
+                def run_sync():
+                    _run_connector_sync(connector_id=cid, connector_type="gsheets", since=None, tenant_id=tid, user_id=uid, full_sync=True)
+                thread = threading.Thread(target=run_sync, daemon=True)
+                thread.start()
+            return redirect(f"{FRONTEND_URL}/integrations?success=gsheets")
+        finally:
+            db.close()
+    except Exception as e:
+        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+
+
+# ============================================================================
+# GOOGLE SLIDES INTEGRATION
+# ============================================================================
+
+@integration_bp.route('/gslides/auth', methods=['GET'])
+@require_auth
+def gslides_auth():
+    """Start Google Slides OAuth flow."""
+    try:
+        from connectors.gslides_connector import GSlidesConnector
+        redirect_uri = os.getenv("GSLIDES_REDIRECT_URI",
+            "http://localhost:5003/api/integrations/gslides/callback")
+        state = create_oauth_state(
+            tenant_id=g.tenant_id, user_id=g.user_id,
+            connector_type="gslides", extra_data={"redirect_uri": redirect_uri}
+        )
+        auth_url = GSlidesConnector.get_auth_url(redirect_uri, state)
+        return jsonify({"success": True, "auth_url": auth_url, "state": state})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@integration_bp.route('/gslides/callback', methods=['GET'])
+def gslides_callback():
+    """Google Slides OAuth callback handler."""
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    try:
+        from connectors.gslides_connector import GSlidesConnector
+        code = request.args.get('code')
+        state = request.args.get('state')
+        error = request.args.get('error')
+        if error:
+            return redirect(f"{FRONTEND_URL}/integrations?error={error}")
+        if not code or not state:
+            return redirect(f"{FRONTEND_URL}/integrations?error=missing_params")
+
+        state_data, error = verify_oauth_state(state)
+        if error or not state_data or state_data.get("connector_type") != "gslides":
+            return redirect(f"{FRONTEND_URL}/integrations?error=invalid_state")
+
+        redirect_uri = state_data.get("data", {}).get("redirect_uri")
+        tokens = GSlidesConnector.exchange_code(code, redirect_uri)
+
+        db = get_db()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == state_data["tenant_id"],
+                Connector.connector_type == ConnectorType.GOOGLE_SLIDES
+            ).first()
+            is_first = connector is None
+            if connector:
+                connector.access_token = tokens["access_token"]
+                connector.refresh_token = tokens.get("refresh_token")
+                connector.status = ConnectorStatus.CONNECTED
+                connector.is_active = True
+                connector.error_message = None
+                connector.updated_at = utc_now()
+            else:
+                connector = Connector(
+                    tenant_id=state_data["tenant_id"], user_id=state_data["user_id"],
+                    connector_type=ConnectorType.GOOGLE_SLIDES, name="Google Slides",
+                    status=ConnectorStatus.CONNECTED,
+                    access_token=tokens["access_token"], refresh_token=tokens.get("refresh_token")
+                )
+                db.add(connector)
+            db.commit()
+            if is_first:
+                cid, tid, uid = connector.id, state_data["tenant_id"], state_data["user_id"]
+                def run_sync():
+                    _run_connector_sync(connector_id=cid, connector_type="gslides", since=None, tenant_id=tid, user_id=uid, full_sync=True)
+                thread = threading.Thread(target=run_sync, daemon=True)
+                thread.start()
+            return redirect(f"{FRONTEND_URL}/integrations?success=gslides")
+        finally:
+            db.close()
+    except Exception as e:
+        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+
+
+# ============================================================================
+# GOOGLE CALENDAR INTEGRATION
+# ============================================================================
+
+@integration_bp.route('/gcalendar/auth', methods=['GET'])
+@require_auth
+def gcalendar_auth():
+    """Start Google Calendar OAuth flow."""
+    try:
+        from connectors.gcalendar_connector import GCalendarConnector
+        redirect_uri = os.getenv("GCALENDAR_REDIRECT_URI",
+            "http://localhost:5003/api/integrations/gcalendar/callback")
+        state = create_oauth_state(
+            tenant_id=g.tenant_id, user_id=g.user_id,
+            connector_type="gcalendar", extra_data={"redirect_uri": redirect_uri}
+        )
+        auth_url = GCalendarConnector.get_auth_url(redirect_uri, state)
+        return jsonify({"success": True, "auth_url": auth_url, "state": state})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@integration_bp.route('/gcalendar/callback', methods=['GET'])
+def gcalendar_callback():
+    """Google Calendar OAuth callback handler."""
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    try:
+        from connectors.gcalendar_connector import GCalendarConnector
+        code = request.args.get('code')
+        state = request.args.get('state')
+        error = request.args.get('error')
+        if error:
+            return redirect(f"{FRONTEND_URL}/integrations?error={error}")
+        if not code or not state:
+            return redirect(f"{FRONTEND_URL}/integrations?error=missing_params")
+
+        state_data, error = verify_oauth_state(state)
+        if error or not state_data or state_data.get("connector_type") != "gcalendar":
+            return redirect(f"{FRONTEND_URL}/integrations?error=invalid_state")
+
+        redirect_uri = state_data.get("data", {}).get("redirect_uri")
+        tokens = GCalendarConnector.exchange_code(code, redirect_uri)
+
+        db = get_db()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == state_data["tenant_id"],
+                Connector.connector_type == ConnectorType.GOOGLE_CALENDAR
+            ).first()
+            is_first = connector is None
+            if connector:
+                connector.access_token = tokens["access_token"]
+                connector.refresh_token = tokens.get("refresh_token")
+                connector.status = ConnectorStatus.CONNECTED
+                connector.is_active = True
+                connector.error_message = None
+                connector.updated_at = utc_now()
+            else:
+                connector = Connector(
+                    tenant_id=state_data["tenant_id"], user_id=state_data["user_id"],
+                    connector_type=ConnectorType.GOOGLE_CALENDAR, name="Google Calendar",
+                    status=ConnectorStatus.CONNECTED,
+                    access_token=tokens["access_token"], refresh_token=tokens.get("refresh_token")
+                )
+                db.add(connector)
+            db.commit()
+            if is_first:
+                cid, tid, uid = connector.id, state_data["tenant_id"], state_data["user_id"]
+                def run_sync():
+                    _run_connector_sync(connector_id=cid, connector_type="gcalendar", since=None, tenant_id=tid, user_id=uid, full_sync=True)
+                thread = threading.Thread(target=run_sync, daemon=True)
+                thread.start()
+            return redirect(f"{FRONTEND_URL}/integrations?success=gcalendar")
+        finally:
+            db.close()
+    except Exception as e:
+        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+
+
+# ============================================================================
 # PUBMED INTEGRATION
 # ============================================================================
 
@@ -2291,6 +2671,10 @@ def sync_connector(connector_type: str):
             "webscraper": ConnectorType.WEBSCRAPER,
             "notion": ConnectorType.NOTION,
             "gdrive": ConnectorType.GOOGLE_DRIVE,
+            "gdocs": ConnectorType.GOOGLE_DOCS,
+            "gsheets": ConnectorType.GOOGLE_SHEETS,
+            "gslides": ConnectorType.GOOGLE_SLIDES,
+            "gcalendar": ConnectorType.GOOGLE_CALENDAR,
             "zotero": ConnectorType.ZOTERO,
             "onedrive": ConnectorType.ONEDRIVE
         }
@@ -2462,6 +2846,26 @@ def _run_connector_sync(
                 from connectors.gdrive_connector import GDriveConnector
                 print(f"[Sync] GDriveConnector imported successfully")
                 ConnectorClass = GDriveConnector
+            elif connector_type == "gdocs":
+                print(f"[Sync] Importing GDocsConnector...")
+                from connectors.gdocs_connector import GDocsConnector
+                print(f"[Sync] GDocsConnector imported successfully")
+                ConnectorClass = GDocsConnector
+            elif connector_type == "gsheets":
+                print(f"[Sync] Importing GSheetsConnector...")
+                from connectors.gsheets_connector import GSheetsConnector
+                print(f"[Sync] GSheetsConnector imported successfully")
+                ConnectorClass = GSheetsConnector
+            elif connector_type == "gslides":
+                print(f"[Sync] Importing GSlidesConnector...")
+                from connectors.gslides_connector import GSlidesConnector
+                print(f"[Sync] GSlidesConnector imported successfully")
+                ConnectorClass = GSlidesConnector
+            elif connector_type == "gcalendar":
+                print(f"[Sync] Importing GCalendarConnector...")
+                from connectors.gcalendar_connector import GCalendarConnector
+                print(f"[Sync] GCalendarConnector imported successfully")
+                ConnectorClass = GCalendarConnector
             elif connector_type == "zotero":
                 print(f"[Sync] Importing ZoteroConnector...")
                 from connectors.zotero_connector import ZoteroConnector
@@ -2511,7 +2915,7 @@ def _run_connector_sync(
             loop = None  # Only created for async connectors
 
             # List of synchronous connectors that don't need event loop
-            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive'}
+            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar'}
 
             if connector_type not in sync_connectors:
                 print(f"[Sync] Creating event loop for async connector: {connector_type}")
@@ -2590,6 +2994,30 @@ def _run_connector_sync(
                     print(f"[Sync] Calling gdrive sync directly (synchronous)")
                     documents = instance.sync(since)
                     print(f"[Sync] GDrive sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'gdocs':
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Docs...')
+                    print(f"[Sync] Calling gdocs sync directly (synchronous)")
+                    documents = instance.sync(since)
+                    print(f"[Sync] GDocs sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'gsheets':
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Sheets...')
+                    print(f"[Sync] Calling gsheets sync directly (synchronous)")
+                    documents = instance.sync(since)
+                    print(f"[Sync] GSheets sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'gslides':
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Slides...')
+                    print(f"[Sync] Calling gslides sync directly (synchronous)")
+                    documents = instance.sync(since)
+                    print(f"[Sync] GSlides sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'gcalendar':
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Calendar events...')
+                    print(f"[Sync] Calling gcalendar sync directly (synchronous)")
+                    documents = instance.sync(since)
+                    print(f"[Sync] GCalendar sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'github':
                     # GitHub sync does LLM analysis which takes time - update progress at each stage
                     if sync_id:
@@ -3351,6 +3779,10 @@ def _get_connector_type_map():
         "webscraper": ConnectorType.WEBSCRAPER,
         "notion": ConnectorType.NOTION,
         "gdrive": ConnectorType.GOOGLE_DRIVE,
+        "gdocs": ConnectorType.GOOGLE_DOCS,
+        "gsheets": ConnectorType.GOOGLE_SHEETS,
+        "gslides": ConnectorType.GOOGLE_SLIDES,
+        "gcalendar": ConnectorType.GOOGLE_CALENDAR,
         "onedrive": ConnectorType.ONEDRIVE,
         "zotero": ConnectorType.ZOTERO
     }
@@ -3659,7 +4091,11 @@ def connector_status(connector_type: str):
             "pubmed": ConnectorType.PUBMED,
             "webscraper": ConnectorType.WEBSCRAPER,
             "notion": ConnectorType.NOTION,
-            "gdrive": ConnectorType.GOOGLE_DRIVE
+            "gdrive": ConnectorType.GOOGLE_DRIVE,
+            "gdocs": ConnectorType.GOOGLE_DOCS,
+            "gsheets": ConnectorType.GOOGLE_SHEETS,
+            "gslides": ConnectorType.GOOGLE_SLIDES,
+            "gcalendar": ConnectorType.GOOGLE_CALENDAR
         }
 
         if connector_type not in type_map:
@@ -3727,7 +4163,11 @@ def update_connector_settings(connector_type: str):
             "pubmed": ConnectorType.PUBMED,
             "webscraper": ConnectorType.WEBSCRAPER,
             "notion": ConnectorType.NOTION,
-            "gdrive": ConnectorType.GOOGLE_DRIVE
+            "gdrive": ConnectorType.GOOGLE_DRIVE,
+            "gdocs": ConnectorType.GOOGLE_DOCS,
+            "gsheets": ConnectorType.GOOGLE_SHEETS,
+            "gslides": ConnectorType.GOOGLE_SLIDES,
+            "gcalendar": ConnectorType.GOOGLE_CALENDAR
         }
 
         if connector_type not in type_map:

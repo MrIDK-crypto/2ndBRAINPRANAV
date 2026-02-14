@@ -34,11 +34,8 @@ GDRIVE_SCOPES = [
     'https://www.googleapis.com/auth/drive.metadata.readonly'
 ]
 
-# Supported MIME types
+# Supported MIME types (regular files only - Google Workspace types handled by dedicated connectors)
 EXTRACTABLE_TYPES = {
-    'application/vnd.google-apps.document': 'text/plain',      # Google Docs
-    'application/vnd.google-apps.spreadsheet': 'text/csv',     # Google Sheets
-    'application/vnd.google-apps.presentation': 'text/plain',  # Google Slides
     'application/pdf': None,
     'text/plain': None,
     'text/markdown': None,
