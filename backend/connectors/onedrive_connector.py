@@ -121,7 +121,7 @@ class OneDriveConnector(BaseConnector):
         except Exception as e:
             return None, str(e)
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """Connect to OneDrive"""
         if not ONEDRIVE_AVAILABLE:
             self._set_error("MSAL not installed. Run: pip install msal")
@@ -152,13 +152,13 @@ class OneDriveConnector(BaseConnector):
             self._set_error(f"Failed to connect: {str(e)}")
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """Disconnect from OneDrive"""
         self.access_token = None
         self.status = ConnectorStatus.DISCONNECTED
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """Test OneDrive connection"""
         if not self.access_token:
             return False
@@ -172,10 +172,10 @@ class OneDriveConnector(BaseConnector):
         except Exception:
             return False
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """Sync files from OneDrive"""
         if not self.access_token:
-            await self.connect()
+            self.connect()
 
         if self.status != ConnectorStatus.CONNECTED:
             return []
@@ -190,11 +190,11 @@ class OneDriveConnector(BaseConnector):
             if folder_ids:
                 # Sync specific folders
                 for folder_id in folder_ids:
-                    folder_docs = await self._sync_folder(folder_id, since)
+                    folder_docs = self._sync_folder(folder_id, since)
                     documents.extend(folder_docs)
             else:
                 # Sync root folder
-                folder_docs = await self._sync_folder("root", since)
+                folder_docs = self._sync_folder("root", since)
                 documents.extend(folder_docs)
 
             # Update stats
@@ -212,7 +212,7 @@ class OneDriveConnector(BaseConnector):
 
         return documents
 
-    async def _sync_folder(self, folder_id: str, since: Optional[datetime]) -> List[Document]:
+    def _sync_folder(self, folder_id: str, since: Optional[datetime]) -> List[Document]:
         """Sync files from a folder recursively"""
         documents = []
 
@@ -241,7 +241,7 @@ class OneDriveConnector(BaseConnector):
                 # Check if it's a folder
                 if "folder" in item:
                     # Recursively sync subfolder
-                    subfolder_docs = await self._sync_folder(item["id"], since)
+                    subfolder_docs = self._sync_folder(item["id"], since)
                     documents.extend(subfolder_docs)
 
                 # Check if it's a file
@@ -266,7 +266,7 @@ class OneDriveConnector(BaseConnector):
                             continue
 
                         # Download and parse file
-                        doc = await self._download_and_parse(item)
+                        doc = self._download_and_parse(item)
                         if doc:
                             documents.append(doc)
 
@@ -275,7 +275,7 @@ class OneDriveConnector(BaseConnector):
 
         return documents
 
-    async def _download_and_parse(self, item: Dict) -> Optional[Document]:
+    def _download_and_parse(self, item: Dict) -> Optional[Document]:
         """Download and parse a file"""
         try:
             file_id = item["id"]
@@ -298,7 +298,7 @@ class OneDriveConnector(BaseConnector):
             file_content = response.content
 
             # Parse based on file type
-            content_text = await self._parse_file(name, file_content)
+            content_text = self._parse_file(name, file_content)
 
             if not content_text:
                 return None
@@ -327,7 +327,7 @@ class OneDriveConnector(BaseConnector):
             print(f"[OneDrive] Error parsing {item.get('name')}: {e}")
             return None
 
-    async def _parse_file(self, filename: str, content: bytes) -> Optional[str]:
+    def _parse_file(self, filename: str, content: bytes) -> Optional[str]:
         """Parse file content based on type"""
         try:
             lower_name = filename.lower()
@@ -447,7 +447,7 @@ class OneDriveConnector(BaseConnector):
 
         return "file"
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a specific document by ID"""
         # Implementation would fetch single file by ID
         return None

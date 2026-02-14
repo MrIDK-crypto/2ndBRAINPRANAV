@@ -1662,16 +1662,16 @@ def onedrive_callback():
         error = request.args.get('error')
 
         if error:
-            return redirect(f"{FRONTEND_URL}/integrations?error={error}")
+            return safe_error_redirect(f"{FRONTEND_URL}/integrations", error)
 
         if not code or not state:
-            return redirect(f"{FRONTEND_URL}/integrations?error=missing_params")
+            return safe_error_redirect(f"{FRONTEND_URL}/integrations", "missing_params")
 
         # Verify JWT state (multi-worker safe)
         state_data, error_msg = verify_oauth_state(state)
         if error_msg or not state_data or state_data.get("connector_type") != "onedrive":
             print(f"[OneDrive Callback] Invalid state: {error_msg}")
-            return redirect(f"{FRONTEND_URL}/integrations?error=invalid_state")
+            return safe_error_redirect(f"{FRONTEND_URL}/integrations", error_msg or "invalid_state")
 
         tenant_id = state_data.get("tenant_id")
         user_id = state_data.get("user_id")
@@ -1681,7 +1681,7 @@ def onedrive_callback():
         tokens, error = OneDriveConnector.exchange_code_for_tokens(code, redirect_uri)
 
         if error:
-            return redirect(f"{FRONTEND_URL}/integrations?error={error}")
+            return safe_error_redirect(f"{FRONTEND_URL}/integrations", error)
 
         # Save connector
         db = get_db()
@@ -1743,7 +1743,7 @@ def onedrive_callback():
             db.close()
 
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
+        return safe_error_redirect(f"{FRONTEND_URL}/integrations", str(e))
 
 
 # ============================================================================
@@ -3184,7 +3184,7 @@ def _run_connector_sync(
 
             # List of synchronous connectors that don't need event loop
             # Note: firecrawl uses `async def sync()` but internally uses synchronous requests library
-            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar', 'firecrawl'}
+            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar', 'firecrawl', 'onedrive'}
 
             if connector_type not in sync_connectors:
                 print(f"[Sync] Creating event loop for async connector: {connector_type}")
@@ -3300,6 +3300,13 @@ def _run_connector_sync(
                     print(f"[Sync] Calling gcalendar sync directly (synchronous)")
                     documents = instance.sync(since)
                     print(f"[Sync] GCalendar sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'onedrive':
+                    # OneDrive uses synchronous requests library - call directly
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching OneDrive files...')
+                    print(f"[Sync] Calling onedrive sync directly (synchronous)", flush=True)
+                    documents = instance.sync(since)
+                    print(f"[Sync] OneDrive sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'github':
                     # GitHub sync does LLM analysis which takes time - update progress at each stage
                     if sync_id:
