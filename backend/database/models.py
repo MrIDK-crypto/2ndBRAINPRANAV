@@ -1325,7 +1325,7 @@ def _migrate_enum_values():
     SQLAlchemy's transaction management entirely.
     """
     new_connector_types = [
-        'google_docs', 'google_sheets', 'google_slides', 'google_calendar'
+        'GOOGLE_DOCS', 'GOOGLE_SHEETS', 'GOOGLE_SLIDES', 'GOOGLE_CALENDAR'
     ]
     try:
         raw_conn = engine.raw_connection()
