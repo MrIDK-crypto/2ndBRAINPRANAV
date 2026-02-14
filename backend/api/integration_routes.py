@@ -2635,6 +2635,252 @@ def webscraper_status():
 
 
 # ============================================================================
+# FIRECRAWL INTEGRATION (Full Website Crawler)
+# ============================================================================
+
+@integration_bp.route('/firecrawl/configure', methods=['POST'])
+@require_auth
+def firecrawl_configure():
+    """
+    Configure Firecrawl website crawler for comprehensive website crawling.
+
+    Request body:
+    {
+        "start_url": "https://example.com",       // Required - base URL to crawl
+        "max_pages": 100,                         // Optional, default 100 (max 500)
+        "max_depth": 10,                          // Optional, default 10
+        "include_subdomains": false,              // Optional - follow subdomains
+        "include_external_links": false,          // Optional - follow external sites
+        "include_patterns": [],                   // Optional - URL patterns to include
+        "exclude_patterns": [],                   // Optional - URL patterns to exclude
+    }
+
+    Features:
+    - Full recursive website crawling (not just BFS)
+    - PDF extraction built-in
+    - JavaScript rendering for SPAs
+    - Automatic sitemap discovery
+    - Clean markdown output
+    """
+    try:
+        data = request.get_json()
+        start_url = data.get("start_url", "").strip()
+
+        if not start_url:
+            return jsonify({
+                "success": False,
+                "error": "start_url is required"
+            }), 400
+
+        # Validate URL format
+        if not start_url.startswith(("http://", "https://")):
+            start_url = "https://" + start_url
+
+        from urllib.parse import urlparse
+        parsed = urlparse(start_url)
+        if not parsed.netloc:
+            return jsonify({
+                "success": False,
+                "error": "Invalid URL format"
+            }), 400
+
+        # Check if Firecrawl API key is configured
+        firecrawl_key = os.getenv("FIRECRAWL_API_KEY", "")
+        if not firecrawl_key:
+            return jsonify({
+                "success": False,
+                "error": "Firecrawl API key not configured. Please add FIRECRAWL_API_KEY to your environment."
+            }), 400
+
+        # Extract settings with defaults
+        max_pages = min(max(int(data.get("max_pages", 100)), 1), 500)
+        max_depth = min(max(int(data.get("max_depth", 10)), 1), 20)
+        include_subdomains = bool(data.get("include_subdomains", False))
+        include_external = bool(data.get("include_external_links", False))
+        include_patterns = data.get("include_patterns", [])
+        exclude_patterns = data.get("exclude_patterns", [])
+
+        # Default exclusions for common non-content paths
+        default_exclusions = [
+            "/login", "/signin", "/signup", "/register", "/logout",
+            "/auth/*", "/account/*", "/admin/*", "/api/*",
+            "/cart", "/checkout", "/payment",
+        ]
+
+        # Merge with user exclusions (filter out invalid patterns)
+        valid_exclusions = [p for p in exclude_patterns if p and not p.startswith("?")]
+        all_exclusions = list(set(valid_exclusions + default_exclusions))
+
+        db = SessionLocal()
+        try:
+            # Check if connector exists
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == g.tenant_id,
+                Connector.connector_type == ConnectorType.FIRECRAWL
+            ).first()
+
+            settings = {
+                "start_url": start_url,
+                "max_pages": max_pages,
+                "max_depth": max_depth,
+                "include_subdomains": include_subdomains,
+                "include_external_links": include_external,
+                "include_patterns": include_patterns,
+                "exclude_patterns": all_exclusions,
+                "crawl_engine": "firecrawl",
+            }
+
+            is_first_connection = connector is None
+
+            if connector:
+                # Update existing
+                connector.settings = settings
+                connector.status = ConnectorStatus.CONNECTED
+                connector.is_active = True
+                connector.error_message = None
+                connector.updated_at = utc_now()
+            else:
+                # Create new
+                name = f"Firecrawl ({parsed.netloc})"
+                connector = Connector(
+                    tenant_id=g.tenant_id,
+                    user_id=g.user_id,
+                    connector_type=ConnectorType.FIRECRAWL,
+                    name=name,
+                    status=ConnectorStatus.CONNECTED,
+                    settings=settings
+                )
+                db.add(connector)
+
+            db.commit()
+
+            # Auto-sync on first connection
+            if is_first_connection:
+                connector_id = connector.id
+                tenant_id = g.tenant_id
+                user_id = g.user_id
+
+                def run_initial_sync():
+                    _run_connector_sync(
+                        connector_id=connector_id,
+                        connector_type="firecrawl",
+                        since=None,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        full_sync=True
+                    )
+
+                thread = threading.Thread(target=run_initial_sync)
+                thread.daemon = True
+                thread.start()
+
+                print(f"[Firecrawl] Started auto-sync for {start_url}")
+
+            return jsonify({
+                "success": True,
+                "message": "Firecrawl crawler configured successfully",
+                "connector_id": connector.id,
+                "settings": settings
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        print(f"[Firecrawl Configure] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@integration_bp.route('/firecrawl/status', methods=['GET'])
+@require_auth
+def firecrawl_status():
+    """Get Firecrawl crawler status and configuration"""
+    try:
+        db = SessionLocal()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == g.tenant_id,
+                Connector.connector_type == ConnectorType.FIRECRAWL,
+                Connector.is_active == True
+            ).first()
+
+            if not connector:
+                return jsonify({
+                    "success": True,
+                    "status": "not_configured",
+                    "connector": None,
+                    "api_key_configured": bool(os.getenv("FIRECRAWL_API_KEY", ""))
+                })
+
+            return jsonify({
+                "success": True,
+                "status": connector.status.value,
+                "connector": {
+                    "id": connector.id,
+                    "name": connector.name,
+                    "status": connector.status.value,
+                    "settings": connector.settings,
+                    "last_sync_at": connector.last_sync_at.isoformat() if connector.last_sync_at else None,
+                    "total_items_synced": connector.total_items_synced,
+                    "error_message": connector.error_message
+                },
+                "api_key_configured": True
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@integration_bp.route('/firecrawl/map', methods=['POST'])
+@require_auth
+def firecrawl_map():
+    """
+    Get a quick sitemap of all URLs on a website without full crawl.
+    Useful for previewing what pages will be crawled.
+    """
+    try:
+        data = request.get_json()
+        url = data.get("url", "").strip()
+
+        if not url:
+            return jsonify({
+                "success": False,
+                "error": "url is required"
+            }), 400
+
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+
+        from connectors.firecrawl_connector import FirecrawlScraper
+        scraper = FirecrawlScraper()
+        urls = scraper.map_website(url)
+
+        return jsonify({
+            "success": True,
+            "url": url,
+            "total_urls": len(urls),
+            "urls": urls[:100]  # Return first 100 for preview
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ============================================================================
 # SYNC OPERATIONS
 # ============================================================================
 
@@ -2669,6 +2915,7 @@ def sync_connector(connector_type: str):
             "github": ConnectorType.GITHUB,
             "pubmed": ConnectorType.PUBMED,
             "webscraper": ConnectorType.WEBSCRAPER,
+            "firecrawl": ConnectorType.FIRECRAWL,
             "notion": ConnectorType.NOTION,
             "gdrive": ConnectorType.GOOGLE_DRIVE,
             "gdocs": ConnectorType.GOOGLE_DOCS,
@@ -2836,6 +3083,11 @@ def _run_connector_sync(
                 from connectors.webscraper_connector import WebScraperConnector
                 print(f"[Sync] WebScraperConnector imported successfully")
                 ConnectorClass = WebScraperConnector
+            elif connector_type == "firecrawl":
+                print(f"[Sync] Importing FirecrawlConnector...")
+                from connectors.firecrawl_connector import FirecrawlConnector
+                print(f"[Sync] FirecrawlConnector imported successfully")
+                ConnectorClass = FirecrawlConnector
             elif connector_type == "notion":
                 print(f"[Sync] Importing NotionConnector...")
                 from connectors.notion_connector import NotionConnector
@@ -2915,7 +3167,8 @@ def _run_connector_sync(
             loop = None  # Only created for async connectors
 
             # List of synchronous connectors that don't need event loop
-            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar'}
+            # Note: firecrawl uses `async def sync()` but internally uses synchronous requests library
+            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar', 'firecrawl'}
 
             if connector_type not in sync_connectors:
                 print(f"[Sync] Creating event loop for async connector: {connector_type}")
@@ -2994,6 +3247,30 @@ def _run_connector_sync(
                     print(f"[Sync] Calling gdrive sync directly (synchronous)")
                     documents = instance.sync(since)
                     print(f"[Sync] GDrive sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'firecrawl':
+                    # Firecrawl uses synchronous requests library internally (despite async def)
+                    max_pages = instance.config.settings.get('max_pages', 100)
+                    if sync_id:
+                        progress_service.update_progress(
+                            sync_id,
+                            status='syncing',
+                            stage='Crawling website with Firecrawl...',
+                            total_items=max_pages
+                        )
+                    print(f"[Sync] Calling firecrawl sync (synchronous under the hood)", flush=True)
+                    # Firecrawl's sync() is async but uses sync requests, so we need to run it properly
+                    import asyncio
+                    temp_loop = asyncio.new_event_loop()
+                    try:
+                        documents = temp_loop.run_until_complete(instance.sync(since))
+                    except Exception as fc_err:
+                        print(f"[Sync] FIRECRAWL ERROR: {type(fc_err).__name__}: {fc_err}", flush=True)
+                        import traceback
+                        traceback.print_exc()
+                        raise
+                    finally:
+                        temp_loop.close()
+                    print(f"[Sync] Firecrawl sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'gdocs':
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Docs...')
@@ -3185,14 +3462,12 @@ def _run_connector_sync(
                         "message": f"All {original_count} documents already synced"
                     })
 
-                    return jsonify({
-                        "success": True,
-                        "message": f"All {original_count} documents already synced. No new content to process.",
-                        "sync_id": sync_id,
-                        "documents_found": original_count,
-                        "documents_new": 0,
-                        "documents_skipped": original_count
-                    }), 200
+                    # Update connector status to CONNECTED (important for background thread)
+                    connector.status = ConnectorStatus.CONNECTED
+                    connector.last_sync_status = "success"
+                    db.commit()
+                    print(f"[Sync] All {original_count} documents already synced, no new content", flush=True)
+                    return  # Exit background thread cleanly (not jsonify - we're in a background thread)
 
                 # Save documents to database with progress updates
                 # Commit in small batches to avoid database connection timeouts
@@ -3703,6 +3978,7 @@ def get_sync_status(connector_type: str):
                 "github": ConnectorType.GITHUB,
                 "pubmed": ConnectorType.PUBMED,
                 "webscraper": ConnectorType.WEBSCRAPER,
+                "firecrawl": ConnectorType.FIRECRAWL,
                 "notion": ConnectorType.NOTION,
                 "gdrive": ConnectorType.GOOGLE_DRIVE,
                 "zotero": ConnectorType.ZOTERO,
@@ -3777,6 +4053,7 @@ def _get_connector_type_map():
         "github": ConnectorType.GITHUB,
         "pubmed": ConnectorType.PUBMED,
         "webscraper": ConnectorType.WEBSCRAPER,
+        "firecrawl": ConnectorType.FIRECRAWL,
         "notion": ConnectorType.NOTION,
         "gdrive": ConnectorType.GOOGLE_DRIVE,
         "gdocs": ConnectorType.GOOGLE_DOCS,
@@ -4090,6 +4367,7 @@ def connector_status(connector_type: str):
             "github": ConnectorType.GITHUB,
             "pubmed": ConnectorType.PUBMED,
             "webscraper": ConnectorType.WEBSCRAPER,
+            "firecrawl": ConnectorType.FIRECRAWL,
             "notion": ConnectorType.NOTION,
             "gdrive": ConnectorType.GOOGLE_DRIVE,
             "gdocs": ConnectorType.GOOGLE_DOCS,
@@ -4162,6 +4440,7 @@ def update_connector_settings(connector_type: str):
             "github": ConnectorType.GITHUB,
             "pubmed": ConnectorType.PUBMED,
             "webscraper": ConnectorType.WEBSCRAPER,
+            "firecrawl": ConnectorType.FIRECRAWL,
             "notion": ConnectorType.NOTION,
             "gdrive": ConnectorType.GOOGLE_DRIVE,
             "gdocs": ConnectorType.GOOGLE_DOCS,

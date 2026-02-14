@@ -81,6 +81,7 @@ class ConnectorType(PyEnum):
     RESEARCHGATE = "researchgate"
     GOOGLESCHOLAR = "googlescholar"
     WEBSCRAPER = "webscraper"
+    FIRECRAWL = "firecrawl"
     ZOTERO = "zotero"
 
 
@@ -1325,7 +1326,7 @@ def _migrate_enum_values():
     SQLAlchemy's transaction management entirely.
     """
     new_connector_types = [
-        'GOOGLE_DOCS', 'GOOGLE_SHEETS', 'GOOGLE_SLIDES', 'GOOGLE_CALENDAR'
+        'GOOGLE_DOCS', 'GOOGLE_SHEETS', 'GOOGLE_SLIDES', 'GOOGLE_CALENDAR', 'FIRECRAWL'
     ]
     try:
         raw_conn = engine.raw_connection()
