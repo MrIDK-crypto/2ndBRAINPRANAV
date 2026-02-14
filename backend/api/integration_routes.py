@@ -588,7 +588,7 @@ def gmail_callback():
             db.close()
 
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -1128,7 +1128,7 @@ def slack_callback():
         print(f"[Slack Callback] Exception: {str(e)}")
         import traceback
         traceback.print_exc()
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -1279,7 +1279,7 @@ def box_callback():
             db.close()
 
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 @integration_bp.route('/box/folders', methods=['GET'])
@@ -1572,7 +1572,7 @@ def github_callback():
         print(f"[GitHub Callback] Exception: {str(e)}")
         import traceback
         traceback.print_exc()
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -1727,7 +1727,7 @@ def onedrive_callback():
             db.close()
 
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -1845,7 +1845,7 @@ def notion_callback():
             db.close()
 
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -1968,7 +1968,7 @@ def gdrive_callback():
             db.close()
 
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -2047,7 +2047,7 @@ def gdocs_callback():
         finally:
             db.close()
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -2126,7 +2126,7 @@ def gsheets_callback():
         finally:
             db.close()
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -2205,7 +2205,7 @@ def gslides_callback():
         finally:
             db.close()
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
@@ -2284,7 +2284,7 @@ def gcalendar_callback():
         finally:
             db.close()
     except Exception as e:
-        return redirect(f"{FRONTEND_URL}/integrations?error={str(e)}")
+        return redirect(f"{FRONTEND_URL}/integrations?error={quote(str(e))}")
 
 
 # ============================================================================
