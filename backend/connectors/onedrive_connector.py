@@ -217,8 +217,12 @@ class OneDriveConnector(BaseConnector):
         documents = []
 
         try:
-            # Get files in folder
-            url = f"{self.GRAPH_ENDPOINT}/me/drive/items/{folder_id}/children"
+            # Use correct endpoint for root vs specific folders
+            if folder_id == "root":
+                url = f"{self.GRAPH_ENDPOINT}/me/drive/root/children"
+            else:
+                url = f"{self.GRAPH_ENDPOINT}/me/drive/items/{folder_id}/children"
+
             response = requests.get(
                 url,
                 headers={"Authorization": f"Bearer {self.access_token}"}
