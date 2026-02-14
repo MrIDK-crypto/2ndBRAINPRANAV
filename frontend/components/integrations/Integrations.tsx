@@ -2233,10 +2233,10 @@ const IntegrationDetailsModal = ({
 
 const integrations: Integration[] = [
   {
-    id: 'webscraper',
+    id: 'firecrawl',
     name: 'Website Scraper',
     logo: '/docs.png',
-    description: 'Crawl lab websites and extract protocols, documentation, and resources.',
+    description: 'Crawl entire websites with JS rendering, PDF extraction, and sitemap discovery.',
     category: 'Research',
     connected: false
   },
@@ -3007,10 +3007,10 @@ export default function Integrations() {
           }
         }
 
-        // Store webscraper settings if configured
-        const webscraper = apiIntegrations.find((a: any) => a.type === 'webscraper')
-        if (webscraper?.settings?.start_url) {
-          setWebscraperUrl(webscraper.settings.start_url)
+        // Store firecrawl/webscraper settings if configured
+        const firecrawlInt = apiIntegrations.find((a: any) => a.type === 'firecrawl')
+        if (firecrawlInt?.settings?.start_url) {
+          setWebscraperUrl(firecrawlInt.settings.start_url)
         }
       }
     } catch (error) {
@@ -3812,7 +3812,7 @@ export default function Integrations() {
     try {
       const authToken = getAuthToken()
       const response = await axios.post(
-        `${API_BASE}/integrations/webscraper/configure`,
+        `${API_BASE}/integrations/firecrawl/configure`,
         {
           start_url: config.startUrl,
           priority_paths: config.priorityPaths,
@@ -3826,12 +3826,12 @@ export default function Integrations() {
         setWebscraperUrl(config.startUrl)
         setIntegrationsState(prev =>
           prev.map(int =>
-            int.id === 'webscraper' ? { ...int, connected: true } : int
+            int.id === 'firecrawl' ? { ...int, connected: true } : int
           )
         )
         setSyncStatus('Website configured! Starting crawl...')
         // Auto-sync starts on backend, poll for progress
-        setTimeout(() => startSyncWithProgress('webscraper'), 500)
+        setTimeout(() => startSyncWithProgress('firecrawl'), 500)
       } else {
         setSyncStatus(`Failed to configure Website Scraper: ${response.data.error}`)
       }
@@ -3920,7 +3920,7 @@ export default function Integrations() {
     }
 
     // Handle WebScraper configuration
-    if (id === 'webscraper') {
+    if (id === 'firecrawl') {
       if (integration?.connected) {
         await disconnectIntegration(id)
       } else {

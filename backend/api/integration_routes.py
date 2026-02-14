@@ -307,11 +307,11 @@ def list_integrations():
                 "settings": pubmed.settings if pubmed else None
             })
 
-            # Website Scraper
+            # Website Scraper (legacy BFS crawler)
             webscraper = connector_map.get(ConnectorType.WEBSCRAPER)
             integrations.append({
                 "type": "webscraper",
-                "name": "Website Scraper",
+                "name": "Website Scraper (Legacy)",
                 "description": "Crawl websites to extract protocols and documentation",
                 "icon": "webscraper",
                 "auth_type": "config",
@@ -321,6 +321,22 @@ def list_integrations():
                 "total_items_synced": webscraper.total_items_synced if webscraper else 0,
                 "error_message": webscraper.error_message if webscraper else None,
                 "settings": webscraper.settings if webscraper else None
+            })
+
+            # Firecrawl (full website crawler with JS rendering, PDF support)
+            firecrawl = connector_map.get(ConnectorType.FIRECRAWL)
+            integrations.append({
+                "type": "firecrawl",
+                "name": "Website Scraper",
+                "description": "Crawl entire websites with JS rendering, PDF extraction, and sitemap discovery",
+                "icon": "webscraper",
+                "auth_type": "config",
+                "status": firecrawl.status.value if firecrawl else "not_configured",
+                "connector_id": firecrawl.id if firecrawl else None,
+                "last_sync_at": firecrawl.last_sync_at.isoformat() if firecrawl and firecrawl.last_sync_at else None,
+                "total_items_synced": firecrawl.total_items_synced if firecrawl else 0,
+                "error_message": firecrawl.error_message if firecrawl else None,
+                "settings": firecrawl.settings if firecrawl else None
             })
 
             # Notion
@@ -3434,7 +3450,7 @@ def _run_connector_sync(
                 if not documents and original_count == 0 and connector_error:
                     print(f"[Sync] ERROR: Connector reported error with 0 docs: {connector_error}", flush=True)
                     raise Exception(connector_error)
-                elif not documents and original_count == 0 and connector_type == 'webscraper':
+                elif not documents and original_count == 0 and connector_type in ('webscraper', 'firecrawl'):
                     error_msg = "Website returned no content. The site may be blocking cloud servers, or the pages may have no extractable text."
                     print(f"[Sync] ERROR: {error_msg}", flush=True)
                     raise Exception(error_msg)
@@ -3788,7 +3804,7 @@ def cancel_all_syncs():
     {
         "success": true,
         "message": "All syncs cancelled",
-        "cancelled": ["webscraper", "slack"]
+        "cancelled": ["webscraper", "firecrawl", "slack"]
     }
     """
     try:
