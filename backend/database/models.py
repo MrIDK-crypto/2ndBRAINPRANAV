@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy import (
     create_engine, Column, String, Text, DateTime, Boolean, Integer,
     Float, ForeignKey, Enum, JSON, LargeBinary, Index, UniqueConstraint,
-    Table, event
+    Table, event, text
 )
 from sqlalchemy.orm import (
     declarative_base, relationship, sessionmaker, Session, validates
@@ -1317,8 +1317,25 @@ class DeletedDocument(Base):
         return f"<DeletedDocument {self.external_id[:20]}>"
 
 
+def _migrate_enum_values():
+    """Add any missing enum values to PostgreSQL enum types."""
+    new_connector_types = [
+        'google_docs', 'google_sheets', 'google_slides', 'google_calendar'
+    ]
+    with engine.connect() as conn:
+        for val in new_connector_types:
+            try:
+                conn.execute(
+                    text(f"ALTER TYPE connectortype ADD VALUE IF NOT EXISTS '{val}'")
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+
 def init_database():
     """Initialize database (create tables)"""
+    _migrate_enum_values()
     Base.metadata.create_all(bind=engine)
     print("✓ Database tables created successfully")
 
