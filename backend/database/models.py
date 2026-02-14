@@ -1320,21 +1320,28 @@ class DeletedDocument(Base):
 def _migrate_enum_values():
     """Add any missing enum values to PostgreSQL enum types.
 
-    ALTER TYPE ... ADD VALUE must run outside a transaction block,
-    so we use AUTOCOMMIT isolation level.
+    ALTER TYPE ... ADD VALUE cannot run inside a transaction block.
+    We use a raw psycopg2 connection with autocommit=True to bypass
+    SQLAlchemy's transaction management entirely.
     """
     new_connector_types = [
         'google_docs', 'google_sheets', 'google_slides', 'google_calendar'
     ]
-    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    try:
+        raw_conn = engine.raw_connection()
+        raw_conn.set_session(autocommit=True)
+        cursor = raw_conn.cursor()
         for val in new_connector_types:
             try:
-                conn.execute(
-                    text(f"ALTER TYPE connectortype ADD VALUE IF NOT EXISTS '{val}'")
-                )
+                cursor.execute(f"ALTER TYPE connectortype ADD VALUE IF NOT EXISTS '{val}'")
                 print(f"  ✓ Added enum value: {val}")
             except Exception as e:
-                print(f"  - Enum value '{val}' already exists or error: {e}")
+                print(f"  - Enum value '{val}': {e}")
+        cursor.close()
+        raw_conn.close()
+        print("✓ Enum migration complete")
+    except Exception as e:
+        print(f"✗ Enum migration failed: {e}")
 
 
 def init_database():
