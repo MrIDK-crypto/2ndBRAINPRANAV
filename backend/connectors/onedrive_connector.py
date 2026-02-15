@@ -49,12 +49,16 @@ class OneDriveConnector(BaseConnector):
         super().__init__(config)
         self.access_token = None
 
+    # Scopes for personal Microsoft accounts (OneDrive Personal)
+    # "consumers" authority + Files.ReadWrite scope
+    SCOPES = ["Files.ReadWrite", "User.Read", "offline_access"]
+
     @classmethod
     def _get_oauth_config(cls) -> Dict:
         return {
             "client_id": os.getenv("MICROSOFT_CLIENT_ID", ""),
             "client_secret": os.getenv("MICROSOFT_CLIENT_SECRET", ""),
-            "tenant": os.getenv("MICROSOFT_TENANT_ID", "common"),
+            "tenant": os.getenv("MICROSOFT_TENANT_ID", "consumers"),
             "redirect_uri": os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:5003/api/integrations/onedrive/callback")
         }
 
@@ -73,11 +77,8 @@ class OneDriveConnector(BaseConnector):
             client_credential=config["client_secret"]
         )
 
-        # Generate auth URL
-        scopes = ["Files.Read.All", "User.Read"]
-
         auth_url = app.get_authorization_request_url(
-            scopes,
+            cls.SCOPES,
             state=state,
             redirect_uri=redirect_uri
         )
@@ -103,7 +104,7 @@ class OneDriveConnector(BaseConnector):
             # Exchange code for token
             result = app.acquire_token_by_authorization_code(
                 code,
-                scopes=["Files.Read.All", "User.Read"],
+                scopes=cls.SCOPES,
                 redirect_uri=redirect_uri
             )
 
@@ -223,59 +224,65 @@ class OneDriveConnector(BaseConnector):
             else:
                 url = f"{self.GRAPH_ENDPOINT}/me/drive/items/{folder_id}/children"
 
-            response = requests.get(
-                url,
-                headers={"Authorization": f"Bearer {self.access_token}"}
-            )
+            # Paginate through all items (Graph API returns max 200 per page)
+            while url:
+                response = requests.get(
+                    url,
+                    headers={"Authorization": f"Bearer {self.access_token}"}
+                )
 
-            if response.status_code != 200:
-                error_text = response.text
-                print(f"[OneDrive] Failed to list folder {folder_id}: {error_text}", flush=True)
-                # Parse error message from Microsoft Graph API response
-                try:
-                    error_data = response.json().get("error", {})
-                    error_msg = error_data.get("message", error_text[:200])
-                except Exception:
-                    error_msg = f"HTTP {response.status_code}: {error_text[:200]}"
-                raise Exception(f"OneDrive API error: {error_msg}")
+                if response.status_code != 200:
+                    error_text = response.text
+                    print(f"[OneDrive] Failed to list folder {folder_id}: {error_text}", flush=True)
+                    try:
+                        error_data = response.json().get("error", {})
+                        error_msg = error_data.get("message", error_text[:200])
+                    except Exception:
+                        error_msg = f"HTTP {response.status_code}: {error_text[:200]}"
+                    raise Exception(f"OneDrive API error: {error_msg}")
 
-            items = response.json().get("value", [])
+                data = response.json()
+                items = data.get("value", [])
+                print(f"[OneDrive] Folder {folder_id}: got {len(items)} items", flush=True)
 
-            for item in items:
-                # Check if it's a folder
-                if "folder" in item:
-                    # Recursively sync subfolder
-                    subfolder_docs = self._sync_folder(item["id"], since)
-                    documents.extend(subfolder_docs)
+                for item in items:
+                    # Check if it's a folder
+                    if "folder" in item:
+                        subfolder_name = item.get("name", "unknown")
+                        print(f"[OneDrive] Entering subfolder: {subfolder_name}", flush=True)
+                        subfolder_docs = self._sync_folder(item["id"], since)
+                        documents.extend(subfolder_docs)
 
-                # Check if it's a file
-                elif "file" in item:
-                    # Check file type
-                    name = item.get("name", "")
-                    file_types = self.config.settings.get("file_types", [])
+                    # Check if it's a file
+                    elif "file" in item:
+                        name = item.get("name", "")
+                        file_types = self.config.settings.get("file_types", [])
 
-                    if any(name.lower().endswith(ext) for ext in file_types):
-                        # Check file size
-                        size_mb = item.get("size", 0) / (1024 * 1024)
-                        max_size = self.config.settings.get("max_file_size_mb", 50)
+                        if any(name.lower().endswith(ext) for ext in file_types):
+                            # Check file size
+                            size_mb = item.get("size", 0) / (1024 * 1024)
+                            max_size = self.config.settings.get("max_file_size_mb", 50)
 
-                        if size_mb > max_size:
-                            print(f"[OneDrive] Skipping {name} - too large ({size_mb:.1f}MB)")
-                            continue
+                            if size_mb > max_size:
+                                print(f"[OneDrive] Skipping {name} - too large ({size_mb:.1f}MB)")
+                                continue
 
-                        # Check modification time
-                        modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
+                            # Check modification time
+                            modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
 
-                        if since and modified < since:
-                            continue
+                            if since and modified < since:
+                                continue
 
-                        # Download and parse file
-                        doc = self._download_and_parse(item)
-                        if doc:
-                            documents.append(doc)
+                            # Download and parse file
+                            doc = self._download_and_parse(item)
+                            if doc:
+                                documents.append(doc)
+
+                # Check for next page
+                url = data.get("@odata.nextLink")
 
         except Exception as e:
-            print(f"[OneDrive] Error syncing folder {folder_id}: {e}")
+            print(f"[OneDrive] Error syncing folder {folder_id}: {e}", flush=True)
 
         return documents
 
