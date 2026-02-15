@@ -50,8 +50,8 @@ class OneDriveConnector(BaseConnector):
         self.access_token = None
 
     # Scopes for personal Microsoft accounts (OneDrive Personal)
-    # "consumers" authority + Files.ReadWrite scope
-    SCOPES = ["Files.ReadWrite", "User.Read", "offline_access"]
+    # Note: MSAL automatically adds offline_access, openid, profile
+    SCOPES = ["Files.ReadWrite", "User.Read"]
 
     @classmethod
     def _get_oauth_config(cls) -> Dict:
