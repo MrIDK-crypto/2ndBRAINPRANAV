@@ -37,7 +37,11 @@ class OneDriveConnector(BaseConnector):
     REQUIRED_CREDENTIALS = ["access_token", "refresh_token"]
     OPTIONAL_SETTINGS = {
         "folder_ids": [],  # Specific folders to sync (empty = root)
-        "file_types": [".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf"],
+        "file_types": [
+            ".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf",
+            ".txt", ".md", ".csv", ".html", ".htm", ".json", ".xml",
+            ".rtf", ".odt", ".ods", ".odp", ".tex", ".log", ".yaml", ".yml"
+        ],
         "max_file_size_mb": 50,
         "include_shared": True
     }
@@ -288,9 +292,10 @@ class OneDriveConnector(BaseConnector):
 
                     elif "file" in item:
                         name = item.get("name", "")
-                        file_types = self.config.settings.get("file_types", [])
+                        file_types = self.config.settings.get("file_types", self.OPTIONAL_SETTINGS["file_types"])
 
                         if any(name.lower().endswith(ext) for ext in file_types):
+                            print(f"[OneDrive] Found matching file: {name}", flush=True)
                             size_mb = item.get("size", 0) / (1024 * 1024)
                             max_size = self.config.settings.get("max_file_size_mb", 50)
 
@@ -398,10 +403,34 @@ class OneDriveConnector(BaseConnector):
             elif lower_name.endswith(".pdf"):
                 return self._parse_pdf(content)
 
+            # Plain text files (txt, md, csv, html, json, xml, etc.)
+            elif lower_name.endswith((
+                ".txt", ".md", ".csv", ".html", ".htm", ".json", ".xml",
+                ".rtf", ".log", ".yaml", ".yml", ".tex"
+            )):
+                return self._parse_text(content)
+
+            # ODF formats
+            elif lower_name.endswith((".odt", ".ods", ".odp")):
+                print(f"[OneDrive] ODF format not yet supported: {filename}")
+                return None
+
             return None
 
         except Exception as e:
             print(f"[OneDrive] Parse error for {filename}: {e}")
+            return None
+
+    def _parse_text(self, content: bytes) -> Optional[str]:
+        """Parse plain text file"""
+        try:
+            # Try UTF-8 first, then fallback to latin-1
+            try:
+                return content.decode("utf-8")
+            except UnicodeDecodeError:
+                return content.decode("latin-1")
+        except Exception as e:
+            print(f"[OneDrive] Text parse error: {e}")
             return None
 
     def _parse_powerpoint(self, content: bytes) -> Optional[str]:
@@ -486,14 +515,20 @@ class OneDriveConnector(BaseConnector):
         """Get document type based on filename"""
         lower_name = filename.lower()
 
-        if lower_name.endswith((".pptx", ".ppt")):
+        if lower_name.endswith((".pptx", ".ppt", ".odp")):
             return "presentation"
-        elif lower_name.endswith((".xlsx", ".xls")):
+        elif lower_name.endswith((".xlsx", ".xls", ".csv", ".ods")):
             return "spreadsheet"
-        elif lower_name.endswith((".docx", ".doc")):
+        elif lower_name.endswith((".docx", ".doc", ".odt", ".rtf")):
             return "document"
         elif lower_name.endswith(".pdf"):
             return "pdf"
+        elif lower_name.endswith((".txt", ".md", ".log", ".tex")):
+            return "text"
+        elif lower_name.endswith((".html", ".htm", ".xml")):
+            return "webpage"
+        elif lower_name.endswith((".json", ".yaml", ".yml")):
+            return "data"
 
         return "file"
 
