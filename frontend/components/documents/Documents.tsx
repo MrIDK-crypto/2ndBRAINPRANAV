@@ -91,6 +91,145 @@ const getStatusInfo = (classification?: string, sourceType?: string) => {
   return { label: 'Pending', color: colors.textMuted }
 }
 
+// Professional file type icons - single consistent color
+const iconColor = '#64748B'
+
+const getFileTypeInfo = (filename: string, type?: string) => {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  const fileType = type?.toLowerCase() || ''
+
+  // PDF
+  if (ext === 'pdf' || fileType.includes('pdf')) {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+          <path d="M14 2v6h6"/>
+          <path d="M9 15v-2h1.5a1.5 1.5 0 0 0 0-3H9v5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )
+    }
+  }
+
+  // Word Documents
+  if (['doc', 'docx'].includes(ext) || fileType.includes('word') || fileType.includes('document')) {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+          <path d="M14 2v6h6"/>
+          <path d="M8 13h8M8 17h6"/>
+        </svg>
+      )
+    }
+  }
+
+  // Excel/Spreadsheets
+  if (['xls', 'xlsx', 'csv'].includes(ext) || fileType.includes('excel') || fileType.includes('spreadsheet')) {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+          <path d="M14 2v6h6"/>
+          <path d="M8 12h8v6H8zM12 12v6M8 15h8"/>
+        </svg>
+      )
+    }
+  }
+
+  // PowerPoint
+  if (['ppt', 'pptx'].includes(ext) || fileType.includes('powerpoint') || fileType.includes('presentation')) {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+          <path d="M14 2v6h6"/>
+          <rect x="7" y="11" width="10" height="6" rx="1"/>
+        </svg>
+      )
+    }
+  }
+
+  // Images
+  if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'].includes(ext) || fileType.includes('image')) {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+      )
+    }
+  }
+
+  // Code files
+  if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'h', 'css', 'html', 'json', 'xml', 'yaml', 'yml', 'md', 'sh', 'rb', 'go', 'rs'].includes(ext) || fileType.includes('code')) {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+          <path d="M14 2v6h6"/>
+          <path d="M10 12l-2 2 2 2M14 12l2 2-2 2"/>
+        </svg>
+      )
+    }
+  }
+
+  // Email
+  if (fileType.includes('email') || fileType.includes('mail') || ext === 'eml') {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <path d="M22 6l-10 7L2 6"/>
+        </svg>
+      )
+    }
+  }
+
+  // Text files
+  if (['txt', 'rtf'].includes(ext) || fileType.includes('text')) {
+    return {
+      color: iconColor,
+      bgColor: '#F8FAFC',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+          <path d="M14 2v6h6"/>
+          <path d="M8 13h8M8 17h5"/>
+        </svg>
+      )
+    }
+  }
+
+  // Default
+  return {
+    color: iconColor,
+    bgColor: '#F8FAFC',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+        <path d="M14 2v6h6"/>
+      </svg>
+    )
+  }
+}
+
 export default function Documents() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [activeCategory, setActiveCategory] = useState<string>('All Items')
@@ -540,66 +679,108 @@ export default function Documents() {
   }
 
   // Folder Card Component
-  const FolderCard = ({ title, count, size, active, onClick }: {
+  const FolderCard = ({ title, count, size, active, onClick, iconType }: {
     title: string
     count: number
     size: string
     active: boolean
     onClick: () => void
-  }) => (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
-        padding: '20px 28px',
-        backgroundColor: colors.cardBg,
-        border: `1px solid ${active ? colors.primary : colors.border}`,
-        borderRadius: '12px',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        minWidth: '240px',
-        boxShadow: active ? `0 0 0 1px ${colors.primary}` : shadows.sm,
-      }}
-      onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.borderColor = colors.textMuted
-      }}
-      onMouseLeave={(e) => {
-        if (!active) e.currentTarget.style.borderColor = colors.border
-      }}
-    >
-      <div style={{
-        width: '48px',
-        height: '48px',
-        backgroundColor: colors.borderLight,
-        borderRadius: '10px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill={colors.textMuted}>
-          <path d="M3 7V17C3 18.1046 3.89543 19 5 19H19C20.1046 19 21 18.1046 21 17V9C21 7.89543 20.1046 7 19 7H13L11 5H5C3.89543 5 3 5.89543 3 7Z"/>
+    iconType: 'all' | 'work' | 'code' | 'web' | 'personal'
+  }) => {
+    const iconColor = active ? '#2563EB' : '#64748B'
+    const bgColor = active ? '#EFF6FF' : '#F8FAFC'
+
+    const icons = {
+      all: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"/>
         </svg>
-      </div>
-      <div style={{ textAlign: 'left' }}>
+      ),
+      work: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+          <path d="M14 2v6h6"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      ),
+      code: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <polyline points="16 18 22 12 16 6"/>
+          <polyline points="8 6 2 12 8 18"/>
+        </svg>
+      ),
+      web: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+      ),
+      personal: (
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      ),
+    }
+
+    return (
+      <button
+        onClick={onClick}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          padding: '20px 28px',
+          backgroundColor: active ? '#FAFCFF' : colors.cardBg,
+          border: `1px solid ${active ? '#93C5FD' : colors.border}`,
+          borderRadius: '12px',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          minWidth: '240px',
+          boxShadow: shadows.sm,
+        }}
+        onMouseEnter={(e) => {
+          if (!active) e.currentTarget.style.borderColor = colors.textMuted
+        }}
+        onMouseLeave={(e) => {
+          if (!active) e.currentTarget.style.borderColor = colors.border
+        }}
+      >
         <div style={{
-          fontSize: '16px',
-          fontWeight: 600,
-          color: colors.textPrimary,
-          marginBottom: '4px',
+          width: '44px',
+          height: '44px',
+          backgroundColor: bgColor,
+          borderRadius: '10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}>
-          {title}
+          {icons[iconType]}
         </div>
-        <div style={{
-          fontSize: '13px',
-          color: colors.textMuted,
-        }}>
-          {count} files | {size}
+        <div style={{ textAlign: 'left' }}>
+          <div style={{
+            fontSize: '15px',
+            fontWeight: 600,
+            color: colors.textPrimary,
+            marginBottom: '4px',
+          }}>
+            {title}
+          </div>
+          <div style={{
+            fontSize: '13px',
+            color: colors.textMuted,
+          }}>
+            {count} files | {size}
+          </div>
         </div>
-      </div>
-    </button>
-  )
+      </button>
+    )
+  }
 
   // Filter Pill Component
   const FilterPill = ({ label, active, hasClose, onClick, onClose }: {
@@ -1077,6 +1258,7 @@ export default function Documents() {
               size={`${Math.floor(counts.all * 0.8)} MB`}
               active={activeCategory === 'All Items'}
               onClick={() => setActiveCategory('All Items')}
+              iconType="all"
             />
             <FolderCard
               title="Work Documents"
@@ -1084,6 +1266,7 @@ export default function Documents() {
               size={`${Math.floor(counts.documents * 1.2)} MB`}
               active={activeCategory === 'Documents'}
               onClick={() => setActiveCategory('Documents')}
+              iconType="work"
             />
             <FolderCard
               title="Code Files"
@@ -1091,6 +1274,7 @@ export default function Documents() {
               size={`${Math.floor(counts.code * 0.5)} MB`}
               active={activeCategory === 'Code'}
               onClick={() => setActiveCategory('Code')}
+              iconType="code"
             />
             <FolderCard
               title="Web Scraper"
@@ -1098,6 +1282,7 @@ export default function Documents() {
               size={`${Math.floor(counts.webscraper * 0.3)} MB`}
               active={activeCategory === 'Web Scraper'}
               onClick={() => setActiveCategory('Web Scraper')}
+              iconType="web"
             />
             <FolderCard
               title="Personal & Other"
@@ -1105,6 +1290,7 @@ export default function Documents() {
               size={`${Math.floor((counts.personal + counts.other) * 0.6)} MB`}
               active={activeCategory === 'Personal Items' || activeCategory === 'Other Items'}
               onClick={() => setActiveCategory('Personal Items')}
+              iconType="personal"
             />
           </div>
         </div>
@@ -1313,7 +1499,7 @@ export default function Documents() {
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 100px 100px 48px',
+                gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 120px 48px',
                 gap: '16px',
                 padding: '12px 20px',
                 backgroundColor: colors.cardBg,
@@ -1332,8 +1518,7 @@ export default function Documents() {
                   { label: 'Type', field: 'type' },
                   { label: 'Source', field: 'source_type' },
                   { label: 'Date', field: 'created' },
-                  { label: 'Work Score', field: 'score' },
-                  { label: 'Embedding', field: 'embedded_at' },
+                  { label: 'Embeddings', field: 'embedded_at' },
                 ].map((col) => (
                   <button
                     key={col.field}
@@ -1368,7 +1553,7 @@ export default function Documents() {
                       key={doc.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 100px 100px 48px',
+                        gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 120px 48px',
                         gap: '16px',
                         padding: '16px 20px',
                         alignItems: 'center',
@@ -1403,20 +1588,24 @@ export default function Documents() {
 
                       {/* Document Name */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden' }}>
-                        <div style={{
-                          width: '32px',
-                          height: '32px',
-                          backgroundColor: colors.borderLight,
-                          borderRadius: '6px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill={colors.textMuted}>
-                            <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z"/>
-                          </svg>
-                        </div>
+                        {(() => {
+                          const fileInfo = getFileTypeInfo(doc.name, doc.type)
+                          return (
+                            <div style={{
+                              width: '36px',
+                              height: '36px',
+                              backgroundColor: fileInfo.bgColor,
+                              borderRadius: '8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                              border: `1px solid ${fileInfo.color}20`,
+                            }}>
+                              {fileInfo.icon}
+                            </div>
+                          )
+                        })()}
                         <span style={{
                           fontSize: '14px',
                           fontWeight: 500,
@@ -1444,23 +1633,20 @@ export default function Documents() {
                         {doc.created}
                       </span>
 
-                      {/* Work Score - higher = more likely work, lower = more likely personal */}
-                      <ProgressBar value={doc.score ?? 50} />
-
-                      {/* Embedding Status */}
+                      {/* Embeddings - In Pinecone/Chatbot */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <div style={{
                           width: '8px',
                           height: '8px',
                           borderRadius: '50%',
-                          backgroundColor: doc.embedded_at ? '#22C55E' : '#F59E0B',
+                          backgroundColor: doc.embedded_at ? '#3B82F6' : '#EF4444',
                         }} />
                         <span style={{
                           fontSize: '12px',
                           fontWeight: 500,
-                          color: doc.embedded_at ? '#16A34A' : '#D97706',
+                          color: doc.embedded_at ? '#2563EB' : '#DC2626',
                         }}>
-                          {doc.embedded_at ? 'Ready' : 'Pending'}
+                          {doc.embedded_at ? 'In Chatbot' : 'Not Indexed'}
                         </span>
                       </div>
 

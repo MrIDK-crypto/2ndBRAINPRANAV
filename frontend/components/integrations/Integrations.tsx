@@ -2226,7 +2226,7 @@ const integrations: Integration[] = [
   {
     id: 'onedrive',
     name: 'Microsoft 365',
-    logo: '/outlook.png',
+    logo: '/microsoft365.png',
     description: 'Connect OneDrive to import PowerPoint, Excel, Word, and PDF files into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
@@ -2296,15 +2296,6 @@ const integrations: Integration[] = [
     isOAuth: true
   },
   {
-    id: 'gcalendar',
-    name: 'Google Calendar',
-    logo: '/gcalendar.png',
-    description: 'Connect Google Calendar to import events and schedules into your knowledge base.',
-    category: 'Conversations',
-    connected: false,
-    isOAuth: true
-  },
-  {
     id: 'pubmed',
     name: 'PubMed',
     logo: '/pubmed.png',
@@ -2327,15 +2318,6 @@ const integrations: Integration[] = [
     description: 'Search scholarly literature across disciplines and sources worldwide.',
     category: 'Research',
     connected: false
-  },
-  {
-    id: 'gmail',
-    name: 'Gmail',
-    logo: '/gmail.png',
-    description: 'Connect Gmail to import emails directly into your knowledge base via OAuth.',
-    category: 'Conversations',
-    connected: false,
-    isOAuth: true
   },
   {
     id: 'zotero',
@@ -2371,11 +2353,11 @@ const IntegrationCard = ({
       style={{
         width: '100%',
         padding: '32px',
-        borderRight: '1px solid #E5E7EB',
-        borderBottom: '1px solid #E5E7EB',
         margin: 0,
         boxSizing: 'border-box',
-        backgroundColor: integration.connected ? '#EFF6FF' : '#FFFFFF'
+        backgroundColor: integration.connected ? '#EFF6FF' : '#FFFFFF',
+        borderRadius: '8px',
+        border: '1px solid #D4D7DC'
       }}
     >
       {/* Logo */}
@@ -3973,45 +3955,6 @@ export default function Integrations() {
           >
             Connect your tools and services to build your knowledge base
           </p>
-          {/* Test Sync Button - for demo purposes */}
-          <button
-            onClick={async () => {
-              const token = localStorage.getItem('accessToken')
-              if (!token) {
-                alert('Please login first')
-                return
-              }
-              try {
-                const response = await fetch(`${API_BASE}/sync-progress/test/start`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({ connector_type: 'github' })
-                })
-                const data = await response.json()
-                if (data.success && data.sync_id) {
-                  globalStartSync(data.sync_id, 'github')
-                  alert('Test sync started! Navigate to another page to see the persistent indicator.')
-                }
-              } catch (err) {
-                console.error('Test sync error:', err)
-              }
-            }}
-            style={{
-              marginTop: '16px',
-              padding: '10px 20px',
-              borderRadius: '8px',
-              border: '2px dashed #9CA3AF',
-              backgroundColor: '#F9FAFB',
-              color: '#6B7280',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Start Test Sync (Demo)
-          </button>
         </div>
 
         {/* Tabs */}
@@ -4090,12 +4033,10 @@ export default function Integrations() {
           )}
 
           <div
-            className="grid grid-cols-3 gap-0"
+            className="grid grid-cols-3 gap-4"
             style={{
               width: '100%',
-              border: '1px solid #D4D4D8',
-              borderRadius: '12px',
-              overflow: 'hidden',
+              backgroundColor: 'transparent',
               display: 'grid'
             }}
           >
