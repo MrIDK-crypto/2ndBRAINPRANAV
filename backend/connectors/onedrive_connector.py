@@ -144,6 +144,25 @@ class OneDriveConnector(BaseConnector):
 
             user_data = response.json()
             self.sync_stats["user"] = user_data.get("displayName", "Unknown")
+            print(f"[OneDrive] Connected as: {user_data.get('displayName')} ({user_data.get('userPrincipalName', user_data.get('mail', 'unknown'))})", flush=True)
+
+            # Check drive info
+            drive_response = requests.get(
+                f"{self.GRAPH_ENDPOINT}/me/drive",
+                headers={"Authorization": f"Bearer {self.access_token}"}
+            )
+            if drive_response.status_code == 200:
+                drive_data = drive_response.json()
+                drive_type = drive_data.get("driveType", "unknown")
+                drive_id = drive_data.get("id", "unknown")
+                quota = drive_data.get("quota", {})
+                used = quota.get("used", 0) / (1024*1024)
+                total = quota.get("total", 0) / (1024*1024*1024)
+                print(f"[OneDrive] Drive type: {drive_type}, id: {drive_id}, used: {used:.1f}MB / {total:.1f}GB", flush=True)
+                self._drive_id = drive_id
+            else:
+                print(f"[OneDrive] WARNING: /me/drive returned {drive_response.status_code}: {drive_response.text[:200]}", flush=True)
+                self._drive_id = None
 
             self.status = ConnectorStatus.CONNECTED
             self._clear_error()
@@ -218,48 +237,60 @@ class OneDriveConnector(BaseConnector):
         documents = []
 
         try:
-            # Use correct endpoint for root vs specific folders
+            # Build URL - try multiple endpoint formats for compatibility
+            urls_to_try = []
             if folder_id == "root":
-                url = f"{self.GRAPH_ENDPOINT}/me/drive/root/children"
+                urls_to_try.append(f"{self.GRAPH_ENDPOINT}/me/drive/root/children")
+                # Fallback: use drive ID if available
+                if hasattr(self, '_drive_id') and self._drive_id:
+                    urls_to_try.append(f"{self.GRAPH_ENDPOINT}/drives/{self._drive_id}/root/children")
+                urls_to_try.append(f"{self.GRAPH_ENDPOINT}/me/drive/items/root/children")
             else:
-                url = f"{self.GRAPH_ENDPOINT}/me/drive/items/{folder_id}/children"
+                urls_to_try.append(f"{self.GRAPH_ENDPOINT}/me/drive/items/{folder_id}/children")
 
-            # Paginate through all items (Graph API returns max 200 per page)
-            while url:
+            # Try each URL format until one works
+            url = None
+            response = None
+            for try_url in urls_to_try:
+                print(f"[OneDrive] Trying: {try_url}", flush=True)
                 response = requests.get(
-                    url,
+                    try_url,
                     headers={"Authorization": f"Bearer {self.access_token}"}
                 )
+                if response.status_code == 200:
+                    url = try_url
+                    print(f"[OneDrive] Success with: {try_url}", flush=True)
+                    break
+                else:
+                    print(f"[OneDrive] {try_url} returned {response.status_code}: {response.text[:200]}", flush=True)
 
-                if response.status_code != 200:
-                    error_text = response.text
-                    print(f"[OneDrive] Failed to list folder {folder_id}: {error_text}", flush=True)
-                    try:
-                        error_data = response.json().get("error", {})
-                        error_msg = error_data.get("message", error_text[:200])
-                    except Exception:
-                        error_msg = f"HTTP {response.status_code}: {error_text[:200]}"
-                    raise Exception(f"OneDrive API error: {error_msg}")
+            if not url or response.status_code != 200:
+                error_text = response.text if response else "No response"
+                try:
+                    error_data = response.json().get("error", {})
+                    error_msg = error_data.get("message", error_text[:200])
+                except Exception:
+                    error_msg = f"HTTP {response.status_code}: {error_text[:200]}"
+                raise Exception(f"OneDrive API error: {error_msg}")
 
+            # Process first page and then paginate
+            while True:
                 data = response.json()
                 items = data.get("value", [])
                 print(f"[OneDrive] Folder {folder_id}: got {len(items)} items", flush=True)
 
                 for item in items:
-                    # Check if it's a folder
                     if "folder" in item:
                         subfolder_name = item.get("name", "unknown")
                         print(f"[OneDrive] Entering subfolder: {subfolder_name}", flush=True)
                         subfolder_docs = self._sync_folder(item["id"], since)
                         documents.extend(subfolder_docs)
 
-                    # Check if it's a file
                     elif "file" in item:
                         name = item.get("name", "")
                         file_types = self.config.settings.get("file_types", [])
 
                         if any(name.lower().endswith(ext) for ext in file_types):
-                            # Check file size
                             size_mb = item.get("size", 0) / (1024 * 1024)
                             max_size = self.config.settings.get("max_file_size_mb", 50)
 
@@ -267,19 +298,27 @@ class OneDriveConnector(BaseConnector):
                                 print(f"[OneDrive] Skipping {name} - too large ({size_mb:.1f}MB)")
                                 continue
 
-                            # Check modification time
                             modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
 
                             if since and modified < since:
                                 continue
 
-                            # Download and parse file
                             doc = self._download_and_parse(item)
                             if doc:
                                 documents.append(doc)
 
                 # Check for next page
-                url = data.get("@odata.nextLink")
+                next_link = data.get("@odata.nextLink")
+                if not next_link:
+                    break
+                print(f"[OneDrive] Fetching next page...", flush=True)
+                response = requests.get(
+                    next_link,
+                    headers={"Authorization": f"Bearer {self.access_token}"}
+                )
+                if response.status_code != 200:
+                    print(f"[OneDrive] Pagination failed: {response.status_code}", flush=True)
+                    break
 
         except Exception as e:
             print(f"[OneDrive] Error syncing folder {folder_id}: {e}", flush=True)
