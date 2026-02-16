@@ -2678,21 +2678,20 @@ def quartzy_upload_csv():
                 if existing:
                     existing.content = doc.content
                     existing.title = doc.title
-                    existing.metadata = doc.metadata
+                    existing.doc_metadata = doc.metadata
                     existing.updated_at = utc_now()
                 else:
                     db_doc = Document(
                         tenant_id=tenant_id,
-                        user_id=user_id,
                         connector_id=connector.id,
                         external_id=doc.doc_id,
                         source_type="quartzy_csv",
                         title=doc.title,
                         content=doc.content,
-                        metadata=doc.metadata,
+                        doc_metadata=doc.metadata,
                         classification="work",
                         classification_confidence=1.0,
-                        is_classified=True,
+                        status=DocumentStatus.CLASSIFIED,
                         source_created_at=utc_now()
                     )
                     db.add(db_doc)
