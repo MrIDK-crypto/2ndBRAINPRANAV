@@ -137,7 +137,7 @@ export default function Login() {
           style={{
             fontSize: '20px',
             fontWeight: 600,
-            color: colors.primary,
+            color: colors.text,
           }}
         >
           2nd Brain
@@ -376,28 +376,38 @@ export default function Login() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                gap: '10px',
                 marginBottom: '24px',
               }}
             >
-              <input
-                type="checkbox"
-                id="remember"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
+              <div
+                onClick={() => setRememberMe(!rememberMe)}
                 style={{
-                  width: '16px',
-                  height: '16px',
+                  width: '18px',
+                  height: '18px',
+                  borderRadius: '4px',
+                  border: `2px solid ${rememberMe ? colors.primary : colors.border}`,
+                  backgroundColor: rememberMe ? colors.primary : 'transparent',
                   cursor: 'pointer',
-                  accentColor: colors.primary,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease',
                 }}
-              />
+              >
+                {rememberMe && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                )}
+              </div>
               <label
-                htmlFor="remember"
+                onClick={() => setRememberMe(!rememberMe)}
                 style={{
                   fontSize: '14px',
-                  color: colors.textMuted,
+                  color: colors.text,
                   cursor: 'pointer',
+                  userSelect: 'none',
                 }}
               >
                 Remember me

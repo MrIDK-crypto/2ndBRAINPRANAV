@@ -73,6 +73,11 @@ class OpenAIClientWrapper:
         """Get the embedding model name"""
         return self.embedding_model
 
+    @property
+    def audio(self):
+        """Expose the underlying client's audio API for Whisper transcription"""
+        return self.client.audio
+
 
 # Singleton instance
 _client = None

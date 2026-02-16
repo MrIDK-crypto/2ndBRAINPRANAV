@@ -302,10 +302,10 @@ function FocusCard({
             <button
               onClick={() => isRecording ? onStopRecording() : onStartRecording()}
               style={{
-                width: '100px',
-                height: '100px',
+                width: '80px',
+                height: '80px',
                 borderRadius: '50%',
-                background: isRecording ? theme.accent : theme.ink,
+                background: isRecording ? '#EF4444' : theme.accent,
                 border: 'none',
                 cursor: 'pointer',
                 display: 'flex',
@@ -313,14 +313,16 @@ function FocusCard({
                 justifyContent: 'center',
                 transform: isRecording ? 'scale(1.1)' : 'scale(1)',
                 transition: 'all 0.2s ease',
+                boxShadow: `0 4px 16px ${isRecording ? 'rgba(239, 68, 68, 0.4)' : 'rgba(201, 165, 152, 0.4)'}`,
               }}
             >
               {isRecording ? (
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
               ) : (
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="#fff">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="#fff" strokeWidth="2"/>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="22"/>
                 </svg>
               )}
             </button>
@@ -363,7 +365,7 @@ function FocusCard({
             fontWeight: 600,
             cursor: canSubmit ? 'pointer' : 'not-allowed',
             fontFamily: fonts.sans,
-            boxShadow: canSubmit ? '0 4px 12px rgba(37, 99, 235, 0.3)' : 'none',
+            boxShadow: canSubmit ? '0 4px 12px rgba(201, 165, 152, 0.4)' : 'none',
           }}
         >
           {isSubmitting ? 'Saving...' : 'Submit Answer'}

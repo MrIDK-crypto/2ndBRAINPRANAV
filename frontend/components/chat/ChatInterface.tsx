@@ -123,6 +123,12 @@ export default function ChatInterface() {
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+
   // Chat History State
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
@@ -464,6 +470,62 @@ export default function ChatInterface() {
     setInputValue(prompt)
   }
 
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaRecorderRef.current = new MediaRecorder(stream)
+      chunksRef.current = []
+
+      mediaRecorderRef.current.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+      }
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        stream.getTracks().forEach(track => track.stop())
+        await transcribeAudio(audioBlob)
+      }
+
+      mediaRecorderRef.current.start()
+      setIsRecording(true)
+    } catch (error) {
+      console.error('Recording error:', error)
+      alert('Could not access microphone. Please allow microphone access.')
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+  }
+
+  const transcribeAudio = async (audioBlob: Blob) => {
+    setIsTranscribing(true)
+    try {
+      const formData = new FormData()
+      formData.append('audio', audioBlob, 'recording.webm')
+
+      const response = await axios.post(`${API_BASE}/knowledge/transcribe`, formData, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        }
+      })
+
+      if (response.data.success && response.data.transcription?.text) {
+        // Append transcribed text to input
+        setInputValue(prev => prev ? `${prev} ${response.data.transcription.text}` : response.data.transcription.text)
+      }
+    } catch (error) {
+      console.error('Transcription error:', error)
+      alert('Failed to transcribe audio. Please try again.')
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
+
   // Render markdown text with proper formatting
   const renderMarkdownMessage = (text: string) => {
     return (
@@ -566,39 +628,38 @@ export default function ChatInterface() {
               <div className="flex-1 flex flex-col items-center justify-center gap-6 w-full overflow-auto">
                 <div style={{ textAlign: 'center' }}>
                   <div style={{
-                    width: '80px',
+                    width: '64px',
                     height: '80px',
-                    borderRadius: '50%',
-                    background: `linear-gradient(135deg, ${warmTheme.primary} 0%, #B8948A 100%)`,
-                    margin: '0 auto 12px',
-                    overflow: 'hidden',
-                    border: `3px solid ${warmTheme.primaryLight}`
+                    margin: '0 auto 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
                   }}>
-                    <Image src="/Maya.png" alt="User" width={80} height={80} />
+                    <Image src="/owl.png" alt="2nd Brain" width={64} height={80} style={{ objectFit: 'contain' }} />
                   </div>
                   <h2 style={{
                     color: warmTheme.textPrimary,
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '24px',
-                    fontWeight: 600,
+                    fontSize: '26px',
+                    fontWeight: 700,
                     marginBottom: '8px'
                   }}>
-                    Welcome, {user?.full_name?.split(' ')[0] || 'User'}
+                    Hi {user?.full_name?.split(' ')[0] || 'there'}!
                   </h2>
                   <p style={{
                     color: warmTheme.textSecondary,
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '14px',
-                    marginBottom: '4px'
+                    fontSize: '15px',
+                    marginBottom: '6px'
                   }}>
-                    Ask anything about your organization's knowledge.
+                    Ask me anything about your knowledge base.
                   </p>
                   <p style={{
                     color: warmTheme.textMuted,
                     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '12px'
+                    fontSize: '13px'
                   }}>
-                    Try one of these to get started:
+                    Or try one of these to get started:
                   </p>
                 </div>
 
@@ -647,16 +708,27 @@ export default function ChatInterface() {
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+                    style={{
+                      display: 'flex',
+                      justifyContent: message.isUser ? 'flex-end' : 'flex-start'
+                    }}
                   >
                     <div
-                      className={`px-6 py-4 rounded-2xl ${
-                        message.isUser
-                          ? 'bg-white text-neutral-800 shadow-sm max-w-[50%]'
-                          : 'bg-transparent text-neutral-800 max-w-[70%]'
-                      }`}
+                      style={{
+                        padding: '16px 20px',
+                        borderRadius: '16px',
+                        maxWidth: message.isUser ? '60%' : '75%',
+                        backgroundColor: message.isUser ? '#FFFFFF' : warmTheme.primaryLight,
+                        border: message.isUser ? `1px solid ${warmTheme.border}` : 'none',
+                        boxShadow: message.isUser ? '0 1px 3px rgba(0,0,0,0.04)' : 'none'
+                      }}
                     >
-                      <div className="font-sans text-[15px] leading-relaxed prose prose-sm max-w-none">
+                      <div style={{
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                        fontSize: '15px',
+                        lineHeight: '1.6',
+                        color: warmTheme.textPrimary
+                      }}>
                         {message.isUser ? message.text : renderMarkdownMessage(message.text)}
                       </div>
 
@@ -751,31 +823,93 @@ export default function ChatInterface() {
 
                       {/* Feedback buttons for AI responses */}
                       {!message.isUser && (
-                        <div className="mt-2 flex items-center gap-1 pt-2">
+                        <div style={{
+                          marginTop: '12px',
+                          paddingTop: '12px',
+                          borderTop: `1px solid ${warmTheme.border}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
                           <button
                             onClick={() => handleFeedback(message, 'up')}
-                            className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+                            style={{
+                              padding: '6px',
+                              background: 'none',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              color: warmTheme.textMuted,
+                              display: 'flex',
+                              alignItems: 'center',
+                              transition: 'all 0.15s'
+                            }}
                             title="Good answer"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = warmTheme.border
+                              e.currentTarget.style.color = warmTheme.primary
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                              e.currentTarget.style.color = warmTheme.textMuted
+                            }}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
                             </svg>
                           </button>
                           <button
                             onClick={() => handleFeedback(message, 'down')}
-                            className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+                            style={{
+                              padding: '6px',
+                              background: 'none',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              color: warmTheme.textMuted,
+                              display: 'flex',
+                              alignItems: 'center',
+                              transition: 'all 0.15s'
+                            }}
                             title="Poor answer"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = warmTheme.border
+                              e.currentTarget.style.color = warmTheme.primary
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                              e.currentTarget.style.color = warmTheme.textMuted
+                            }}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
                             </svg>
                           </button>
                           <button
-                            className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors ml-1"
+                            style={{
+                              padding: '6px',
+                              background: 'none',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              color: warmTheme.textMuted,
+                              display: 'flex',
+                              alignItems: 'center',
+                              marginLeft: '4px',
+                              transition: 'all 0.15s'
+                            }}
                             title="Copy response"
                             onClick={() => navigator.clipboard.writeText(message.text)}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = warmTheme.border
+                              e.currentTarget.style.color = warmTheme.primary
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                              e.currentTarget.style.color = warmTheme.textMuted
+                            }}
                           >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                             </svg>
                           </button>
@@ -879,44 +1013,147 @@ export default function ChatInterface() {
             <div
               style={{
                 display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
+                alignItems: 'center',
+                gap: '12px',
                 alignSelf: 'stretch',
-                backgroundColor: '#FFFFFE',
-                borderRadius: '20px',
+                backgroundColor: '#FFFFFF',
+                borderRadius: '16px',
                 border: `1px solid ${warmTheme.border}`,
-                padding: '16px',
-                minHeight: '79px'
+                padding: '12px 16px',
+                transition: 'border-color 0.2s'
               }}
             >
-              <div className="flex items-center gap-3 w-full">
-                <button
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading || attachedFiles.length >= 5}
-                  title={attachedFiles.length >= 5 ? 'Max 5 files' : 'Attach files'}
-                >
-                  <Image src="/attach.svg" alt="Attach" width={20} height={20} />
-                </button>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || attachedFiles.length >= 5}
+                title={attachedFiles.length >= 5 ? 'Max 5 files' : 'Attach files'}
+                style={{
+                  padding: '8px',
+                  background: 'none',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: isUploading || attachedFiles.length >= 5 ? 'not-allowed' : 'pointer',
+                  opacity: isUploading || attachedFiles.length >= 5 ? 0.5 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  transition: 'background-color 0.15s'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isUploading && attachedFiles.length < 5) {
+                    e.currentTarget.style.backgroundColor = warmTheme.primaryLight
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={warmTheme.textSecondary} strokeWidth="2">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+                </svg>
+              </button>
 
-                <input
-                  type="text"
-                  placeholder={attachedFiles.length > 0 ? "Ask about your documents..." : "Write your message ..."}
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                  className="flex-1 outline-none text-gray-700 font-sans text-[15px]"
-                />
+              <input
+                type="text"
+                placeholder={isTranscribing ? "Transcribing..." : attachedFiles.length > 0 ? "Ask about your documents..." : "Ask anything..."}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                disabled={isTranscribing}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  outline: 'none',
+                  fontSize: '15px',
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  color: warmTheme.textPrimary,
+                  backgroundColor: 'transparent'
+                }}
+              />
 
-                <button
-                  onClick={handleSend}
-                  disabled={isLoading || isUploading || (!inputValue.trim() && attachedFiles.length === 0)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Image src="/send.svg" alt="Send" width={20} height={20} />
-                </button>
-              </div>
+              {/* Voice Recording Button */}
+              <button
+                onClick={() => isRecording ? stopRecording() : startRecording()}
+                disabled={isLoading || isUploading || isTranscribing}
+                title={isRecording ? 'Stop recording' : 'Start voice input'}
+                style={{
+                  padding: '8px',
+                  background: isRecording ? warmTheme.primary : 'none',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: isLoading || isUploading || isTranscribing ? 'not-allowed' : 'pointer',
+                  opacity: isLoading || isUploading || isTranscribing ? 0.5 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading && !isUploading && !isTranscribing && !isRecording) {
+                    e.currentTarget.style.backgroundColor = warmTheme.primaryLight
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isRecording) {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                  }
+                }}
+              >
+                {isTranscribing ? (
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    border: `2px solid ${warmTheme.border}`,
+                    borderTopColor: warmTheme.primary,
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                ) : (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke={isRecording ? '#FFFFFF' : warmTheme.textSecondary}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="22" />
+                  </svg>
+                )}
+              </button>
+
+              <button
+                onClick={handleSend}
+                disabled={isLoading || isUploading || isTranscribing || (!inputValue.trim() && attachedFiles.length === 0)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: isLoading || isUploading || isTranscribing || (!inputValue.trim() && attachedFiles.length === 0) ? warmTheme.border : warmTheme.primary,
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: isLoading || isUploading || isTranscribing || (!inputValue.trim() && attachedFiles.length === 0) ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'background-color 0.15s'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading && !isUploading && !isTranscribing && (inputValue.trim() || attachedFiles.length > 0)) {
+                    e.currentTarget.style.backgroundColor = warmTheme.primaryHover
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isLoading && !isUploading && !isTranscribing && (inputValue.trim() || attachedFiles.length > 0)) {
+                    e.currentTarget.style.backgroundColor = warmTheme.primary
+                  }
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>

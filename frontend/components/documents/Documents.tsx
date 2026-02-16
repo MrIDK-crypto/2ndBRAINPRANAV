@@ -1731,7 +1731,7 @@ export default function Documents() {
                   { label: 'Type', field: 'type' },
                   { label: 'Source', field: 'source_type' },
                   { label: 'Date', field: 'created' },
-                  { label: 'Embeddings', field: 'embedded_at' },
+                  { label: 'Searchable', field: 'embedded_at' },
                 ].map((col) => (
                   <button
                     key={col.field}
@@ -1846,7 +1846,7 @@ export default function Documents() {
                         {doc.created}
                       </span>
 
-                      {/* Embeddings - In Pinecone/Chatbot */}
+                      {/* Searchable - In Chatbot */}
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',

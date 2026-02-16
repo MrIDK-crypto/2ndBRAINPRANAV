@@ -2,61 +2,100 @@
 
 import React from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
+
+// Wellspring-Inspired Warm Design System
+const warmTheme = {
+  primary: '#C9A598',
+  primaryHover: '#B8948A',
+  primaryLight: '#FBF4F1',
+  pageBg: '#FAF9F7',
+  cardBg: '#FFFFFE',
+  textPrimary: '#2D2D2D',
+  textSecondary: '#6B6B6B',
+  textMuted: '#9A9A9A',
+  border: '#F0EEEC',
+}
 
 export default function TermsPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: '#F8FAFC',
+      backgroundColor: warmTheme.pageBg,
       padding: '40px 20px'
     }}>
       <div style={{
         maxWidth: '800px',
         margin: '0 auto',
-        backgroundColor: 'white',
-        borderRadius: '12px',
+        backgroundColor: warmTheme.cardBg,
+        borderRadius: '16px',
         padding: '40px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+        border: `1px solid ${warmTheme.border}`
       }}>
-        <Link href="/" style={{
-          display: 'inline-flex',
+        {/* Header with logo */}
+        <div style={{
+          display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          color: '#3B82F6',
-          textDecoration: 'none',
-          marginBottom: '24px',
-          fontFamily: '"Work Sans", sans-serif',
-          fontSize: '14px'
+          justifyContent: 'space-between',
+          marginBottom: '32px'
         }}>
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
-            <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Home
-        </Link>
+          <Link href="/" style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '12px',
+            textDecoration: 'none'
+          }}>
+            <Image src="/owl.png" alt="2nd Brain" width={36} height={45} style={{ objectFit: 'contain' }} />
+            <span style={{
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              fontSize: '18px',
+              fontWeight: 600,
+              color: warmTheme.textPrimary
+            }}>
+              2nd Brain
+            </span>
+          </Link>
+          <Link href="/" style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            color: warmTheme.primary,
+            textDecoration: 'none',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontSize: '14px',
+            fontWeight: 500
+          }}>
+            <svg width="16" height="16" fill="none" viewBox="0 0 24 24">
+              <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Home
+          </Link>
+        </div>
 
         <h1 style={{
-          fontFamily: '"Work Sans", sans-serif',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: '32px',
           fontWeight: 700,
-          color: '#081028',
+          color: warmTheme.textPrimary,
           marginBottom: '8px'
         }}>
           Terms and Conditions
         </h1>
 
         <p style={{
-          fontFamily: '"Work Sans", sans-serif',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: '14px',
-          color: '#6B7280',
+          color: warmTheme.textMuted,
           marginBottom: '32px'
         }}>
           Last updated: February 4, 2026
         </p>
 
         <div style={{
-          fontFamily: '"Work Sans", sans-serif',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: '15px',
-          color: '#374151',
+          color: warmTheme.textSecondary,
           lineHeight: '1.7'
         }}>
           <Section title="1. Agreement to Terms">
@@ -231,23 +270,25 @@ export default function TermsPage() {
         <div style={{
           marginTop: '40px',
           paddingTop: '24px',
-          borderTop: '1px solid #E5E7EB',
+          borderTop: `1px solid ${warmTheme.border}`,
           textAlign: 'center'
         }}>
           <Link href="/privacy" style={{
-            color: '#3B82F6',
+            color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '"Work Sans", sans-serif',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
             fontSize: '14px',
+            fontWeight: 500,
             marginRight: '24px'
           }}>
             Privacy Policy
           </Link>
           <Link href="/" style={{
-            color: '#3B82F6',
+            color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '"Work Sans", sans-serif',
-            fontSize: '14px'
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontSize: '14px',
+            fontWeight: 500
           }}>
             Return to Home
           </Link>
@@ -263,13 +304,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 style={{
         fontSize: '18px',
         fontWeight: 600,
-        color: '#081028',
+        color: '#2D2D2D',
         marginBottom: '12px'
       }}>
         {title}
       </h2>
       <div style={{
-        color: '#374151'
+        color: '#6B6B6B'
       }}>
         {React.Children.map(children, child => {
           if (React.isValidElement(child)) {
@@ -293,7 +334,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
                 style: {
                   fontSize: '15px',
                   fontWeight: 600,
-                  color: '#1F2937',
+                  color: '#2D2D2D',
                   marginTop: '16px',
                   marginBottom: '8px',
                   ...((child.props as any).style || {})

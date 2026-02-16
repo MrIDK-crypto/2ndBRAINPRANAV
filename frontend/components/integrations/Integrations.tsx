@@ -1960,111 +1960,111 @@ const IntegrationDetailsModal = ({
     docsUrl: string
   }> = {
     slack: {
-      fullDescription: 'Slack is a channel-based messaging platform. Connect Slack to automatically import messages, threads, and shared files from your workspace channels into your knowledge base.',
+      fullDescription: 'Bring your team conversations into your knowledge base. Connect Slack to save important messages, discussions, and files shared in your workspace so you can search and reference them later.',
       features: [
-        'Import messages from public and private channels',
-        'Capture threaded conversations',
-        'Index shared files and documents',
-        'Real-time sync with configurable intervals'
+        'Save messages from any channel you choose',
+        'Keep threaded conversations together',
+        'Include files and documents shared in Slack',
+        'Automatically stays up to date'
       ],
-      dataTypes: ['Messages', 'Threads', 'Files', 'User mentions'],
+      dataTypes: ['Messages', 'Conversations', 'Files', 'Links'],
       setupSteps: [
-        'Enter your Slack Bot User OAuth Token',
-        'Select channels to sync',
-        'Configure sync frequency',
-        'Start initial sync'
+        'Click Connect and sign in to Slack',
+        'Pick which channels to include',
+        'Choose how often to check for new messages',
+        'Click Start to begin importing'
       ],
-      brandColor: '#4A154B',
+      brandColor: '#C9A598',
       docsUrl: 'https://api.slack.com/docs'
     },
     gmail: {
-      fullDescription: 'Gmail integration allows you to import emails and attachments into your knowledge base. Capture important communications, decisions, and documents shared via email.',
+      fullDescription: 'Save important emails to your knowledge base. Connect Gmail to import emails and their attachments so you never lose track of important decisions, agreements, or information shared via email.',
       features: [
-        'Import emails from specific labels or all mail',
-        'Extract and index attachments',
-        'Smart filtering by sender or subject',
-        'Continuous sync for new emails'
+        'Choose specific folders or import all emails',
+        'Automatically saves email attachments',
+        'Filter by sender, subject, or date',
+        'New emails are added automatically'
       ],
-      dataTypes: ['Emails', 'Attachments', 'Contacts', 'Labels'],
+      dataTypes: ['Emails', 'Attachments', 'Contacts', 'Folders'],
       setupSteps: [
-        'Authenticate with Google OAuth',
-        'Select labels or folders to sync',
-        'Configure filters (optional)',
-        'Start synchronization'
+        'Click Connect and sign in with Google',
+        'Choose which email folders to import',
+        'Set up any filters you want (optional)',
+        'Click Start to begin importing'
       ],
-      brandColor: '#EA4335',
+      brandColor: '#C9A598',
       docsUrl: 'https://developers.google.com/gmail/api'
     },
     box: {
-      fullDescription: 'Box is a cloud content management platform. Connect Box to import documents, spreadsheets, presentations, and other files stored in your Box folders.',
+      fullDescription: 'Import your files from Box into your knowledge base. Connect Box to bring in documents, spreadsheets, presentations, and other files so you can search through all your content in one place.',
       features: [
-        'Sync files from selected folders',
-        'Support for 100+ file types',
-        'Automatic parsing and text extraction',
-        'Version history tracking'
+        'Choose specific folders to import',
+        'Works with all common file types',
+        'Reads and searches inside your documents',
+        'Keeps track of different file versions'
       ],
       dataTypes: ['Documents', 'Spreadsheets', 'Presentations', 'PDFs', 'Images'],
       setupSteps: [
-        'Authenticate with Box OAuth',
-        'Select folders to sync',
-        'Configure file type filters',
-        'Begin document import'
+        'Click Connect and sign in to Box',
+        'Select the folders you want to import',
+        'Choose which file types to include',
+        'Click Start to begin importing'
       ],
-      brandColor: '#0061D5',
+      brandColor: '#C9A598',
       docsUrl: 'https://developer.box.com/docs'
     },
     github: {
-      fullDescription: 'GitHub integration imports code repositories, documentation, issues, and pull requests. Perfect for capturing technical knowledge and development decisions.',
+      fullDescription: 'Import your code projects and documentation. Connect GitHub to bring in README files, project docs, discussions, and notes from your repositories into your knowledge base.',
       features: [
-        'Import README and documentation files',
-        'Index code comments and discussions',
-        'Capture issue and PR conversations',
-        'Track repository wikis'
+        'Import project documentation and READMEs',
+        'Save discussions and comments',
+        'Include issue conversations and decisions',
+        'Bring in wiki pages'
       ],
-      dataTypes: ['Code', 'Documentation', 'Issues', 'Pull Requests', 'Wikis'],
+      dataTypes: ['Documentation', 'Code', 'Discussions', 'Issues', 'Wikis'],
       setupSteps: [
-        'Authenticate with GitHub OAuth',
-        'Select repositories to sync',
-        'Choose content types to import',
-        'Start repository scan'
+        'Click Connect and sign in to GitHub',
+        'Select which repositories to import',
+        'Choose what content to include',
+        'Click Start to begin importing'
       ],
-      brandColor: '#24292F',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.github.com/en/rest'
     },
     zotero: {
-      fullDescription: 'Zotero is a free, open-source reference management tool. Connect Zotero to import your research papers, PDFs, citations, and notes directly into your knowledge base.',
+      fullDescription: 'Import your research library into your knowledge base. Connect Zotero to bring in all your saved papers, PDFs, notes, and citations so you can search and reference them easily.',
       features: [
-        'Import research papers and citations',
-        'Extract text from PDF attachments',
-        'Sync library metadata (authors, DOIs, abstracts)',
-        'Incremental sync for new items'
+        'Import all your saved papers and citations',
+        'Search inside PDF documents',
+        'Keep author names, dates, and abstracts',
+        'New items sync automatically'
       ],
-      dataTypes: ['Papers', 'PDFs', 'Citations', 'Notes', 'Tags'],
+      dataTypes: ['Research Papers', 'PDFs', 'Citations', 'Notes', 'Tags'],
       setupSteps: [
-        'Authenticate with Zotero OAuth',
-        'Authorize access to your library',
-        'Start library synchronization',
-        'Review imported documents'
+        'Click Connect and sign in to Zotero',
+        'Allow access to your library',
+        'Click Start to begin importing',
+        'Your papers will appear in Documents'
       ],
-      brandColor: '#CC2936',
+      brandColor: '#C9A598',
       docsUrl: 'https://www.zotero.org/support/dev/web_api/v3/start'
     },
     quartzy: {
-      fullDescription: 'Quartzy is a lab management platform for ordering supplies and tracking inventory. Connect your Quartzy account via API token or upload a CSV export to import inventory items and order requests into your knowledge base.',
+      fullDescription: 'Import your lab inventory and orders into your knowledge base. Connect Quartzy to bring in all your supplies, equipment, and order history so you can quickly find what you need.',
       features: [
-        'Import inventory items with full metadata',
-        'Import order request history',
-        'Upload CSV/Excel exports from Quartzy',
-        'Automatic AI-powered search via embeddings'
+        'Import all your inventory items',
+        'Include order history and requests',
+        'Upload spreadsheet exports if preferred',
+        'Search everything with AI'
       ],
-      dataTypes: ['Inventory Items', 'Order Requests', 'Vendor Info', 'Catalog Numbers'],
+      dataTypes: ['Inventory', 'Orders', 'Suppliers', 'Product Numbers'],
       setupSteps: [
-        'Generate an Access Token in Quartzy Settings > API',
-        'Paste the token and click Connect',
-        'Or upload a CSV/Excel export directly',
-        'Items are automatically indexed for AI search'
+        'Get your access key from Quartzy Settings',
+        'Paste it here and click Connect',
+        'Or just upload an exported spreadsheet',
+        'Your items will be searchable instantly'
       ],
-      brandColor: '#00BFA5',
+      brandColor: '#C9A598',
       docsUrl: 'https://support.quartzy.com/hc/en-us/articles/5333106670747-Quartzy-API-and-Webhooks'
     },
     website_builder: {
@@ -2086,59 +2086,203 @@ const IntegrationDetailsModal = ({
       docsUrl: '#'
     },
     powerpoint: {
-      fullDescription: 'Import Microsoft PowerPoint presentations to capture knowledge from slides, speaker notes, and embedded content. Great for onboarding materials and company presentations.',
+      fullDescription: 'Import your presentations into your knowledge base. Bring in PowerPoint files to make slide content and speaker notes searchable, perfect for training materials and company presentations.',
       features: [
-        'Extract text from all slides',
-        'Capture speaker notes',
-        'Index embedded images and charts',
-        'Maintain slide structure'
+        'Read text from all your slides',
+        'Include speaker notes',
+        'Import images and diagrams',
+        'Keep slides organized together'
       ],
-      dataTypes: ['Slides', 'Speaker Notes', 'Images', 'Charts'],
+      dataTypes: ['Slides', 'Speaker Notes', 'Images', 'Diagrams'],
       setupSteps: [
-        'Connect Microsoft 365 account',
-        'Select OneDrive folders',
-        'Choose presentation files',
-        'Begin import process'
+        'Click Connect and sign in with Microsoft',
+        'Choose folders containing presentations',
+        'Select the files you want',
+        'Click Start to begin importing'
       ],
-      brandColor: '#D24726',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.microsoft.com/en-us/office/dev/add-ins/'
     },
     excel: {
-      fullDescription: 'Microsoft Excel integration imports spreadsheet data, formulas, and structured information. Ideal for capturing data-driven knowledge and business metrics.',
+      fullDescription: 'Import your spreadsheets into your knowledge base. Bring in Excel files to make your data, reports, and business information searchable alongside all your other content.',
       features: [
-        'Import spreadsheet data and tables',
-        'Preserve data relationships',
-        'Extract charts and visualizations',
-        'Support for complex workbooks'
+        'Import data from your spreadsheets',
+        'Keep tables and formatting intact',
+        'Include charts and graphs',
+        'Works with complex workbooks'
       ],
-      dataTypes: ['Spreadsheets', 'Tables', 'Charts', 'Formulas'],
+      dataTypes: ['Spreadsheets', 'Tables', 'Charts', 'Data'],
       setupSteps: [
-        'Connect Microsoft 365 account',
-        'Select OneDrive folders',
-        'Choose Excel files',
-        'Configure import settings'
+        'Click Connect and sign in with Microsoft',
+        'Choose folders containing spreadsheets',
+        'Select the files you want',
+        'Click Start to begin importing'
       ],
-      brandColor: '#217346',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.microsoft.com/en-us/office/dev/add-ins/'
     },
     pubmed: {
-      fullDescription: 'PubMed is a free search engine accessing the MEDLINE database of references and abstracts on life sciences and biomedical topics. Import research papers, citations, and medical literature into your knowledge base.',
+      fullDescription: 'Search and import medical research papers. Access over 35 million scientific articles from PubMed to build a searchable library of medical and life science literature.',
       features: [
-        'Search 35+ million citations and abstracts',
-        'Import full paper metadata and abstracts',
-        'Track citation relationships',
-        'Access MeSH term classifications'
+        'Search millions of research papers',
+        'Import paper titles, authors, and summaries',
+        'Find related papers and citations',
+        'Access medical topic categories'
       ],
-      dataTypes: ['Papers', 'Abstracts', 'Citations', 'Authors', 'MeSH Terms'],
+      dataTypes: ['Research Papers', 'Summaries', 'Citations', 'Authors'],
       setupSteps: [
-        'Connect with NCBI API key (optional)',
-        'Configure search queries or topics',
-        'Select papers to import',
-        'Start literature sync'
+        'Enter your research topic or keywords',
+        'Set how many papers to import',
+        'Choose a date range (optional)',
+        'Click Start to find and import papers'
       ],
-      brandColor: '#326599',
+      brandColor: '#C9A598',
       docsUrl: 'https://pubmed.ncbi.nlm.nih.gov/help/'
     },
+    firecrawl: {
+      fullDescription: 'Import entire websites into your knowledge base. Just enter a web address and we\'ll automatically read all the pages, making the content searchable. Great for documentation sites and help centers.',
+      features: [
+        'Automatically finds and reads all pages',
+        'Works with modern interactive websites',
+        'Includes PDFs found on the site',
+        'Discovers linked pages automatically'
+      ],
+      dataTypes: ['Web Pages', 'PDFs', 'Articles', 'Documentation'],
+      setupSteps: [
+        'Enter the website address (URL)',
+        'Choose how deep to search (optional)',
+        'Click Start to begin reading the site',
+        'Content will appear in your Documents'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: 'https://docs.firecrawl.dev/'
+    },
+    'email-forwarding': {
+      fullDescription: 'The easiest way to save emails. Simply forward any email to a special address and it automatically gets added to your knowledge base. No setup or passwords needed.',
+      features: [
+        'Works with any email app',
+        'Attachments are saved automatically',
+        'Keeps email conversations together',
+        'No login or password needed'
+      ],
+      dataTypes: ['Emails', 'Attachments', 'Conversations'],
+      setupSteps: [
+        'Copy the special email address shown',
+        'Forward any email you want to save',
+        'Wait a moment for processing',
+        'Find your email in Documents'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: '#'
+    },
+    notion: {
+      fullDescription: 'Import your Notion workspace into your knowledge base. Bring in all your pages, notes, and databases so you can search everything in one place.',
+      features: [
+        'Import all your pages and subpages',
+        'Include databases and tables',
+        'Keep images and files',
+        'Preserve your page structure'
+      ],
+      dataTypes: ['Pages', 'Databases', 'Notes', 'Images'],
+      setupSteps: [
+        'Click Connect and sign in to Notion',
+        'Choose which workspace to use',
+        'Select the pages you want',
+        'Click Start to begin importing'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: 'https://developers.notion.com/'
+    },
+    gdrive: {
+      fullDescription: 'Import your Google Drive files into your knowledge base. Bring in documents, spreadsheets, presentations, PDFs, and more from your Drive and Shared Drives.',
+      features: [
+        'Import from your Drive or Shared Drives',
+        'Works with all Google file types',
+        'Reads content from your files',
+        'Keeps your folder organization'
+      ],
+      dataTypes: ['Documents', 'Spreadsheets', 'Presentations', 'PDFs'],
+      setupSteps: [
+        'Click Connect and sign in with Google',
+        'Choose which folders to import',
+        'Select the file types you want',
+        'Click Start to begin importing'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: 'https://developers.google.com/drive'
+    },
+    gdocs: {
+      fullDescription: 'Import your Google Docs into your knowledge base. Bring in all your documents with their formatting, comments, and content intact.',
+      features: [
+        'Keep document formatting',
+        'Include comments and suggestions',
+        'Preserve headings and structure',
+        'Import images and tables'
+      ],
+      dataTypes: ['Documents', 'Comments', 'Images', 'Tables'],
+      setupSteps: [
+        'Click Connect and sign in with Google',
+        'Choose which documents to import',
+        'Confirm your selection',
+        'Click Start to begin importing'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: 'https://developers.google.com/docs'
+    },
+    gsheets: {
+      fullDescription: 'Import your Google Sheets into your knowledge base. Bring in your spreadsheets and data so you can search through all your information.',
+      features: [
+        'Import all your spreadsheet data',
+        'Keep formulas and formatting',
+        'Include multiple sheets per file',
+        'Bring in charts and graphs'
+      ],
+      dataTypes: ['Spreadsheets', 'Data', 'Charts', 'Tables'],
+      setupSteps: [
+        'Click Connect and sign in with Google',
+        'Choose which spreadsheets to import',
+        'Select specific sheets (optional)',
+        'Click Start to begin importing'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: 'https://developers.google.com/sheets'
+    },
+    gslides: {
+      fullDescription: 'Import your Google Slides into your knowledge base. Bring in your presentations so you can search through slide content and speaker notes.',
+      features: [
+        'Import slide text and images',
+        'Include speaker notes',
+        'Keep diagrams and graphics',
+        'Preserve presentation structure'
+      ],
+      dataTypes: ['Slides', 'Speaker Notes', 'Images', 'Diagrams'],
+      setupSteps: [
+        'Click Connect and sign in with Google',
+        'Choose which presentations to import',
+        'Confirm your selection',
+        'Click Start to begin importing'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: 'https://developers.google.com/slides'
+    },
+    onedrive: {
+      fullDescription: 'Import your Microsoft 365 files into your knowledge base. Bring in Word documents, Excel spreadsheets, PowerPoint presentations, and PDFs from your OneDrive.',
+      features: [
+        'Import from OneDrive or SharePoint',
+        'Works with all Office file types',
+        'Reads content from your documents',
+        'Keeps file information intact'
+      ],
+      dataTypes: ['Word', 'Excel', 'PowerPoint', 'PDFs'],
+      setupSteps: [
+        'Click Connect and sign in with Microsoft',
+        'Choose which folders to import',
+        'Select the file types you want',
+        'Click Start to begin importing'
+      ],
+      brandColor: '#C9A598',
+      docsUrl: 'https://docs.microsoft.com/en-us/onedrive/developer/'
+    }
   }
 
   const details = integrationDetails[integration.id] || {
@@ -2146,7 +2290,7 @@ const IntegrationDetailsModal = ({
     features: ['Feature details coming soon'],
     dataTypes: ['Various'],
     setupSteps: ['Connect to get started'],
-    brandColor: '#7A7A7A',
+    brandColor: '#C9A598',
     docsUrl: '#'
   }
 
@@ -2721,13 +2865,13 @@ const IntegrationCard = ({
       }}
     >
       {/* Logo */}
-      <div style={{ width: '40px', height: '40px', flexShrink: 0 }}>
+      <div style={{ width: integration.id === 'pubmed' ? '56px' : '40px', height: integration.id === 'pubmed' ? '56px' : '40px', flexShrink: 0 }}>
         <Image
           src={integration.logo}
           alt={integration.name}
-          width={40}
-          height={40}
-          style={{ width: '40px', height: '40px', objectFit: 'contain' }}
+          width={integration.id === 'pubmed' ? 56 : 40}
+          height={integration.id === 'pubmed' ? 56 : 40}
+          style={{ width: integration.id === 'pubmed' ? '56px' : '40px', height: integration.id === 'pubmed' ? '56px' : '40px', objectFit: 'contain' }}
         />
       </div>
 
@@ -2901,6 +3045,7 @@ export default function Integrations() {
   const { startSync: globalStartSync } = useSyncProgress()
   const [activeItem, setActiveItem] = useState('Integrations')
   const [activeTab, setActiveTab] = useState('All Integrations')
+  const [searchQuery, setSearchQuery] = useState('')
   // Initialize without localStorage to avoid hydration mismatch
   const [integrationsState, setIntegrationsState] = useState(() =>
     integrations.map(int => ({
@@ -4356,8 +4501,24 @@ export default function Integrations() {
   }
 
   const getFilteredIntegrations = () => {
-    if (activeTab === 'All Integrations') return integrationsState
-    return integrationsState.filter(i => i.category === activeTab)
+    let filtered = integrationsState
+
+    // Filter by category
+    if (activeTab !== 'All Integrations') {
+      filtered = filtered.filter(i => i.category === activeTab)
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(i =>
+        i.name.toLowerCase().includes(query) ||
+        i.description.toLowerCase().includes(query) ||
+        i.category.toLowerCase().includes(query)
+      )
+    }
+
+    return filtered
   }
 
   const filteredIntegrations = getFilteredIntegrations()
@@ -4370,30 +4531,81 @@ export default function Integrations() {
       {/* Main Content */}
       <div style={{ flex: 1, padding: '32px 48px' }}>
         {/* Header */}
-        <div style={{ marginBottom: '32px' }}>
-          <h1
-            style={{
-              color: warmTheme.textPrimary,
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              fontSize: '32px',
-              fontWeight: 700,
-              lineHeight: '40px',
-              marginBottom: '8px'
-            }}
-          >
-            Integrations
-          </h1>
-          <p
-            style={{
-              color: warmTheme.textSecondary,
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              fontSize: '16px',
-              fontWeight: 400,
-              lineHeight: '24px'
-            }}
-          >
-            Connect your tools and services to build your knowledge base
-          </p>
+        <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1
+              style={{
+                color: warmTheme.textPrimary,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                fontSize: '32px',
+                fontWeight: 700,
+                lineHeight: '40px',
+                marginBottom: '8px'
+              }}
+            >
+              Integrations
+            </h1>
+            <p
+              style={{
+                color: warmTheme.textSecondary,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                fontSize: '16px',
+                fontWeight: 400,
+                lineHeight: '24px'
+              }}
+            >
+              Connect your tools and services to build your knowledge base
+            </p>
+          </div>
+          {/* Search */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '12px 18px',
+            backgroundColor: warmTheme.cardBg,
+            borderRadius: '12px',
+            border: `1px solid ${warmTheme.border}`,
+            minWidth: '280px'
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={warmTheme.textMuted} strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search integrations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                flex: 1,
+                border: 'none',
+                outline: 'none',
+                backgroundColor: 'transparent',
+                fontSize: '14px',
+                color: warmTheme.textPrimary,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={warmTheme.textMuted} strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}

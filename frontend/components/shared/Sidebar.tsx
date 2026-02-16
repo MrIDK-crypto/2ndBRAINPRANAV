@@ -154,12 +154,12 @@ export default function Sidebar({
         <div style={{ marginBottom: '32px' }}>
           <Link href="/">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-              <div style={{ width: '40px', height: '50px', flexShrink: 0 }}>
+              <div style={{ width: '48px', height: '60px', flexShrink: 0 }}>
                 <Image
                   src="/owl.png"
                   alt="2nd Brain Logo"
-                  width={40}
-                  height={50}
+                  width={48}
+                  height={60}
                   style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />
               </div>
