@@ -151,7 +151,7 @@ export default function ChatInterface() {
   // Note: X-Tenant removed - tenant ID extracted from JWT on backend
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
   }
 
   // Handle file selection for chat attachments
@@ -404,7 +404,8 @@ export default function ChatInterface() {
       // Build source name mapping for inline citations
       const sourceMapData: { [key: string]: { name: string; doc_id: string } } = {}
       response.data.sources?.forEach((s: any, idx: number) => {
-        const sourceName = s.metadata?.file_name || s.doc_id || s.chunk_id || `Source ${idx + 1}`
+        // Never use raw doc_id/chunk_id as display name — use title or generic label
+        const sourceName = s.metadata?.file_name || s.title || s.metadata?.title || s.metadata?.subject || `Source ${idx + 1}`
         const doc_id = s.doc_id || s.chunk_id || ''
         // Clean up source name - get just the filename
         const cleanName = sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName
@@ -464,9 +465,12 @@ export default function ChatInterface() {
         }
       )
 
-      const aiSources = response.data.sources?.map((s: any) => ({
+      // Add commas between consecutive source markers (e.g. ]] [[SOURCE: → ]], [[SOURCE:)
+      cleanedAnswer = cleanedAnswer.replace(/\]\]\s+\[\[SOURCE:/g, ']], [[SOURCE:')
+
+      const aiSources = response.data.sources?.map((s: any, idx: number) => ({
         doc_id: s.doc_id || s.chunk_id,
-        subject: s.metadata?.file_name || s.doc_id || s.chunk_id,
+        subject: s.metadata?.file_name || s.title || s.metadata?.title || s.metadata?.subject || `Source ${idx + 1}`,
         project: s.metadata?.project || 'Unknown',
         score: s.rerank_score || s.score,
         content: s.content?.substring(0, 200) + '...'
@@ -594,22 +598,26 @@ export default function ChatInterface() {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          // Style code blocks
+          // Style code blocks — pre handles the container, code just renders text
           code: ({ className, children, ...props }: any) => {
-            const isInline = !className
-            return isInline ? (
-              <code className="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono text-gray-800" {...props}>
-                {children}
-              </code>
-            ) : (
-              <code className="block bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm font-mono my-2" {...props}>
+            // If inside a pre (block code) — className is set for language-tagged blocks
+            if (className) {
+              return (
+                <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, monospace', fontSize: '13px', lineHeight: '1.6' }} {...props}>
+                  {children}
+                </code>
+              )
+            }
+            // Inline code
+            return (
+              <code style={{ backgroundColor: '#E5E7EB', padding: '2px 6px', borderRadius: '4px', fontSize: '0.9em', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#374151' }} {...props}>
                 {children}
               </code>
             )
           },
-          // Style pre blocks (code containers)
+          // Style pre blocks (code containers) — all block code goes through pre
           pre: ({ children }: any) => (
-            <pre className="bg-gray-900 rounded-lg overflow-x-auto my-3">
+            <pre style={{ backgroundColor: '#1E1E2E', color: '#CDD6F4', borderRadius: '12px', padding: '16px', overflow: 'auto', margin: '12px 0', fontSize: '13px', lineHeight: '1.6', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, monospace' }}>
               {children}
             </pre>
           ),
@@ -642,25 +650,25 @@ export default function ChatInterface() {
           // Style tables (GFM)
           table: ({ children }: any) => (
             <div className="overflow-x-auto my-3">
-              <table className="min-w-full border-collapse text-sm" style={{ border: '1px solid #E5E7EB' }}>
+              <table className="min-w-full border-collapse text-sm" style={{ border: '1px solid #D1D5DB', borderRadius: '8px' }}>
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }: any) => (
-            <thead style={{ backgroundColor: '#F9FAFB' }}>{children}</thead>
+            <thead style={{ backgroundColor: '#E5E7EB' }}>{children}</thead>
           ),
           tbody: ({ children }: any) => (
             <tbody>{children}</tbody>
           ),
           tr: ({ children }: any) => (
-            <tr style={{ borderBottom: '1px solid #E5E7EB' }}>{children}</tr>
+            <tr style={{ borderBottom: '1px solid #D1D5DB' }}>{children}</tr>
           ),
           th: ({ children }: any) => (
-            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB' }}>{children}</th>
+            <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#1F2937', border: '1px solid #D1D5DB', backgroundColor: '#E5E7EB' }}>{children}</th>
           ),
           td: ({ children }: any) => (
-            <td style={{ padding: '8px 12px', color: '#4B5563', border: '1px solid #E5E7EB' }}>{children}</td>
+            <td style={{ padding: '10px 14px', color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#F9FAFB' }}>{children}</td>
           ),
         }}
       >
