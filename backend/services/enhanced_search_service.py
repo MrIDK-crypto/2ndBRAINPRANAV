@@ -327,6 +327,65 @@ class CrossEncoderReranker:
 
 
 # =============================================================================
+# LLM-BASED RERANKING
+# =============================================================================
+
+class LLMReranker:
+    """LLM-based reranker using Azure OpenAI for high-accuracy relevance scoring"""
+
+    def __init__(self, client):
+        self.client = client
+
+    def rerank(self, query: str, results: List[Dict], top_k: int = 10) -> List[Dict]:
+        if not results:
+            return []
+
+        # Build passage list for scoring (first 300 chars each, max 30 passages)
+        passages = []
+        for i, r in enumerate(results[:30]):
+            content = (r.get('content', '') or r.get('content_preview', ''))[:300]
+            title = r.get('title', '')[:100]
+            passages.append(f"{i+1}. [{title}] {content}")
+
+        passages_text = "\n".join(passages)
+
+        prompt = f"""Score each passage's relevance to the query on a scale of 0-10.
+0 = completely irrelevant, 10 = directly answers the query.
+
+Query: {query}
+
+Passages:
+{passages_text}
+
+Return ONLY a JSON array of scores in order, e.g. [8, 3, 9, ...]. No other text."""
+
+        try:
+            response = self.client.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=200
+            )
+            scores_text = response.choices[0].message.content.strip()
+            import json as _json
+            scores = _json.loads(scores_text)
+
+            # Apply scores
+            for i, r in enumerate(results[:30]):
+                if i < len(scores):
+                    r['rerank_score'] = float(scores[i])
+                else:
+                    r['rerank_score'] = 0.0
+
+            # Sort by score descending
+            scored = sorted(results[:30], key=lambda x: x.get('rerank_score', 0), reverse=True)
+            return scored[:top_k]
+
+        except Exception as e:
+            print(f"[LLMReranker] Failed, falling back to original order: {e}")
+            return results[:top_k]
+
+
+# =============================================================================
 # MMR DIVERSITY SELECTION
 # =============================================================================
 
@@ -677,6 +736,7 @@ class EnhancedSearchService:
 
         # Initialize components
         self.reranker = CrossEncoderReranker()
+        self.llm_reranker = LLMReranker(self.client)
         self.hallucination_detector = HallucinationDetector(self.client)
 
         # Cache for embeddings
@@ -684,6 +744,7 @@ class EnhancedSearchService:
 
         print("[EnhancedSearch] Service initialized")
         print(f"[EnhancedSearch] Cross-encoder available: {self.reranker.model is not None}")
+        print(f"[EnhancedSearch] LLM reranker: enabled")
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding with caching"""
@@ -806,12 +867,12 @@ class EnhancedSearchService:
             if boosted_count > 0:
                 print(f"[EnhancedSearch] Boosted {boosted_count} newly uploaded documents")
 
-        # Step 4: Cross-encoder reranking
+        # Step 4: LLM-based reranking (upgraded from cross-encoder)
         reranked = False
-        if use_reranking and self.reranker.model:
-            initial_results = self.reranker.rerank(query, initial_results, top_k=top_k * 2)
+        if use_reranking:
+            initial_results = self.llm_reranker.rerank(search_query, initial_results, top_k=top_k * 2)
             reranked = True
-            print(f"[EnhancedSearch] Reranked to {len(initial_results)} results")
+            print(f"[EnhancedSearch] LLM-reranked to {len(initial_results)} results")
 
         # Step 5: MMR diversity selection
         mmr_applied = False
@@ -861,12 +922,31 @@ class EnhancedSearchService:
             }
         }
 
+    def _classify_query_complexity(self, query: str) -> str:
+        """Classify query as simple/medium/complex for adaptive context sizing"""
+        q = query.lower().strip()
+        word_count = len(q.split())
+
+        complex_signals = [
+            'compare', 'contrast', 'analyze', 'analysis', 'comprehensive',
+            'explain in detail', 'pros and cons', 'advantages and disadvantages',
+            'step by step', 'how does', 'walk me through', 'deep dive',
+            'what are all', 'list all', 'everything about', 'full overview'
+        ]
+        if any(s in q for s in complex_signals) or word_count > 25 or q.count('?') > 1:
+            return 'complex'
+
+        if word_count <= 8:
+            return 'simple'
+
+        return 'medium'
+
     def generate_answer(
         self,
         query: str,
         search_results: Dict,
         validate: bool = True,
-        max_context_tokens: int = 12000,
+        max_context_tokens: int = None,
         conversation_history: list = None
     ) -> Dict:
         """
@@ -876,7 +956,7 @@ class EnhancedSearchService:
             query: User query
             search_results: Results from enhanced_search
             validate: Run hallucination detection
-            max_context_tokens: Max tokens for context
+            max_context_tokens: Max tokens for context (auto-detected if None)
             conversation_history: Previous messages for multi-turn conversations
 
         Returns:
@@ -893,19 +973,37 @@ class EnhancedSearchService:
                 'hallucination_check': None
             }
 
-        # Build context with FULL content (not just 500 chars)
+        # Adaptive context based on query complexity
+        complexity = self._classify_query_complexity(query)
+        CONTEXT_SETTINGS = {
+            'simple':  {'tokens': 16000, 'max_sources': 8,  'chars_per_source': 4000, 'response_tokens': 2000},
+            'medium':  {'tokens': 32000, 'max_sources': 12, 'chars_per_source': 5000, 'response_tokens': 3000},
+            'complex': {'tokens': 64000, 'max_sources': 20, 'chars_per_source': 6000, 'response_tokens': 4000},
+        }
+        settings = CONTEXT_SETTINGS[complexity]
+
+        # Override with explicit parameter if provided
+        if max_context_tokens:
+            settings['tokens'] = max_context_tokens
+
+        max_sources = settings['max_sources']
+        chars_per_source = settings['chars_per_source']
+        response_tokens = settings['response_tokens']
+
+        print(f"[EnhancedSearch] Query complexity: {complexity}, context: {settings['tokens']}t, sources: {max_sources}, response: {response_tokens}t")
+
+        # Build context with adaptive sizing
         context_parts = []
         total_chars = 0
-        max_chars = max_context_tokens * 4  # ~4 chars per token
+        max_chars = settings['tokens'] * 4  # ~4 chars per token
 
-        for i, result in enumerate(results[:15], 1):  # Use up to 15 sources
+        for i, result in enumerate(results[:max_sources], 1):
             content = result.get('content', '') or result.get('content_preview', '')
             title = result.get('title', 'Untitled')
             score = result.get('rerank_score', result.get('score', 0))
 
-            # Don't truncate aggressively - use more content
-            if len(content) > 3000:
-                content = content[:3000] + "..."
+            if len(content) > chars_per_source:
+                content = content[:chars_per_source] + "..."
 
             if total_chars + len(content) > max_chars:
                 remaining = max_chars - total_chars
@@ -996,7 +1094,7 @@ End with "Sources Used: [list numbers]"."""
             response = self.client.chat_completion(
                 messages=messages,
                 temperature=0.1,  # Low for factual consistency
-                max_tokens=2000
+                max_tokens=response_tokens
             )
 
             answer = response.choices[0].message.content.strip()
@@ -1021,18 +1119,20 @@ End with "Sources Used: [list numbers]"."""
             return {
                 'answer': answer,
                 'confidence': base_confidence,
-                'sources': results[:10],
+                'sources': results[:max_sources],
                 'hallucination_check': hallucination_check,
                 'citation_check': citation_check,
                 'context_chars': total_chars,
-                'sources_used': len(context_parts)
+                'sources_used': len(context_parts),
+                'query_complexity': complexity,
+                'response_tokens': response_tokens
             }
 
         except Exception as e:
             return {
                 'answer': f"Error generating answer: {str(e)}",
                 'confidence': 0.0,
-                'sources': results[:10],
+                'sources': results[:max_sources],
                 'error': str(e)
             }
 

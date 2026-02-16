@@ -421,26 +421,29 @@ export default function ChatInterface() {
         if (source) {
           return `[[SOURCE:${source.name}:${source.doc_id}]]`
         }
-        return match
+        // No mapping — remove the raw [Source N] text entirely so it doesn't clutter the answer
+        return ''
       })
       // Also handle [Source X, Source Y] format (full prefix)
       cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+), Source (\d+)\]/g, (match: string, num1: string, num2: string) => {
         const source1 = sourceMapData[`Source ${num1}`]
         const source2 = sourceMapData[`Source ${num2}`]
-        if (source1 && source2) {
-          return `[[SOURCE:${source1.name}:${source1.doc_id}]], [[SOURCE:${source2.name}:${source2.doc_id}]]`
-        }
-        return match
+        const parts = []
+        if (source1) parts.push(`[[SOURCE:${source1.name}:${source1.doc_id}]]`)
+        if (source2) parts.push(`[[SOURCE:${source2.name}:${source2.doc_id}]]`)
+        return parts.length > 0 ? parts.join(', ') : ''
       })
       // Handle [Source 1, 2] or [Source 1, 2, 3] shorthand format
       cleanedAnswer = cleanedAnswer.replace(
         /\[Source (\d+(?:,\s*\d+)+)\]/g,
         (match: string, nums: string) => {
           const numbers = nums.split(/,\s*/)
-          const markers = numbers.map((n: string) => {
-            const source = sourceMapData[`Source ${n.trim()}`]
-            return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : `[Source ${n.trim()}]`
-          })
+          const markers = numbers
+            .map((n: string) => {
+              const source = sourceMapData[`Source ${n.trim()}`]
+              return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : null
+            })
+            .filter(Boolean)
           return markers.join(', ')
         }
       )
@@ -449,10 +452,12 @@ export default function ChatInterface() {
         /\[Sources (\d+(?:,\s*\d+)+)\]/gi,
         (match: string, nums: string) => {
           const numbers = nums.split(/,\s*/)
-          const markers = numbers.map((n: string) => {
-            const source = sourceMapData[`Source ${n.trim()}`]
-            return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : `[Source ${n.trim()}]`
-          })
+          const markers = numbers
+            .map((n: string) => {
+              const source = sourceMapData[`Source ${n.trim()}`]
+              return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : null
+            })
+            .filter(Boolean)
           return markers.join(', ')
         }
       )
@@ -461,12 +466,20 @@ export default function ChatInterface() {
         /\[Source (\d+):\s*[^\]]+\]/g,
         (match: string, num: string) => {
           const source = sourceMapData[`Source ${num}`]
-          return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : match
+          return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : ''
         }
       )
 
+      // Catch-all: remove any remaining raw [Source N] that weren't mapped
+      cleanedAnswer = cleanedAnswer.replace(/\[Sources?\s*\d+(?:,\s*\d+)*\]/gi, '')
+
       // Add commas between consecutive source markers (e.g. ]] [[SOURCE: → ]], [[SOURCE:)
       cleanedAnswer = cleanedAnswer.replace(/\]\]\s+\[\[SOURCE:/g, ']], [[SOURCE:')
+
+      // Clean up orphaned commas and extra whitespace from removed sources
+      cleanedAnswer = cleanedAnswer.replace(/,\s*,/g, ',')
+      cleanedAnswer = cleanedAnswer.replace(/\s{2,}/g, ' ')
+      cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n')
 
       const aiSources = response.data.sources?.map((s: any, idx: number) => ({
         doc_id: s.doc_id || s.chunk_id,
@@ -635,7 +648,7 @@ export default function ChatInterface() {
           li: ({ children }: any) => <li className="mb-1">{children}</li>,
           // Style links
           a: ({ href, children }: any) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#C9A598', textDecoration: 'none' }} onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'} onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}>
+            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#8B5E4B', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '2px' }} onMouseEnter={(e) => e.currentTarget.style.color = '#6B4436'} onMouseLeave={(e) => e.currentTarget.style.color = '#8B5E4B'}>
               {children}
             </a>
           ),
@@ -715,7 +728,7 @@ export default function ChatInterface() {
         {/* Chat Area */}
         <div className="flex-1 flex items-center justify-center px-8 py-4 overflow-hidden" style={{ backgroundColor: warmTheme.chatBg }}>
           <div
-            className="flex flex-col justify-end items-center gap-5 rounded-3xl p-5 h-full max-h-[calc(100vh-40px)] w-full"
+            className="flex flex-col items-center gap-5 rounded-3xl p-5 h-full max-h-[calc(100vh-40px)] w-full"
             style={{ maxWidth: '1000px', backgroundColor: '#F7F5F3', border: '1px solid #F0EEEC' }}
           >
             {/* Messages or Welcome Screen */}
