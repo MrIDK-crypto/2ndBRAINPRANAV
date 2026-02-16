@@ -123,9 +123,11 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
               failedItems: data.failed_items ?? existing.failedItems,
               currentItem: data.current_item,
               errorMessage: data.error_message,
-              percentComplete: data.total_items > 0
-                ? Math.round((data.processed_items / data.total_items) * 100)
-                : 0
+              percentComplete: data.overall_percent ?? data.percent_complete ?? (
+                data.total_items > 0
+                  ? Math.round((data.processed_items / data.total_items) * 100)
+                  : existing.percentComplete
+              )
             })
           }
           return next

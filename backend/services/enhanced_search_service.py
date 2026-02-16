@@ -941,9 +941,10 @@ RESPONSE FORMAT:
 - Keep paragraphs focused and clear
 
 CITATION FORMAT:
-- Cite every factual claim: [Source 1], [Source 2]
-- For code snippets, cite the source file: [Source 3: filename.py]
-- If combining info from multiple sources, cite all: [Source 1, 2]
+- Cite every factual claim with separate brackets: [Source 1] [Source 2]
+- For multiple sources on one claim: [Source 1] [Source 2] [Source 3]
+- ALWAYS use the format [Source N] with exactly one number per bracket
+- Never combine numbers like [Source 1, 2] or [Sources 1, 2]
 
 HONESTY REQUIREMENTS:
 - If asked about something not in sources: "I don't have that information in my knowledge base."

@@ -7,6 +7,7 @@ import axios from 'axios'
 import { useAuth } from '@/contexts/AuthContext'
 import { sessionManager } from '@/utils/sessionManager'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
@@ -421,7 +422,7 @@ export default function ChatInterface() {
         }
         return match
       })
-      // Also handle [Source X, Source Y] format
+      // Also handle [Source X, Source Y] format (full prefix)
       cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+), Source (\d+)\]/g, (match: string, num1: string, num2: string) => {
         const source1 = sourceMapData[`Source ${num1}`]
         const source2 = sourceMapData[`Source ${num2}`]
@@ -430,6 +431,38 @@ export default function ChatInterface() {
         }
         return match
       })
+      // Handle [Source 1, 2] or [Source 1, 2, 3] shorthand format
+      cleanedAnswer = cleanedAnswer.replace(
+        /\[Source (\d+(?:,\s*\d+)+)\]/g,
+        (match: string, nums: string) => {
+          const numbers = nums.split(/,\s*/)
+          const markers = numbers.map((n: string) => {
+            const source = sourceMapData[`Source ${n.trim()}`]
+            return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : `[Source ${n.trim()}]`
+          })
+          return markers.join(', ')
+        }
+      )
+      // Handle [Sources 1, 2, 3] plural format
+      cleanedAnswer = cleanedAnswer.replace(
+        /\[Sources (\d+(?:,\s*\d+)+)\]/gi,
+        (match: string, nums: string) => {
+          const numbers = nums.split(/,\s*/)
+          const markers = numbers.map((n: string) => {
+            const source = sourceMapData[`Source ${n.trim()}`]
+            return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : `[Source ${n.trim()}]`
+          })
+          return markers.join(', ')
+        }
+      )
+      // Handle [Source 3: filename.py] format (with filename after colon)
+      cleanedAnswer = cleanedAnswer.replace(
+        /\[Source (\d+):\s*[^\]]+\]/g,
+        (match: string, num: string) => {
+          const source = sourceMapData[`Source ${num}`]
+          return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : match
+        }
+      )
 
       const aiSources = response.data.sources?.map((s: any) => ({
         doc_id: s.doc_id || s.chunk_id,
@@ -536,8 +569,30 @@ export default function ChatInterface() {
 
   // Render markdown text with proper formatting
   const renderMarkdownMessage = (text: string) => {
+    // Pre-process: Convert [[SOURCE:name:doc_id]] markers into markdown links
+    const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+    const shareToken = sessionManager.getShareToken()
+    const authToken = sourceToken || shareToken
+    const processedText = text.replace(
+      /\[\[SOURCE:([^:]+):([^\]]+)\]\]/g,
+      (match: string, name: string, docId: string) => {
+        const hasValidDocId = docId && docId.length >= 32
+        if (hasValidDocId && authToken) {
+          const tokenParam = sourceToken
+            ? `token=${encodeURIComponent(sourceToken)}`
+            : `share_token=${encodeURIComponent(shareToken || '')}`
+          const url = `${API_BASE}/documents/${encodeURIComponent(docId)}/view?${tokenParam}`
+          return `[${name}](${url})`
+        } else if (hasValidDocId) {
+          return `[${name}](${API_BASE}/documents/${encodeURIComponent(docId)}/view)`
+        }
+        return `**${name}**`
+      }
+    )
+
     return (
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         components={{
           // Style code blocks
           code: ({ className, children, ...props }: any) => {
@@ -584,9 +639,32 @@ export default function ChatInterface() {
           ),
           // Style strong/bold
           strong: ({ children }: any) => <strong className="font-semibold">{children}</strong>,
+          // Style tables (GFM)
+          table: ({ children }: any) => (
+            <div className="overflow-x-auto my-3">
+              <table className="min-w-full border-collapse text-sm" style={{ border: '1px solid #E5E7EB' }}>
+                {children}
+              </table>
+            </div>
+          ),
+          thead: ({ children }: any) => (
+            <thead style={{ backgroundColor: '#F9FAFB' }}>{children}</thead>
+          ),
+          tbody: ({ children }: any) => (
+            <tbody>{children}</tbody>
+          ),
+          tr: ({ children }: any) => (
+            <tr style={{ borderBottom: '1px solid #E5E7EB' }}>{children}</tr>
+          ),
+          th: ({ children }: any) => (
+            <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', border: '1px solid #E5E7EB' }}>{children}</th>
+          ),
+          td: ({ children }: any) => (
+            <td style={{ padding: '8px 12px', color: '#4B5563', border: '1px solid #E5E7EB' }}>{children}</td>
+          ),
         }}
       >
-        {text}
+        {processedText}
       </ReactMarkdown>
     )
   }

@@ -11,11 +11,14 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, List
 
 # Email configuration from environment
+# Fall back to FORWARD_EMAIL credentials (same Gmail account used for email forwarding)
 SMTP_HOST = os.getenv('SMTP_HOST', 'smtp.gmail.com')
 SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SMTP_USER = os.getenv('SMTP_USER', '')
-SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
-SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', 'noreply@2ndbrain.ai')
+SMTP_USER = os.getenv('SMTP_USER') or os.getenv('FORWARD_EMAIL_ADDRESS', '')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD') or os.getenv('FORWARD_EMAIL_PASSWORD', '')
+# CRITICAL: Gmail SMTP can only send from the authenticated account.
+# Fall back to SMTP_USER (the Gmail address) instead of noreply@2ndbrain.ai
+SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or SMTP_USER or 'noreply@2ndbrain.ai'
 SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', '2nd Brain')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3006')
 
@@ -312,8 +315,15 @@ View your documents: {FRONTEND_URL}/documents
             print(f"[EmailService] Sent notification to {to_email}: {subject}")
             return True
 
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"[EmailService] SMTP AUTH FAILED for {SMTP_USER}: {e}", flush=True)
+            print(f"[EmailService] Ensure you're using a Gmail App Password, not your regular password", flush=True)
+            return False
+        except smtplib.SMTPSenderRefused as e:
+            print(f"[EmailService] SENDER REFUSED: from={SMTP_FROM_EMAIL}. Gmail can only send from the authenticated account ({SMTP_USER}). Error: {e}", flush=True)
+            return False
         except Exception as e:
-            print(f"[EmailService] Failed to send email to {to_email}: {e}")
+            print(f"[EmailService] Failed to send email to {to_email}: {type(e).__name__}: {e}", flush=True)
             import traceback
             traceback.print_exc()
             return False

@@ -3427,6 +3427,58 @@ def sync_connector(connector_type: str):
         }), 500
 
 
+def _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=False):
+    """Run sync with a heartbeat thread that sends progress updates during the blocking fetch phase"""
+    import threading
+    result = [None]
+    error = [None]
+    done = threading.Event()
+
+    def heartbeat():
+        tick = 0
+        messages = [
+            f'Connecting to {connector_type.replace("_", " ").title()}...',
+            f'Fetching {connector_type.replace("_", " ").title()} data...',
+            f'Downloading items from {connector_type.replace("_", " ").title()}...',
+            f'Still fetching from {connector_type.replace("_", " ").title()}...',
+        ]
+        while not done.is_set():
+            done.wait(timeout=5)
+            if done.is_set():
+                break
+            tick += 1
+            msg = messages[min(tick, len(messages) - 1)]
+            if sync_id:
+                try:
+                    progress_service.update_progress(
+                        sync_id, status='fetching',
+                        stage=msg, overall_percent=0.0
+                    )
+                except Exception:
+                    pass
+
+    heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+    heartbeat_thread.start()
+
+    try:
+        if is_async:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            result[0] = loop.run_until_complete(instance.sync(since))
+            loop.close()
+        else:
+            result[0] = instance.sync(since)
+    except Exception as e:
+        error[0] = e
+    finally:
+        done.set()
+        heartbeat_thread.join(timeout=2)
+
+    if error[0]:
+        raise error[0]
+    return result[0]
+
+
 def _run_connector_sync(
     connector_id: str,
     connector_type: str,
@@ -3678,15 +3730,15 @@ def _run_connector_sync(
                     # Notion uses synchronous notion-client SDK
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Notion pages...')
-                    print(f"[Sync] Calling notion sync directly (synchronous)")
-                    documents = instance.sync(since)
+                    print(f"[Sync] Calling notion sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] Notion sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gdrive':
                     # GDrive uses synchronous Google API
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Drive files...')
-                    print(f"[Sync] Calling gdrive sync directly (synchronous)")
-                    documents = instance.sync(since)
+                    print(f"[Sync] Calling gdrive sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GDrive sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'firecrawl':
                     # Firecrawl uses synchronous requests library - call directly
@@ -3704,33 +3756,33 @@ def _run_connector_sync(
                 elif connector_type == 'gdocs':
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Docs...')
-                    print(f"[Sync] Calling gdocs sync directly (synchronous)")
-                    documents = instance.sync(since)
+                    print(f"[Sync] Calling gdocs sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GDocs sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gsheets':
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Sheets...')
-                    print(f"[Sync] Calling gsheets sync directly (synchronous)")
-                    documents = instance.sync(since)
+                    print(f"[Sync] Calling gsheets sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GSheets sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gslides':
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Slides...')
-                    print(f"[Sync] Calling gslides sync directly (synchronous)")
-                    documents = instance.sync(since)
+                    print(f"[Sync] Calling gslides sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GSlides sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gcalendar':
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Calendar events...')
-                    print(f"[Sync] Calling gcalendar sync directly (synchronous)")
-                    documents = instance.sync(since)
+                    print(f"[Sync] Calling gcalendar sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GCalendar sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'onedrive':
-                    # OneDrive uses synchronous requests library - call directly
+                    # OneDrive uses synchronous requests library
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching OneDrive files...')
-                    print(f"[Sync] Calling onedrive sync directly (synchronous)", flush=True)
-                    documents = instance.sync(since)
+                    print(f"[Sync] Calling onedrive sync with heartbeat (synchronous)", flush=True)
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] OneDrive sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'github':
                     # GitHub sync does LLM analysis which takes time - update progress at each stage
@@ -3753,11 +3805,11 @@ def _run_connector_sync(
                         )
                     print(f"[Sync] GitHub sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'zotero':
-                    # Zotero uses async methods - needs event loop
+                    # Zotero uses async methods - needs event loop with heartbeat
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Zotero library...')
-                    print(f"[Sync] Starting Zotero sync...")
-                    documents = loop.run_until_complete(instance.sync(since))
+                    print(f"[Sync] Starting Zotero sync with heartbeat...")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=True)
                     if sync_id and documents:
                         progress_service.update_progress(
                             sync_id,
