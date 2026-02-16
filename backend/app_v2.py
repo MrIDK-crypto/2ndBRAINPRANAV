@@ -993,6 +993,43 @@ def search():
         }), 500
 
 # ============================================================================
+# FEEDBACK ENDPOINT
+# ============================================================================
+
+@app.route('/api/feedback', methods=['POST'])
+@require_auth
+def submit_feedback():
+    """Submit thumbs up/down feedback on a chat response."""
+    from database.models import SessionLocal, AuditLog
+    data = request.get_json() or {}
+    db = SessionLocal()
+    try:
+        audit = AuditLog(
+            tenant_id=g.tenant_id,
+            user_id=g.user_id,
+            action=f"feedback:{data.get('rating', 'unknown')}",
+            resource_type='chat_feedback',
+            resource_id=None,
+            changes={
+                'query': (data.get('query', '') or '')[:500],
+                'answer': (data.get('answer', '') or '')[:500],
+                'rating': data.get('rating'),
+                'source_ids': data.get('source_ids', []),
+            },
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', '')[:255],
+        )
+        db.add(audit)
+        db.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
+# ============================================================================
 # PROJECTS ENDPOINT
 # ============================================================================
 
