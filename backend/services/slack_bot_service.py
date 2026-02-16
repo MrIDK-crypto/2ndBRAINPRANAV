@@ -11,8 +11,34 @@ from collections import defaultdict
 from typing import Dict, Optional, List
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-from database.models import get_db
+from database.models import get_db, AuditLog, SessionLocal
 from services.enhanced_search_service import EnhancedSearchService
+
+
+def _log_slack_query(tenant_id: str, query: str, result: str, channel_type: str):
+    """Log a Slack bot query to AuditLog for analytics tracking.
+    result: 'answered' or 'no_results'
+    channel_type: 'command', 'mention', or 'dm'
+    """
+    try:
+        db = SessionLocal()
+        audit = AuditLog(
+            tenant_id=tenant_id,
+            user_id=None,
+            action='slack_bot:question',
+            resource_type='slack_bot',
+            resource_id=None,
+            changes={
+                'query': query[:500],
+                'result': result,
+                'channel_type': channel_type,
+            },
+        )
+        db.add(audit)
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"[SlackBot] Error logging query: {e}", flush=True)
 
 
 # ============================================================================
@@ -270,6 +296,7 @@ class SlackBotService:
                 if result.get('answer') and 'Error' not in result['answer']:
                     # Record assistant response
                     _conversation_cache.add_message(tenant_id, channel_id, 'assistant', result['answer'])
+                    _log_slack_query(tenant_id, query, 'answered', 'command')
 
                     return {
                         'response_type': 'in_channel',  # Visible to everyone
@@ -281,6 +308,7 @@ class SlackBotService:
                         })
                     }
                 else:
+                    _log_slack_query(tenant_id, query, 'no_results', 'command')
                     return {
                         'response_type': 'ephemeral',  # Only visible to user
                         'text': f"No results found for: _{query}_\n\nTry:\n- Adding more documents to your knowledge base\n- Using different keywords\n- Checking if documents are indexed"
@@ -343,6 +371,7 @@ class SlackBotService:
                 if result.get('answer') and 'Error' not in result['answer']:
                     # Record assistant response
                     _conversation_cache.add_message(tenant_id, channel, 'assistant', result['answer'], thread_ts)
+                    _log_slack_query(tenant_id, query, 'answered', 'mention')
 
                     blocks = self._format_search_results(query, {
                         'answer': result['answer'],
@@ -358,6 +387,7 @@ class SlackBotService:
                         thread_ts=event.get('ts')  # Reply in thread
                     )
                 else:
+                    _log_slack_query(tenant_id, query, 'no_results', 'mention')
                     self.client.chat_postMessage(
                         channel=channel,
                         text=f"No results found for: _{query}_",
@@ -426,6 +456,7 @@ class SlackBotService:
                 if result.get('answer') and 'Error' not in result['answer']:
                     # Record assistant response
                     _conversation_cache.add_message(tenant_id, channel, 'assistant', result['answer'])
+                    _log_slack_query(tenant_id, text, 'answered', 'dm')
 
                     blocks = self._format_search_results(text, {
                         'answer': result['answer'],
@@ -440,6 +471,7 @@ class SlackBotService:
                         blocks=blocks
                     )
                 else:
+                    _log_slack_query(tenant_id, text, 'no_results', 'dm')
                     self.client.chat_postMessage(
                         channel=channel,
                         text=f"No results found for: _{text}_"

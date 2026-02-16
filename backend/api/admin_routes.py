@@ -448,14 +448,13 @@ def get_analytics():
         tenant_id = g.tenant_id
         days = int(request.args.get('days', 30))
 
-        # Check analytics access - only super admins
+        # Check if super admin (can view any tenant)
         user = db.query(User).filter(User.id == g.user_id).first()
-        if not user or user.email not in SUPER_ADMIN_EMAILS:
-            return jsonify({"success": False, "error": "Analytics access restricted"}), 403
+        is_super_admin = user and user.email in SUPER_ADMIN_EMAILS
 
-        # Super admin can override tenant_id
+        # Super admin can override tenant_id; regular users can only see their own
         override_tenant = request.args.get('tenant_id')
-        if override_tenant:
+        if override_tenant and is_super_admin:
             tenant_id = override_tenant
 
         since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -499,6 +498,32 @@ def get_analytics():
         avg_messages = 0
         if recent_conversations > 0:
             avg_messages = round(recent_messages / recent_conversations, 1)
+
+        # --- Slack Bot Metrics ---
+        slack_total = db.query(AuditLog).filter(
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.action == 'slack_bot:question',
+            AuditLog.created_at >= since
+        ).count()
+        try:
+            slack_answered = db.query(AuditLog).filter(
+                AuditLog.tenant_id == tenant_id,
+                AuditLog.action == 'slack_bot:question',
+                AuditLog.created_at >= since,
+                func.json_extract(AuditLog.changes, '$.result') == 'answered'
+            ).count()
+        except Exception:
+            # Fallback for PostgreSQL which uses different JSON syntax
+            try:
+                slack_answered = db.query(AuditLog).filter(
+                    AuditLog.tenant_id == tenant_id,
+                    AuditLog.action == 'slack_bot:question',
+                    AuditLog.created_at >= since,
+                    AuditLog.changes['result'].astext == 'answered'
+                ).count()
+            except Exception:
+                slack_answered = 0
+        slack_no_results = slack_total - slack_answered
 
         # --- Document Metrics (last N days) ---
         recent_docs = db.query(Document).filter(
@@ -618,10 +643,15 @@ def get_analytics():
                     "detected_last_period": recent_gaps,
                     "by_category": gap_category_breakdown,
                 },
+                "slack_bot": {
+                    "questions_asked": slack_total,
+                    "answered": slack_answered,
+                    "no_results": slack_no_results,
+                    "answer_rate": round((slack_answered / slack_total * 100) if slack_total > 0 else 0, 1),
+                },
                 "integrations": integrations,
                 "activity_timeline": activity_timeline,
                 "period_days": days,
-                "debug_tenant_id": tenant_id,
             }
         })
 
@@ -630,12 +660,7 @@ def get_analytics():
         traceback.print_exc()
         return jsonify({
             "success": False,
-            "error": str(e),
-            "debug": {
-                "tenant_id": g.tenant_id if hasattr(g, 'tenant_id') else None,
-                "user_id": g.user_id if hasattr(g, 'user_id') else None,
-                "traceback": traceback.format_exc()[-500:]
-            }
+            "error": str(e)
         }), 500
     finally:
         db.close()

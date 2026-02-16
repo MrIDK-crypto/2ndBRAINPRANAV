@@ -47,6 +47,12 @@ interface Metrics {
     detected_last_period: number
     by_category: Record<string, number>
   }
+  slack_bot: {
+    questions_asked: number
+    answered: number
+    no_results: number
+    answer_rate: number
+  }
   integrations: Array<{
     type: string
     status: string
@@ -102,6 +108,12 @@ const emptyMetrics = (days: number): Metrics => ({
     detected_last_period: 0,
     by_category: {},
   },
+  slack_bot: {
+    questions_asked: 0,
+    answered: 0,
+    no_results: 0,
+    answer_rate: 0,
+  },
   integrations: [],
   activity_timeline: generateEmptyTimeline(days),
   period_days: days,
@@ -125,21 +137,21 @@ export default function AnalyticsPage() {
   const [selectedTenant, setSelectedTenant] = useState<string>('')
   const [apiError, setApiError] = useState<string | null>(null)
 
-  const isAllowed = user?.email === ALLOWED_EMAIL
+  const isSuperAdmin = user?.email === ALLOWED_EMAIL
 
   useEffect(() => {
-    if (token && isAllowed) {
+    if (token && isSuperAdmin) {
       fetchTenants()
     }
-  }, [token, isAllowed])
+  }, [token, isSuperAdmin])
 
   useEffect(() => {
-    if (token && isAllowed) {
+    if (token) {
       fetchMetrics()
     } else {
       setLoading(false)
     }
-  }, [token, period, selectedTenant, isAllowed])
+  }, [token, period, selectedTenant])
 
   const fetchTenants = async () => {
     try {
@@ -247,23 +259,6 @@ export default function AnalyticsPage() {
     )
   }
 
-  if (!isAllowed) {
-    return (
-      <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
-        <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ textAlign: 'center' }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="1.5" style={{ margin: '0 auto 16px' }}>
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
-            <h2 style={{ fontSize: '20px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 8px' }}>Access Restricted</h2>
-            <p style={{ fontSize: '14px', color: colors.textMuted, margin: 0 }}>Analytics is only available to platform administrators.</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
       <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
@@ -274,8 +269,8 @@ export default function AnalyticsPage() {
             Analytics & Metrics
           </h1>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {/* Tenant Selector */}
-            {tenants.length > 0 && (
+            {/* Tenant Selector - Super admin only */}
+            {isSuperAdmin && tenants.length > 0 && (
               <select
                 value={selectedTenant}
                 onChange={(e) => setSelectedTenant(e.target.value)}
@@ -340,18 +335,15 @@ export default function AnalyticsPage() {
             {/* API Error Banner */}
             {apiError && (
               <div style={{
-                padding: '16px 20px',
+                padding: '12px 16px',
                 backgroundColor: '#FEF2F2',
                 border: '1px solid #FECACA',
-                borderRadius: '12px',
-                marginBottom: '24px',
+                borderRadius: '10px',
+                marginBottom: '20px',
                 fontSize: '13px',
                 color: '#991B1B',
-                fontFamily: 'monospace',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
               }}>
-                <strong>Analytics API Error:</strong> {apiError}
+                Unable to load analytics: {apiError}
               </div>
             )}
             {/* Overview Stats */}
@@ -407,6 +399,28 @@ export default function AnalyticsPage() {
                 value={m.knowledge_gaps.detected_last_period}
                 subtitle={`Last ${period} days`}
                 icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
+              />
+            </div>
+
+            {/* Slack Bot Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
+              <StatCard
+                title="Slack Bot Questions"
+                value={m.slack_bot.questions_asked}
+                subtitle={`Last ${period} days`}
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 10c-.83 0-1.5-.67-1.5-1.5v-5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5z"/><path d="M20.5 10H19V8.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/><path d="M9.5 14c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5S8 21.33 8 20.5v-5c0-.83.67-1.5 1.5-1.5z"/><path d="M3.5 14H5v1.5c0 .83-.67 1.5-1.5 1.5S2 16.33 2 15.5 2.67 14 3.5 14z"/><path d="M14 14.5c0-.83.67-1.5 1.5-1.5h5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-5c-.83 0-1.5-.67-1.5-1.5z"/><path d="M15.5 19H14v1.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5-.67-1.5-1.5-1.5z"/><path d="M10 9.5C10 10.33 9.33 11 8.5 11h-5C2.67 11 2 10.33 2 9.5S2.67 8 3.5 8h5c.83 0 1.5.67 1.5 1.5z"/><path d="M8.5 5H10V3.5C10 2.67 9.33 2 8.5 2S7 2.67 7 3.5 7.67 5 8.5 5z"/></svg>}
+              />
+              <StatCard
+                title="Bot Answered"
+                value={m.slack_bot.answered}
+                subtitle={`${m.slack_bot.answer_rate}% answer rate`}
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}
+              />
+              <StatCard
+                title="Bot No Results"
+                value={m.slack_bot.no_results}
+                subtitle="Could not find info"
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>}
               />
             </div>
 
