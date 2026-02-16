@@ -5,7 +5,7 @@ import axios from 'axios'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
-  : 'http://localhost:5003/api'
+  : 'http://localhost:5006/api'
 
 interface WebsiteBuilderModalProps {
   isOpen: boolean
