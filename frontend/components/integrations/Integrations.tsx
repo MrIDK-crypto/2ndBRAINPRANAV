@@ -14,6 +14,22 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : 'http://localhost:5003/api'
 
+// Wellspring-Inspired Warm Design System
+const warmTheme = {
+  primary: '#C9A598',
+  primaryHover: '#B8948A',
+  primaryLight: '#FBF4F1',
+  pageBg: '#FAF9F7',
+  cardBg: '#F7F5F3',
+  textPrimary: '#2D2D2D',
+  textSecondary: '#6B6B6B',
+  textMuted: '#9A9A9A',
+  border: '#F0EEEC',
+  borderDark: '#E8E5E2',
+  success: '#9CB896',
+  successLight: 'rgba(156, 184, 150, 0.15)',
+}
+
 interface Integration {
   id: string
   name: string
@@ -113,7 +129,7 @@ const ChannelSelectionModal = ({
           fontSize: '24px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#111827'
+          color: '#1A1A1A'
         }}>
           Select Slack Channels
         </h2>
@@ -246,7 +262,7 @@ const ChannelSelectionModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: selectedChannels.size === 0 ? '#9ca3af' : '#2563EB',
+              backgroundColor: selectedChannels.size === 0 ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
@@ -611,8 +627,8 @@ const PollingProgressModal = ({
               transition: 'all 0.2s'
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.backgroundColor = '#F3F4F6'
-              e.currentTarget.style.color = '#6B7280'
+              e.currentTarget.style.backgroundColor = '#F5F3F1'
+              e.currentTarget.style.color = '#7A7A7A'
             }}
             onMouseLeave={e => {
               e.currentTarget.style.backgroundColor = 'transparent'
@@ -633,8 +649,8 @@ const PollingProgressModal = ({
               width: '56px',
               height: '56px',
               borderRadius: '16px',
-              backgroundColor: progress.status === 'completed' ? '#3B82F6' :
-                               progress.status === 'error' ? '#64748B' : '#2563EB',
+              backgroundColor: progress.status === 'completed' ? '#C9A598' :
+                               progress.status === 'error' ? '#8A8A8A' : '#C9A598',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -719,7 +735,7 @@ const PollingProgressModal = ({
               <div style={{
                 width: '100%',
                 height: '6px',
-                backgroundColor: '#E5E7EB',
+                backgroundColor: '#ECEAE8',
                 borderRadius: '3px',
                 overflow: 'hidden'
               }}>
@@ -727,7 +743,7 @@ const PollingProgressModal = ({
                   style={{
                     width: `${progress.progress}%`,
                     height: '100%',
-                    backgroundColor: '#2563EB',
+                    backgroundColor: '#C9A598',
                     borderRadius: '3px',
                     transition: 'width 0.5s ease-out'
                   }}
@@ -740,14 +756,14 @@ const PollingProgressModal = ({
               display: 'flex',
               justifyContent: 'space-around',
               padding: '16px 0',
-              borderTop: '1px solid #F3F4F6',
-              borderBottom: '1px solid #F3F4F6',
+              borderTop: '1px solid #F5F3F1',
+              borderBottom: '1px solid #F5F3F1',
               marginBottom: '16px'
             }}>
               <AnimatedCounter value={progress.documentsFound} label="Found" />
-              <div style={{ width: '1px', backgroundColor: '#F3F4F6' }} />
+              <div style={{ width: '1px', backgroundColor: '#F5F3F1' }} />
               <AnimatedCounter value={progress.documentsParsed} label="Processed" />
-              <div style={{ width: '1px', backgroundColor: '#F3F4F6' }} />
+              <div style={{ width: '1px', backgroundColor: '#F5F3F1' }} />
               <AnimatedCounter value={progress.documentsEmbedded} label="Indexed" />
             </div>
 
@@ -763,8 +779,8 @@ const PollingProgressModal = ({
               marginBottom: '12px'
             }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="#3B82F6" strokeWidth="1.5" />
-                <path d="M8 5v3M8 10h.01" stroke="#3B82F6" strokeWidth="1.5" strokeLinecap="round" />
+                <circle cx="8" cy="8" r="7" stroke="#C9A598" strokeWidth="1.5" />
+                <path d="M8 5v3M8 10h.01" stroke="#C9A598" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
               <span style={{
                 fontFamily: '"Work Sans", sans-serif',
@@ -782,9 +798,9 @@ const PollingProgressModal = ({
               alignItems: 'center',
               gap: '10px',
               padding: '12px 14px',
-              backgroundColor: emailWhenComplete ? '#EFF6FF' : '#F9FAFB',
+              backgroundColor: emailWhenComplete ? '#FDF8F6' : '#FAF9F7',
               borderRadius: '10px',
-              border: emailWhenComplete ? '1px solid #3B82F6' : '1px solid #E5E7EB',
+              border: emailWhenComplete ? '1px solid #C9A598' : '1px solid #ECEAE8',
               marginBottom: '12px',
               cursor: 'pointer',
               transition: 'all 0.2s'
@@ -796,12 +812,12 @@ const PollingProgressModal = ({
                 style={{
                   width: 18,
                   height: 18,
-                  accentColor: '#3B82F6',
+                  accentColor: '#C9A598',
                   cursor: 'pointer'
                 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Mail size={16} color={emailWhenComplete ? '#3B82F6' : '#6B7280'} />
+                <Mail size={16} color={emailWhenComplete ? '#C9A598' : '#7A7A7A'} />
                 <span style={{
                   fontFamily: '"Work Sans", sans-serif',
                   fontSize: '13px',
@@ -812,7 +828,7 @@ const PollingProgressModal = ({
                 </span>
               </div>
               {emailWhenComplete && (
-                <CheckCircle2 size={16} color="#3B82F6" />
+                <CheckCircle2 size={16} color="#C9A598" />
               )}
             </label>
 
@@ -823,9 +839,9 @@ const PollingProgressModal = ({
                 width: '100%',
                 padding: '12px',
                 borderRadius: '10px',
-                border: '1px solid #64748B',
+                border: '1px solid #8A8A8A',
                 backgroundColor: '#FEFEFE',
-                color: '#64748B',
+                color: '#8A8A8A',
                 fontFamily: '"Work Sans", sans-serif',
                 fontSize: '14px',
                 fontWeight: 500,
@@ -833,7 +849,7 @@ const PollingProgressModal = ({
                 transition: 'all 0.2s'
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.backgroundColor = '#F1F5F9'
+                e.currentTarget.style.backgroundColor = '#F5F3F1'
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.backgroundColor = '#FEFEFE'
@@ -858,14 +874,14 @@ const PollingProgressModal = ({
                   fontFamily: '"Work Sans", sans-serif',
                   fontSize: '24px',
                   fontWeight: 600,
-                  color: '#3B82F6'
+                  color: '#C9A598'
                 }}>
                   {progress.documentsFound}
                 </div>
                 <div style={{
                   fontFamily: '"Work Sans", sans-serif',
                   fontSize: '12px',
-                  color: '#6B7280'
+                  color: '#7A7A7A'
                 }}>
                   documents synced
                 </div>
@@ -878,7 +894,7 @@ const PollingProgressModal = ({
                 padding: '12px',
                 borderRadius: '10px',
                 border: 'none',
-                backgroundColor: '#3B82F6',
+                backgroundColor: '#C9A598',
                 color: '#fff',
                 fontFamily: '"Work Sans", sans-serif',
                 fontSize: '14px',
@@ -886,8 +902,8 @@ const PollingProgressModal = ({
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#2563EB'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#3B82F6'}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#C9A598'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#C9A598'}
             >
               Done
             </button>
@@ -920,7 +936,7 @@ const PollingProgressModal = ({
                 padding: '12px',
                 borderRadius: '10px',
                 border: 'none',
-                backgroundColor: '#6B7280',
+                backgroundColor: '#7A7A7A',
                 color: '#fff',
                 fontFamily: '"Work Sans", sans-serif',
                 fontSize: '14px',
@@ -929,7 +945,7 @@ const PollingProgressModal = ({
                 transition: 'all 0.2s'
               }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = '#4B5563'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#6B7280'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#7A7A7A'}
             >
               Close
             </button>
@@ -996,7 +1012,7 @@ const SlackTokenModal = ({
           fontSize: '20px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#111827'
+          color: '#1A1A1A'
         }}>
           Connect Slack
         </h2>
@@ -1079,7 +1095,7 @@ const SlackTokenModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: !token.startsWith('xoxb-') ? '#9ca3af' : '#2563EB',
+              backgroundColor: !token.startsWith('xoxb-') ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
@@ -1152,7 +1168,7 @@ const PubMedConfigModal = ({
           fontSize: '20px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#111827'
+          color: '#1A1A1A'
         }}>
           Configure PubMed Search
         </h2>
@@ -1197,7 +1213,7 @@ const PubMedConfigModal = ({
             color: '#71717A',
             marginTop: '4px'
           }}>
-            Use PubMed search syntax. <a href="https://pubmed.ncbi.nlm.nih.gov/help/" target="_blank" rel="noopener" style={{color: '#3B82F6', textDecoration: 'underline'}}>Learn more</a>
+            Use PubMed search syntax. <a href="https://pubmed.ncbi.nlm.nih.gov/help/" target="_blank" rel="noopener" style={{color: '#C9A598', textDecoration: 'underline'}}>Learn more</a>
           </p>
         </div>
 
@@ -1299,7 +1315,7 @@ const PubMedConfigModal = ({
             color: '#71717A',
             marginTop: '4px'
           }}>
-            Get an API key from <a href="https://www.ncbi.nlm.nih.gov/account/settings/" target="_blank" rel="noopener" style={{color: '#3B82F6', textDecoration: 'underline'}}>NCBI Account Settings</a>
+            Get an API key from <a href="https://www.ncbi.nlm.nih.gov/account/settings/" target="_blank" rel="noopener" style={{color: '#C9A598', textDecoration: 'underline'}}>NCBI Account Settings</a>
           </p>
         </div>
 
@@ -1352,7 +1368,7 @@ const PubMedConfigModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: !searchQuery.trim() ? '#9ca3af' : '#3B82F6',
+              backgroundColor: !searchQuery.trim() ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
@@ -1440,9 +1456,9 @@ const WebScraperConfigModal = ({
   if (!isOpen) return null
 
   const featureBadges = ['PDF Extraction', 'JavaScript Rendering', 'Sitemap Discovery', 'Recursive Crawling']
-  const labelStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, display: 'block', marginBottom: '6px', color: '#111827' }
+  const labelStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, display: 'block', marginBottom: '6px', color: '#1A1A1A' }
   const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #D4D4D8', fontSize: '14px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }
-  const hintStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#3B82F6', marginTop: '4px' }
+  const hintStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#C9A598', marginTop: '4px' }
 
   return (
     <div
@@ -1450,20 +1466,20 @@ const WebScraperConfigModal = ({
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '32px', maxWidth: '620px', width: '90%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
+        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '32px', maxWidth: '620px', width: '90%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '22px', fontWeight: 600, marginBottom: '8px', color: '#111827' }}>
+        <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '22px', fontWeight: 600, marginBottom: '8px', color: '#1A1A1A' }}>
           Configure Website Crawler
         </h2>
-        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#6B7280', marginBottom: '16px', lineHeight: '1.5' }}>
+        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#7A7A7A', marginBottom: '16px', lineHeight: '1.5' }}>
           Full website crawler with PDF extraction, JavaScript rendering, and automatic sitemap discovery. Powered by Firecrawl for comprehensive content extraction.
         </p>
 
         {/* Feature Badges */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
           {featureBadges.map(badge => (
-            <span key={badge} style={{ padding: '6px 14px', backgroundColor: '#EFF6FF', color: '#2563EB', borderRadius: '20px', fontSize: '13px', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
+            <span key={badge} style={{ padding: '6px 14px', backgroundColor: '#FDF8F6', color: '#C9A598', borderRadius: '20px', fontSize: '13px', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
               {badge}
             </span>
           ))}
@@ -1518,11 +1534,11 @@ const WebScraperConfigModal = ({
               type="checkbox"
               checked={includeSubdomains}
               onChange={e => setIncludeSubdomains(e.target.checked)}
-              style={{ width: '18px', height: '18px', accentColor: '#3B82F6', cursor: 'pointer' }}
+              style={{ width: '18px', height: '18px', accentColor: '#C9A598', cursor: 'pointer' }}
             />
-            <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#111827' }}>Include Subdomains</span>
+            <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#1A1A1A' }}>Include Subdomains</span>
           </label>
-          <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#6B7280', marginTop: '4px', marginLeft: '28px' }}>
+          <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#7A7A7A', marginTop: '4px', marginLeft: '28px' }}>
             Also crawl subdomains (e.g., blog.example.com, docs.example.com)
           </p>
         </div>
@@ -1564,7 +1580,7 @@ const WebScraperConfigModal = ({
           <button
             onClick={handleSubmit}
             disabled={!startUrl.trim() || isLoading || !!urlError}
-            style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#3B82F6', color: '#fff', fontSize: '14px', fontWeight: 500, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
+            style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '14px', fontWeight: 500, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
           >
             {isLoading ? 'Configuring...' : 'Start Crawling'}
           </button>
@@ -1787,7 +1803,7 @@ const IntegrationDetailsModal = ({
     features: ['Feature details coming soon'],
     dataTypes: ['Various'],
     setupSteps: ['Connect to get started'],
-    brandColor: '#6B7280',
+    brandColor: '#7A7A7A',
     docsUrl: '#'
   }
 
@@ -1866,8 +1882,8 @@ const IntegrationDetailsModal = ({
                 style={{
                   padding: '4px 10px',
                   borderRadius: '100px',
-                  backgroundColor: integration.connected ? '#D1FAE5' : '#F3F4F6',
-                  color: integration.connected ? '#059669' : '#6B7280',
+                  backgroundColor: integration.connected ? '#D1FAE5' : '#F5F3F1',
+                  color: integration.connected ? '#059669' : '#7A7A7A',
                   fontFamily: 'Inter, sans-serif',
                   fontSize: '12px',
                   fontWeight: 500
@@ -1879,8 +1895,8 @@ const IntegrationDetailsModal = ({
                 style={{
                   padding: '4px 10px',
                   borderRadius: '100px',
-                  backgroundColor: '#F3F4F6',
-                  color: '#6B7280',
+                  backgroundColor: '#F5F3F1',
+                  color: '#7A7A7A',
                   fontFamily: 'Inter, sans-serif',
                   fontSize: '12px',
                   fontWeight: 500
@@ -1897,14 +1913,14 @@ const IntegrationDetailsModal = ({
               height: '36px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: '#F3F4F6',
+              backgroundColor: '#F5F3F1',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7A7A7A" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -1950,7 +1966,7 @@ const IntegrationDetailsModal = ({
                   key={idx}
                   style={{
                     padding: '12px 16px',
-                    borderBottom: idx < details.features.length - 1 ? '1px solid #F3F4F6' : 'none',
+                    borderBottom: idx < details.features.length - 1 ? '1px solid #F5F3F1' : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px'
@@ -2119,7 +2135,7 @@ const IntegrationDetailsModal = ({
                   fontFamily: 'Inter, sans-serif',
                   fontSize: '14px',
                   fontWeight: 500,
-                  color: '#64748B',
+                  color: '#8A8A8A',
                   cursor: 'pointer'
                 }}
               >
@@ -2355,9 +2371,10 @@ const IntegrationCard = ({
         padding: '32px',
         margin: 0,
         boxSizing: 'border-box',
-        backgroundColor: integration.connected ? '#EFF6FF' : '#FFFFFF',
-        borderRadius: '8px',
-        border: '1px solid #D4D7DC'
+        backgroundColor: integration.connected ? warmTheme.primaryLight : warmTheme.cardBg,
+        borderRadius: '16px',
+        border: `1px solid ${warmTheme.border}`,
+        transition: 'all 0.15s ease'
       }}
     >
       {/* Logo */}
@@ -2374,8 +2391,8 @@ const IntegrationCard = ({
       {/* Name */}
       <h3
         style={{
-          color: '#18181B',
-          fontFamily: 'Geist, sans-serif',
+          color: warmTheme.textPrimary,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: '18px',
           fontWeight: 500,
           marginTop: '8px'
@@ -2388,8 +2405,8 @@ const IntegrationCard = ({
       <p
         style={{
           width: '264px',
-          color: '#71717A',
-          fontFamily: 'Inter, sans-serif',
+          color: warmTheme.textSecondary,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           fontSize: '14px',
           fontWeight: 400,
           lineHeight: '20px',
@@ -2417,9 +2434,9 @@ const IntegrationCard = ({
           style={{
             padding: '6px 10px',
             borderRadius: '375px',
-            border: '0.75px solid #E5E7EB',
-            backgroundColor: isThisSyncing ? '#DC2626' : isSyncing ? '#2563EB' : integration.connected ? '#2563EB' : '#FFFFFF',
-            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+            border: `0.75px solid ${warmTheme.border}`,
+            backgroundColor: isThisSyncing ? '#DC2626' : isSyncing ? warmTheme.primary : integration.connected ? warmTheme.primary : warmTheme.cardBg,
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
             cursor: (isSyncing && !isThisSyncing) ? 'default' : 'pointer',
             opacity: (isSyncing && !isThisSyncing) ? 0.9 : 1,
             flexShrink: 0
@@ -2462,7 +2479,7 @@ const IntegrationCard = ({
                 width: '16px',
                 height: '16px',
                 borderRadius: '50%',
-                backgroundColor: '#3B82F6',
+                backgroundColor: '#C9A598',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -2482,7 +2499,7 @@ const IntegrationCard = ({
               padding: '6px 10px',
               borderRadius: '375px',
               border: 'none',
-              backgroundColor: '#3B82F6',
+              backgroundColor: '#C9A598',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
               flexShrink: 0
@@ -3924,7 +3941,7 @@ export default function Integrations() {
   const filteredIntegrations = getFilteredIntegrations()
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#FFFFFF' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: warmTheme.pageBg }}>
       {/* Sidebar */}
       <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
 
@@ -3934,7 +3951,7 @@ export default function Integrations() {
         <div style={{ marginBottom: '32px' }}>
           <h1
             style={{
-              color: '#111827',
+              color: warmTheme.textPrimary,
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
               fontSize: '32px',
               fontWeight: 700,
@@ -3946,7 +3963,7 @@ export default function Integrations() {
           </h1>
           <p
             style={{
-              color: '#6B7280',
+              color: warmTheme.textSecondary,
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
               fontSize: '16px',
               fontWeight: 400,
@@ -3966,10 +3983,10 @@ export default function Integrations() {
                 onClick={() => setActiveTab(category)}
                 style={{
                   padding: '10px 20px',
-                  borderRadius: '8px',
-                  border: activeTab === category ? '2px solid #2563EB' : '1px solid #E5E7EB',
-                  backgroundColor: activeTab === category ? '#EFF6FF' : '#FFFFFF',
-                  color: activeTab === category ? '#2563EB' : '#374151',
+                  borderRadius: '12px',
+                  border: activeTab === category ? `2px solid ${warmTheme.primary}` : `1px solid ${warmTheme.border}`,
+                  backgroundColor: activeTab === category ? warmTheme.primaryLight : warmTheme.cardBg,
+                  color: activeTab === category ? warmTheme.primary : warmTheme.textSecondary,
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                   fontSize: '14px',
                   fontWeight: activeTab === category ? 600 : 500,
@@ -3990,8 +4007,8 @@ export default function Integrations() {
                       width: '24px',
                       height: '24px',
                       borderRadius: '12px',
-                      backgroundColor: activeTab === category ? '#2563EB' : '#E5E7EB',
-                      color: activeTab === category ? '#FFFFFF' : '#374151',
+                      backgroundColor: activeTab === category ? warmTheme.primary : warmTheme.border,
+                      color: activeTab === category ? '#FFFFFF' : warmTheme.textSecondary,
                       fontSize: '12px',
                       fontWeight: 600
                     }}
@@ -4060,10 +4077,10 @@ export default function Integrations() {
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                color: '#71717A',
-                fontFamily: 'Inter, sans-serif',
+                color: warmTheme.textMuted,
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                 fontSize: '14px',
-                textDecoration: 'underline'
+                textDecoration: 'none'
               }}
             >
               Read our terms and Conditions ↗
@@ -4116,7 +4133,7 @@ export default function Integrations() {
         >
           <div
             style={{
-              backgroundColor: '#FFFFFF',
+              backgroundColor: '#F7F5F3',
               borderRadius: '16px',
               padding: '32px',
               maxWidth: '600px',
@@ -4128,7 +4145,7 @@ export default function Integrations() {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#111827' }}>Email Forwarding</h2>
+              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1A1A1A' }}>Email Forwarding</h2>
               <button
                 onClick={() => setShowEmailForwardingModal(false)}
                 style={{
@@ -4166,19 +4183,19 @@ export default function Integrations() {
           zIndex: 9999
         }}>
           <div style={{
-            background: '#fff', borderRadius: 16,
+            background: '#F7F5F3', borderRadius: 16,
             width: 500, maxWidth: '90vw', maxHeight: '80vh',
             boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
             overflow: 'hidden', display: 'flex', flexDirection: 'column'
           }}>
             {/* Header */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #ECEAE8' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <img src="/github.png" alt="GitHub" style={{ width: 32, height: 32 }} />
                   <div>
                     <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Select Repositories</h2>
-                    <p style={{ margin: '2px 0 0', fontSize: 13, color: '#6B7280' }}>
+                    <p style={{ margin: '2px 0 0', fontSize: 13, color: '#7A7A7A' }}>
                       Choose which repositories to sync
                     </p>
                   </div>
@@ -4187,8 +4204,8 @@ export default function Integrations() {
                   onClick={() => setShowGitHubRepoModal(false)}
                   style={{
                     width: 32, height: 32, borderRadius: 8,
-                    border: '1px solid #E5E7EB', background: '#fff',
-                    cursor: 'pointer', fontSize: 16, color: '#6B7280'
+                    border: '1px solid #ECEAE8', background: '#fff',
+                    cursor: 'pointer', fontSize: 16, color: '#7A7A7A'
                   }}
                 >
                   ×
@@ -4199,11 +4216,11 @@ export default function Integrations() {
             {/* Repository List */}
             <div style={{ padding: '16px 24px', overflowY: 'auto', flex: 1 }}>
               {loadingRepos ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#6B7280' }}>
+                <div style={{ textAlign: 'center', padding: 40, color: '#7A7A7A' }}>
                   Loading repositories...
                 </div>
               ) : githubRepos.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#6B7280' }}>
+                <div style={{ textAlign: 'center', padding: 40, color: '#7A7A7A' }}>
                   No repositories found
                 </div>
               ) : (
@@ -4211,8 +4228,8 @@ export default function Integrations() {
                   {/* Select All */}
                   <label style={{
                     display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-                    background: '#F9FAFB', borderRadius: 8, cursor: 'pointer',
-                    border: '1px solid #E5E7EB'
+                    background: '#FAF9F7', borderRadius: 8, cursor: 'pointer',
+                    border: '1px solid #ECEAE8'
                   }}>
                     <input
                       type="checkbox"
@@ -4237,9 +4254,9 @@ export default function Integrations() {
                       key={repo.full_name}
                       style={{
                         display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px',
-                        background: selectedRepos.includes(repo.full_name) ? '#EFF6FF' : '#fff',
+                        background: selectedRepos.includes(repo.full_name) ? '#FDF8F6' : '#fff',
                         borderRadius: 8, cursor: 'pointer',
-                        border: selectedRepos.includes(repo.full_name) ? '1px solid #BFDBFE' : '1px solid #E5E7EB',
+                        border: selectedRepos.includes(repo.full_name) ? '1px solid #BFDBFE' : '1px solid #ECEAE8',
                         transition: 'all 0.15s'
                       }}
                     >
@@ -4257,7 +4274,7 @@ export default function Integrations() {
                       />
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>
+                          <span style={{ fontWeight: 600, fontSize: 14, color: '#1A1A1A' }}>
                             {repo.full_name}
                           </span>
                           {repo.private && (
@@ -4270,7 +4287,7 @@ export default function Integrations() {
                           )}
                         </div>
                         {repo.description && (
-                          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#6B7280' }}>
+                          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#7A7A7A' }}>
                             {repo.description}
                           </p>
                         )}
@@ -4287,24 +4304,24 @@ export default function Integrations() {
             {/* Scan Results / Estimated Time */}
             {totalEstimate && (
               <div style={{
-                padding: '14px 24px', borderTop: '1px solid #E5E7EB',
+                padding: '14px 24px', borderTop: '1px solid #ECEAE8',
                 background: '#FAFBFC',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 28
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{
                     width: 24, height: 24, borderRadius: 6,
-                    background: '#3B82F6',
+                    background: '#C9A598',
                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                   }}>
                     <FileText size={12} color="white" strokeWidth={2.5} />
                   </div>
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 600, color: '#000' }}>{totalEstimate.files.toLocaleString()}</div>
-                    <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 500 }}>documents to create</div>
+                    <div style={{ fontSize: 10, color: '#7A7A7A', fontWeight: 500 }}>documents to create</div>
                   </div>
                 </div>
-                <div style={{ width: 1, height: 28, background: '#E5E7EB' }} />
+                <div style={{ width: 1, height: 28, background: '#ECEAE8' }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{
                     width: 24, height: 24, borderRadius: 6,
@@ -4315,7 +4332,7 @@ export default function Integrations() {
                   </div>
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 600, color: '#000' }}>{totalEstimate.time}</div>
-                    <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 500 }}>estimated time</div>
+                    <div style={{ fontSize: 10, color: '#7A7A7A', fontWeight: 500 }}>estimated time</div>
                   </div>
                 </div>
               </div>
@@ -4323,7 +4340,7 @@ export default function Integrations() {
 
             {/* Per-repo scan results */}
             {prescanResults && Object.keys(prescanResults).length > 0 && (
-              <div style={{ padding: '12px 24px', borderTop: '1px solid #E5E7EB', background: '#FAFAFA' }}>
+              <div style={{ padding: '12px 24px', borderTop: '1px solid #ECEAE8', background: '#FAFAFA' }}>
                 <div style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
                   Per Repository
                 </div>
@@ -4331,10 +4348,10 @@ export default function Integrations() {
                   <div key={repo} style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     fontSize: 13, padding: '8px 12px', marginBottom: 4,
-                    background: '#fff', borderRadius: 6, border: '1px solid #E5E7EB'
+                    background: '#fff', borderRadius: 6, border: '1px solid #ECEAE8'
                   }}>
                     <span style={{ color: '#374151', fontWeight: 500 }}>{repo.split('/')[1]}</span>
-                    <span style={{ color: '#6B7280', fontSize: 12 }}>
+                    <span style={{ color: '#7A7A7A', fontSize: 12 }}>
                       {data.expected_documents} documents • {data.estimated_time}
                     </span>
                   </div>
@@ -4344,10 +4361,10 @@ export default function Integrations() {
 
             {/* Footer */}
             <div style={{
-              padding: '16px 24px', borderTop: '1px solid #E5E7EB',
+              padding: '16px 24px', borderTop: '1px solid #ECEAE8',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
-              <span style={{ fontSize: 13, color: '#6B7280' }}>
+              <span style={{ fontSize: 13, color: '#7A7A7A' }}>
                 {selectedRepos.length} selected
               </span>
               <div style={{ display: 'flex', gap: 12 }}>
@@ -4359,7 +4376,7 @@ export default function Integrations() {
                   }}
                   style={{
                     padding: '10px 20px', borderRadius: 8,
-                    border: '1px solid #E5E7EB', background: '#fff',
+                    border: '1px solid #ECEAE8', background: '#fff',
                     cursor: 'pointer', fontSize: 14, fontWeight: 500
                   }}
                 >
@@ -4370,8 +4387,8 @@ export default function Integrations() {
                   disabled={selectedRepos.length === 0 || isScanning}
                   style={{
                     padding: '10px 20px', borderRadius: 8,
-                    border: '1px solid #E5E7EB',
-                    background: selectedRepos.length === 0 || isScanning ? '#F3F4F6' : '#fff',
+                    border: '1px solid #ECEAE8',
+                    background: selectedRepos.length === 0 || isScanning ? '#F5F3F1' : '#fff',
                     color: selectedRepos.length === 0 || isScanning ? '#9CA3AF' : '#374151',
                     cursor: selectedRepos.length === 0 || isScanning ? 'not-allowed' : 'pointer',
                     fontSize: 14, fontWeight: 500,
@@ -4381,7 +4398,7 @@ export default function Integrations() {
                   {isScanning && (
                     <div style={{
                       width: 14, height: 14, borderRadius: '50%',
-                      border: '2px solid #E5E7EB', borderTopColor: '#3B82F6',
+                      border: '2px solid #ECEAE8', borderTopColor: '#C9A598',
                       animation: 'spin 1s linear infinite'
                     }} />
                   )}
@@ -4393,7 +4410,7 @@ export default function Integrations() {
                   style={{
                     padding: '10px 20px', borderRadius: 8,
                     border: 'none',
-                    background: selectedRepos.length === 0 || !totalEstimate ? '#9CA3AF' : '#2563EB',
+                    background: selectedRepos.length === 0 || !totalEstimate ? '#9CA3AF' : '#C9A598',
                     color: '#fff',
                     cursor: selectedRepos.length === 0 || !totalEstimate ? 'not-allowed' : 'pointer',
                     fontSize: 14, fontWeight: 600
@@ -4470,7 +4487,7 @@ export default function Integrations() {
           zIndex: 10000
         }}>
           <div style={{
-            background: '#fff', borderRadius: 16,
+            background: '#F7F5F3', borderRadius: 16,
             width: 440, maxWidth: '90vw',
             boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
             overflow: 'hidden'
@@ -4509,7 +4526,7 @@ export default function Integrations() {
               </p>
 
               <div style={{
-                background: '#F9FAFB',
+                background: '#FAF9F7',
                 borderRadius: 8,
                 padding: 16,
                 marginBottom: 16
@@ -4529,7 +4546,7 @@ export default function Integrations() {
                 )}
               </div>
 
-              <p style={{ margin: 0, fontSize: 13, color: '#6B7280' }}>
+              <p style={{ margin: 0, fontSize: 13, color: '#7A7A7A' }}>
                 You can reconnect this integration later, but you will need to sync all data again.
               </p>
             </div>
@@ -4537,7 +4554,7 @@ export default function Integrations() {
             {/* Footer */}
             <div style={{
               padding: '16px 24px',
-              borderTop: '1px solid #E5E7EB',
+              borderTop: '1px solid #ECEAE8',
               display: 'flex', justifyContent: 'flex-end', gap: 12
             }}>
               <button

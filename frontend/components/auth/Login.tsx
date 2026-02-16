@@ -7,16 +7,16 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { validateLogin, getPasswordStrength } from '@/utils/validation'
 
-// Catalyst-style color palette with 2nd Brain branding
+// Wellspring-inspired warm color palette
 const colors = {
-  primary: '#1e3a5f', // Dark navy
-  primaryHover: '#152a45',
-  secondary: '#0d9488', // Teal accent
-  background: '#f8fafc', // Light gray background
-  card: '#ffffff',
-  text: '#1e293b',
-  textMuted: '#64748b',
-  border: '#e2e8f0',
+  primary: '#C9A598', // Warm coral
+  primaryHover: '#B8948A',
+  secondary: '#C9A598', // Coral accent
+  background: '#FAF9F7', // Warm cream background
+  card: '#FFFFFE',
+  text: '#2D2D2D',
+  textMuted: '#6B6B6B',
+  border: '#F0EEEC',
   error: '#dc2626',
   errorBg: '#fef2f2',
 }

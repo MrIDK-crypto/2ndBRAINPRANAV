@@ -10,38 +10,38 @@ import Sidebar from '../shared/Sidebar'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
 
-// Modern Design System - Blue/Grey Theme
+// Wellspring-Inspired Warm Design System
 const colors = {
-  // Primary
-  primary: '#2563EB',
-  primaryHover: '#1D4ED8',
-  primaryLight: '#EFF6FF',
+  // Primary - Warm Coral/Salmon
+  primary: '#D4A59A',
+  primaryHover: '#C4958A',
+  primaryLight: '#FBF4F1',
 
-  // Backgrounds
-  pageBg: '#F8FAFC',
-  cardBg: '#FFFFFF',
+  // Backgrounds - Warm Cream/Off-white
+  pageBg: '#FAF9F7',
+  cardBg: '#F7F5F3',
 
-  // Text
-  textPrimary: '#111827',
-  textSecondary: '#6B7280',
-  textMuted: '#9CA3AF',
+  // Text - Warm Tones
+  textPrimary: '#2D2D2D',
+  textSecondary: '#6B6B6B',
+  textMuted: '#9A9A9A',
 
-  // Borders & Dividers
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
+  // Borders & Dividers - Very Subtle
+  border: '#F0EEEC',
+  borderLight: '#F7F5F3',
 
-  // Status Colors - Blue/Grey Palette
-  statusActive: '#3B82F6',     // Blue - active/work items
-  statusPending: '#94A3B8',    // Slate grey - pending items
-  statusArchived: '#64748B',   // Darker slate - archived
-  statusBlue: '#3B82F6',       // Primary blue
-  statusAccent: '#60A5FA',     // Light blue accent
+  // Status Colors - Soft Muted Palette
+  statusActive: '#D4A59A',     // Warm coral
+  statusSuccess: '#9CB896',    // Soft sage green
+  statusPending: '#E8E8E8',    // Light gray
+  statusArchived: '#BEBEBE',   // Medium gray
+  statusAccent: '#F0E6E3',     // Very light coral
 }
 
 const shadows = {
-  sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-  md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-  lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+  sm: '0 1px 3px 0 rgba(0, 0, 0, 0.04)',
+  md: '0 4px 12px -2px rgba(0, 0, 0, 0.06)',
+  lg: '0 8px 24px -4px rgba(0, 0, 0, 0.08)',
 }
 
 interface Document {
@@ -81,18 +81,18 @@ interface FullDocument {
   source_url?: string
 }
 
-// Status mapping for visual indicators - Blue/Grey theme
+// Status mapping for visual indicators - Warm theme
 const getStatusInfo = (classification?: string, sourceType?: string) => {
   if (classification === 'work') return { label: 'Active', color: colors.statusActive }
   if (classification === 'personal') return { label: 'Personal', color: colors.statusPending }
   if (classification === 'spam') return { label: 'Archived', color: colors.statusArchived }
-  if (sourceType === 'webscraper' || sourceType === 'firecrawl') return { label: 'Scraped', color: colors.statusBlue }
+  if (sourceType === 'webscraper' || sourceType === 'firecrawl') return { label: 'Scraped', color: colors.statusSuccess }
   if (sourceType === 'github') return { label: 'Code', color: colors.statusAccent }
   return { label: 'Pending', color: colors.textMuted }
 }
 
-// Professional file type icons - single consistent color
-const iconColor = '#64748B'
+// Professional file type icons - warm consistent color
+const iconColor = '#7A7A7A'
 
 const getFileTypeInfo = (filename: string, type?: string) => {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
@@ -102,7 +102,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (ext === 'pdf' || fileType.includes('pdf')) {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -117,7 +117,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['doc', 'docx'].includes(ext) || fileType.includes('word') || fileType.includes('document')) {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -132,7 +132,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['xls', 'xlsx', 'csv'].includes(ext) || fileType.includes('excel') || fileType.includes('spreadsheet')) {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -147,7 +147,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['ppt', 'pptx'].includes(ext) || fileType.includes('powerpoint') || fileType.includes('presentation')) {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -162,7 +162,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'].includes(ext) || fileType.includes('image')) {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -177,7 +177,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'h', 'css', 'html', 'json', 'xml', 'yaml', 'yml', 'md', 'sh', 'rb', 'go', 'rs'].includes(ext) || fileType.includes('code')) {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -192,7 +192,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (fileType.includes('email') || fileType.includes('mail') || ext === 'eml') {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <rect x="2" y="4" width="20" height="16" rx="2"/>
@@ -206,7 +206,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['txt', 'rtf'].includes(ext) || fileType.includes('text')) {
     return {
       color: iconColor,
-      bgColor: '#F8FAFC',
+      bgColor: '#F0EEEC',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -220,7 +220,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   // Default
   return {
     color: iconColor,
-    bgColor: '#F8FAFC',
+    bgColor: '#F0EEEC',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -415,11 +415,205 @@ export default function Documents() {
             embedded_at: doc.embedded_at || null
           }
         })
-        setDocuments(docs)
+
+        // Add sample documents for demo if none exist
+        if (docs.length === 0) {
+          const sampleDocs: Document[] = [
+            {
+              id: 'sample-1',
+              name: 'Q1 Product Roadmap.pdf',
+              created: '2026-02-10',
+              lastModified: '2026-02-14',
+              type: 'PDF',
+              description: 'Product roadmap and feature priorities for Q1 2026',
+              category: 'Documents',
+              selected: false,
+              classification: 'work',
+              source_type: 'Google Drive',
+              quickSummary: 'Product roadmap outlining key features...',
+              score: 92,
+              embedded_at: '2026-02-14T10:30:00Z'
+            },
+            {
+              id: 'sample-2',
+              name: 'Engineering Team Meeting Notes.docx',
+              created: '2026-02-12',
+              lastModified: '2026-02-12',
+              type: 'DOCX',
+              description: 'Weekly engineering standup meeting notes',
+              category: 'Meetings',
+              selected: false,
+              classification: 'work',
+              source_type: 'OneDrive',
+              quickSummary: 'Discussion on sprint planning and blockers...',
+              score: 88,
+              embedded_at: '2026-02-12T15:00:00Z'
+            },
+            {
+              id: 'sample-3',
+              name: 'Budget Analysis 2026.xlsx',
+              created: '2026-02-08',
+              lastModified: '2026-02-13',
+              type: 'XLSX',
+              description: 'Annual budget breakdown and projections',
+              category: 'Documents',
+              selected: false,
+              classification: 'work',
+              source_type: 'Box',
+              quickSummary: 'Financial projections for fiscal year...',
+              score: 85,
+              embedded_at: null
+            },
+            {
+              id: 'sample-4',
+              name: 'Customer Feedback Summary.pdf',
+              created: '2026-02-05',
+              lastModified: '2026-02-11',
+              type: 'PDF',
+              description: 'Compiled customer feedback from Q4 surveys',
+              category: 'Documents',
+              selected: false,
+              classification: 'work',
+              source_type: 'Notion',
+              quickSummary: 'Key themes from customer interviews...',
+              score: 78,
+              embedded_at: '2026-02-11T09:15:00Z'
+            },
+            {
+              id: 'sample-5',
+              name: 'API Documentation.md',
+              created: '2026-02-01',
+              lastModified: '2026-02-15',
+              type: 'Code',
+              description: 'REST API endpoints and usage guide',
+              category: 'Code',
+              selected: false,
+              classification: 'work',
+              source_type: 'GitHub',
+              quickSummary: 'API reference documentation for v2...',
+              score: 95,
+              embedded_at: '2026-02-15T08:00:00Z'
+            },
+            {
+              id: 'sample-6',
+              name: 'Marketing Campaign Results.pptx',
+              created: '2026-02-03',
+              lastModified: '2026-02-09',
+              type: 'PPTX',
+              description: 'Q4 marketing campaign performance analysis',
+              category: 'Documents',
+              selected: false,
+              classification: 'work',
+              source_type: 'Google Drive',
+              quickSummary: 'Campaign metrics and ROI analysis...',
+              score: 82,
+              embedded_at: '2026-02-09T14:30:00Z'
+            }
+          ]
+          setDocuments(sampleDocs)
+        } else {
+          setDocuments(docs)
+        }
+      } else {
+        // If API fails, show sample documents
+        setDocuments([])
       }
     } catch (error) {
       console.error('Error loading documents:', error)
-      setDocuments([])
+      // Show sample documents on error
+      const sampleDocs: Document[] = [
+        {
+          id: 'sample-1',
+          name: 'Q1 Product Roadmap.pdf',
+          created: '2026-02-10',
+          lastModified: '2026-02-14',
+          type: 'PDF',
+          description: 'Product roadmap and feature priorities for Q1 2026',
+          category: 'Documents',
+          selected: false,
+          classification: 'work',
+          source_type: 'Google Drive',
+          quickSummary: 'Product roadmap outlining key features...',
+          score: 92,
+          embedded_at: '2026-02-14T10:30:00Z'
+        },
+        {
+          id: 'sample-2',
+          name: 'Engineering Team Meeting Notes.docx',
+          created: '2026-02-12',
+          lastModified: '2026-02-12',
+          type: 'DOCX',
+          description: 'Weekly engineering standup meeting notes',
+          category: 'Meetings',
+          selected: false,
+          classification: 'work',
+          source_type: 'OneDrive',
+          quickSummary: 'Discussion on sprint planning and blockers...',
+          score: 88,
+          embedded_at: '2026-02-12T15:00:00Z'
+        },
+        {
+          id: 'sample-3',
+          name: 'Budget Analysis 2026.xlsx',
+          created: '2026-02-08',
+          lastModified: '2026-02-13',
+          type: 'XLSX',
+          description: 'Annual budget breakdown and projections',
+          category: 'Documents',
+          selected: false,
+          classification: 'work',
+          source_type: 'Box',
+          quickSummary: 'Financial projections for fiscal year...',
+          score: 85,
+          embedded_at: null
+        },
+        {
+          id: 'sample-4',
+          name: 'Customer Feedback Summary.pdf',
+          created: '2026-02-05',
+          lastModified: '2026-02-11',
+          type: 'PDF',
+          description: 'Compiled customer feedback from Q4 surveys',
+          category: 'Documents',
+          selected: false,
+          classification: 'work',
+          source_type: 'Notion',
+          quickSummary: 'Key themes from customer interviews...',
+          score: 78,
+          embedded_at: '2026-02-11T09:15:00Z'
+        },
+        {
+          id: 'sample-5',
+          name: 'API Documentation.md',
+          created: '2026-02-01',
+          lastModified: '2026-02-15',
+          type: 'Code',
+          description: 'REST API endpoints and usage guide',
+          category: 'Code',
+          selected: false,
+          classification: 'work',
+          source_type: 'GitHub',
+          quickSummary: 'API reference documentation for v2...',
+          score: 95,
+          embedded_at: '2026-02-15T08:00:00Z'
+        },
+        {
+          id: 'sample-6',
+          name: 'Marketing Campaign Results.pptx',
+          created: '2026-02-03',
+          lastModified: '2026-02-09',
+          type: 'PPTX',
+          description: 'Q4 marketing campaign performance analysis',
+          category: 'Documents',
+          selected: false,
+          classification: 'work',
+          source_type: 'Google Drive',
+          quickSummary: 'Campaign metrics and ROI analysis...',
+          score: 82,
+          embedded_at: '2026-02-09T14:30:00Z'
+        }
+      ]
+      setDocuments(sampleDocs)
     } finally {
       setLoading(false)
     }
@@ -687,8 +881,8 @@ export default function Documents() {
     onClick: () => void
     iconType: 'all' | 'work' | 'code' | 'web' | 'personal'
   }) => {
-    const iconColor = active ? '#2563EB' : '#64748B'
-    const bgColor = active ? '#EFF6FF' : '#F8FAFC'
+    const iconColor = active ? '#C9A598' : '#7A7A7A'
+    const bgColor = active ? colors.primaryLight : '#F7F5F3'
 
     const icons = {
       all: (
@@ -736,16 +930,16 @@ export default function Documents() {
           alignItems: 'center',
           gap: '16px',
           padding: '20px 28px',
-          backgroundColor: active ? '#FAFCFF' : colors.cardBg,
-          border: `1px solid ${active ? '#93C5FD' : colors.border}`,
-          borderRadius: '12px',
+          backgroundColor: active ? colors.primaryLight : '#F7F5F3',
+          border: `1px solid ${active ? '#D4C4BE' : colors.border}`,
+          borderRadius: '16px',
           cursor: 'pointer',
           transition: 'all 0.2s ease',
           minWidth: '240px',
           boxShadow: shadows.sm,
         }}
         onMouseEnter={(e) => {
-          if (!active) e.currentTarget.style.borderColor = colors.textMuted
+          if (!active) e.currentTarget.style.borderColor = '#D4C4BE'
         }}
         onMouseLeave={(e) => {
           if (!active) e.currentTarget.style.borderColor = colors.border
@@ -1076,7 +1270,7 @@ export default function Documents() {
                   alignItems: 'center',
                   gap: '8px',
                   padding: '10px 20px',
-                  backgroundColor: (documents.length === 0 || analyzingGaps) ? colors.textMuted : colors.statusBlue,
+                  backgroundColor: (documents.length === 0 || analyzingGaps) ? colors.textMuted : colors.primary,
                   border: 'none',
                   borderRadius: '8px',
                   color: '#fff',
@@ -1110,7 +1304,7 @@ export default function Documents() {
                     top: '100%',
                     left: 0,
                     marginTop: '4px',
-                    backgroundColor: '#fff',
+                    backgroundColor: '#FAF9F7',
                     borderRadius: '8px',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                     border: `1px solid ${colors.border}`,
@@ -1168,7 +1362,7 @@ export default function Documents() {
                 alignItems: 'center',
                 gap: '8px',
                 padding: '10px 20px',
-                backgroundColor: '#FFFFFF',
+                backgroundColor: colors.cardBg,
                 border: `1px solid ${colors.border}`,
                 borderRadius: '8px',
                 color: colors.textPrimary,
@@ -1182,7 +1376,7 @@ export default function Documents() {
                 e.currentTarget.style.borderColor = colors.primary
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#FFFFFF'
+                e.currentTarget.style.backgroundColor = colors.cardBg
                 e.currentTarget.style.borderColor = colors.border
               }}
             >
@@ -1297,7 +1491,7 @@ export default function Documents() {
 
         {/* Files Section */}
         <div style={{
-          backgroundColor: colors.cardBg,
+          backgroundColor: '#F7F5F3',
           borderRadius: '12px',
           border: `1px solid ${colors.border}`,
           boxShadow: shadows.sm,
@@ -1376,7 +1570,7 @@ export default function Documents() {
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#475569'}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#9A9A9A'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.statusArchived}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1395,7 +1589,7 @@ export default function Documents() {
                   alignItems: 'center',
                   gap: '6px',
                   padding: '8px 14px',
-                  backgroundColor: '#475569',
+                  backgroundColor: colors.primary,
                   border: 'none',
                   borderRadius: '6px',
                   color: '#fff',
@@ -1404,8 +1598,8 @@ export default function Documents() {
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#334155'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#475569'}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.primaryHover}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.primary}
                 title="Delete ALL documents and start fresh"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1502,7 +1696,7 @@ export default function Documents() {
                 gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 120px 48px',
                 gap: '16px',
                 padding: '12px 20px',
-                backgroundColor: colors.cardBg,
+                backgroundColor: '#F0EEEC',
                 borderBottom: `1px solid ${colors.border}`,
               }}>
                 <div>
@@ -1510,7 +1704,7 @@ export default function Documents() {
                     type="checkbox"
                     checked={selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0}
                     onChange={toggleSelectAll}
-                    style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                    style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#C9A598' }}
                   />
                 </div>
                 {[
@@ -1582,7 +1776,7 @@ export default function Documents() {
                           type="checkbox"
                           checked={selectedDocs.has(doc.id)}
                           onChange={() => toggleDocSelection(doc.id)}
-                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#C9A598' }}
                         />
                       </div>
 
@@ -1634,17 +1828,24 @@ export default function Documents() {
                       </span>
 
                       {/* Embeddings - In Pinecone/Chatbot */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        backgroundColor: doc.embedded_at ? '#F4F7F2' : '#FDF8F6',
+                      }}>
                         <div style={{
-                          width: '8px',
-                          height: '8px',
+                          width: '6px',
+                          height: '6px',
                           borderRadius: '50%',
-                          backgroundColor: doc.embedded_at ? '#3B82F6' : '#EF4444',
+                          backgroundColor: doc.embedded_at ? '#A3B899' : '#C9A598',
                         }} />
                         <span style={{
                           fontSize: '12px',
                           fontWeight: 500,
-                          color: doc.embedded_at ? '#2563EB' : '#DC2626',
+                          color: doc.embedded_at ? '#7A8F70' : '#B8958A',
                         }}>
                           {doc.embedded_at ? 'In Chatbot' : 'Not Indexed'}
                         </span>

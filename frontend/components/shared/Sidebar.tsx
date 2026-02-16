@@ -89,7 +89,7 @@ export default function Sidebar({
 
   // SVG icon components
   const renderIcon = (iconId: string, isActive: boolean) => {
-    const color = isActive ? '#2563EB' : '#6B7280'
+    const color = isActive ? '#C9A598' : '#8A8A8A'
 
     switch (iconId) {
       case 'integrations':
@@ -142,8 +142,8 @@ export default function Sidebar({
       style={{
         width: '280px',
         minHeight: '100vh',
-        backgroundColor: '#FFFFFF',
-        borderRight: '1px solid #E5E7EB',
+        backgroundColor: '#FAF9F7',
+        borderRight: '1px solid #F0EEEC',
         display: 'flex',
         flexDirection: 'column',
         padding: '24px 0'
@@ -165,7 +165,7 @@ export default function Sidebar({
               </div>
               <h1
                 style={{
-                  color: '#111827',
+                  color: '#1A1A1A',
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                   fontSize: '20px',
                   fontWeight: 700,
@@ -188,9 +188,9 @@ export default function Sidebar({
               alignItems: 'center',
               gap: '10px',
               padding: '10px 14px',
-              backgroundColor: '#F9FAFB',
+              backgroundColor: '#FFFFFF',
               borderRadius: '10px',
-              border: '1px solid #E5E7EB'
+              border: '1px solid #F0EEEC'
             }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2">
@@ -226,16 +226,14 @@ export default function Sidebar({
                     alignItems: 'center',
                     gap: '12px',
                     padding: '12px 16px',
-                    borderRadius: '10px',
+                    borderRadius: '12px',
                     cursor: 'pointer',
-                    backgroundColor: isActive ? '#EFF6FF' : 'transparent',
-                    borderLeft: isActive ? '3px solid #2563EB' : '3px solid transparent',
-                    marginLeft: '-3px',
+                    backgroundColor: isActive ? '#FBF4F1' : 'transparent',
                     transition: 'all 0.15s ease'
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
-                      e.currentTarget.style.backgroundColor = '#F9FAFB'
+                      e.currentTarget.style.backgroundColor = '#FAF8F6'
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -245,15 +243,15 @@ export default function Sidebar({
                   }}
                 >
                   {/* Icon */}
-                  <div style={{ width: '18px', height: '18px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: '20px', height: '20px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {renderIcon(item.icon, isActive)}
                   </div>
                   <span
                     style={{
-                      color: isActive ? '#1D4ED8' : '#374151',
+                      color: isActive ? '#C9A598' : '#5C5C5C',
                       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                      fontSize: '14px',
-                      fontWeight: isActive ? 600 : 500
+                      fontSize: '15px',
+                      fontWeight: isActive ? 500 : 400
                     }}
                   >
                     {item.label}
@@ -277,7 +275,7 @@ export default function Sidebar({
                   gap: '6px',
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: '#6B7280',
+                  color: '#7A7A7A',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   background: 'none',
@@ -318,7 +316,7 @@ export default function Sidebar({
                   title="New Chat"
                   onMouseEnter={(e) => {
                     e.currentTarget.style.backgroundColor = '#F3F4F6'
-                    e.currentTarget.style.color = '#6B7280'
+                    e.currentTarget.style.color = '#7A7A7A'
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = 'transparent'
@@ -340,8 +338,8 @@ export default function Sidebar({
                     <div style={{
                       width: '16px',
                       height: '16px',
-                      border: '2px solid #E5E7EB',
-                      borderTopColor: '#2563EB',
+                      border: '2px solid #ECEAE8',
+                      borderTopColor: '#C9A598',
                       borderRadius: '50%',
                       animation: 'spin 1s linear infinite'
                     }} />
@@ -362,12 +360,12 @@ export default function Sidebar({
                         padding: '8px 16px',
                         cursor: 'pointer',
                         borderRadius: '8px',
-                        backgroundColor: currentConversationId === conv.id ? '#EFF6FF' : 'transparent',
+                        backgroundColor: currentConversationId === conv.id ? '#FBF4F1' : 'transparent',
                         transition: 'background-color 0.15s'
                       }}
                       onMouseEnter={(e) => {
                         if (currentConversationId !== conv.id) {
-                          e.currentTarget.style.backgroundColor = '#F9FAFB'
+                          e.currentTarget.style.backgroundColor = '#F5F3F1'
                         }
                       }}
                       onMouseLeave={(e) => {
@@ -385,7 +383,8 @@ export default function Sidebar({
                       <span style={{
                         flex: 1,
                         fontSize: '13px',
-                        color: currentConversationId === conv.id ? '#1D4ED8' : '#374151',
+                        color: currentConversationId === conv.id ? '#C9A598' : '#4A4A4A',
+                        fontWeight: currentConversationId === conv.id ? 500 : 400,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
@@ -413,7 +412,7 @@ export default function Sidebar({
       <div style={{ padding: '0 24px' }}>
         <div
           style={{
-            borderTop: '1px solid #E5E7EB',
+            borderTop: '1px solid #ECEAE8',
             paddingTop: '20px',
             marginTop: '20px'
           }}
@@ -430,7 +429,7 @@ export default function Sidebar({
                 transition: 'background-color 0.15s'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#F9FAFB'
+                e.currentTarget.style.backgroundColor = '#F5F3F1'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'transparent'
@@ -442,13 +441,13 @@ export default function Sidebar({
                 borderRadius: '50%',
                 overflow: 'hidden',
                 flexShrink: 0,
-                border: '2px solid #E5E7EB'
+                border: '2px solid #ECEAE8'
               }}>
                 <Image src="/Maya.png" alt="User" width={40} height={40} />
               </div>
               <div>
                 <div style={{
-                  color: '#111827',
+                  color: '#1A1A1A',
                   fontSize: '14px',
                   fontWeight: 600,
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
@@ -456,7 +455,7 @@ export default function Sidebar({
                   {userName}
                 </div>
                 <div style={{
-                  color: '#6B7280',
+                  color: '#7A7A7A',
                   fontSize: '12px',
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
                 }}>

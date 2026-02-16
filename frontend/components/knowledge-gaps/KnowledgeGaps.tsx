@@ -8,24 +8,24 @@ import Sidebar from '../shared/Sidebar'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
 
-// Blue-themed Design System
+// Wellspring-Inspired Warm Design System
 const theme = {
-  pageBg: '#F8FAFC',
-  cardBg: '#FFFFFF',
-  glassBg: 'rgba(248, 250, 252, 0.85)',
-  ink: '#0F172A',
-  body: '#334155',
-  muted: '#64748B',
-  subtle: '#94A3B8',
-  accent: '#2563EB',
-  accentHover: '#1D4ED8',
-  accentLight: 'rgba(37, 99, 235, 0.08)',
-  forest: '#1E40AF',
-  forestLight: 'rgba(30, 64, 175, 0.08)',
-  border: '#E2E8F0',
-  borderLight: '#F1F5F9',
-  progressBg: '#E2E8F0',
-  progressFill: '#2563EB',
+  pageBg: '#FAF9F6',
+  cardBg: '#F7F5F3',
+  glassBg: 'rgba(250, 249, 246, 0.85)',
+  ink: '#2D2D2D',
+  body: '#4A4A4A',
+  muted: '#6B6B6B',
+  subtle: '#9A9A9A',
+  accent: '#C9A598',
+  accentHover: '#B8948A',
+  accentLight: '#FBF4F1',
+  forest: '#9CB896',
+  forestLight: 'rgba(156, 184, 150, 0.15)',
+  border: '#F0EEEC',
+  borderLight: '#F7F5F3',
+  progressBg: '#F0EEEC',
+  progressFill: '#C9A598',
 }
 
 const fonts = {
@@ -415,6 +415,9 @@ export default function KnowledgeGaps() {
 
   // Fetch LLM-summarized context for a gap
   const fetchContextForGap = async (gapId: string) => {
+    // Skip API call for sample/demo gaps
+    if (gapId.startsWith('sample_')) return
+
     // Extract original gap ID (remove question index suffix if present)
     const idParts = gapId.split('_')
     const originalGapId = idParts.length > 1 ? idParts.slice(0, -1).join('_') : gapId
@@ -452,12 +455,56 @@ export default function KnowledgeGaps() {
     return text.trim()
   }
 
+  // Sample knowledge gaps for demo
+  const SAMPLE_GAPS: KnowledgeGap[] = [
+    {
+      id: 'sample_1',
+      description: 'What is the onboarding process for new team members joining the engineering department?',
+      project: 'Onboarding',
+      category: 'Process',
+      priority: 'high',
+      estimated_time: 5,
+    },
+    {
+      id: 'sample_2',
+      description: 'How do we handle customer escalations that require executive involvement?',
+      project: 'Customer Success',
+      category: 'Escalation',
+      priority: 'high',
+      estimated_time: 4,
+    },
+    {
+      id: 'sample_3',
+      description: 'What are the key metrics we track for quarterly business reviews?',
+      project: 'Operations',
+      category: 'Metrics',
+      priority: 'medium',
+      estimated_time: 3,
+    },
+    {
+      id: 'sample_4',
+      description: 'Who are the primary stakeholders for the product roadmap decisions?',
+      project: 'Product',
+      category: 'Stakeholders',
+      priority: 'medium',
+      estimated_time: 2,
+    },
+    {
+      id: 'sample_5',
+      description: 'What documentation standards should be followed for API changes?',
+      project: 'Engineering',
+      category: 'Documentation',
+      priority: 'low',
+      estimated_time: 3,
+    },
+  ]
+
   const loadKnowledgeGaps = async () => {
     if (!authHeaders || !authHeaders.Authorization) return
 
     try {
       const response = await axios.get(`${API_BASE}/knowledge/gaps`, { headers: authHeaders })
-      if (response.data.success && response.data.gaps) {
+      if (response.data.success && response.data.gaps && response.data.gaps.length > 0) {
         const allGaps: KnowledgeGap[] = []
         const initialAnswers: Record<string, string> = {}
 
@@ -516,9 +563,20 @@ export default function KnowledgeGaps() {
 
         setGaps(allGaps)
         setAnswers(initialAnswers)
+      } else {
+        // Use sample gaps for demo
+        setGaps(SAMPLE_GAPS)
+        const sampleAnswers: Record<string, string> = {}
+        SAMPLE_GAPS.forEach(g => { sampleAnswers[g.id] = '' })
+        setAnswers(sampleAnswers)
       }
     } catch (error: any) {
       console.error('[KnowledgeGaps] Error:', error)
+      // On error, still show sample gaps for demo
+      setGaps(SAMPLE_GAPS)
+      const sampleAnswers: Record<string, string> = {}
+      SAMPLE_GAPS.forEach(g => { sampleAnswers[g.id] = '' })
+      setAnswers(sampleAnswers)
     } finally {
       setLoading(false)
     }
@@ -542,6 +600,16 @@ export default function KnowledgeGaps() {
 
     setSubmittingId(gapId)
     try {
+      // Skip API call for sample/demo gaps - just update local state
+      if (gapId.startsWith('sample_')) {
+        setGaps(prev => prev.map(g => g.id === gapId ? { ...g, answered: true } : g))
+        setSessionAnswered(prev => prev + 1)
+        const filtered = getFilteredGaps()
+        const currentIdx = filtered.findIndex(g => g.id === gapId)
+        if (currentIdx < filtered.length - 1) setCurrentGapIndex(currentIdx + 1)
+        return
+      }
+
       const idParts = gapId.split('_')
       const questionIndex = idParts.length > 1 ? parseInt(idParts[idParts.length - 1]) : 0
       const originalGapId = idParts.length > 1 ? idParts.slice(0, -1).join('_') : gapId
@@ -816,7 +884,13 @@ export default function KnowledgeGaps() {
             </div>
           ) : gaps.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
-              <div style={{ fontSize: '64px', marginBottom: '24px' }}>📚</div>
+              <div style={{ width: '80px', height: '80px', borderRadius: '20px', backgroundColor: theme.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="1.5">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                  <circle cx="12" cy="17" r="0.5" fill={theme.accent}/>
+                </svg>
+              </div>
               <h2 style={{ fontFamily: fonts.serif, fontSize: '28px', color: theme.ink, margin: '0 0 12px' }}>No knowledge gaps yet</h2>
               <p style={{ fontFamily: fonts.sans, fontSize: '15px', color: theme.muted, maxWidth: '400px' }}>
                 Analyze your documents to identify knowledge gaps.
@@ -829,8 +903,12 @@ export default function KnowledgeGaps() {
               </button>
             </div>
           ) : filteredGaps.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '80px', background: theme.cardBg, borderRadius: '20px', maxWidth: '600px', margin: '0 auto' }}>
-              <div style={{ fontSize: '64px', marginBottom: '24px' }}>🎉</div>
+            <div style={{ textAlign: 'center', padding: '80px', background: theme.accentLight, borderRadius: '20px', maxWidth: '600px', margin: '0 auto' }}>
+              <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: theme.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              </div>
               <h2 style={{ fontFamily: fonts.serif, fontSize: '28px', color: theme.ink, margin: '0 0 12px' }}>All done!</h2>
               <p style={{ fontFamily: fonts.sans, fontSize: '15px', color: theme.muted }}>
                 You've answered all gaps{timeStrategy !== 'all' ? ` in your ${timeStrategy} minute session` : ''}.

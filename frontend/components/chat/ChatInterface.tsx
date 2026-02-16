@@ -29,15 +29,57 @@ interface Conversation {
   message_count: number
 }
 
+// Wellspring-Inspired Warm Design System
+const warmTheme = {
+  primary: '#C9A598',
+  primaryHover: '#B8948A',
+  primaryLight: '#FBF4F1',
+  pageBg: '#FAF9F7',
+  chatBg: '#FAF9F7',
+  cardBg: '#FFFFFE',
+  textPrimary: '#2D2D2D',
+  textSecondary: '#6B6B6B',
+  textMuted: '#9A9A9A',
+  border: '#F0EEEC',
+  borderDark: '#E8E5E2',
+  statusSuccess: '#9CB896',
+}
+
 const WelcomeCard = ({ icon, title, description, onClick }: any) => (
-  <div 
+  <div
     onClick={onClick}
-    className="flex flex-col justify-center items-start gap-2 flex-1 px-4 py-4 rounded-xl bg-white hover:shadow-md transition-shadow cursor-pointer border border-gray-100"
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+      gap: '8px',
+      flex: 1,
+      padding: '16px',
+      borderRadius: '16px',
+      backgroundColor: '#FFFFFE',
+      border: `1px solid #F0EEEC`,
+      cursor: 'pointer',
+      transition: 'all 0.15s ease',
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.06)'
+      e.currentTarget.style.transform = 'translateY(-2px)'
+      e.currentTarget.style.borderColor = '#D4A59A'
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.boxShadow = 'none'
+      e.currentTarget.style.transform = 'translateY(0)'
+      e.currentTarget.style.borderColor = '#F0EEEC'
+    }}
   >
-    <div 
-      className="flex items-center justify-center rounded-lg" 
-      style={{ 
-        backgroundColor: '#F3F3F3',
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '12px',
+        backgroundColor: warmTheme.primaryLight,
         width: '40px',
         height: '40px'
       }}
@@ -47,10 +89,21 @@ const WelcomeCard = ({ icon, title, description, onClick }: any) => (
       </div>
     </div>
     <div>
-      <h3 className="text-neutral-800 font-sans text-sm font-semibold mb-1">
+      <h3 style={{
+        color: warmTheme.textPrimary,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontSize: '14px',
+        fontWeight: 600,
+        marginBottom: '4px'
+      }}>
         {title}
       </h3>
-      <p className="text-gray-600 font-sans text-xs leading-tight">
+      <p style={{
+        color: warmTheme.textSecondary,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontSize: '12px',
+        lineHeight: 1.4
+      }}>
         {description}
       </p>
     </div>
@@ -213,10 +266,24 @@ export default function ChatInterface() {
   // Show loading while checking auth (after all hooks)
   if (authLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-primary">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div style={{
+        display: 'flex',
+        height: '100vh',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: warmTheme.pageBg
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            border: `2px solid ${warmTheme.border}`,
+            borderTopColor: warmTheme.primary,
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }}></div>
+          <p style={{ color: warmTheme.textSecondary }}>Loading...</p>
         </div>
       </div>
     )
@@ -435,7 +502,7 @@ export default function ChatInterface() {
           li: ({ children }: any) => <li className="mb-1">{children}</li>,
           // Style links
           a: ({ href, children }: any) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#C9A598', textDecoration: 'none' }} onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'} onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}>
               {children}
             </a>
           ),
@@ -472,7 +539,7 @@ export default function ChatInterface() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: '#F8FAFC' }}>
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: warmTheme.pageBg }}>
       {/* Sidebar - Always Visible */}
       <Sidebar
         activeItem={activeItem}
@@ -489,25 +556,48 @@ export default function ChatInterface() {
       {/* Main Content - Full page chat */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Chat Area */}
-        <div className="flex-1 flex items-center justify-center px-8 py-4 overflow-hidden" style={{ backgroundColor: '#F0F7FF' }}>
+        <div className="flex-1 flex items-center justify-center px-8 py-4 overflow-hidden" style={{ backgroundColor: warmTheme.chatBg }}>
           <div
-            className="flex flex-col justify-end items-center gap-5 bg-white rounded-3xl shadow-sm p-5 h-full max-h-[calc(100vh-40px)] w-full"
-            style={{ maxWidth: '1000px' }}
+            className="flex flex-col justify-end items-center gap-5 rounded-3xl p-5 h-full max-h-[calc(100vh-40px)] w-full"
+            style={{ maxWidth: '1000px', backgroundColor: '#F7F5F3', border: '1px solid #F0EEEC' }}
           >
             {/* Messages or Welcome Screen */}
             {messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-6 w-full overflow-auto">
-                <div className="text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 mx-auto mb-3 overflow-hidden">
-                    <Image src="/Maya.png" alt="Rishit" width={80} height={80} />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{
+                    width: '80px',
+                    height: '80px',
+                    borderRadius: '50%',
+                    background: `linear-gradient(135deg, ${warmTheme.primary} 0%, #B8948A 100%)`,
+                    margin: '0 auto 12px',
+                    overflow: 'hidden',
+                    border: `3px solid ${warmTheme.primaryLight}`
+                  }}>
+                    <Image src="/Maya.png" alt="User" width={80} height={80} />
                   </div>
-                  <h2 className="text-neutral-800 font-work text-2xl font-semibold mb-2">
+                  <h2 style={{
+                    color: warmTheme.textPrimary,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontSize: '24px',
+                    fontWeight: 600,
+                    marginBottom: '8px'
+                  }}>
                     Welcome, {user?.full_name?.split(' ')[0] || 'User'}
                   </h2>
-                  <p className="text-gray-600 font-sans text-sm">
+                  <p style={{
+                    color: warmTheme.textSecondary,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontSize: '14px',
+                    marginBottom: '4px'
+                  }}>
                     Ask anything about your organization's knowledge.
                   </p>
-                  <p className="text-gray-500 font-sans text-xs">
+                  <p style={{
+                    color: warmTheme.textMuted,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontSize: '12px'
+                  }}>
                     Try one of these to get started:
                   </p>
                 </div>
@@ -574,7 +664,16 @@ export default function ChatInterface() {
                       {message.isUser && message.attachments && message.attachments.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {message.attachments.map((att, idx) => (
-                            <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 rounded-full text-xs text-blue-700">
+                            <span key={idx} style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '2px 8px',
+                              backgroundColor: warmTheme.primaryLight,
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              color: warmTheme.primary
+                            }}>
                               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clipRule="evenodd" />
                               </svg>
@@ -600,19 +699,41 @@ export default function ChatInterface() {
                                   href={sourceViewUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-xs text-gray-600 hover:text-gray-800 transition-colors cursor-pointer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    padding: '4px 10px',
+                                    borderRadius: '12px',
+                                    backgroundColor: warmTheme.primaryLight,
+                                    fontSize: '12px',
+                                    color: warmTheme.primary,
+                                    textDecoration: 'none',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F5EBE7'}
+                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = warmTheme.primaryLight}
                                 >
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                   </svg>
-                                  <span className="max-w-[120px] truncate">{source.subject?.split('/').pop() || source.subject}</span>
+                                  <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{source.subject?.split('/').pop() || source.subject}</span>
                                 </a>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-xs text-gray-500">
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '4px 10px',
+                                  borderRadius: '12px',
+                                  backgroundColor: warmTheme.border,
+                                  fontSize: '12px',
+                                  color: warmTheme.textMuted
+                                }}>
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                   </svg>
-                                  <span className="max-w-[120px] truncate">{source.subject?.split('/').pop() || source.subject}</span>
+                                  <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{source.subject?.split('/').pop() || source.subject}</span>
                                 </span>
                               )}
                               {/* Tooltip on hover */}
@@ -666,13 +787,21 @@ export default function ChatInterface() {
 
                 {isLoading && (
                   <div className="flex justify-start">
-                    <div className="flex items-center gap-3 px-5 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100">
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                        <div className="w-2 h-2 bg-blue-300 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px 20px',
+                      background: warmTheme.primaryLight,
+                      borderRadius: '16px',
+                      border: `1px solid ${warmTheme.border}`
+                    }}>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite' }}></div>
+                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.2s', opacity: 0.7 }}></div>
+                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.4s', opacity: 0.5 }}></div>
                       </div>
-                      <span className="text-blue-600 text-sm font-medium">Thinking</span>
+                      <span style={{ color: warmTheme.primary, fontSize: '14px', fontWeight: 500 }}>Thinking</span>
                     </div>
                   </div>
                 )}
@@ -693,9 +822,24 @@ export default function ChatInterface() {
 
             {/* Upload progress indicator */}
             {isUploading && (
-              <div className="flex items-center gap-3 px-4 py-2 bg-blue-50 rounded-lg mb-2">
-                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-sm text-blue-700">
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 16px',
+                backgroundColor: warmTheme.primaryLight,
+                borderRadius: '12px',
+                marginBottom: '8px'
+              }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  border: `2px solid ${warmTheme.primary}`,
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                <span style={{ fontSize: '14px', color: warmTheme.primary }}>
                   Uploading and processing documents...
                 </span>
               </div>
@@ -703,18 +847,26 @@ export default function ChatInterface() {
 
             {/* Attached files preview */}
             {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-2">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
                 {attachedFiles.map((file, idx) => (
-                  <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full text-sm">
-                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div key={idx} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 12px',
+                    backgroundColor: warmTheme.border,
+                    borderRadius: '20px',
+                    fontSize: '14px'
+                  }}>
+                    <svg style={{ width: '16px', height: '16px', color: warmTheme.textSecondary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <span className="max-w-[150px] truncate text-gray-700">{file.name}</span>
+                    <span style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: warmTheme.textPrimary }}>{file.name}</span>
                     <button
                       onClick={() => removeAttachment(idx)}
-                      className="text-gray-400 hover:text-gray-600"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: warmTheme.textMuted }}
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
@@ -725,8 +877,18 @@ export default function ChatInterface() {
 
             {/* Input Box */}
             <div
-              className="flex flex-col justify-between items-start self-stretch bg-white rounded-[20px] border border-gray-200 p-4"
-              style={{ minHeight: '79px' }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                alignSelf: 'stretch',
+                backgroundColor: '#FFFFFE',
+                borderRadius: '20px',
+                border: `1px solid ${warmTheme.border}`,
+                padding: '16px',
+                minHeight: '79px'
+              }}
             >
               <div className="flex items-center gap-3 w-full">
                 <button
@@ -759,6 +921,18 @@ export default function ChatInterface() {
           </div>
         </div>
       </div>
+
+      {/* CSS Animations */}
+      <style jsx global>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(0.9); }
+        }
+      `}</style>
     </div>
   )
 }

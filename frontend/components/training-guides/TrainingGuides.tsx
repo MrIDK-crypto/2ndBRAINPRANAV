@@ -8,6 +8,21 @@ import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
 
+// Wellspring-Inspired Warm Design System
+const warmTheme = {
+  primary: '#C9A598',
+  primaryHover: '#B8948A',
+  primaryLight: '#FBF4F1',
+  pageBg: '#FAF9F6',
+  cardBg: '#FFFFFF',
+  headerBg: '#FFFFFF',
+  textPrimary: '#2D2D2D',
+  textSecondary: '#6B6B6B',
+  textMuted: '#9A9A9A',
+  border: '#F0EEEC',
+  borderDark: '#E8E5E2',
+}
+
 interface Video {
   id: string
   title: string
@@ -95,8 +110,8 @@ const VideoPlayerModal = ({ video, onClose }: VideoPlayerModalProps) => {
           ) : (
             <div style={{ textAlign: 'center', color: '#94A3B8' }}>
               <svg width="80" height="80" viewBox="0 0 24 24" fill="none" style={{ margin: '0 auto 16px' }}>
-                <circle cx="12" cy="12" r="10" stroke="#3B82F6" strokeWidth="2" />
-                <path d="M10 8L16 12L10 16V8Z" fill="#3B82F6" />
+                <circle cx="12" cy="12" r="10" stroke={warmTheme.primary} strokeWidth="2" />
+                <path d="M10 8L16 12L10 16V8Z" fill={warmTheme.primary} />
               </svg>
               <p style={{ fontSize: '16px', fontWeight: 500 }}>Demo Video Preview</p>
               <p style={{ fontSize: '14px', marginTop: '8px' }}>Duration: {formatDuration(video.duration_seconds)}</p>
@@ -133,7 +148,7 @@ const VideoPlayerModal = ({ video, onClose }: VideoPlayerModalProps) => {
           <h2 style={{
             fontSize: '20px',
             fontWeight: 600,
-            color: '#111827',
+            color: warmTheme.textPrimary,
             marginBottom: '8px',
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
           }}>
@@ -141,20 +156,20 @@ const VideoPlayerModal = ({ video, onClose }: VideoPlayerModalProps) => {
           </h2>
           <p style={{
             fontSize: '14px',
-            color: '#6B7280',
+            color: warmTheme.textSecondary,
             marginBottom: '16px',
             lineHeight: '1.5'
           }}>
             {video.description}
           </p>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '13px', color: '#9CA3AF' }}>
+            <span style={{ fontSize: '13px', color: warmTheme.textMuted }}>
               {video.views?.toLocaleString() || 0} views
             </span>
-            <span style={{ fontSize: '13px', color: '#9CA3AF' }}>
+            <span style={{ fontSize: '13px', color: warmTheme.textMuted }}>
               {video.slides_count} slides
             </span>
-            <span style={{ fontSize: '13px', color: '#9CA3AF' }}>
+            <span style={{ fontSize: '13px', color: warmTheme.textMuted }}>
               {formatDuration(video.duration_seconds)}
             </span>
           </div>
@@ -193,13 +208,13 @@ const VideoListItem = ({ video, onClick, index }: { video: Video, onClick: () =>
     return `${Math.floor(diffDays / 365)} years ago`
   }
 
-  // Generate gradient colors for thumbnails
+  // Warm gradient colors for thumbnails
   const gradients = [
-    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-    'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+    'linear-gradient(135deg, #C9A598 0%, #B8948A 100%)',
+    'linear-gradient(135deg, #D4B8B0 0%, #C9A598 100%)',
+    'linear-gradient(135deg, #9CB896 0%, #8AAA84 100%)',
+    'linear-gradient(135deg, #B8C4D4 0%, #A0AEBE 100%)',
+    'linear-gradient(135deg, #D4C4B8 0%, #C9B8A8 100%)',
   ]
 
   return (
@@ -209,12 +224,18 @@ const VideoListItem = ({ video, onClick, index }: { video: Video, onClick: () =>
         display: 'flex',
         gap: '20px',
         padding: '16px',
-        borderRadius: '12px',
+        borderRadius: '16px',
         cursor: 'pointer',
-        transition: 'background-color 0.15s'
+        transition: 'all 0.15s ease'
       }}
-      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F3F4F6'}
-      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = warmTheme.primaryLight
+        e.currentTarget.style.transform = 'translateX(4px)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = 'transparent'
+        e.currentTarget.style.transform = 'translateX(0)'
+      }}
     >
       {/* Thumbnail - Bigger */}
       <div style={{
@@ -267,7 +288,7 @@ const VideoListItem = ({ video, onClick, index }: { video: Video, onClick: () =>
         <h3 style={{
           fontSize: '18px',
           fontWeight: 600,
-          color: '#111827',
+          color: warmTheme.textPrimary,
           marginBottom: '8px',
           lineHeight: '1.4',
           display: '-webkit-box',
@@ -280,14 +301,14 @@ const VideoListItem = ({ video, onClick, index }: { video: Video, onClick: () =>
         </h3>
         <p style={{
           fontSize: '14px',
-          color: '#6B7280',
+          color: warmTheme.textSecondary,
           marginBottom: '6px'
         }}>
           {video.author || '2nd Brain'}
         </p>
         <p style={{
           fontSize: '14px',
-          color: '#9CA3AF'
+          color: warmTheme.textMuted
         }}>
           {formatViews(video.views)} • {formatDate(video.created_at)}
         </p>
@@ -306,7 +327,7 @@ const VideoListItem = ({ video, onClick, index }: { video: Video, onClick: () =>
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#6B7280',
+          color: warmTheme.textSecondary,
           flexShrink: 0
         }}
       >
@@ -361,7 +382,7 @@ export default function TrainingGuides() {
   const totalViews = displayVideos.reduce((sum, v) => sum + (v.views || 0), 0)
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F8FAFC' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: warmTheme.pageBg }}>
       {/* Sidebar */}
       <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
 
@@ -370,14 +391,14 @@ export default function TrainingGuides() {
         {/* Header */}
         <div style={{
           padding: '24px 32px',
-          borderBottom: '1px solid #E5E7EB',
-          backgroundColor: '#FFFFFF'
+          borderBottom: `1px solid ${warmTheme.border}`,
+          backgroundColor: warmTheme.headerBg
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h1 style={{
               fontSize: '24px',
               fontWeight: 700,
-              color: '#111827',
+              color: warmTheme.textPrimary,
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
             }}>
               Training Videos
@@ -389,12 +410,12 @@ export default function TrainingGuides() {
               alignItems: 'center',
               gap: '10px',
               padding: '10px 16px',
-              backgroundColor: '#F9FAFB',
+              backgroundColor: warmTheme.primaryLight,
               borderRadius: '24px',
-              border: '1px solid #E5E7EB',
+              border: `1px solid ${warmTheme.border}`,
               width: '320px'
             }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={warmTheme.textMuted} strokeWidth="2">
                 <circle cx="11" cy="11" r="8" />
                 <path d="M21 21l-4.35-4.35" />
               </svg>
@@ -409,7 +430,7 @@ export default function TrainingGuides() {
                   outline: 'none',
                   backgroundColor: 'transparent',
                   fontSize: '14px',
-                  color: '#374151'
+                  color: warmTheme.textPrimary
                 }}
               />
             </div>
@@ -428,8 +449,8 @@ export default function TrainingGuides() {
               <div style={{
                 width: '32px',
                 height: '32px',
-                border: '3px solid #E5E7EB',
-                borderTopColor: '#2563EB',
+                border: `3px solid ${warmTheme.border}`,
+                borderTopColor: warmTheme.primary,
                 borderRadius: '50%',
                 animation: 'spin 1s linear infinite'
               }} />
@@ -443,7 +464,7 @@ export default function TrainingGuides() {
                 justifyContent: 'space-between',
                 marginBottom: '24px'
               }}>
-                <p style={{ fontSize: '14px', color: '#6B7280' }}>
+                <p style={{ fontSize: '14px', color: warmTheme.textSecondary }}>
                   {displayVideos.length} videos • {totalMins} min total
                 </p>
               </div>
@@ -464,10 +485,12 @@ export default function TrainingGuides() {
                 <div style={{
                   textAlign: 'center',
                   padding: '48px',
-                  color: '#6B7280'
+                  backgroundColor: warmTheme.cardBg,
+                  borderRadius: '16px',
+                  border: `1px solid ${warmTheme.border}`
                 }}>
-                  <p style={{ fontSize: '16px', marginBottom: '8px' }}>No videos found</p>
-                  <p style={{ fontSize: '14px' }}>Try a different search term</p>
+                  <p style={{ fontSize: '16px', marginBottom: '8px', color: warmTheme.textSecondary }}>No videos found</p>
+                  <p style={{ fontSize: '14px', color: warmTheme.textMuted }}>Try a different search term</p>
                 </div>
               )}
             </>
