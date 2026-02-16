@@ -177,7 +177,7 @@ export default function SettingsPage() {
           borderBottom: `1px solid ${theme.border}`,
           backgroundColor: theme.cardBg,
         }}>
-          <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+          <div style={{ maxWidth: '900px' }}>
             <h1 style={{
               fontSize: '26px',
               fontWeight: 700,
@@ -200,7 +200,7 @@ export default function SettingsPage() {
 
         {/* Content */}
         <div style={{ flex: 1, padding: '32px 40px', overflowY: 'auto' }}>
-          <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+          <div style={{ maxWidth: '900px' }}>
 
             {/* Account Type */}
             <section style={{
