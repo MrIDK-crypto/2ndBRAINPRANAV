@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import DocumentViewer from './DocumentViewer'
 import Sidebar from '../shared/Sidebar'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
 // Wellspring-Inspired Warm Design System
 const colors = {
@@ -1283,7 +1283,7 @@ export default function Documents() {
                   if (documents.length > 0 && !analyzingGaps) e.currentTarget.style.backgroundColor = colors.primaryHover
                 }}
                 onMouseLeave={(e) => {
-                  if (documents.length > 0 && !analyzingGaps) e.currentTarget.style.backgroundColor = colors.statusBlue
+                  if (documents.length > 0 && !analyzingGaps) e.currentTarget.style.backgroundColor = colors.primary
                 }}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
