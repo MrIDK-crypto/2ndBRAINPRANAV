@@ -508,7 +508,8 @@ export default function ChatInterface() {
 
       // Clean up orphaned commas and extra whitespace from removed sources
       cleanedAnswer = cleanedAnswer.replace(/,\s*,/g, ',')
-      cleanedAnswer = cleanedAnswer.replace(/\s{2,}/g, ' ')
+      // Only collapse multiple spaces/tabs — preserve newlines so tables and headings render
+      cleanedAnswer = cleanedAnswer.replace(/[^\S\n]{2,}/g, ' ')
       cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n')
 
       const aiSources = response.data.sources?.map((s: any, idx: number) => ({
