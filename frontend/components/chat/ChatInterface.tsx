@@ -622,7 +622,7 @@ export default function ChatInterface() {
     const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
     const shareToken = sessionManager.getShareToken()
     const authToken = sourceToken || shareToken
-    const processedText = text.replace(
+    let processedText = text.replace(
       /\[\[SOURCE:([^:]+):([^\]]+)\]\]/g,
       (match: string, name: string, docId: string) => {
         const hasValidDocId = docId && docId.length >= 32
@@ -635,9 +635,23 @@ export default function ChatInterface() {
         } else if (hasValidDocId) {
           return `[${name}](${API_BASE}/documents/${encodeURIComponent(docId)}/view)`
         }
-        return `**${name}**`
+        return name
       }
     )
+
+    // Fix tables: ensure blank lines before and after markdown tables so they render properly
+    // Match table rows (lines starting with |) and ensure they have blank lines around the block
+    processedText = processedText.replace(
+      /([^\n])\n(\|[^\n]+\|)/g,
+      '$1\n\n$2'
+    )
+    processedText = processedText.replace(
+      /(\|[^\n]+\|)\n([^\n|])/g,
+      '$1\n\n$2'
+    )
+
+    // Strip bold markers (**text**) — render as plain text
+    processedText = processedText.replace(/\*\*([^*]+)\*\*/g, '$1')
 
     return (
       <ReactMarkdown
@@ -690,8 +704,8 @@ export default function ChatInterface() {
               {children}
             </blockquote>
           ),
-          // Style strong/bold
-          strong: ({ children }: any) => <strong className="font-semibold">{children}</strong>,
+          // Render bold as normal text (no bold styling)
+          strong: ({ children }: any) => <span>{children}</span>,
           // Style tables (GFM)
           table: ({ children }: any) => (
             <div className="overflow-x-auto my-3">
