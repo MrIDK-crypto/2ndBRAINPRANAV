@@ -200,7 +200,7 @@ export default function SettingsPage() {
 
         {/* Content */}
         <div style={{ flex: 1, padding: '32px 40px', overflowY: 'auto' }}>
-          <div style={{ maxWidth: '900px' }}>
+          <div style={{ maxWidth: '900px', margin: '0 auto' }}>
 
             {/* Account Type */}
             <section style={{
