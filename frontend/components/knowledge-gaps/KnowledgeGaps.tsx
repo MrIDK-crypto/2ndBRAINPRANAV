@@ -417,9 +417,6 @@ export default function KnowledgeGaps() {
 
   // Fetch LLM-summarized context for a gap
   const fetchContextForGap = async (gapId: string) => {
-    // Skip API call for sample/demo gaps
-    if (gapId.startsWith('sample_')) return
-
     // Extract original gap ID (remove question index suffix if present)
     const idParts = gapId.split('_')
     const originalGapId = idParts.length > 1 ? idParts.slice(0, -1).join('_') : gapId
@@ -457,49 +454,6 @@ export default function KnowledgeGaps() {
     return text.trim()
   }
 
-  // Sample knowledge gaps for demo
-  const SAMPLE_GAPS: KnowledgeGap[] = [
-    {
-      id: 'sample_1',
-      description: 'What is the onboarding process for new team members joining the engineering department?',
-      project: 'Onboarding',
-      category: 'Process',
-      priority: 'high',
-      estimated_time: 5,
-    },
-    {
-      id: 'sample_2',
-      description: 'How do we handle customer escalations that require executive involvement?',
-      project: 'Customer Success',
-      category: 'Escalation',
-      priority: 'high',
-      estimated_time: 4,
-    },
-    {
-      id: 'sample_3',
-      description: 'What are the key metrics we track for quarterly business reviews?',
-      project: 'Operations',
-      category: 'Metrics',
-      priority: 'medium',
-      estimated_time: 3,
-    },
-    {
-      id: 'sample_4',
-      description: 'Who are the primary stakeholders for the product roadmap decisions?',
-      project: 'Product',
-      category: 'Stakeholders',
-      priority: 'medium',
-      estimated_time: 2,
-    },
-    {
-      id: 'sample_5',
-      description: 'What documentation standards should be followed for API changes?',
-      project: 'Engineering',
-      category: 'Documentation',
-      priority: 'low',
-      estimated_time: 3,
-    },
-  ]
 
   const loadKnowledgeGaps = async () => {
     if (!authHeaders || !authHeaders.Authorization) return
@@ -566,19 +520,13 @@ export default function KnowledgeGaps() {
         setGaps(allGaps)
         setAnswers(initialAnswers)
       } else {
-        // Use sample gaps for demo
-        setGaps(SAMPLE_GAPS)
-        const sampleAnswers: Record<string, string> = {}
-        SAMPLE_GAPS.forEach(g => { sampleAnswers[g.id] = '' })
-        setAnswers(sampleAnswers)
+        setGaps([])
+        setAnswers({})
       }
     } catch (error: any) {
       console.error('[KnowledgeGaps] Error:', error)
-      // On error, still show sample gaps for demo
-      setGaps(SAMPLE_GAPS)
-      const sampleAnswers: Record<string, string> = {}
-      SAMPLE_GAPS.forEach(g => { sampleAnswers[g.id] = '' })
-      setAnswers(sampleAnswers)
+      setGaps([])
+      setAnswers({})
     } finally {
       setLoading(false)
     }
@@ -602,16 +550,6 @@ export default function KnowledgeGaps() {
 
     setSubmittingId(gapId)
     try {
-      // Skip API call for sample/demo gaps - just update local state
-      if (gapId.startsWith('sample_')) {
-        setGaps(prev => prev.map(g => g.id === gapId ? { ...g, answered: true } : g))
-        setSessionAnswered(prev => prev + 1)
-        const filtered = getFilteredGaps()
-        const currentIdx = filtered.findIndex(g => g.id === gapId)
-        if (currentIdx < filtered.length - 1) setCurrentGapIndex(currentIdx + 1)
-        return
-      }
-
       const idParts = gapId.split('_')
       const questionIndex = idParts.length > 1 ? parseInt(idParts[idParts.length - 1]) : 0
       const originalGapId = idParts.length > 1 ? idParts.slice(0, -1).join('_') : gapId

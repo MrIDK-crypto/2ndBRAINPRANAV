@@ -1238,9 +1238,9 @@ _engine_kwargs = {
 if _is_postgres:
     # PostgreSQL-specific settings for production
     _engine_kwargs.update({
-        'pool_size': 10,  # Base pool connections (4 workers x 2-3 concurrent)
-        'max_overflow': 20,  # Extra connections under load
-        'pool_timeout': 30,  # Wait up to 30s for a connection
+        'pool_size': 20,  # Base pool connections (handles 20 concurrent syncs)
+        'max_overflow': 30,  # Extra connections under burst load
+        'pool_timeout': 60,  # Wait up to 60s for a connection (syncs are long-running)
     })
 elif _is_sqlite:
     # SQLite-specific settings for local development

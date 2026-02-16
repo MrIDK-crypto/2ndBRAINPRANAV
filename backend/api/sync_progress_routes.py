@@ -288,6 +288,68 @@ def get_progress(sync_id: str):
         }), 404
 
 
+@sync_progress_bp.route('/<sync_id>/subscribe-email', methods=['POST', 'OPTIONS'])
+@require_auth
+def subscribe_email(sync_id: str):
+    """
+    Subscribe for email notification when sync completes.
+    Called when user checks "Email me when done" checkbox.
+    The email is sent server-side when sync completes, even if browser is closed.
+
+    Persists to BOTH in-memory service AND database (Connector.settings)
+    so it survives race conditions and multi-worker deployments.
+
+    POST /api/sync-progress/<sync_id>/subscribe-email
+
+    Returns:
+        { "success": true, "message": "Email notification subscribed" }
+    """
+    from database.models import SessionLocal, User, Connector
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or not user.email:
+            return jsonify({"success": False, "error": "User email not found"}), 400
+
+        email = user.email
+
+        # 1) Try in-memory service (works if sync is on this worker)
+        service = get_sync_progress_service()
+        service.subscribe_email(sync_id, email)
+
+        # 2) ALSO persist to database (survives multi-worker, race conditions)
+        # Find connector with this sync_id
+        connectors = db.query(Connector).filter(
+            Connector.tenant_id == g.tenant_id
+        ).all()
+
+        db_persisted = False
+        for connector in connectors:
+            settings = connector.settings or {}
+            if settings.get('current_sync_id') == sync_id:
+                settings['notify_email'] = email
+                connector.settings = settings
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(connector, 'settings')
+                db.commit()
+                db_persisted = True
+                print(f"[SubscribeEmail] Persisted notify_email to DB for sync {sync_id}")
+                break
+
+        if not db_persisted:
+            print(f"[SubscribeEmail] No connector found in DB for sync {sync_id}, in-memory only")
+
+        return jsonify({
+            "success": True,
+            "message": f"Email notification will be sent to {email} when sync completes"
+        })
+    except Exception as e:
+        print(f"[SubscribeEmail] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @sync_progress_bp.route('/<sync_id>/notify', methods=['POST', 'OPTIONS'])
 @require_auth
 def send_notification(sync_id: str):

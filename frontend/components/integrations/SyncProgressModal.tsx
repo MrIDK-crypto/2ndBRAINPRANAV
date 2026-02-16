@@ -7,20 +7,21 @@ interface SyncProgressModalProps {
   syncId: string
   connectorType: string
   onClose: () => void
-  onCloseWhileActive?: () => void  // Called when user closes modal while sync is still running
-  initialEstimatedSeconds?: number  // From prescan, shown until we can calculate from rate
+  onCloseWhileActive?: () => void
+  initialEstimatedSeconds?: number
 }
 
 interface ProgressData {
   sync_id: string
   connector_type: string
-  status: 'connecting' | 'syncing' | 'parsing' | 'embedding' | 'complete' | 'error'
+  status: 'connecting' | 'fetching' | 'syncing' | 'saving' | 'extracting' | 'embedding' | 'parsing' | 'complete' | 'error'
   stage: string
   total_items: number
   processed_items: number
   failed_items: number
   current_item?: string
   error_message?: string
+  overall_percent: number
   percent_complete: number
 }
 
@@ -34,37 +35,39 @@ const connectorConfig: Record<string, { logo: string; name: string }> = {
   gmail: { logo: '/gmail.png', name: 'Gmail' },
   slack: { logo: '/slack.png', name: 'Slack' },
   box: { logo: '/box.png', name: 'Box' },
-  onedrive: { logo: '/docs.png', name: 'OneDrive' },
+  onedrive: { logo: '/microsoft365.png', name: 'OneDrive' },
   googledrive: { logo: '/gdrive.png', name: 'Google Drive' },
   gdrive: { logo: '/gdrive.png', name: 'Google Drive' },
   notion: { logo: '/notion.png', name: 'Notion' },
-  zotero: { logo: '/pubmed.png', name: 'Zotero' },
+  zotero: { logo: '/zotero.webp', name: 'Zotero' },
   outlook: { logo: '/outlook.png', name: 'Outlook' },
   excel: { logo: '/excel.png', name: 'Excel' },
   powerpoint: { logo: '/powerpoint.png', name: 'PowerPoint' },
   gdocs: { logo: '/gdocs.png', name: 'Google Docs' },
   gsheets: { logo: '/gsheets.png', name: 'Google Sheets' },
   gslides: { logo: '/gslides.png', name: 'Google Slides' },
-  webscraper: { logo: '/docs.png', name: 'Website' },
+  webscraper: { logo: '/website-builder.png', name: 'Website' },
+  firecrawl: { logo: '/website-builder.png', name: 'Website' },
+  quartzy: { logo: '/quartzy.png', name: 'Quartzy' },
   default: { logo: '/owl.png', name: 'Integration' }
 }
 
-// Consistent color palette - Blue/Grey Theme
+// Warm Coral theme (matches app-wide palette)
 const colors = {
-  primary: '#2563EB',
-  primaryLight: '#EFF6FF',
-  primaryBorder: '#BFDBFE',
-  success: '#3B82F6',       // Blue for success
-  successLight: '#EFF6FF',
-  successBorder: '#BFDBFE',
-  error: '#64748B',         // Slate grey for errors
-  errorLight: '#F1F5F9',
-  errorBorder: '#CBD5E1',
-  gray: '#6B7280',
-  grayLight: '#F9FAFB',
-  grayBorder: '#E5E7EB',
-  text: '#111827',
-  textMuted: '#6B7280'
+  primary: '#C9A598',
+  primaryLight: '#FBF4F1',
+  primaryBorder: '#E8D5CE',
+  success: '#9CB896',
+  successLight: '#F0F7EE',
+  successBorder: '#C8DCC3',
+  error: '#B87070',
+  errorLight: '#FBF0F0',
+  errorBorder: '#E0B8B8',
+  gray: '#6B6B6B',
+  grayLight: '#FAF9F7',
+  grayBorder: '#F0EEEC',
+  text: '#2D2D2D',
+  textMuted: '#6B6B6B'
 }
 
 export default function SyncProgressModal({ syncId, connectorType, onClose, onCloseWhileActive, initialEstimatedSeconds }: SyncProgressModalProps) {
@@ -73,43 +76,20 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
   const [elapsed, setElapsed] = useState(0)
   const [startTime] = useState(Date.now())
   const [emailWhenDone, setEmailWhenDone] = useState(false)
-  const [emailSent, setEmailSent] = useState(false)
+  const [emailSubscribed, setEmailSubscribed] = useState(false)
   const eventSourceRef = useRef<EventSource | null>(null)
-
-  // Use refs to avoid stale closure in useEffect callbacks
-  const emailWhenDoneRef = useRef(emailWhenDone)
-  const emailSentRef = useRef(emailSent)
-
-  // Keep refs in sync with state
-  useEffect(() => {
-    emailWhenDoneRef.current = emailWhenDone
-  }, [emailWhenDone])
-
-  useEffect(() => {
-    emailSentRef.current = emailSent
-  }, [emailSent])
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   const config = connectorConfig[connectorType] || connectorConfig.default
 
-  // Send email notification when sync completes
-  // Uses refs to avoid stale closure issues
-  const sendEmailNotification = async () => {
-    console.log('[SyncProgress] sendEmailNotification called, emailWhenDone:', emailWhenDoneRef.current, 'emailSent:', emailSentRef.current)
-
-    if (!emailWhenDoneRef.current || emailSentRef.current) {
-      console.log('[SyncProgress] Skipping email notification - emailWhenDone:', emailWhenDoneRef.current, 'emailSent:', emailSentRef.current)
-      return
-    }
-
+  // Subscribe for server-side email notification
+  const subscribeEmail = async () => {
     try {
       const token = localStorage.getItem('accessToken')
-      if (!token) {
-        console.log('[SyncProgress] No token found, skipping email')
-        return
-      }
+      if (!token) return
 
-      console.log('[SyncProgress] Sending email notification request to:', `${API_BASE}/sync-progress/${syncId}/notify`)
-      const response = await fetch(`${API_BASE}/sync-progress/${syncId}/notify`, {
+      const response = await fetch(`${API_BASE}/sync-progress/${syncId}/subscribe-email`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -118,17 +98,22 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
       })
 
       const data = await response.json()
-      console.log('[SyncProgress] Email notification response:', response.status, data)
-
       if (response.ok && data.success) {
-        console.log('[SyncProgress] Email notification sent successfully')
-        setEmailSent(true)
-        emailSentRef.current = true
+        setEmailSubscribed(true)
+        console.log('[SyncProgress] Email subscription registered server-side')
       } else {
-        console.error('[SyncProgress] Email notification failed:', data.error || 'Unknown error')
+        console.error('[SyncProgress] Email subscription failed:', data.error)
       }
     } catch (err) {
-      console.error('[SyncProgress] Failed to send email notification:', err)
+      console.error('[SyncProgress] Failed to subscribe email:', err)
+    }
+  }
+
+  // Handle email checkbox toggle
+  const handleEmailToggle = (checked: boolean) => {
+    setEmailWhenDone(checked)
+    if (checked && !emailSubscribed) {
+      subscribeEmail()
     }
   }
 
@@ -139,7 +124,7 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
     return () => clearInterval(timer)
   }, [startTime, progress?.status])
 
-  // SSE connection with polling fallback for multi-worker deployments
+  // SSE connection with polling fallback
   useEffect(() => {
     const token = localStorage.getItem('accessToken')
     if (!token) return
@@ -148,7 +133,7 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
     let lastUpdateTime = Date.now()
     let sseConnected = false
 
-    // Polling fallback function
+    // Polling fallback
     const pollProgress = async () => {
       try {
         const response = await fetch(
@@ -158,7 +143,6 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
         if (response.ok) {
           const data = await response.json()
           if (data.success && data.status) {
-            // Map status endpoint format to SSE format
             const mappedProgress: ProgressData = {
               sync_id: syncId,
               connector_type: connectorType,
@@ -168,18 +152,16 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
               processed_items: data.status.documents_parsed || 0,
               failed_items: 0,
               current_item: data.status.current_file,
-              percent_complete: data.status.progress || 0
+              overall_percent: data.status.overall_percent ?? data.status.progress ?? 0,
+              percent_complete: data.status.overall_percent ?? data.status.progress ?? 0
             }
             setProgress(mappedProgress)
             lastUpdateTime = Date.now()
 
-            // Stop polling on complete
-            if (data.status.status === 'completed' || data.status.status === 'error') {
+            if (data.status.status === 'completed' || data.status.status === 'complete' || data.status.status === 'error') {
               if (pollingInterval) clearInterval(pollingInterval)
-              if (data.status.status === 'completed') {
-                // Send email notification if enabled (uses refs internally)
-                sendEmailNotification()
-                setTimeout(() => onClose(), 3000)
+              if (data.status.status !== 'error') {
+                setTimeout(() => onCloseRef.current(), 3000)
               }
             }
           }
@@ -213,9 +195,8 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
         setProgress(JSON.parse(e.data))
       } catch {}
       if (pollingInterval) clearInterval(pollingInterval)
-      // Send email notification if enabled (uses refs internally)
-      sendEmailNotification()
-      setTimeout(() => { es.close(); onClose() }, 3000)
+      // Email notification is now handled server-side (no client-side call needed)
+      setTimeout(() => { es.close(); onCloseRef.current() }, 3000)
     })
     es.addEventListener('error', (e: MessageEvent) => {
       try { if (e.data && e.data !== 'undefined') setProgress(JSON.parse(e.data)) } catch {}
@@ -231,8 +212,8 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
     const checkSSE = setTimeout(() => {
       if (!sseConnected || Date.now() - lastUpdateTime > 3000) {
         console.log('[SyncProgress] SSE inactive, starting polling fallback')
-        pollProgress() // Initial poll
-        pollingInterval = setInterval(pollProgress, 2000) // Poll every 2 seconds
+        pollProgress()
+        pollingInterval = setInterval(pollProgress, 2000)
       }
     }, 3000)
 
@@ -241,53 +222,41 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
       clearTimeout(checkSSE)
       if (pollingInterval) clearInterval(pollingInterval)
     }
-  }, [syncId, connectorType, onClose])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncId, connectorType])
 
   const isComplete = progress?.status === 'complete'
   const isError = progress?.status === 'error'
   const isActive = !isComplete && !isError
-  // Calculate percentage, but show minimum 10% when actively syncing to indicate activity
-  const rawPct = progress?.total_items ? Math.round((progress.processed_items / progress.total_items) * 100) : 0
-  // During early phases (syncing/analyzing), show at least 10% so it doesn't look stuck
-  const isAnalyzing = progress?.status === 'syncing' && progress?.stage?.toLowerCase().includes('analyz')
-  const pct = isAnalyzing && rawPct === 0 ? 10 : rawPct
+
+  // Use server-calculated percentage directly (accurate, phase-based)
+  const pct = Math.round(progress?.overall_percent ?? progress?.percent_complete ?? 0)
+
+  // Determine if we're in an indeterminate phase (fetch - no item count yet)
+  const isFetching = isActive && (!progress || progress.status === 'connecting' || progress.status === 'fetching' || progress.status === 'syncing')
+  const isProcessing = isActive && ['saving', 'extracting', 'embedding', 'parsing'].includes(progress?.status || '')
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60)
     return m > 0 ? `${m}m ${s % 60}s` : `${s}s`
   }
 
-  // Calculate estimated remaining time based on progress rate
+  // Estimated remaining based on progress rate
   const getEstimatedRemaining = () => {
-    if (!isActive) return null
+    if (!isActive || pct <= 0) return null
 
-    // Prefer initial estimate from prescan until we have significant progress (>20%)
-    // This avoids wild fluctuations early in the sync when LLM analysis skews the rate
-    if (progress) {
-      const { processed_items, total_items } = progress
-      const progressPercent = total_items > 0 ? (processed_items / total_items) * 100 : 0
-
-      // Only calculate from rate after 20% progress AND at least 30 seconds elapsed
-      // This gives us more stable data after the initial LLM analysis phase
-      if (progressPercent > 20 && elapsed > 30 && processed_items > 0) {
-        const rate = processed_items / elapsed
-        if (rate > 0) {
-          const remainingItems = total_items - processed_items
-          const remainingSeconds = Math.ceil(remainingItems / rate)
-          // Cap at reasonable maximum (don't show > 30 minutes)
-          return Math.min(remainingSeconds, 1800)
-        }
+    // Calculate from overall percent rate
+    if (pct > 5 && elapsed > 10) {
+      const percentPerSec = pct / elapsed
+      if (percentPerSec > 0) {
+        const remainingPercent = 100 - pct
+        const remainingSeconds = Math.ceil(remainingPercent / percentPerSec)
+        return Math.min(remainingSeconds, 1800)
       }
     }
 
-    // Use initial estimate from prescan (more reliable early on)
     if (initialEstimatedSeconds && initialEstimatedSeconds > elapsed) {
       return initialEstimatedSeconds - elapsed
-    }
-
-    // If elapsed exceeds initial estimate, show small buffer
-    if (initialEstimatedSeconds) {
-      return Math.max(30, initialEstimatedSeconds - elapsed + 60) // At least 30s, or estimate + 1min buffer
     }
 
     return null
@@ -297,23 +266,36 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
 
   const getStatusText = () => {
     if (!progress) return 'Connecting...'
-    // If stage contains file count info (from pre-scan), show it
-    if (progress.stage && progress.stage.includes('Found')) {
-      return progress.stage
-    }
+    if (progress.stage && progress.stage.includes('Found')) return progress.stage
     switch (progress.status) {
       case 'connecting': return 'Connecting...'
+      case 'fetching':
       case 'syncing': return progress.stage || 'Fetching data...'
+      case 'saving': return progress.stage || 'Saving documents...'
+      case 'extracting': return progress.stage || 'Extracting summaries...'
+      case 'embedding': return progress.stage || 'Embedding documents...'
       case 'parsing': return progress.stage || 'Processing files...'
-      case 'embedding': return progress.stage || 'Building index...'
       case 'complete': return 'Sync complete!'
       case 'error': return 'Sync failed'
       default: return progress.stage || 'Processing...'
     }
   }
 
+  // Auto-dismiss minimized pill when sync completes
+  const [pillFading, setPillFading] = useState(false)
+  useEffect(() => {
+    if (isMinimized && (isComplete || pct >= 100)) {
+      const timer = setTimeout(() => {
+        setPillFading(true)
+        setTimeout(() => onCloseRef.current(), 500)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [isMinimized, isComplete, pct])
+
   // Minimized floating pill
   if (isMinimized) {
+    const pillDone = isComplete || pct >= 100
     return (
       <>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -321,28 +303,33 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
           onClick={() => setIsMinimized(false)}
           style={{
             position: 'fixed', bottom: 24, right: 24,
-            background: isComplete ? colors.success : isError ? colors.error : '#fff',
-            color: isComplete || isError ? '#fff' : colors.text,
+            background: pillDone ? colors.success : isError ? colors.error : '#fff',
+            color: pillDone || isError ? '#fff' : colors.text,
             padding: '12px 20px', borderRadius: 12,
             boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
             cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12,
             fontSize: 14, fontWeight: 500, zIndex: 9999,
-            border: isComplete || isError ? 'none' : `1px solid ${colors.grayBorder}`
+            border: pillDone || isError ? 'none' : `1px solid ${colors.grayBorder}`,
+            opacity: pillFading ? 0 : 1,
+            transition: 'opacity 0.5s ease-out'
           }}
         >
-          {isActive && (
+          {!pillDone && !isError && (
             <div style={{
               width: 16, height: 16, borderRadius: '50%',
               border: `2px solid ${colors.grayBorder}`, borderTopColor: colors.primary,
               animation: 'spin 1s linear infinite'
             }} />
           )}
-          {isComplete && '✓'} {isError && '✕'}
+          {pillDone && <span style={{ fontSize: 16 }}>✓</span>}
+          {isError && <span style={{ fontSize: 16 }}>✕</span>}
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Image src={config.logo} alt={config.name} width={16} height={16} style={{ borderRadius: 4 }} />
             {config.name}
           </span>
-          {isActive && progress?.total_items ? (
+          {pillDone ? (
+            <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>Done</span>
+          ) : isActive && pct > 0 ? (
             <span style={{ background: 'rgba(0,0,0,0.08)', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>{pct}%</span>
           ) : null}
         </div>
@@ -354,7 +341,10 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
     <>
       <style>{`
         @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        @keyframes indeterminate{
+          0%{transform:translateX(-100%)}
+          100%{transform:translateX(200%)}
+        }
       `}</style>
 
       <div style={{
@@ -370,7 +360,7 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
           boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
           overflow: 'hidden'
         }}>
-          {/* Blue top accent */}
+          {/* Top accent bar */}
           <div style={{
             height: 4,
             background: isComplete ? colors.success : isError ? colors.error : colors.primary
@@ -440,7 +430,7 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
                     {getStatusText()}
                   </span>
                 </div>
-                {isActive && (progress?.total_items ?? 0) > 0 && (
+                {isActive && pct > 0 && (
                   <span style={{ fontSize: 14, fontWeight: 600, color: colors.primary }}>{pct}%</span>
                 )}
               </div>
@@ -448,15 +438,26 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
               {/* Progress bar */}
               {isActive && (
                 <div style={{ height: 6, background: colors.grayBorder, borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{
-                    height: '100%',
-                    width: progress?.total_items ? `${pct}%` : '30%',
-                    background: colors.primary,
-                    borderRadius: 3,
-                    transition: 'width 0.3s',
-                    // Pulse animation when analyzing (0% real progress) or when no total_items
-                    animation: (!progress?.total_items || isAnalyzing) ? 'pulse 1.5s ease-in-out infinite' : 'none'
-                  }} />
+                  {isFetching ? (
+                    /* Indeterminate sliding bar during fetch phase */
+                    <div style={{
+                      height: '100%',
+                      width: '40%',
+                      background: colors.primary,
+                      borderRadius: 3,
+                      opacity: 0.6,
+                      animation: 'indeterminate 1.5s ease-in-out infinite'
+                    }} />
+                  ) : (
+                    /* Determinate progress bar during processing phases */
+                    <div style={{
+                      height: '100%',
+                      width: `${pct}%`,
+                      background: colors.primary,
+                      borderRadius: 3,
+                      transition: 'width 0.5s ease'
+                    }} />
+                  )}
                 </div>
               )}
 
@@ -471,7 +472,7 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
               )}
             </div>
 
-            {/* Stats - all using blue theme */}
+            {/* Stats */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               <StatBox value={progress?.total_items || 0} label="Found" color={colors.primary} bgColor={colors.primaryLight} borderColor={colors.primaryBorder} />
               <StatBox value={progress?.processed_items || 0} label="Done" color={colors.success} bgColor={colors.successLight} borderColor={colors.successBorder} />
@@ -506,23 +507,16 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
                   <input
                     type="checkbox"
                     checked={emailWhenDone}
-                    onChange={(e) => setEmailWhenDone(e.target.checked)}
+                    onChange={(e) => handleEmailToggle(e.target.checked)}
                     style={{ width: 16, height: 16, cursor: 'pointer' }}
                   />
                   <span>Email me when sync completes</span>
                 </label>
-              </div>
-            )}
-
-            {/* Email sent confirmation */}
-            {emailSent && (
-              <div style={{
-                marginTop: 12, padding: '8px 12px', borderRadius: 8,
-                background: colors.successLight, border: `1px solid ${colors.successBorder}`,
-                fontSize: 13, color: colors.success, display: 'flex', alignItems: 'center', gap: 8
-              }}>
-                <span>✓</span>
-                <span>Email notification sent</span>
+                {emailSubscribed && (
+                  <p style={{ margin: '6px 0 0 26px', fontSize: 12, color: colors.success }}>
+                    ✓ You will be emailed when this sync finishes
+                  </p>
+                )}
               </div>
             )}
 
@@ -539,7 +533,7 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
                     ~{formatTime(remainingTime)} left
                   </span>
                 )}
-                <span>⏱ {formatTime(elapsed)}</span>
+                <span>{formatTime(elapsed)}</span>
               </div>
             </div>
           </div>

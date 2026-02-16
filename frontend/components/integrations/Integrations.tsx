@@ -2930,8 +2930,9 @@ const IntegrationCard = ({
           }}
         >
           {isThisSyncing ? (
-            <div
+            <span
               style={{
+                display: 'inline-block',
                 width: '8px',
                 height: '8px',
                 backgroundColor: '#FFFFFF',
@@ -2939,8 +2940,9 @@ const IntegrationCard = ({
               }}
             />
           ) : isSyncing ? (
-            <div
+            <span
               style={{
+                display: 'inline-block',
                 width: '12px',
                 height: '12px',
                 border: '2px solid transparent',
@@ -2961,19 +2963,19 @@ const IntegrationCard = ({
             {isSyncing && !isThisSyncing ? 'Connecting' : isThisSyncing ? 'Stop Sync' : integration.connected ? 'Connected' : 'Connect'}
           </span>
           {integration.connected && !isSyncing && !isThisSyncing && (
-            <div
+            <span
               style={{
+                display: 'inline-flex',
                 width: '16px',
                 height: '16px',
                 borderRadius: '50%',
                 backgroundColor: '#C9A598',
-                display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}
             >
               <span style={{ color: 'white', fontSize: '10px' }}>✓</span>
-            </div>
+            </span>
           )}
         </button>
 
@@ -3056,6 +3058,24 @@ export default function Integrations() {
   const [isHydrated, setIsHydrated] = useState(false)
   const [isConnecting, setIsConnecting] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<string | null>(null)
+  const [toastVisible, setToastVisible] = useState(false)
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Auto-dismiss toast after 4 seconds (errors stay longer)
+  useEffect(() => {
+    if (syncStatus) {
+      setToastVisible(true)
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+      const isError = syncStatus.toLowerCase().includes('error') || syncStatus.toLowerCase().includes('failed')
+      toastTimerRef.current = setTimeout(() => {
+        setToastVisible(false)
+        setTimeout(() => setSyncStatus(null), 300) // fade out then remove
+      }, isError ? 6000 : 4000)
+    } else {
+      setToastVisible(false)
+    }
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current) }
+  }, [syncStatus])
 
   // Channel selection state
   const [showChannelModal, setShowChannelModal] = useState(false)
@@ -4658,28 +4678,50 @@ export default function Integrations() {
 
         {/* Integrations Grid */}
         <div>
-          {/* Status Message */}
+          {/* Toast Notification */}
           {syncStatus && (
             <div
-              className="mb-4 p-4 rounded-lg"
               style={{
-                width: '100%',
-                backgroundColor: syncStatus.includes('error') || syncStatus.includes('failed') || syncStatus.includes('Failed')
-                  ? '#FEE2E2'
-                  : syncStatus.includes('Syncing')
-                    ? '#FEF3C7'
-                    : '#D1FAE5',
-                border: '1px solid',
-                borderColor: syncStatus.includes('error') || syncStatus.includes('failed') || syncStatus.includes('Failed')
-                  ? '#FCA5A5'
-                  : syncStatus.includes('Syncing')
-                    ? '#FCD34D'
-                    : '#6EE7B7'
+                position: 'fixed',
+                top: 24,
+                right: 24,
+                zIndex: 10000,
+                maxWidth: 420,
+                padding: '14px 20px',
+                borderRadius: 12,
+                boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontFamily: 'Inter, sans-serif',
+                fontSize: 14,
+                fontWeight: 500,
+                opacity: toastVisible ? 1 : 0,
+                transform: toastVisible ? 'translateY(0)' : 'translateY(-12px)',
+                transition: 'opacity 0.3s ease, transform 0.3s ease',
+                backgroundColor: syncStatus.toLowerCase().includes('error') || syncStatus.toLowerCase().includes('failed')
+                  ? '#FBF0F0'
+                  : '#FBF4F1',
+                border: `1px solid ${
+                  syncStatus.toLowerCase().includes('error') || syncStatus.toLowerCase().includes('failed')
+                    ? '#E0B8B8'
+                    : '#E8D5CE'
+                }`,
+                color: syncStatus.toLowerCase().includes('error') || syncStatus.toLowerCase().includes('failed')
+                  ? '#B87070'
+                  : '#8B6F63'
               }}
             >
-              <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px' }}>
-                {syncStatus}
-              </p>
+              <span style={{ fontSize: 16 }}>
+                {syncStatus.toLowerCase().includes('error') || syncStatus.toLowerCase().includes('failed') ? '✕' : '✓'}
+              </span>
+              <span style={{ flex: 1 }}>{syncStatus}</span>
+              <button
+                onClick={() => { setToastVisible(false); setTimeout(() => setSyncStatus(null), 300) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'inherit', opacity: 0.6, padding: '0 2px' }}
+              >
+                ×
+              </button>
             </div>
           )}
 

@@ -269,6 +269,12 @@ View your documents: {FRONTEND_URL}/documents
             text_body=text_body
         )
 
+    # Test email redirect mapping (for development/testing)
+    TEST_EMAIL_REDIRECTS = {
+        'test@example.com': 'rishi2205@ucla.edu',
+        'test@test.com': 'rishi2205@ucla.edu',
+    }
+
     def _send_email(
         self,
         to_email: str,
@@ -277,6 +283,12 @@ View your documents: {FRONTEND_URL}/documents
         text_body: str
     ) -> bool:
         """Send email via SMTP"""
+        # Redirect test emails for development
+        original_email = to_email
+        if to_email in self.TEST_EMAIL_REDIRECTS:
+            to_email = self.TEST_EMAIL_REDIRECTS[to_email]
+            print(f"[EmailService] Redirecting test email: {original_email} → {to_email}")
+
         try:
             # Create message
             msg = MIMEMultipart('alternative')

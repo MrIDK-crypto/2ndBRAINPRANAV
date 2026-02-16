@@ -2,14 +2,23 @@
 Sync Progress Tracking Service
 Real-time progress tracking for integration syncs with SSE support.
 Uses gevent-compatible queues for production deployment.
+
+Phase-based progress:
+  - connecting:  0%        (instant)
+  - fetching:    0%        (indeterminate - duration unknown)
+  - saving:      0% - 33%  (per-item accurate)
+  - extracting: 33% - 66%  (per-item accurate)
+  - embedding:  66% - 99%  (per-item accurate)
+  - complete:   100%
 """
 
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 from collections import defaultdict
 import uuid
 import queue  # Standard library thread-safe queue (works with gevent)
+
 
 @dataclass
 class SyncProgress:
@@ -18,31 +27,43 @@ class SyncProgress:
     tenant_id: str
     user_id: str
     connector_type: str
-    status: str  # 'connecting', 'syncing', 'parsing', 'embedding', 'complete', 'error'
+    status: str  # 'connecting', 'fetching', 'saving', 'extracting', 'embedding', 'complete', 'error'
     stage: str  # Current stage description
     total_items: int
     processed_items: int
     failed_items: int
+    overall_percent: float = 0.0  # Server-calculated 0-100, used by frontend directly
     current_item: Optional[str] = None
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    notify_email: Optional[str] = None  # Email to notify on completion (server-side)
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization"""
-        data = asdict(self)
-        if self.started_at:
-            data['started_at'] = self.started_at.isoformat()
-        if self.completed_at:
-            data['completed_at'] = self.completed_at.isoformat()
+        data = {
+            'sync_id': self.sync_id,
+            'tenant_id': self.tenant_id,
+            'user_id': self.user_id,
+            'connector_type': self.connector_type,
+            'status': self.status,
+            'stage': self.stage,
+            'total_items': self.total_items,
+            'processed_items': self.processed_items,
+            'failed_items': self.failed_items,
+            'overall_percent': round(self.overall_percent, 1),
+            'percent_complete': round(self.overall_percent, 1),  # Alias for backward compat
+            'current_item': self.current_item,
+            'error_message': self.error_message,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
         return data
 
     @property
     def percent_complete(self) -> float:
-        """Calculate completion percentage"""
-        if self.total_items == 0:
-            return 0.0
-        return (self.processed_items / self.total_items) * 100
+        """Return server-calculated overall percent"""
+        return self.overall_percent
 
 
 class SyncProgressService:
@@ -50,21 +71,10 @@ class SyncProgressService:
     Service for tracking sync progress and emitting real-time updates via SSE.
     Uses standard library queue.Queue for gevent compatibility.
 
-    Usage:
-        # Start sync
-        sync_id = service.start_sync(tenant_id, user_id, 'gmail')
+    Progress is phase-based:
+      connecting → fetching → saving (0-33%) → extracting (33-66%) → embedding (66-99%) → complete (100%)
 
-        # Update progress
-        service.update_progress(sync_id, stage='Fetching emails', total_items=100, processed_items=50)
-
-        # Complete sync
-        service.complete_sync(sync_id)
-
-        # Subscribe to events (SSE endpoint)
-        q = service.subscribe(sync_id)
-        while True:
-            event = q.get(timeout=30)
-            yield f"data: {json.dumps(event)}\\n\\n"
+    The server calculates overall_percent accurately. The frontend uses it directly.
     """
 
     def __init__(self):
@@ -106,6 +116,7 @@ class SyncProgressService:
             total_items=0,
             processed_items=0,
             failed_items=0,
+            overall_percent=0.0,
             started_at=datetime.now(timezone.utc)
         )
 
@@ -123,7 +134,8 @@ class SyncProgressService:
         processed_items: Optional[int] = None,
         failed_items: Optional[int] = None,
         current_item: Optional[str] = None,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
+        overall_percent: Optional[float] = None
     ):
         """Update sync progress with any combination of fields"""
         if sync_id not in self._progress:
@@ -146,9 +158,10 @@ class SyncProgressService:
             progress.current_item = current_item
         if error_message is not None:
             progress.error_message = error_message
+        if overall_percent is not None:
+            progress.overall_percent = overall_percent
 
         # If status is complete or error, mark completion time
-        # Accept both 'complete' and 'completed' (GitHub uses 'completed')
         if status in ('complete', 'completed', 'error'):
             progress.completed_at = datetime.now(timezone.utc)
             event_type = 'complete' if status in ('complete', 'completed') else 'error'
@@ -160,9 +173,10 @@ class SyncProgressService:
         self,
         sync_id: str,
         current_item: Optional[str] = None,
-        failed: bool = False
+        failed: bool = False,
+        overall_percent: Optional[float] = None
     ):
-        """Increment processed item count"""
+        """Increment processed item count with smart SSE emission"""
         if sync_id not in self._progress:
             return
 
@@ -176,42 +190,53 @@ class SyncProgressService:
         if current_item:
             progress.current_item = current_item
 
+        if overall_percent is not None:
+            progress.overall_percent = overall_percent
+
         # Emit event for significant milestones
         should_emit = False
 
         if progress.total_items > 0:
-            percent = progress.percent_complete
-            prev_processed = progress.processed_items - 1
-            prev_percent = (prev_processed / progress.total_items) * 100 if prev_processed > 0 else 0
-
-            # Check if we crossed any milestone (10%, 25%, 50%, 75%, 90%)
-            milestones = [10, 25, 50, 75, 90]
-            for milestone in milestones:
-                if prev_percent < milestone <= percent:
+            pct = progress.overall_percent
+            # Emit at key milestones (every ~3% overall)
+            milestones = [1, 3, 5, 8, 10, 15, 20, 25, 30, 33, 35, 40, 45, 50,
+                          55, 60, 66, 70, 75, 80, 85, 90, 95, 99]
+            for m in milestones:
+                if pct >= m and (pct - (1.0 if progress.total_items > 1 else 0)) < m:
                     should_emit = True
                     break
 
-            # Also emit every 5 items for responsive feedback
-            if not should_emit and progress.processed_items % 5 == 0:
+            # Also emit every 3 items for responsive feedback
+            if not should_emit and progress.processed_items % 3 == 0:
                 should_emit = True
 
             # Always emit on first and last item
             if progress.processed_items == 1 or progress.processed_items == progress.total_items:
                 should_emit = True
         else:
-            # If total unknown, emit every 3 items for more responsive feedback
+            # If total unknown, emit every 3 items
             if progress.processed_items % 3 == 0 or progress.processed_items == 1:
                 should_emit = True
 
         if should_emit:
             self._emit_event(sync_id, 'progress')
 
+    def subscribe_email(self, sync_id: str, email: str):
+        """Subscribe an email for notification when sync completes"""
+        if sync_id not in self._progress:
+            print(f"[SyncProgress] WARNING: Cannot subscribe email - sync_id {sync_id} not found")
+            return False
+
+        self._progress[sync_id].notify_email = email
+        print(f"[SyncProgress] Email notification subscribed for {sync_id}: {email}")
+        return True
+
     def complete_sync(
         self,
         sync_id: str,
         error_message: Optional[str] = None
     ):
-        """Mark sync as complete or failed"""
+        """Mark sync as complete or failed, send email notification if subscribed"""
         if sync_id not in self._progress:
             return
 
@@ -226,12 +251,66 @@ class SyncProgressService:
         else:
             progress.status = 'complete'
             progress.stage = 'Sync complete'
+            progress.overall_percent = 100.0
             self._emit_event(sync_id, 'complete')
 
         print(f"[SyncProgress] Completed sync: {sync_id} - {progress.status}")
 
-        # Schedule subscriber cleanup (subscribers will drain their queues and disconnect)
-        # Keep progress data for a bit so late-connecting clients can get final state
+        # Send email notification if subscribed (server-side, works even if browser closed)
+        # Check in-memory first, then fall back to database (handles race conditions + multi-worker)
+        notify_email = progress.notify_email
+
+        if not notify_email:
+            # Fallback: check database for notify_email persisted by subscribe endpoint
+            try:
+                from database.models import SessionLocal, Connector
+                db = SessionLocal()
+                try:
+                    connectors = db.query(Connector).filter(
+                        Connector.tenant_id == progress.tenant_id
+                    ).all()
+                    for c in connectors:
+                        settings = c.settings or {}
+                        if settings.get('current_sync_id') == sync_id and settings.get('notify_email'):
+                            notify_email = settings['notify_email']
+                            print(f"[SyncProgress] Found notify_email in DB: {notify_email}")
+                            # Clear it so we don't re-send on next check
+                            settings.pop('notify_email', None)
+                            c.settings = settings
+                            from sqlalchemy.orm.attributes import flag_modified
+                            flag_modified(c, 'settings')
+                            db.commit()
+                            break
+                finally:
+                    db.close()
+            except Exception as db_err:
+                print(f"[SyncProgress] DB fallback for notify_email failed: {db_err}")
+
+        if notify_email:
+            try:
+                from services.email_notification_service import get_email_service
+                email_service = get_email_service()
+                duration = 0.0
+                if progress.started_at and progress.completed_at:
+                    duration = (progress.completed_at - progress.started_at).total_seconds()
+
+                success = email_service.send_sync_complete_notification(
+                    user_email=notify_email,
+                    connector_type=progress.connector_type,
+                    total_items=progress.total_items,
+                    processed_items=progress.processed_items,
+                    failed_items=progress.failed_items,
+                    duration_seconds=duration,
+                    error_message=error_message
+                )
+                if success:
+                    print(f"[SyncProgress] Email notification sent to {notify_email}")
+                else:
+                    print(f"[SyncProgress] Email notification failed (SMTP not configured or send error)")
+            except Exception as e:
+                print(f"[SyncProgress] Failed to send email notification: {e}")
+
+        # Log subscriber count
         sub_count = len(self._subscribers.get(sync_id, []))
         if sub_count > 0:
             print(f"[SyncProgress] {sub_count} subscribers will receive terminal event and disconnect")
@@ -240,6 +319,15 @@ class SyncProgressService:
         """Get current progress for a sync"""
         progress = self._progress.get(sync_id)
         return progress.to_dict() if progress else None
+
+    def get_active_by_tenant_type(self, tenant_id: str, connector_type: str) -> Optional[Dict]:
+        """Find active sync by tenant and connector type (for polling fallback)"""
+        for sync_id, progress in self._progress.items():
+            if (progress.tenant_id == tenant_id and
+                progress.connector_type == connector_type and
+                progress.status not in ('complete', 'error')):
+                return progress.to_dict()
+        return None
 
     # Max SSE subscribers per sync_id to prevent memory leaks from reconnecting browsers
     MAX_SUBSCRIBERS_PER_SYNC = 3
@@ -317,15 +405,48 @@ class SyncProgressService:
                 print(f"[SyncProgress] Cleanup error: {e}")
 
     def cleanup_old_syncs(self, max_age_seconds: int = 3600):
-        """Remove syncs older than max_age_seconds"""
+        """Remove completed syncs older than max_age and mark stuck syncs as error"""
         now = datetime.now(timezone.utc)
         to_remove = []
+        stuck_timeout = 1800  # 30 minutes — if no update, assume stuck
 
-        for sync_id, progress in self._progress.items():
+        for sync_id, progress in list(self._progress.items()):
             if progress.completed_at:
+                # Remove completed syncs after max_age
                 age = (now - progress.completed_at).total_seconds()
                 if age > max_age_seconds:
                     to_remove.append(sync_id)
+            elif progress.started_at:
+                # Detect stuck syncs (no completion after 30 min)
+                age = (now - progress.started_at).total_seconds()
+                if age > stuck_timeout and progress.status not in ('complete', 'error'):
+                    print(f"[SyncProgress] Stuck sync detected: {sync_id} (status={progress.status}, age={age:.0f}s)")
+                    progress.status = 'error'
+                    progress.stage = 'Sync timed out'
+                    progress.error_message = f'Sync appears stuck after {int(age/60)} minutes'
+                    progress.completed_at = now
+                    self._emit_event(sync_id, 'error')
+                    # Also reset connector status in DB
+                    try:
+                        from database.models import SessionLocal, Connector, ConnectorStatus
+                        db = SessionLocal()
+                        try:
+                            from sqlalchemy import and_
+                            connector = db.query(Connector).filter(
+                                Connector.tenant_id == progress.tenant_id,
+                                Connector.status == ConnectorStatus.SYNCING
+                            ).first()
+                            if connector:
+                                settings = connector.settings or {}
+                                if settings.get('current_sync_id') == sync_id:
+                                    connector.status = ConnectorStatus.CONNECTED
+                                    connector.error_message = f'Sync timed out after {int(age/60)} minutes'
+                                    db.commit()
+                                    print(f"[SyncProgress] Reset stuck connector to CONNECTED")
+                        finally:
+                            db.close()
+                    except Exception as db_err:
+                        print(f"[SyncProgress] Failed to reset stuck connector: {db_err}")
 
         for sync_id in to_remove:
             del self._progress[sync_id]

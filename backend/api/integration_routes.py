@@ -8,6 +8,7 @@ import secrets
 import jwt
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, g, redirect
@@ -171,11 +172,30 @@ oauth_states = {}
 
 # Sync progress tracking (use Redis in production for multi-instance)
 sync_progress = {}
+_sync_progress_lock = threading.RLock()  # Protects sync_progress dict from concurrent access
+
+# Thread pool for sync operations (prevents unbounded thread creation)
+_sync_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix='sync')
 
 
 def get_db():
     """Get database session"""
     return SessionLocal()
+
+
+def _update_sync_progress(key: str, updates: dict = None, init: dict = None):
+    """Thread-safe update to sync_progress dict."""
+    with _sync_progress_lock:
+        if init is not None:
+            sync_progress[key] = init
+        elif key in sync_progress and updates:
+            sync_progress[key].update(updates)
+
+
+def _get_sync_progress(key: str) -> dict:
+    """Thread-safe read from sync_progress dict."""
+    with _sync_progress_lock:
+        return dict(sync_progress.get(key, {}))
 
 
 # ============================================================================
@@ -443,6 +463,25 @@ def list_integrations():
                 "last_sync_at": gcalendar.last_sync_at.isoformat() if gcalendar and gcalendar.last_sync_at else None,
                 "total_items_synced": gcalendar.total_items_synced if gcalendar else 0,
                 "error_message": gcalendar.error_message if gcalendar else None
+            })
+
+            # Zotero
+            zotero = connector_map.get(ConnectorType.ZOTERO)
+            integrations.append({
+                "type": "zotero",
+                "name": "Zotero",
+                "description": "Sync research papers and citations from Zotero",
+                "icon": "zotero",
+                "auth_type": "oauth",
+                "status": zotero.status.value if zotero else "not_configured",
+                "connector_id": zotero.id if zotero else None,
+                "last_sync_at": zotero.last_sync_at.isoformat() if zotero and zotero.last_sync_at else None,
+                "total_items_synced": zotero.total_items_synced if zotero else 0,
+                "error_message": zotero.error_message if zotero else None,
+                "settings": {
+                    "library_id": zotero.settings.get("library_id") if zotero and zotero.settings else None,
+                    "library_type": zotero.settings.get("library_type") if zotero and zotero.settings else None
+                } if zotero else None
             })
 
             return jsonify({
@@ -3293,6 +3332,20 @@ def sync_connector(connector_type: str):
 
         db = get_db()
         try:
+            # Check for already-running sync (dedup)
+            already_syncing = db.query(Connector).filter(
+                Connector.tenant_id == g.tenant_id,
+                Connector.connector_type == type_map[connector_type],
+                Connector.status == ConnectorStatus.SYNCING
+            ).first()
+
+            if already_syncing:
+                return jsonify({
+                    "success": False,
+                    "error": f"{connector_type.title()} sync already in progress",
+                    "sync_id": (already_syncing.settings or {}).get('current_sync_id')
+                }), 409
+
             connector = db.query(Connector).filter(
                 Connector.tenant_id == g.tenant_id,
                 Connector.connector_type == type_map[connector_type],
@@ -3322,23 +3375,33 @@ def sync_connector(connector_type: str):
         progress_service = get_sync_progress_service()
         sync_id = progress_service.start_sync(tenant, user, connector_type)
 
-        # Use threading (Celery infrastructure is broken/unstable)
-        # Start thread AFTER db.close() to avoid session conflicts
-        # Note: threading is imported at module level (line 10)
-        def run_sync():
-            _run_connector_sync(
-                connector_id=conn_id,
-                connector_type=connector_type,
-                since=since,
-                tenant_id=tenant,
-                user_id=user,
-                full_sync=full_sync,
-                sync_id=sync_id  # Pass sync_id to background function
-            )
+        # Persist sync_id to connector settings (needed for email subscription DB lookup)
+        try:
+            db2 = get_db()
+            c = db2.query(Connector).filter(Connector.id == conn_id).first()
+            if c:
+                s = c.settings or {}
+                s['current_sync_id'] = sync_id
+                s['sync_started_at'] = utc_now().isoformat()
+                c.settings = s
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(c, 'settings')
+                db2.commit()
+            db2.close()
+        except Exception as e:
+            print(f"[Sync] Warning: Failed to persist sync_id to connector: {e}")
 
-        thread = threading.Thread(target=run_sync)
-        thread.daemon = True  # Don't block server shutdown
-        thread.start()
+        # Submit sync to thread pool (bounded concurrency, prevents server OOM)
+        _sync_executor.submit(
+            _run_connector_sync,
+            connector_id=conn_id,
+            connector_type=connector_type,
+            since=since,
+            tenant_id=tenant,
+            user_id=user,
+            full_sync=full_sync,
+            sync_id=sync_id
+        )
 
         return jsonify({
             "success": True,
@@ -3570,9 +3633,16 @@ def _run_connector_sync(
                 elif not since and connector.last_sync_at and not full_sync:
                     since = connector.last_sync_at
 
-                # Update progress - fetching
-                sync_progress[progress_key]["progress"] = 20
+                # Update progress - fetching (indeterminate phase, no percentage)
+                sync_progress[progress_key]["progress"] = 0
+                sync_progress[progress_key]["status"] = "fetching"
                 sync_progress[progress_key]["current_file"] = "Fetching documents..."
+                if sync_id:
+                    progress_service.update_progress(
+                        sync_id, status='fetching',
+                        stage=f'Fetching {connector_type.title()} data...',
+                        overall_percent=0.0
+                    )
 
                 # For webscraper, set initial total_items to max_pages to avoid 100% progress at start
                 if connector_type == 'webscraper':
@@ -3693,9 +3763,7 @@ def _run_connector_sync(
                 else:
                     documents = loop.run_until_complete(instance.sync(since))
 
-                # Update total items to actual count found
-                if sync_id and documents:
-                    progress_service.update_progress(sync_id, total_items=len(documents))
+                # Note: total_items is set AFTER deduplication below for accurate progress
 
                 # CRITICAL: Refresh database session after long-running sync
                 # The sync can take 3+ minutes for large connectors (GDrive with 147 files)
@@ -3770,17 +3838,20 @@ def _run_connector_sync(
                     d for d in (documents or []) if d.doc_id in existing_external_ids
                 ])
 
-                # Update progress - documents found
-                sync_progress[progress_key]["documents_found"] = len(documents)
-                sync_progress[progress_key]["documents_skipped"] = original_count - len(documents)
-                sync_progress[progress_key]["progress"] = 40
-                sync_progress[progress_key]["status"] = "parsing"
+                # Update progress - documents found (AFTER dedup for accurate total)
+                new_doc_count = len(documents) if documents else 0
+                sync_progress[progress_key]["documents_found"] = new_doc_count
+                sync_progress[progress_key]["documents_skipped"] = original_count - new_doc_count
+                sync_progress[progress_key]["progress"] = 0
+                sync_progress[progress_key]["status"] = "saving"
                 if sync_id:
                     progress_service.update_progress(
                         sync_id,
-                        status='parsing',
-                        stage=f'Parsing {len(documents)} documents...',
-                        total_items=len(documents) if documents else 0
+                        status='saving',
+                        stage=f'Saving {new_doc_count} new documents...',
+                        total_items=new_doc_count,
+                        processed_items=0,
+                        overall_percent=0.0
                     )
 
                 print(f"[Sync] Found {original_count} docs, skipping {original_count - len(documents)} (deleted or existing), processing {len(documents)}")
@@ -3888,16 +3959,20 @@ def _run_connector_sync(
                         raise Exception(f"DB unavailable after {max_retries} retries (last error: {err_name}: {commit_err})")
 
                 for i, doc in enumerate(documents):
-                    # Update progress
-                    parse_progress = 40 + int((i / total_docs) * 30)
-                    sync_progress[progress_key]["progress"] = parse_progress
+                    # Phase 1 (Save): 0% - 33%
+                    save_pct = ((i + 1) / total_docs) * 33.0
+                    sync_progress[progress_key]["progress"] = int(save_pct)
                     sync_progress[progress_key]["documents_parsed"] = i + 1
                     current_doc_name = doc.title[:50] if doc.title else f"Document {i+1}"
                     sync_progress[progress_key]["current_file"] = current_doc_name
 
-                    # Update new progress service
+                    # Update progress service with accurate percent
                     if sync_id:
-                        progress_service.increment_processed(sync_id, current_item=current_doc_name)
+                        progress_service.increment_processed(
+                            sync_id,
+                            current_item=current_doc_name,
+                            overall_percent=save_pct
+                        )
 
                     # Map connector Document attributes to database Document fields
                     # Connector Document uses: doc_id, source, content, title, metadata, timestamp, author
@@ -3961,19 +4036,20 @@ def _run_connector_sync(
                     total_committed += docs_in_batch
                     print(f"[Sync] Committed final batch of {docs_in_batch} documents ({total_committed} total)", flush=True)
 
-                # Update progress - embedding phase
+                # === PHASE 2: EXTRACTION (33% - 66%) ===
                 elapsed = time.time() - sync_start_time
-                print(f"[Sync] All {total_committed} documents committed to DB (elapsed: {elapsed:.1f}s), starting embedding phase...", flush=True)
-                sync_progress[progress_key]["status"] = "embedding"
-                sync_progress[progress_key]["progress"] = 75
-                sync_progress[progress_key]["current_file"] = "Creating embeddings..."
+                print(f"[Sync] All {total_committed} documents committed to DB (elapsed: {elapsed:.1f}s), starting extraction phase...", flush=True)
+                sync_progress[progress_key]["status"] = "extracting"
+                sync_progress[progress_key]["progress"] = 33
+                sync_progress[progress_key]["current_file"] = "Extracting document summaries..."
                 if sync_id:
-                    progress_service.update_progress(sync_id, status='embedding', stage='Creating embeddings...')
+                    progress_service.update_progress(
+                        sync_id, status='extracting',
+                        stage='Extracting document summaries...',
+                        overall_percent=33.0
+                    )
 
-                # REAL EMBEDDING: Embed documents to Pinecone
                 try:
-                    print(f"[Sync] Starting embedding for {len(documents)} new documents...")
-
                     # Query ALL un-embedded documents for this connector (including from previous failed syncs)
                     un_embedded_docs = db.query(Document).filter(
                         Document.tenant_id == tenant_id,
@@ -3985,21 +4061,33 @@ def _run_connector_sync(
                     print(f"[Sync] Found {len(doc_ids)} total un-embedded documents (including from previous syncs)")
 
                     if doc_ids:
-                        # Get fresh document objects (with tenant_id filter for defense-in-depth)
                         docs_to_embed = db.query(Document).filter(
                             Document.id.in_(doc_ids),
-                            Document.tenant_id == tenant_id  # Security: ensure tenant isolation
+                            Document.tenant_id == tenant_id
                         ).all()
 
-                        # STEP 1: Extract structured summaries (for Knowledge Gap analysis)
-                        sync_progress[progress_key]["current_file"] = "Extracting document summaries..."
-                        sync_progress[progress_key]["progress"] = 85
+                        embed_total = len(docs_to_embed)
+
+                        # STEP 1: Extract structured summaries (33% - 66%)
+                        def extraction_progress(cur, total, msg):
+                            pct = 33.0 + (cur / total) * 33.0
+                            sync_progress[progress_key]["progress"] = int(pct)
+                            sync_progress[progress_key]["current_file"] = msg
+                            if sync_id:
+                                progress_service.update_progress(
+                                    sync_id,
+                                    current_item=msg,
+                                    overall_percent=pct,
+                                    stage=f'Extracting summaries ({cur}/{total})...'
+                                )
+
                         try:
                             extraction_service = get_extraction_service()
                             extract_result = extraction_service.extract_documents(
                                 documents=docs_to_embed,
                                 db=db,
-                                force=False
+                                force=False,
+                                progress_callback=extraction_progress
                             )
                             sync_progress[progress_key]["documents_extracted"] = extract_result.get('extracted', 0)
                             print(f"[Sync] Extracted summaries for {extract_result.get('extracted', 0)} documents", flush=True)
@@ -4009,17 +4097,37 @@ def _run_connector_sync(
                             traceback.print_exc()
                             sync_progress[progress_key]["extraction_error"] = str(extract_error)
 
-                        # STEP 2: Embed to Pinecone (for RAG search)
+                        # === PHASE 3: EMBEDDING (66% - 99%) ===
+                        sync_progress[progress_key]["status"] = "embedding"
+                        sync_progress[progress_key]["progress"] = 66
                         sync_progress[progress_key]["current_file"] = "Embedding documents..."
-                        sync_progress[progress_key]["progress"] = 90
+                        if sync_id:
+                            progress_service.update_progress(
+                                sync_id, status='embedding',
+                                stage='Embedding documents...',
+                                overall_percent=66.0
+                            )
 
-                        print(f"[Sync] Calling embedding_service.embed_documents() with {len(docs_to_embed)} documents", flush=True)
+                        def embedding_progress(cur, total, msg):
+                            pct = 66.0 + (cur / total) * 33.0
+                            sync_progress[progress_key]["progress"] = int(pct)
+                            sync_progress[progress_key]["current_file"] = msg
+                            if sync_id:
+                                progress_service.update_progress(
+                                    sync_id,
+                                    current_item=msg,
+                                    overall_percent=pct,
+                                    stage=f'Embedding documents ({cur}/{total})...'
+                                )
+
+                        print(f"[Sync] Calling embedding_service.embed_documents() with {embed_total} documents", flush=True)
                         embedding_service = get_embedding_service()
                         embed_result = embedding_service.embed_documents(
                             documents=docs_to_embed,
                             tenant_id=tenant_id,
                             db=db,
-                            force_reembed=False
+                            force_reembed=False,
+                            progress_callback=embedding_progress
                         )
 
                         sync_progress[progress_key]["documents_embedded"] = embed_result.get('embedded', 0)
@@ -4028,19 +4136,19 @@ def _run_connector_sync(
                         print(f"[Sync] Embedding result: embedded={embed_result.get('embedded', 0)}, chunks={embed_result.get('chunks', 0)}, skipped={embed_result.get('skipped', 0)}", flush=True)
                         if embed_result.get('errors'):
                             print(f"[Sync] Embedding errors: {embed_result['errors']}", flush=True)
-                        if embed_result.get('embedded', 0) == 0 and len(docs_to_embed) > 0:
-                            print(f"[Sync] WARNING: 0 documents embedded but {len(docs_to_embed)} were provided!", flush=True)
                     else:
-                        print(f"[Sync] No un-embedded documents found - all documents are already embedded or processed")
+                        print(f"[Sync] No un-embedded documents found - all already processed")
+                        # Skip extraction/embedding phases entirely
+                        if sync_id:
+                            progress_service.update_progress(sync_id, overall_percent=99.0)
 
                 except Exception as embed_error:
-                    print(f"[Sync] EMBEDDING ERROR: {type(embed_error).__name__}: {embed_error}", flush=True)
+                    print(f"[Sync] EXTRACTION/EMBEDDING ERROR: {type(embed_error).__name__}: {embed_error}", flush=True)
                     import traceback
                     traceback.print_exc()
-                    # Don't fail the sync, just log the error
                     sync_progress[progress_key]["embedding_error"] = str(embed_error)
 
-                sync_progress[progress_key]["progress"] = 95
+                sync_progress[progress_key]["progress"] = 99
 
                 # Refresh session before final connector update (embedding can take minutes)
                 try:
@@ -4068,6 +4176,7 @@ def _run_connector_sync(
                 sync_progress[progress_key]["status"] = "completed"
                 sync_progress[progress_key]["progress"] = 100
                 sync_progress[progress_key]["current_file"] = None
+                sync_progress[progress_key]["overall_percent"] = 100
 
                 # Complete progress tracking
                 if sync_id:
@@ -4331,72 +4440,98 @@ def get_sync_status(connector_type: str):
     }
     """
     try:
+        # First check in-memory progress service (accurate, phase-based)
+        from services.sync_progress_service import get_sync_progress_service
+        svc = get_sync_progress_service()
+        svc_progress = svc.get_active_by_tenant_type(g.tenant_id, connector_type)
+        if svc_progress:
+            # Map progress service format to polling format
+            return jsonify({
+                "success": True,
+                "status": {
+                    "status": svc_progress.get('status', 'syncing'),
+                    "progress": svc_progress.get('overall_percent', 0),
+                    "overall_percent": svc_progress.get('overall_percent', 0),
+                    "documents_found": svc_progress.get('total_items', 0),
+                    "documents_parsed": svc_progress.get('processed_items', 0),
+                    "documents_embedded": 0,
+                    "current_file": svc_progress.get('current_item'),
+                    "error": svc_progress.get('error_message')
+                }
+            })
+
+        # Fallback to old dict
         progress_key = f"{g.tenant_id}:{connector_type}"
+        if progress_key in sync_progress:
+            status_data = dict(sync_progress[progress_key])
+            # Ensure overall_percent is present
+            if 'overall_percent' not in status_data:
+                status_data['overall_percent'] = status_data.get('progress', 0)
+            return jsonify({
+                "success": True,
+                "status": status_data
+            })
 
-        if progress_key not in sync_progress:
-            # No active sync, check connector status
-            type_map = {
-                "gmail": ConnectorType.GMAIL,
-                "slack": ConnectorType.SLACK,
-                "box": ConnectorType.BOX,
-                "github": ConnectorType.GITHUB,
-                "pubmed": ConnectorType.PUBMED,
-                "webscraper": ConnectorType.WEBSCRAPER,
-                "firecrawl": ConnectorType.FIRECRAWL,
-                "notion": ConnectorType.NOTION,
-                "gdrive": ConnectorType.GOOGLE_DRIVE,
-                "zotero": ConnectorType.ZOTERO,
-                "onedrive": ConnectorType.ONEDRIVE,
-                "quartzy": ConnectorType.QUARTZY
-            }
+        # No active sync, check connector status in DB
+        type_map = {
+            "gmail": ConnectorType.GMAIL,
+            "slack": ConnectorType.SLACK,
+            "box": ConnectorType.BOX,
+            "github": ConnectorType.GITHUB,
+            "pubmed": ConnectorType.PUBMED,
+            "webscraper": ConnectorType.WEBSCRAPER,
+            "firecrawl": ConnectorType.FIRECRAWL,
+            "notion": ConnectorType.NOTION,
+            "gdrive": ConnectorType.GOOGLE_DRIVE,
+            "zotero": ConnectorType.ZOTERO,
+            "onedrive": ConnectorType.ONEDRIVE,
+            "quartzy": ConnectorType.QUARTZY
+        }
 
-            if connector_type not in type_map:
-                return jsonify({
-                    "success": False,
-                    "error": f"Invalid connector type: {connector_type}"
-                }), 400
+        if connector_type not in type_map:
+            return jsonify({
+                "success": False,
+                "error": f"Invalid connector type: {connector_type}"
+            }), 400
 
-            db = get_db()
-            try:
-                connector = db.query(Connector).filter(
-                    Connector.tenant_id == g.tenant_id,
-                    Connector.connector_type == type_map[connector_type],
-                    Connector.is_active == True
-                ).first()
+        db = get_db()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == g.tenant_id,
+                Connector.connector_type == type_map[connector_type],
+                Connector.is_active == True
+            ).first()
 
-                if connector and connector.status == ConnectorStatus.SYNCING:
-                    return jsonify({
-                        "success": True,
-                        "status": {
-                            "status": "syncing",
-                            "progress": 10,
-                            "documents_found": 0,
-                            "documents_parsed": 0,
-                            "documents_embedded": 0,
-                            "current_file": "Initializing...",
-                            "error": None
-                        }
-                    })
-
+            if connector and connector.status == ConnectorStatus.SYNCING:
                 return jsonify({
                     "success": True,
                     "status": {
-                        "status": "idle",
+                        "status": "fetching",
                         "progress": 0,
+                        "overall_percent": 0,
                         "documents_found": 0,
                         "documents_parsed": 0,
                         "documents_embedded": 0,
-                        "current_file": None,
+                        "current_file": "Initializing...",
                         "error": None
                     }
                 })
-            finally:
-                db.close()
 
-        return jsonify({
-            "success": True,
-            "status": sync_progress[progress_key]
-        })
+            return jsonify({
+                "success": True,
+                "status": {
+                    "status": "idle",
+                    "progress": 0,
+                    "overall_percent": 0,
+                    "documents_found": 0,
+                    "documents_parsed": 0,
+                    "documents_embedded": 0,
+                    "current_file": None,
+                    "error": None
+                }
+            })
+        finally:
+            db.close()
 
     except Exception as e:
         return jsonify({

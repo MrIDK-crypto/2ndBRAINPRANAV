@@ -78,14 +78,14 @@ class EmbeddingService:
         progress_callback: Optional[callable] = None
     ) -> Dict:
         """
-        Embed documents to Pinecone.
+        Embed documents to Pinecone one at a time with progress tracking.
 
         Args:
             documents: List of Document model instances
             tenant_id: Tenant ID for isolation
             db: Database session for updating embedded_at
             force_reembed: If True, re-embed even if already embedded
-            progress_callback: Optional callback(current, total, status) for progress updates
+            progress_callback: Optional callback(current, total, doc_title) for progress updates
 
         Returns:
             Dict with embedding stats
@@ -102,45 +102,32 @@ class EmbeddingService:
                 'errors': []
             }
 
-        # Filter documents that need embedding
-        docs_to_embed = []
+        total = len(documents)
+        embedded_count = 0
+        total_chunks = 0
         skipped = 0
-        skipped_no_content = 0
-        skipped_already_embedded = 0
+        errors = []
+        now = utc_now()
+        embedding_model = os.getenv('AZURE_EMBEDDING_DEPLOYMENT', 'text-embedding-3-large')
 
-        for doc in documents:
+        for i, doc in enumerate(documents):
+            doc_title = doc.title[:50] if doc.title else f"Document {i+1}"
+
+            # Report progress for every document (including skipped)
+            if progress_callback:
+                progress_callback(i + 1, total, f"Embedding: {doc_title}")
+
+            # Skip if no content
             if not doc.content:
                 skipped += 1
-                skipped_no_content += 1
-                print(f"[EmbeddingService] Skipping doc {doc.id} ({doc.title}): No content", flush=True)
                 continue
 
+            # Skip if already embedded
             if not force_reembed and doc.embedded_at:
                 skipped += 1
-                skipped_already_embedded += 1
-                print(f"[EmbeddingService] Skipping doc {doc.id} ({doc.title}): Already embedded at {doc.embedded_at}", flush=True)
                 continue
 
-            docs_to_embed.append(doc)
-
-        print(f"[EmbeddingService] Filtered: {len(docs_to_embed)} to embed, {skipped_no_content} without content, {skipped_already_embedded} already embedded", flush=True)
-
-        if not docs_to_embed:
-            print(f"[EmbeddingService] No documents to embed after filtering", flush=True)
-            return {
-                'success': True,
-                'total': len(documents),
-                'embedded': 0,
-                'skipped': skipped,
-                'errors': []
-            }
-
-        print(f"[EmbeddingService] Embedding {len(docs_to_embed)} documents for tenant {tenant_id}", flush=True)
-
-        # Convert to format expected by PineconeVectorStore
-        pinecone_docs = []
-        for doc in docs_to_embed:
-            # Base metadata for all documents
+            # Prepare single document for Pinecone
             metadata = {
                 'source_type': doc.source_type or '',
                 'external_id': doc.external_id or '',
@@ -149,12 +136,9 @@ class EmbeddingService:
                 'created_at': doc.source_created_at.isoformat() if doc.source_created_at else ''
             }
 
-            # Add Slack-specific metadata for deep links (from doc_metadata JSON field)
+            # Add Slack-specific metadata for deep links
             if doc.source_type == 'slack' and doc.doc_metadata:
                 doc_meta = doc.doc_metadata if isinstance(doc.doc_metadata, dict) else {}
-                # DEBUG: Log what we're getting from doc_metadata
-                print(f"[EmbeddingService] DEBUG Slack doc_metadata keys: {list(doc_meta.keys()) if doc_meta else 'None'}", flush=True)
-                print(f"[EmbeddingService] DEBUG team_domain={doc_meta.get('team_domain')}, channel_id={doc_meta.get('channel_id')}, message_ts={doc_meta.get('message_ts')}", flush=True)
                 if doc_meta.get('channel_id'):
                     metadata['channel_id'] = doc_meta['channel_id']
                 if doc_meta.get('message_ts'):
@@ -164,73 +148,49 @@ class EmbeddingService:
                 if doc_meta.get('team_id'):
                     metadata['team_id'] = doc_meta['team_id']
 
-            pinecone_docs.append({
+            pinecone_doc = {
                 'id': str(doc.id),
                 'content': doc.content,
                 'title': doc.title or '',
                 'metadata': metadata
-            })
+            }
 
-        print(f"[EmbeddingService] Prepared {len(pinecone_docs)} docs for Pinecone", flush=True)
+            try:
+                result = self.vector_store.embed_and_upsert_documents(
+                    documents=[pinecone_doc],
+                    tenant_id=tenant_id,
+                    chunk_size=CHUNK_SIZE,
+                    chunk_overlap=CHUNK_OVERLAP,
+                    show_progress=False
+                )
 
-        # Embed to Pinecone with explicit chunking params
-        try:
-            print(f"[EmbeddingService] Calling vector_store.embed_and_upsert_documents...", flush=True)
-            result = self.vector_store.embed_and_upsert_documents(
-                documents=pinecone_docs,
-                tenant_id=tenant_id,
-                chunk_size=CHUNK_SIZE,
-                chunk_overlap=CHUNK_OVERLAP,
-                show_progress=True
-            )
-            print(f"[EmbeddingService] embed_and_upsert_documents returned: success={result.get('success')}, upserted={result.get('upserted', 0)}", flush=True)
-
-            # Update embedded_at for successfully embedded documents
-            if result.get('success') or result.get('upserted', 0) > 0:
-                now = utc_now()
-                embedding_model = os.getenv('AZURE_EMBEDDING_DEPLOYMENT', 'text-embedding-3-large')
-
-                for doc in docs_to_embed:
+                if result.get('success') or result.get('upserted', 0) > 0:
                     doc.embedded_at = now
                     doc.embedding_generated = True
                     doc.embedding_model = embedding_model
+                    embedded_count += result.get('upserted', 0)
+                    total_chunks += result.get('total_chunks', 0)
+                    db.commit()
+                else:
+                    doc_errors = result.get('errors', [])
+                    if doc_errors:
+                        errors.extend(doc_errors)
 
-                db.commit()
-                print(f"[EmbeddingService] Updated embedded_at for {len(docs_to_embed)} documents", flush=True)
+            except Exception as e:
+                print(f"[EmbeddingService] Error embedding doc {doc.id} ({doc_title}): {e}", flush=True)
+                errors.append(f"Doc {doc_title}: {str(e)}")
 
-            return {
-                'success': result.get('success', False),
-                'total': len(documents),
-                'embedded': result.get('upserted', 0),
-                'chunks': result.get('total_chunks', 0),
-                'skipped': skipped,
-                'errors': result.get('errors', []),
-                'namespace': result.get('namespace', tenant_id)
-            }
+        print(f"[EmbeddingService] Done: embedded={embedded_count} chunks, skipped={skipped}, errors={len(errors)}", flush=True)
 
-        except ValueError as e:
-            # Configuration errors (missing API keys, etc.)
-            print(f"[EmbeddingService] CONFIGURATION ERROR: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
-            return {
-                'success': False,
-                'total': len(documents),
-                'embedded': 0,
-                'skipped': skipped,
-                'errors': [f"Configuration error: {str(e)}"]
-            }
-        except Exception as e:
-            print(f"[EmbeddingService] UNEXPECTED ERROR embedding documents: {type(e).__name__}: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
-            return {
-                'success': False,
-                'total': len(documents),
-                'embedded': 0,
-                'skipped': skipped,
-                'errors': [str(e)]
-            }
+        return {
+            'success': len(errors) == 0,
+            'total': total,
+            'embedded': embedded_count,
+            'chunks': total_chunks,
+            'skipped': skipped,
+            'errors': errors,
+            'namespace': tenant_id
+        }
 
     def embed_tenant_documents(
         self,
