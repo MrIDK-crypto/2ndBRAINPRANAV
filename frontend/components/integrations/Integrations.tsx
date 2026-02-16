@@ -1462,7 +1462,7 @@ const QuartzyConfigModal = ({
           fontSize: '20px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#111827'
+          color: '#1A1A1A'
         }}>
           Connect Quartzy
         </h2>
@@ -1488,9 +1488,9 @@ const QuartzyConfigModal = ({
             style={{
               padding: '10px 20px',
               border: 'none',
-              borderBottom: activeTab === 'api' ? '2px solid #3B82F6' : '2px solid transparent',
+              borderBottom: activeTab === 'api' ? '2px solid #C9A598' : '2px solid transparent',
               backgroundColor: 'transparent',
-              color: activeTab === 'api' ? '#3B82F6' : '#6B7280',
+              color: activeTab === 'api' ? '#C9A598' : '#6B7280',
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -1504,9 +1504,9 @@ const QuartzyConfigModal = ({
             style={{
               padding: '10px 20px',
               border: 'none',
-              borderBottom: activeTab === 'csv' ? '2px solid #3B82F6' : '2px solid transparent',
+              borderBottom: activeTab === 'csv' ? '2px solid #C9A598' : '2px solid transparent',
               backgroundColor: 'transparent',
-              color: activeTab === 'csv' ? '#3B82F6' : '#6B7280',
+              color: activeTab === 'csv' ? '#C9A598' : '#6B7280',
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -1550,7 +1550,7 @@ const QuartzyConfigModal = ({
                 color: '#71717A',
                 marginTop: '4px'
               }}>
-                Generate a token in <a href="https://app.quartzy.com/settings" target="_blank" rel="noopener" style={{color: '#3B82F6', textDecoration: 'underline'}}>Quartzy Settings &gt; API</a>
+                Generate a token in <a href="https://app.quartzy.com/settings" target="_blank" rel="noopener" style={{color: '#C9A598', textDecoration: 'underline'}}>Quartzy Settings &gt; API</a>
               </p>
             </div>
 
@@ -1580,12 +1580,12 @@ const QuartzyConfigModal = ({
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               style={{
-                border: `2px dashed ${dragOver ? '#3B82F6' : '#D4D4D8'}`,
+                border: `2px dashed ${dragOver ? '#C9A598' : '#D4D4D8'}`,
                 borderRadius: '12px',
                 padding: '40px 20px',
                 textAlign: 'center',
                 marginBottom: '20px',
-                backgroundColor: dragOver ? '#EFF6FF' : '#FAFAFA',
+                backgroundColor: dragOver ? '#FDF2F0' : '#FAFAFA',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
@@ -1710,7 +1710,7 @@ const QuartzyConfigModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: (activeTab === 'api' ? !accessToken.trim() : !selectedFile) ? '#9ca3af' : '#00BFA5',
+              backgroundColor: (activeTab === 'api' ? !accessToken.trim() : !selectedFile) ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
