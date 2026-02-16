@@ -4,7 +4,7 @@ const nextConfig = {
 
   // Environment variables available at runtime
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006',
   },
 
   // Disable image optimization for Cloud Run (uses external URLs)

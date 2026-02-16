@@ -26,7 +26,7 @@ interface ProgressData {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
-  : 'http://localhost:5003/api'
+  : 'http://localhost:5006/api'
 
 // All integrations use actual logo images
 const connectorConfig: Record<string, { logo: string; name: string }> = {

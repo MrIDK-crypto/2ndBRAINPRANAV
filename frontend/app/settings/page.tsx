@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/shared/Sidebar'
 import axios from 'axios'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
 export default function SettingsPage() {
   const { user, logout, isLoading: authLoading } = useAuth()

@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { validateSignup, getPasswordStrength, validatePasswordMatch } from '@/utils/validation'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006'
 
 interface InvitationInfo {
   recipient_email: string

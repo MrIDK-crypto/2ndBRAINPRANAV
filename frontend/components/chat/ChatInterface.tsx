@@ -7,7 +7,7 @@ import axios from 'axios'
 import { useAuth } from '@/contexts/AuthContext'
 import ReactMarkdown from 'react-markdown'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
 interface Message {
   id: string

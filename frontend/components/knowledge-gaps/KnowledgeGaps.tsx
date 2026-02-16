@@ -6,7 +6,7 @@ import axios from 'axios'
 import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
 import Sidebar from '../shared/Sidebar'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003') + '/api'
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
 // Wellspring-Inspired Warm Design System
 const theme = {

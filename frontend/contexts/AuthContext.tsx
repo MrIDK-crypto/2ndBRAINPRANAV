@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { sessionManager } from '@/utils/sessionManager'
 import { authApi } from '@/utils/api'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5003'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006'
 
 interface User {
   id: string
