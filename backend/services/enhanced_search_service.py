@@ -1180,8 +1180,9 @@ End with "Sources Used: [list numbers]"."""
         query = sanitized_query
 
         # MEMORY SAFETY: Bound conversation history to prevent memory leaks
-        MAX_HISTORY_MESSAGES = 20  # Reasonable max for context
-        MAX_MESSAGE_LENGTH = 1000  # Max chars per message
+        # Frontend sends up to 500 messages from cloud; we use the most recent 50 for LLM context
+        MAX_HISTORY_MESSAGES = 50  # Last 50 messages for LLM context window
+        MAX_MESSAGE_LENGTH = 2000  # Max chars per message
 
         if conversation_history:
             # Truncate to last N messages

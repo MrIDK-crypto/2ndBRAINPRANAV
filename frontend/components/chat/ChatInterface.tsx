@@ -135,13 +135,7 @@ export default function ChatInterface() {
   // Chat History State
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(() => {
-    // Restore last conversation from localStorage
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('2ndBrain_currentConversationId') || null
-    }
-    return null
-  })
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
 
   // Auth headers for API calls
   const getAuthHeaders = () => {
@@ -180,21 +174,24 @@ export default function ChatInterface() {
   }
 
   // Fetch chat history
-  const fetchConversations = useCallback(async () => {
-    if (!token) return
+  const fetchConversations = useCallback(async (): Promise<Conversation[]> => {
+    if (!token) return []
     setIsLoadingHistory(true)
     try {
       const response = await axios.get(`${API_BASE}/chat/conversations`, {
         headers: getAuthHeaders()
       })
       if (response.data.success) {
-        setConversations(response.data.conversations || [])
+        const convs = response.data.conversations || []
+        setConversations(convs)
+        return convs
       }
     } catch (error) {
       console.error('Error fetching conversations:', error)
     } finally {
       setIsLoadingHistory(false)
     }
+    return []
   }, [token])
 
   // Load a specific conversation
@@ -272,37 +269,22 @@ export default function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  // Persist currentConversationId to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (currentConversationId) {
-        localStorage.setItem('2ndBrain_currentConversationId', currentConversationId)
-      } else {
-        localStorage.removeItem('2ndBrain_currentConversationId')
-      }
-    }
-  }, [currentConversationId])
-
-  // Fetch conversations on mount and auto-load last conversation
+  // Fetch conversations on mount and auto-load the most recent one from the cloud
   useEffect(() => {
     if (token) {
-      fetchConversations().then(() => {
-        // Auto-load last conversation if we have one saved and no messages loaded yet
-        const savedId = typeof window !== 'undefined' ? localStorage.getItem('2ndBrain_currentConversationId') : null
-        if (savedId && messages.length === 0) {
-          loadConversation(savedId)
+      fetchConversations().then((convs) => {
+        // Auto-load the most recent conversation from the server (cloud-based memory)
+        if (convs && convs.length > 0 && messages.length === 0 && !currentConversationId) {
+          loadConversation(convs[0].id)
         }
       })
     }
-  }, [token, fetchConversations])
+  }, [token])
 
   // Handler for starting new chat
   const handleNewChat = () => {
     setMessages([])
     setCurrentConversationId(null)
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('2ndBrain_currentConversationId')
-    }
   }
 
   // Show loading while checking auth (after all hooks)
@@ -401,12 +383,28 @@ export default function ChatInterface() {
     }
 
     try {
-      // Build conversation history for context - include recent messages for memory
-      const allCurrentMessages = [...messages, userMessage]
-      const conversationHistory = allCurrentMessages.slice(-20).map(m => ({
-        role: m.isUser ? 'user' : 'assistant',
-        content: m.text
-      }))
+      // Build conversation history from cloud - fetch full history from backend
+      let conversationHistory: Array<{ role: string; content: string }> = []
+      if (convId) {
+        try {
+          const historyResponse = await axios.get(
+            `${API_BASE}/chat/conversations/${convId}`,
+            { headers: getAuthHeaders() }
+          )
+          if (historyResponse.data.success) {
+            const cloudMessages = historyResponse.data.conversation.messages || []
+            // Use up to 500 messages from cloud for full memory
+            conversationHistory = cloudMessages.slice(-500).map((m: any) => ({
+              role: m.role,
+              content: m.content
+            }))
+          }
+        } catch (histErr) {
+          console.error('Error fetching conversation history:', histErr)
+        }
+      }
+      // Append the current user message that was just sent (not yet saved to cloud)
+      conversationHistory.push({ role: 'user', content: queryText })
 
       // Use Enhanced RAG v2.1 endpoint with auth headers and conversation history
       const response = await axios.post(`${API_BASE}/search`, {
