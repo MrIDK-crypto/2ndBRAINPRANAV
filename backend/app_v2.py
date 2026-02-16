@@ -49,7 +49,7 @@ CORS(app,
          r"/api/*": {
              "origins": list(set(_cors_origins)),
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization"]
+             "allow_headers": ["Content-Type", "Authorization", "X-Share-Token"]
          }
      })
 
@@ -155,6 +155,7 @@ from api.sync_progress_routes import sync_progress_bp
 from api.email_forwarding_routes import email_forwarding_bp
 from api.admin_routes import admin_bp
 from api.website_routes import website_bp
+from api.share_routes import share_bp
 
 app.register_blueprint(auth_bp)
 # IMPORTANT: Register github_bp BEFORE integration_bp so /api/integrations/github/* routes
@@ -172,6 +173,7 @@ app.register_blueprint(sync_progress_bp)
 app.register_blueprint(email_forwarding_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
+app.register_blueprint(share_bp)
 
 print("✓ API blueprints registered")
 

@@ -249,10 +249,10 @@ export default function Documents() {
 
   // Share modal state
   const [showShareModal, setShowShareModal] = useState(false)
-  const [shareEmail, setShareEmail] = useState('')
-  const [shareMessage, setShareMessage] = useState('')
-  const [sendingInvite, setSendingInvite] = useState(false)
-  const [shareResult, setShareResult] = useState<{success: boolean, message: string} | null>(null)
+  const [shareLink, setShareLink] = useState<string | null>(null)
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [existingLinks, setExistingLinks] = useState<{id: string, label: string | null, access_count: number, created_at: string | null}[]>([])
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const authHeaders = useAuthHeaders()
   const { token, user, logout } = useAuth()
@@ -827,38 +827,57 @@ export default function Documents() {
     }
   }
 
-  const handleSendInvite = async () => {
-    if (!shareEmail.trim()) return
-
-    setSendingInvite(true)
-    setShareResult(null)
-
+  const fetchExistingLinks = async () => {
     try {
-      const response = await axios.post(`${API_BASE}/auth/invite`, {
-        email: shareEmail.trim(),
-        message: shareMessage.trim()
-      }, { headers: authHeaders })
-
+      const response = await axios.get(`${API_BASE}/shared/links`, { headers: authHeaders })
       if (response.data.success) {
-        setShareResult({ success: true, message: 'Invitation sent! The email may take 1-2 minutes to arrive.' })
-        // Clear form after success
-        setTimeout(() => {
-          setShareEmail('')
-          setShareMessage('')
-          setShowShareModal(false)
-          setShareResult(null)
-        }, 3000)
-      } else {
-        setShareResult({ success: false, message: response.data.error || 'Failed to send invitation' })
+        setExistingLinks(response.data.links || [])
+      }
+    } catch (error) {
+      console.error('Error fetching share links:', error)
+    }
+  }
+
+  const handleGenerateLink = async () => {
+    setGeneratingLink(true)
+    try {
+      const response = await axios.post(`${API_BASE}/shared/links`, {}, { headers: authHeaders })
+      if (response.data.success) {
+        setShareLink(response.data.share_url)
+        fetchExistingLinks()
       }
     } catch (error: any) {
-      console.error('Error sending invitation:', error)
-      setShareResult({
-        success: false,
-        message: error.response?.data?.error || 'Failed to send invitation'
-      })
+      console.error('Error generating share link:', error)
     } finally {
-      setSendingInvite(false)
+      setGeneratingLink(false)
+    }
+  }
+
+  const handleCopyLink = async () => {
+    if (!shareLink) return
+    try {
+      await navigator.clipboard.writeText(shareLink)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea')
+      textArea.value = shareLink
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    }
+  }
+
+  const handleRevokeLink = async (linkId: string) => {
+    try {
+      await axios.delete(`${API_BASE}/shared/links/${linkId}`, { headers: authHeaders })
+      setExistingLinks(prev => prev.filter(l => l.id !== linkId))
+    } catch (error) {
+      console.error('Error revoking share link:', error)
     }
   }
 
@@ -1356,7 +1375,7 @@ export default function Documents() {
               )}
             </div>
             <button
-              onClick={() => setShowShareModal(true)}
+              onClick={() => { setShowShareModal(true); fetchExistingLinks() }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1955,7 +1974,7 @@ export default function Documents() {
           }}
           onClick={() => {
             setShowShareModal(false)
-            setShareResult(null)
+            setShareLink(null)
           }}
         >
           <div
@@ -1971,12 +1990,12 @@ export default function Documents() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: 600, color: colors.textPrimary, margin: 0 }}>
-                Invite to 2nd Brain
+                Share Knowledge Portal
               </h2>
               <button
                 onClick={() => {
                   setShowShareModal(false)
-                  setShareResult(null)
+                  setShareLink(null)
                 }}
                 style={{
                   background: 'none',
@@ -1992,77 +2011,130 @@ export default function Documents() {
             </div>
 
             <p style={{ color: colors.textSecondary, fontSize: '14px', marginBottom: '24px' }}>
-              Share 2nd Brain with a colleague or friend. They&apos;ll receive an email invitation to sign up.
+              Anyone with this link can view your knowledge portal — documents, chatbot, and knowledge gaps.
             </p>
 
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textPrimary, marginBottom: '8px' }}>
-                Email Address *
-              </label>
-              <input
-                type="email"
-                value={shareEmail}
-                onChange={(e) => setShareEmail(e.target.value)}
-                placeholder="colleague@example.com"
+            {/* Generate Link Button */}
+            {!shareLink && (
+              <button
+                onClick={handleGenerateLink}
+                disabled={generatingLink}
                 style={{
                   width: '100%',
-                  padding: '12px 16px',
+                  padding: '12px 20px',
                   fontSize: '14px',
-                  border: `1px solid ${colors.border}`,
+                  fontWeight: 600,
+                  backgroundColor: generatingLink ? colors.textMuted : colors.primary,
+                  border: 'none',
                   borderRadius: '8px',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-                onFocus={(e) => e.currentTarget.style.borderColor = colors.primary}
-                onBlur={(e) => e.currentTarget.style.borderColor = colors.border}
-              />
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textPrimary, marginBottom: '8px' }}>
-                Personal Message (optional)
-              </label>
-              <textarea
-                value={shareMessage}
-                onChange={(e) => setShareMessage(e.target.value)}
-                placeholder="Hey! I've been using 2nd Brain to organize my knowledge and thought you'd like it too."
-                rows={3}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  fontSize: '14px',
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: '8px',
-                  outline: 'none',
-                  resize: 'vertical',
-                  boxSizing: 'border-box',
-                  fontFamily: 'inherit',
-                }}
-                onFocus={(e) => e.currentTarget.style.borderColor = colors.primary}
-                onBlur={(e) => e.currentTarget.style.borderColor = colors.border}
-              />
-            </div>
-
-            {shareResult && (
-              <div
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '8px',
-                  marginBottom: '16px',
-                  backgroundColor: shareResult.success ? colors.primaryLight : '#F1F5F9',
-                  color: shareResult.success ? colors.primary : colors.statusArchived,
-                  fontSize: '14px',
+                  color: '#fff',
+                  cursor: generatingLink ? 'not-allowed' : 'pointer',
+                  marginBottom: '20px',
                 }}
               >
-                {shareResult.success ? '✓ ' : '✗ '}{shareResult.message}
+                {generatingLink ? 'Generating...' : 'Generate Share Link'}
+              </button>
+            )}
+
+            {/* Generated Link Display */}
+            {shareLink && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={shareLink}
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      fontSize: '13px',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      backgroundColor: colors.pageBg,
+                      color: colors.textPrimary,
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    onClick={handleCopyLink}
+                    style={{
+                      padding: '10px 16px',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      backgroundColor: linkCopied ? colors.statusSuccess : colors.primary,
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'background-color 0.2s',
+                    }}
+                  >
+                    {linkCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            {/* Existing Links */}
+            {existingLinks.length > 0 && (
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>
+                  Active Links
+                </div>
+                {existingLinks.map((link) => (
+                  <div
+                    key={link.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      backgroundColor: colors.pageBg,
+                      borderRadius: '8px',
+                      marginBottom: '6px',
+                      fontSize: '13px',
+                    }}
+                  >
+                    <div>
+                      <span style={{ color: colors.textPrimary, fontWeight: 500 }}>
+                        {link.label || 'Share Link'}
+                      </span>
+                      <span style={{ color: colors.textMuted, marginLeft: '8px' }}>
+                        {link.access_count} view{link.access_count !== 1 ? 's' : ''}
+                      </span>
+                      {link.created_at && (
+                        <span style={{ color: colors.textMuted, marginLeft: '8px' }}>
+                          · {new Date(link.created_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleRevokeLink(link.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        fontSize: '16px',
+                        cursor: 'pointer',
+                        color: colors.textMuted,
+                        padding: '2px 6px',
+                      }}
+                      title="Revoke link"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
               <button
                 onClick={() => {
                   setShowShareModal(false)
-                  setShareResult(null)
+                  setShareLink(null)
                 }}
                 style={{
                   padding: '10px 20px',
@@ -2075,23 +2147,7 @@ export default function Documents() {
                   cursor: 'pointer',
                 }}
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleSendInvite}
-                disabled={!shareEmail.trim() || sendingInvite}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  backgroundColor: (!shareEmail.trim() || sendingInvite) ? colors.textMuted : colors.primary,
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  cursor: (!shareEmail.trim() || sendingInvite) ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {sendingInvite ? 'Sending email...' : 'Send Invitation'}
+                Close
               </button>
             </div>
           </div>

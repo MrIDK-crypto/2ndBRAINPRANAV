@@ -186,6 +186,7 @@ class Tenant(Base):
     projects = relationship("Project", back_populates="tenant", cascade="all, delete-orphan")
     knowledge_gaps = relationship("KnowledgeGap", back_populates="tenant", cascade="all, delete-orphan")
     videos = relationship("Video", back_populates="tenant", cascade="all, delete-orphan")
+    share_links = relationship("TenantShareLink", back_populates="tenant", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Tenant {self.slug}>"
@@ -508,6 +509,80 @@ class Invitation(Base):
             "role": self.role.value,
             "status": self.status.value,
             "message": self.message,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
+# TENANT SHARE LINK MODEL (Public portal sharing)
+# ============================================================================
+
+class TenantShareLink(Base):
+    """
+    Share link for giving public access to a tenant's knowledge portal.
+    Anyone with the link can view documents, use chatbot, and answer knowledge gaps
+    without needing to sign up or log in.
+    """
+    __tablename__ = "tenant_share_links"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    created_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    # Token (stored as SHA-256 hash for security)
+    token_hash = Column(String(255), nullable=False, unique=True, index=True)
+
+    # Optional label (e.g., "External reviewers", "Board members")
+    label = Column(String(255))
+
+    # Permissions: what sections the link grants access to
+    permissions = Column(JSON, default=lambda: {
+        "documents": True,
+        "chatbot": True,
+        "knowledge_gaps": True
+    })
+
+    # Access tracking
+    access_count = Column(Integer, default=0)
+    last_accessed_at = Column(DateTime(timezone=True))
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False)
+    revoked_at = Column(DateTime(timezone=True))
+    revoked_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+
+    # Expiration (null = no expiry)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    tenant = relationship("Tenant", back_populates="share_links")
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+    def __repr__(self):
+        return f"<TenantShareLink for tenant {self.tenant_id[:8]}... active={self.is_active}>"
+
+    @property
+    def is_valid(self) -> bool:
+        """Check if share link is valid (active and not expired)"""
+        if not self.is_active:
+            return False
+        if self.expires_at and make_aware(self.expires_at) < utc_now():
+            return False
+        return True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "permissions": self.permissions,
+            "access_count": self.access_count or 0,
+            "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
+            "is_active": self.is_active,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
