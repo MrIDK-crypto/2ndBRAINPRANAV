@@ -237,6 +237,7 @@ export default function Settings() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ padding: '32px 40px 0', backgroundColor: colors.pageBg }}>
+          <div style={{ maxWidth: '720px', margin: '0 auto' }}>
           <h1 style={{
             fontSize: '28px',
             fontWeight: 700,
@@ -274,11 +275,12 @@ export default function Settings() {
               </button>
             ))}
           </div>
+          </div>
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, padding: '32px 40px', overflow: 'auto' }}>
-          <div style={{ maxWidth: '100%' }}>
+          <div style={{ maxWidth: '720px', margin: '0 auto' }}>
 
             {/* Save/Error Message */}
             {saveMessage && (
@@ -347,6 +349,52 @@ export default function Settings() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* User Type */}
+                <div style={{
+                  padding: '24px 28px',
+                  backgroundColor: colors.cardBg,
+                  borderRadius: '16px',
+                  border: `1px solid ${colors.border}`,
+                  marginBottom: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '10px',
+                      backgroundColor: user?.email === 'pranav@use2ndbrain.com' ? '#FBF4F1' : '#F0F7EE',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={user?.email === 'pranav@use2ndbrain.com' ? colors.primary : colors.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                        Account Type
+                      </div>
+                      <div style={{ fontSize: '15px', fontWeight: 600, color: colors.textPrimary }}>
+                        {user?.email === 'pranav@use2ndbrain.com' ? 'Admin' : 'Member'}
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    backgroundColor: user?.email === 'pranav@use2ndbrain.com' ? '#FBF4F1' : '#F0F7EE',
+                    color: user?.email === 'pranav@use2ndbrain.com' ? colors.primary : '#5A7A52',
+                  }}>
+                    {user?.email === 'pranav@use2ndbrain.com' ? 'Full Access + Analytics' : 'Standard Access'}
+                  </span>
                 </div>
 
                 {/* Profile Form */}
