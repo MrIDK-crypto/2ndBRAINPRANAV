@@ -177,28 +177,72 @@ export default function SettingsPage() {
           borderBottom: `1px solid ${theme.border}`,
           backgroundColor: theme.cardBg,
         }}>
-          <h1 style={{
-            fontSize: '26px',
-            fontWeight: 700,
-            color: theme.textPrimary,
-            margin: 0,
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          }}>
-            Account Settings
-          </h1>
-          <p style={{
-            color: theme.textSecondary,
-            fontSize: '14px',
-            marginTop: '6px',
-            marginBottom: 0,
-          }}>
-            Manage your profile and security preferences
-          </p>
+          <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+            <h1 style={{
+              fontSize: '26px',
+              fontWeight: 700,
+              color: theme.textPrimary,
+              margin: 0,
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            }}>
+              Account Settings
+            </h1>
+            <p style={{
+              color: theme.textSecondary,
+              fontSize: '14px',
+              marginTop: '6px',
+              marginBottom: 0,
+            }}>
+              Manage your profile and security preferences
+            </p>
+          </div>
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, padding: '32px 40px', overflowY: 'auto' }}>
-          <div style={{ maxWidth: '640px' }}>
+          <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+
+            {/* Account Type */}
+            <section style={{
+              ...sectionStyle,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '12px',
+                  backgroundColor: user?.email === 'pranav@use2ndbrain.com' ? theme.primaryLight : theme.successLight,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={user?.email === 'pranav@use2ndbrain.com' ? theme.primary : theme.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  </svg>
+                </div>
+                <div>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 2px' }}>
+                    Account Type
+                  </p>
+                  <p style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>
+                    {user?.email === 'pranav@use2ndbrain.com' ? 'Admin' : 'Member'}
+                  </p>
+                </div>
+              </div>
+              <span style={{
+                padding: '6px 14px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: 600,
+                backgroundColor: user?.email === 'pranav@use2ndbrain.com' ? theme.primaryLight : theme.successLight,
+                color: user?.email === 'pranav@use2ndbrain.com' ? theme.primary : theme.success,
+              }}>
+                {user?.email === 'pranav@use2ndbrain.com' ? 'Full Access + Analytics' : 'Standard Access'}
+              </span>
+            </section>
 
             {/* Profile Section */}
             <section style={sectionStyle}>
