@@ -532,6 +532,17 @@ Time: {timestamp.isoformat() if timestamp else 'Unknown'}
             if response["ok"]:
                 self.sync_stats["team"] = response.get("team")
                 self.sync_stats["user"] = response.get("user")
+                self.team_id = response.get("team_id")
+
+                # Extract team_domain from URL for deep links
+                url = response.get("url", "")
+                if url:
+                    import re
+                    match = re.search(r'https://([^.]+)\.slack\.com', url)
+                    if match:
+                        self.team_domain = match.group(1)
+                        print(f"[Slack] Team domain (sync): {self.team_domain}", flush=True)
+
                 self.status = ConnectorStatus.CONNECTED
                 self._clear_error()
                 return True

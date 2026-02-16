@@ -7,6 +7,8 @@ import os
 import hmac
 import hashlib
 import time
+import json
+import secrets
 import threading
 from flask import Blueprint, request, jsonify, redirect, g
 from slack_sdk import WebClient
@@ -51,6 +53,7 @@ def _is_duplicate_event(event_id: str) -> bool:
         _processed_events[event_id] = now
         return False
 
+
 # Slack app credentials (from environment)
 SLACK_CLIENT_ID = os.getenv('SLACK_CLIENT_ID')
 SLACK_CLIENT_SECRET = os.getenv('SLACK_CLIENT_SECRET')
@@ -61,21 +64,91 @@ signature_verifier = SignatureVerifier(SLACK_SIGNING_SECRET) if SLACK_SIGNING_SE
 
 
 # ============================================================================
-# SLACK VERIFICATION MIDDLEWARE
+# OAUTH STATE STORE (CSRF protection)
+# ============================================================================
+# Stores {state_token: (tenant_id, user_id, timestamp)} with 10-min TTL.
+_oauth_states = {}
+_oauth_states_lock = threading.Lock()
+OAUTH_STATE_TTL_SECONDS = 600  # 10 minutes
+
+
+def _create_oauth_state(tenant_id: str, user_id: str) -> str:
+    """Create a cryptographically random state token and store the mapping."""
+    token = secrets.token_urlsafe(32)
+    with _oauth_states_lock:
+        # Clean expired states
+        now = time.time()
+        expired = [k for k, v in _oauth_states.items() if now - v[2] > OAUTH_STATE_TTL_SECONDS]
+        for k in expired:
+            del _oauth_states[k]
+        _oauth_states[token] = (tenant_id, user_id, now)
+    return token
+
+
+def _validate_oauth_state(token: str):
+    """Validate and consume a state token. Returns (tenant_id, user_id) or None."""
+    if not token:
+        return None
+    with _oauth_states_lock:
+        entry = _oauth_states.pop(token, None)
+    if not entry:
+        return None
+    tenant_id, user_id, created_at = entry
+    if time.time() - created_at > OAUTH_STATE_TTL_SECONDS:
+        return None
+    return tenant_id, user_id
+
+
+# ============================================================================
+# SLACK SIGNATURE VERIFICATION
 # ============================================================================
 
 def verify_slack_request():
-    """Verify Slack request signature"""
-    # TEMPORARILY DISABLED for development/debugging
-    # TODO: Re-enable in production
-    print("[SlackBot] Signature verification DISABLED for development", flush=True)
-    return True
+    """
+    Verify that the request actually came from Slack using HMAC signature.
+    Returns True if valid, False if not.
+    """
+    if not SLACK_SIGNING_SECRET:
+        print("[SlackBot] WARNING: No SLACK_SIGNING_SECRET configured - skipping verification", flush=True)
+        # In development without a signing secret, allow requests through
+        # but log a clear warning. In production, SLACK_SIGNING_SECRET must be set.
+        return True
 
-    # Original verification code (disabled):
-    # if not signature_verifier:
-    #     print("[SlackBot] No signing secret configured, skipping verification", flush=True)
-    #     return True
-    # ... etc
+    if not signature_verifier:
+        print("[SlackBot] WARNING: SignatureVerifier not initialized", flush=True)
+        return True
+
+    try:
+        # Slack sends timestamp and signature in headers
+        timestamp = request.headers.get('X-Slack-Request-Timestamp', '')
+        signature = request.headers.get('X-Slack-Signature', '')
+
+        if not timestamp or not signature:
+            print("[SlackBot] REJECTED: Missing signature headers", flush=True)
+            return False
+
+        # Reject requests older than 5 minutes (replay attack protection)
+        if abs(time.time() - int(timestamp)) > 300:
+            print("[SlackBot] REJECTED: Request timestamp too old (replay attack?)", flush=True)
+            return False
+
+        # Verify HMAC signature
+        body = request.get_data(as_text=True)
+        is_valid = signature_verifier.is_valid(
+            body=body,
+            timestamp=timestamp,
+            signature=signature
+        )
+
+        if not is_valid:
+            print("[SlackBot] REJECTED: Invalid HMAC signature", flush=True)
+            return False
+
+        return True
+
+    except Exception as e:
+        print(f"[SlackBot] Signature verification error: {e}", flush=True)
+        return False
 
 
 # ============================================================================
@@ -101,14 +174,16 @@ def slack_oauth_install():
         'channels:read',      # Access channel list
         'chat:write',         # Post messages
         'commands',           # Receive slash commands
+        'files:read',         # Read files shared in channels
+        'files:write',        # Upload files
         'im:history',         # Read DMs
         'im:read',            # Access DM list
         'im:write',           # Send DMs
         'users:read',         # Read user info
     ]
 
-    # State parameter includes tenant_id for security
-    state = f"{g.tenant_id}:{g.user_id}"
+    # Create cryptographically random state with CSRF protection
+    state = _create_oauth_state(g.tenant_id, g.user_id)
 
     slack_auth_url = (
         f"https://slack.com/oauth/v2/authorize"
@@ -149,14 +224,16 @@ def slack_oauth_callback():
                 'error': "No authorization code provided"
             }), 400
 
-        # Parse state
-        try:
-            tenant_id, user_id = state.split(':', 1)
-        except ValueError:
+        # Validate state token (CSRF protection)
+        state_result = _validate_oauth_state(state)
+        if not state_result:
+            print(f"[SlackBot] OAuth REJECTED: Invalid or expired state token", flush=True)
             return jsonify({
                 'success': False,
-                'error': "Invalid state parameter"
-            }), 400
+                'error': "Invalid or expired authorization. Please try again."
+            }), 403
+
+        tenant_id, user_id = state_result
 
         # Exchange code for access token
         client = WebClient()
@@ -177,22 +254,51 @@ def slack_oauth_callback():
         bot_token = response['access_token']
         bot_user_id = response['bot_user_id']
 
-        # Register workspace
+        # Register workspace mapping
         register_slack_workspace(team_id, tenant_id, bot_token)
 
-        # In production: Store in database
-        # from database.models import SlackWorkspace
-        # workspace = SlackWorkspace(
-        #     tenant_id=tenant_id,
-        #     team_id=team_id,
-        #     team_name=team_name,
-        #     bot_token=bot_token,
-        #     bot_user_id=bot_user_id
-        # )
-        # db.add(workspace)
-        # db.commit()
+        # Store in database via Connector model
+        try:
+            from database.models import Connector, ConnectorType, get_db
+            db = next(get_db())
+            try:
+                # Check if connector already exists for this tenant
+                connector = db.query(Connector).filter(
+                    Connector.tenant_id == tenant_id,
+                    Connector.connector_type == ConnectorType.SLACK
+                ).first()
 
-        print(f"[SlackBot] Workspace connected: {team_name} ({team_id})", flush=True)
+                settings = {
+                    'team_id': team_id,
+                    'team_name': team_name,
+                    'bot_user_id': bot_user_id,
+                    'channels': [],
+                    'include_dms': True,
+                    'include_threads': True,
+                }
+
+                if connector:
+                    connector.access_token = bot_token
+                    connector.is_active = True
+                    connector.settings = settings
+                else:
+                    connector = Connector(
+                        tenant_id=tenant_id,
+                        connector_type=ConnectorType.SLACK,
+                        access_token=bot_token,
+                        is_active=True,
+                        settings=settings
+                    )
+                    db.add(connector)
+
+                db.commit()
+                print(f"[SlackBot] Connector saved for tenant {tenant_id[:8]}...", flush=True)
+            finally:
+                db.close()
+        except Exception as db_err:
+            print(f"[SlackBot] DB save error (non-fatal): {db_err}", flush=True)
+
+        print(f"[SlackBot] Workspace connected: {team_name} ({team_id}) for tenant {tenant_id[:8]}...", flush=True)
 
         # Redirect to success page
         return redirect(f"{request.host_url}integrations?slack_connected=true")
@@ -201,14 +307,14 @@ def slack_oauth_callback():
         print(f"[SlackBot] OAuth error: {e}", flush=True)
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': "Failed to connect Slack workspace. Please try again."
         }), 500
 
     except Exception as e:
         print(f"[SlackBot] OAuth error: {e}", flush=True)
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': "Failed to connect Slack workspace. Please try again."
         }), 500
 
 
@@ -224,22 +330,12 @@ def slack_command_ask():
     User types: /ask What is our pricing model?
 
     POST /api/slack/commands/ask
-
-    Slack sends:
-    {
-        "token": "...",
-        "team_id": "...",
-        "user_id": "...",
-        "channel_id": "...",
-        "text": "What is our pricing model?",
-        "response_url": "..."
-    }
     """
     try:
         # Verify Slack signature
         if not verify_slack_request():
             return jsonify({
-                'text': '❌ Invalid request signature'
+                'text': 'Invalid request signature'
             }), 403
 
         # Parse command data
@@ -249,12 +345,18 @@ def slack_command_ask():
         query = request.form.get('text', '').strip()
         response_url = request.form.get('response_url')
 
+        if not team_id:
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': 'Invalid request: missing workspace ID.'
+            })
+
         # Get tenant for workspace
         tenant_id = get_tenant_for_workspace(team_id)
         if not tenant_id:
             return jsonify({
                 'response_type': 'ephemeral',
-                'text': '❌ Workspace not connected to 2nd Brain. Please connect in Settings > Integrations.'
+                'text': 'Workspace not connected to KnowledgeVault. Please connect in Settings > Integrations.'
             })
 
         # Get bot token
@@ -262,7 +364,7 @@ def slack_command_ask():
         if not bot_token:
             return jsonify({
                 'response_type': 'ephemeral',
-                'text': '❌ Bot token not found. Please reconnect workspace.'
+                'text': 'Bot token not found. Please reconnect workspace.'
             })
 
         # Handle command
@@ -271,7 +373,7 @@ def slack_command_ask():
         if not query:
             return jsonify({
                 'response_type': 'ephemeral',
-                'text': '❓ *Usage:* `/ask <your question>`\n\nExample: `/ask What is our pricing model?`'
+                'text': '*Usage:* `/ask <your question>`\n\nExample: `/ask What is our pricing model?`'
             })
 
         response = bot_service.handle_ask_command(
@@ -288,7 +390,7 @@ def slack_command_ask():
         print(f"[SlackBot] Command error: {e}", flush=True)
         return jsonify({
             'response_type': 'ephemeral',
-            'text': f'❌ Error: {str(e)}'
+            'text': 'Something went wrong processing your request. Please try again.'
         })
 
 
@@ -299,14 +401,9 @@ def slack_command_ask():
 @slack_bot_bp.route('/events', methods=['POST'])
 def slack_events():
     """
-    Handle Slack events (mentions, messages, etc.).
+    Handle Slack events (mentions, messages, file_shared, etc.).
 
     POST /api/slack/events
-
-    Slack sends events like:
-    - app_mention: @2ndBrain what is...
-    - message: DMs to the bot
-    - url_verification: Challenge request when setting up events URL
     """
     try:
         data = request.get_json()
@@ -314,6 +411,9 @@ def slack_events():
         # Handle URL verification challenge FIRST (before signature verification)
         # This is required by Slack when you first set up the Events URL
         if data.get('type') == 'url_verification':
+            # Still verify signature on challenge requests if possible
+            if SLACK_SIGNING_SECRET and not verify_slack_request():
+                return jsonify({'error': 'Invalid signature'}), 403
             challenge = data.get('challenge', '')
             print(f"[SlackBot] Responding to URL verification challenge", flush=True)
             return jsonify({'challenge': challenge})
@@ -326,8 +426,13 @@ def slack_events():
         if data.get('type') == 'event_callback':
             event = data.get('event', {})
             team_id = data.get('team_id')
-            event_id = data.get('event_id')  # Unique ID for deduplication
+            event_id = data.get('event_id')
             event_subtype = event.get('type')
+
+            # Validate team_id is present and reasonable
+            if not team_id or not isinstance(team_id, str) or len(team_id) > 20:
+                print(f"[SlackBot] REJECTED: Invalid team_id in event", flush=True)
+                return jsonify({'ok': True})
 
             # DEDUPLICATION: Skip if already processed
             if _is_duplicate_event(event_id):
@@ -352,10 +457,21 @@ def slack_events():
                         bot_service.handle_app_mention(tenant_id, event)
                     elif event_subtype == 'message':
                         if not event.get('bot_id') and event.get('channel', '').startswith('D'):
-                            bot_service.handle_message(tenant_id, event)
+                            # Check if message has files (file upload to bot)
+                            if event.get('files'):
+                                bot_service.handle_file_upload(tenant_id, event)
+                            else:
+                                bot_service.handle_message(tenant_id, event)
+                    elif event_subtype == 'file_shared':
+                        # File shared in a DM with the bot
+                        channel = event.get('channel_id', '')
+                        if channel.startswith('D'):
+                            bot_service.handle_file_shared(tenant_id, event)
 
                 except Exception as e:
+                    import traceback
                     print(f"[SlackBot] Background error: {e}", flush=True)
+                    traceback.print_exc()
 
             # Spawn background thread and return immediately
             thread = threading.Thread(
@@ -373,17 +489,15 @@ def slack_events():
 
 
 # ============================================================================
-# INTERACTIVE COMPONENTS
+# INTERACTIVE COMPONENTS (Feedback buttons)
 # ============================================================================
 
 @slack_bot_bp.route('/interactive', methods=['POST'])
 def slack_interactive():
     """
-    Handle Slack interactive components (buttons, menus, etc.).
+    Handle Slack interactive components (feedback buttons, etc.).
 
     POST /api/slack/interactive
-
-    Future use: Handle button clicks, dropdown selections
     """
     try:
         # Verify Slack signature
@@ -391,28 +505,114 @@ def slack_interactive():
             return jsonify({'error': 'Invalid signature'}), 403
 
         # Parse payload
-        import json
         payload = json.loads(request.form.get('payload', '{}'))
 
-        # Handle interactive action
         action_type = payload.get('type')
         team_id = payload.get('team', {}).get('id')
+        user_info = payload.get('user', {})
+        user_id = user_info.get('id', 'unknown')
+
+        if not team_id:
+            return jsonify({'ok': True})
 
         # Get tenant
         tenant_id = get_tenant_for_workspace(team_id)
         if not tenant_id:
-            return jsonify({'text': '❌ Workspace not connected'})
+            return jsonify({'text': 'Workspace not connected'})
 
-        # Future: Handle different action types
-        # - block_actions: Button clicks
-        # - view_submission: Modal submissions
-        # - view_closed: Modal closed
+        if action_type == 'block_actions':
+            actions = payload.get('actions', [])
+            for action in actions:
+                action_id = action.get('action_id', '')
+                value = action.get('value', '')
+
+                if action_id == 'feedback_helpful':
+                    _handle_feedback(payload, tenant_id, user_id, helpful=True)
+                elif action_id == 'feedback_not_helpful':
+                    _handle_feedback(payload, tenant_id, user_id, helpful=False)
 
         return jsonify({'ok': True})
 
     except Exception as e:
         print(f"[SlackBot] Interactive error: {e}", flush=True)
         return jsonify({'ok': True})
+
+
+def _handle_feedback(payload: dict, tenant_id: str, user_id: str, helpful: bool):
+    """Process feedback button click and update the message."""
+    try:
+        # Get the original message info
+        channel = payload.get('channel', {}).get('id')
+        message_ts = payload.get('message', {}).get('ts')
+        original_blocks = payload.get('message', {}).get('blocks', [])
+
+        if not channel or not message_ts:
+            return
+
+        # Log the feedback
+        feedback_type = "helpful" if helpful else "not helpful"
+        print(f"[SlackBot] Feedback from {user_id}: {feedback_type} (tenant: {tenant_id[:8]}...)", flush=True)
+
+        # Store feedback in database
+        try:
+            from database.models import get_db
+            db = next(get_db())
+            try:
+                from database.models import AuditLog
+                log = AuditLog(
+                    tenant_id=tenant_id,
+                    action='slack_bot_feedback',
+                    details={
+                        'user_id': user_id,
+                        'helpful': helpful,
+                        'channel': channel,
+                        'message_ts': message_ts,
+                    }
+                )
+                db.add(log)
+                db.commit()
+            finally:
+                db.close()
+        except Exception as db_err:
+            print(f"[SlackBot] Feedback DB error (non-fatal): {db_err}", flush=True)
+
+        # Update the message: replace feedback buttons with confirmation
+        bot_token = get_bot_token_for_workspace(
+            payload.get('team', {}).get('id')
+        )
+        if not bot_token:
+            return
+
+        client = WebClient(token=bot_token)
+
+        # Replace the feedback block (last block) with a confirmation
+        updated_blocks = []
+        for block in original_blocks:
+            # Skip the old feedback actions block
+            if block.get('type') == 'actions':
+                continue
+            updated_blocks.append(block)
+
+        # Add confirmation text
+        emoji = "thumbs up" if helpful else "thumbs down"
+        label = "Helpful" if helpful else "Not helpful"
+        updated_blocks.append({
+            'type': 'context',
+            'elements': [{
+                'type': 'mrkdwn',
+                'text': f"_{label}_ - thanks for your feedback!"
+            }]
+        })
+
+        client.chat_update(
+            channel=channel,
+            ts=message_ts,
+            blocks=updated_blocks,
+            text="Search result (feedback received)"
+        )
+
+    except Exception as e:
+        print(f"[SlackBot] Feedback handler error: {e}", flush=True)
 
 
 # ============================================================================
@@ -426,35 +626,44 @@ def slack_bot_status():
     Check if Slack bot is connected for current tenant.
 
     GET /api/slack/status
-
-    Returns:
-    {
-        "success": true,
-        "connected": true,
-        "workspace": "Acme Corp",
-        "bot_user_id": "U0123456"
-    }
     """
     try:
         tenant_id = g.tenant_id
 
-        # In production: Query database for SlackWorkspace
-        # For now: Check in-memory mapping
-        # workspace = db.query(SlackWorkspace).filter(
-        #     SlackWorkspace.tenant_id == tenant_id
-        # ).first()
+        # Query database for Slack connector
+        try:
+            from database.models import Connector, ConnectorType, get_db
+            db = next(get_db())
+            try:
+                connector = db.query(Connector).filter(
+                    Connector.tenant_id == tenant_id,
+                    Connector.connector_type == ConnectorType.SLACK,
+                    Connector.is_active == True
+                ).first()
 
-        # Placeholder response
+                if connector:
+                    settings = connector.settings or {}
+                    return jsonify({
+                        'success': True,
+                        'connected': True,
+                        'workspace': settings.get('team_name', 'Unknown'),
+                        'bot_user_id': settings.get('bot_user_id'),
+                    })
+            finally:
+                db.close()
+        except Exception:
+            pass
+
         return jsonify({
             'success': True,
-            'connected': False,  # Update based on database
-            'message': 'Slack bot implementation complete. Configure OAuth to connect.'
+            'connected': False,
+            'message': 'Slack bot not connected. Use Settings > Integrations to connect.'
         })
 
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': 'Failed to check Slack bot status.'
         }), 500
 
 
@@ -469,13 +678,28 @@ def slack_bot_disconnect():
     try:
         tenant_id = g.tenant_id
 
-        # In production: Delete from database
-        # workspace = db.query(SlackWorkspace).filter(
-        #     SlackWorkspace.tenant_id == tenant_id
-        # ).first()
-        # if workspace:
-        #     db.delete(workspace)
-        #     db.commit()
+        try:
+            from database.models import Connector, ConnectorType, get_db
+            from services.slack_bot_service import _workspace_cache
+            db = next(get_db())
+            try:
+                connector = db.query(Connector).filter(
+                    Connector.tenant_id == tenant_id,
+                    Connector.connector_type == ConnectorType.SLACK
+                ).first()
+
+                if connector:
+                    team_id = (connector.settings or {}).get('team_id')
+                    connector.is_active = False
+                    db.commit()
+                    # Invalidate caches
+                    if team_id:
+                        _workspace_cache.invalidate(team_id)
+                    print(f"[SlackBot] Disconnected for tenant {tenant_id[:8]}...", flush=True)
+            finally:
+                db.close()
+        except Exception as db_err:
+            print(f"[SlackBot] Disconnect DB error: {db_err}", flush=True)
 
         return jsonify({
             'success': True,
@@ -485,5 +709,5 @@ def slack_bot_disconnect():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': 'Failed to disconnect Slack bot.'
         }), 500
