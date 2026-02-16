@@ -107,24 +107,60 @@ const emptyMetrics = (days: number): Metrics => ({
   period_days: days,
 })
 
+const ALLOWED_EMAIL = 'pranav@use2ndbrain.com'
+
+interface TenantOption {
+  id: string
+  name: string
+  slug: string
+  user_count: number
+}
+
 export default function AnalyticsPage() {
   const { user, token } = useAuth()
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState(30)
+  const [tenants, setTenants] = useState<TenantOption[]>([])
+  const [selectedTenant, setSelectedTenant] = useState<string>('')
+
+  const isAllowed = user?.email === ALLOWED_EMAIL
 
   useEffect(() => {
-    if (token) {
+    if (token && isAllowed) {
+      fetchTenants()
+    }
+  }, [token, isAllowed])
+
+  useEffect(() => {
+    if (token && isAllowed) {
       fetchMetrics()
     } else {
       setLoading(false)
     }
-  }, [token, period])
+  }, [token, period, selectedTenant, isAllowed])
+
+  const fetchTenants = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/admin/tenants`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (response.data.success) {
+        setTenants(response.data.tenants)
+      }
+    } catch (error) {
+      console.error('Error fetching tenants:', error)
+    }
+  }
 
   const fetchMetrics = async () => {
     setLoading(true)
     try {
-      const response = await axios.get(`${API_BASE}/admin/analytics?days=${period}`, {
+      let url = `${API_BASE}/admin/analytics?days=${period}`
+      if (selectedTenant) {
+        url += `&tenant_id=${selectedTenant}`
+      }
+      const response = await axios.get(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.data.success) {
@@ -205,6 +241,23 @@ export default function AnalyticsPage() {
     )
   }
 
+  if (!isAllowed) {
+    return (
+      <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
+        <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ textAlign: 'center' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="1.5" style={{ margin: '0 auto 16px' }}>
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <h2 style={{ fontSize: '20px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 8px' }}>Access Restricted</h2>
+            <p style={{ fontSize: '14px', color: colors.textMuted, margin: 0 }}>Analytics is only available to platform administrators.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
       <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
@@ -214,7 +267,35 @@ export default function AnalyticsPage() {
           <h1 style={{ fontSize: '28px', fontWeight: 700, color: colors.textPrimary, margin: 0 }}>
             Analytics & Metrics
           </h1>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {/* Tenant Selector */}
+            {tenants.length > 0 && (
+              <select
+                value={selectedTenant}
+                onChange={(e) => setSelectedTenant(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  backgroundColor: colors.cardBg,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  color: colors.textPrimary,
+                  cursor: 'pointer',
+                  outline: 'none',
+                  minWidth: '160px',
+                }}
+              >
+                <option value="">My Tenant</option>
+                {tenants.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.user_count} users)
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Period Selector */}
             {[7, 14, 30].map((d) => (
               <button
                 key={d}

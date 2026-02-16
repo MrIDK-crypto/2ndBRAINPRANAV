@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from datetime import datetime, timezone, timedelta
 
-from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole
+from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole, Tenant
 from services.auth_service import require_auth
 
 # Create blueprint
@@ -16,6 +16,11 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
 # Admin emails - these users are always promoted to admin on startup
 ADMIN_EMAILS = [
+    'pranav@use2ndbrain.com',
+]
+
+# Super admin emails - can view analytics for all tenants
+SUPER_ADMIN_EMAILS = [
     'pranav@use2ndbrain.com',
 ]
 
@@ -382,6 +387,39 @@ def get_tenant_stats():
         db.close()
 
 
+@admin_bp.route('/tenants', methods=['GET'])
+@require_auth
+def list_tenants():
+    """
+    List all tenants. Only accessible to super admins.
+    """
+    db = get_db()
+    try:
+        # Check super admin
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        result = []
+        for t in tenants:
+            user_count = db.query(User).filter(User.tenant_id == t.id, User.is_active == True).count()
+            result.append({
+                "id": t.id,
+                "name": t.name,
+                "slug": t.slug,
+                "plan": t.plan.value if t.plan else "free",
+                "user_count": user_count,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            })
+
+        return jsonify({"success": True, "tenants": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @admin_bp.route('/analytics', methods=['GET'])
 @require_auth
 def get_analytics():
@@ -390,6 +428,7 @@ def get_analytics():
 
     Query params:
         days: Number of days to look back (default 30)
+        tenant_id: Override tenant (super admin only)
 
     Response:
     {
@@ -408,6 +447,17 @@ def get_analytics():
     try:
         tenant_id = g.tenant_id
         days = int(request.args.get('days', 30))
+
+        # Check analytics access - only super admins
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Analytics access restricted"}), 403
+
+        # Super admin can override tenant_id
+        override_tenant = request.args.get('tenant_id')
+        if override_tenant:
+            tenant_id = override_tenant
+
         since = datetime.now(timezone.utc) - timedelta(days=days)
 
         # --- Overview Metrics ---
