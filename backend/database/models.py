@@ -83,6 +83,7 @@ class ConnectorType(PyEnum):
     WEBSCRAPER = "webscraper"
     FIRECRAWL = "firecrawl"
     ZOTERO = "zotero"
+    QUARTZY = "quartzy"
 
 
 class ConnectorStatus(PyEnum):
@@ -1152,18 +1153,43 @@ class AuditLog(Base):
 # Create engine with resilient pool settings for AWS RDS PostgreSQL
 _db_url = get_database_url()
 _is_postgres = _db_url.startswith('postgresql')
+_is_sqlite = _db_url.startswith('sqlite')
 
-engine = create_engine(
-    _db_url,
-    echo=False,  # Set to True for SQL debugging
-    pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=300,  # Recycle connections every 5 min
-    **({
+# Build engine kwargs based on database type
+_engine_kwargs = {
+    'echo': False,  # Set to True for SQL debugging
+    'pool_pre_ping': True,  # Verify connections before use
+    'pool_recycle': 300,  # Recycle connections every 5 min
+}
+
+if _is_postgres:
+    # PostgreSQL-specific settings for production
+    _engine_kwargs.update({
         'pool_size': 10,  # Base pool connections (4 workers x 2-3 concurrent)
         'max_overflow': 20,  # Extra connections under load
         'pool_timeout': 30,  # Wait up to 30s for a connection
-    } if _is_postgres else {})
-)
+    })
+elif _is_sqlite:
+    # SQLite-specific settings for local development
+    # These prevent "database is locked" errors during concurrent access
+    _engine_kwargs.update({
+        'connect_args': {
+            'timeout': 30,  # Wait up to 30 seconds for locks
+            'check_same_thread': False,  # Allow multi-threaded access
+        },
+    })
+
+engine = create_engine(_db_url, **_engine_kwargs)
+
+# Enable WAL mode for SQLite (better concurrency)
+if _is_sqlite:
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
+        cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes, still safe
+        cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
+        cursor.close()
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -307,6 +307,22 @@ def list_integrations():
                 "settings": pubmed.settings if pubmed else None
             })
 
+            # Quartzy (lab inventory)
+            quartzy = connector_map.get(ConnectorType.QUARTZY)
+            integrations.append({
+                "type": "quartzy",
+                "name": "Quartzy",
+                "description": "Import lab inventory items and order requests",
+                "icon": "quartzy",
+                "auth_type": "api_key",
+                "status": quartzy.status.value if quartzy else "not_configured",
+                "connector_id": quartzy.id if quartzy else None,
+                "last_sync_at": quartzy.last_sync_at.isoformat() if quartzy and quartzy.last_sync_at else None,
+                "total_items_synced": quartzy.total_items_synced if quartzy else 0,
+                "error_message": quartzy.error_message if quartzy else None,
+                "settings": quartzy.settings if quartzy else None
+            })
+
             # Website Scraper (legacy BFS crawler)
             webscraper = connector_map.get(ConnectorType.WEBSCRAPER)
             integrations.append({
@@ -2461,6 +2477,325 @@ def pubmed_status():
 
 
 # ============================================================================
+# QUARTZY INTEGRATION
+# ============================================================================
+
+@integration_bp.route('/quartzy/configure', methods=['POST'])
+@require_auth
+def quartzy_configure():
+    """
+    Configure Quartzy with an API access token.
+
+    Request body:
+    {
+        "access_token": "your-quartzy-access-token"  // Required
+    }
+    """
+    try:
+        data = request.get_json()
+        access_token = (data.get("access_token") or "").strip()
+
+        if not access_token:
+            return jsonify({
+                "success": False,
+                "error": "Access token is required. Generate one in Quartzy Settings > API."
+            }), 400
+
+        # Validate the token
+        try:
+            import requests as http_requests
+            test_resp = http_requests.get(
+                "https://api.quartzy.com/order-requests",
+                headers={"Access-Token": access_token, "Accept": "application/json"},
+                params={"page": 1},
+                timeout=15
+            )
+            if test_resp.status_code == 401:
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid access token. Please check your Quartzy API token."
+                }), 401
+            if test_resp.status_code != 200:
+                return jsonify({
+                    "success": False,
+                    "error": f"Quartzy API error: status {test_resp.status_code}"
+                }), 400
+        except Exception as api_err:
+            return jsonify({
+                "success": False,
+                "error": f"Could not reach Quartzy API: {str(api_err)}"
+            }), 400
+
+        db = get_db()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == g.tenant_id,
+                Connector.connector_type == ConnectorType.QUARTZY
+            ).first()
+
+            settings = {"max_items": 500, "include_order_requests": True}
+            is_first_connection = connector is None
+
+            if connector:
+                connector.access_token = access_token
+                connector.settings = settings
+                connector.status = ConnectorStatus.CONNECTED
+                connector.is_active = True
+                connector.error_message = None
+                connector.updated_at = utc_now()
+            else:
+                connector = Connector(
+                    tenant_id=g.tenant_id,
+                    user_id=g.user_id,
+                    connector_type=ConnectorType.QUARTZY,
+                    name="Quartzy",
+                    status=ConnectorStatus.CONNECTED,
+                    access_token=access_token,
+                    settings=settings
+                )
+                db.add(connector)
+
+            db.commit()
+
+            # Auto-sync on first connection
+            if is_first_connection:
+                connector_id = connector.id
+                tenant_id = g.tenant_id
+                user_id = g.user_id
+
+                def run_initial_sync():
+                    _run_connector_sync(
+                        connector_id=connector_id,
+                        connector_type="quartzy",
+                        since=None,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        full_sync=True
+                    )
+
+                thread = threading.Thread(target=run_initial_sync)
+                thread.daemon = True
+                thread.start()
+                print(f"[Quartzy] Started auto-sync for first-time connection")
+
+            return jsonify({
+                "success": True,
+                "message": "Quartzy connected successfully",
+                "connector_id": connector.id
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        print(f"[Quartzy Configure] Error: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@integration_bp.route('/quartzy/upload-csv', methods=['POST'])
+@require_auth
+def quartzy_upload_csv():
+    """
+    Upload a Quartzy CSV or Excel export. Parses items, saves as documents, and embeds.
+
+    Request: multipart/form-data with 'file' field (.csv or .xlsx)
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                "success": False,
+                "error": "No file provided. Please upload a CSV or Excel file."
+            }), 400
+
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({
+                "success": False,
+                "error": "No file selected"
+            }), 400
+
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ('.csv', '.xlsx', '.xls'):
+            return jsonify({
+                "success": False,
+                "error": "Unsupported file type. Please upload a .csv or .xlsx file."
+            }), 400
+
+        file_bytes = file.read()
+        if not file_bytes:
+            return jsonify({
+                "success": False,
+                "error": "File is empty"
+            }), 400
+
+        # Parse the CSV/Excel
+        from connectors.quartzy_connector import QuartzyConnector
+        connector_docs = QuartzyConnector.parse_csv(file_bytes, file.filename)
+
+        if not connector_docs:
+            return jsonify({
+                "success": False,
+                "error": "No items found in the file. Check that it has an 'Item Name' column."
+            }), 400
+
+        print(f"[Quartzy CSV] Parsed {len(connector_docs)} items from {file.filename}")
+
+        # Save to database and embed
+        db = get_db()
+        try:
+            tenant_id = g.tenant_id
+            user_id = g.user_id
+            saved_count = 0
+
+            # Ensure connector record exists
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == tenant_id,
+                Connector.connector_type == ConnectorType.QUARTZY
+            ).first()
+
+            if not connector:
+                connector = Connector(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    connector_type=ConnectorType.QUARTZY,
+                    name="Quartzy",
+                    status=ConnectorStatus.CONNECTED,
+                    settings={"source": "csv_upload"}
+                )
+                db.add(connector)
+                db.commit()
+
+            for doc in connector_docs:
+                # Check for duplicate
+                existing = db.query(Document).filter(
+                    Document.tenant_id == tenant_id,
+                    Document.external_id == doc.doc_id
+                ).first()
+
+                if existing:
+                    existing.content = doc.content
+                    existing.title = doc.title
+                    existing.metadata = doc.metadata
+                    existing.updated_at = utc_now()
+                else:
+                    db_doc = Document(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        connector_id=connector.id,
+                        external_id=doc.doc_id,
+                        source_type="quartzy_csv",
+                        title=doc.title,
+                        content=doc.content,
+                        metadata=doc.metadata,
+                        classification="work",
+                        classification_confidence=1.0,
+                        is_classified=True,
+                        source_created_at=utc_now()
+                    )
+                    db.add(db_doc)
+                    saved_count += 1
+
+            db.commit()
+
+            # Update connector stats
+            connector.total_items_synced = (connector.total_items_synced or 0) + saved_count
+            connector.last_sync_at = utc_now()
+            db.commit()
+
+            # Embed in background
+            def run_embedding():
+                embed_db = get_db()
+                try:
+                    docs_to_embed = embed_db.query(Document).filter(
+                        Document.tenant_id == tenant_id,
+                        Document.source_type == "quartzy_csv",
+                        Document.embedded_at == None
+                    ).all()
+
+                    if docs_to_embed:
+                        embedding_service = get_embedding_service()
+                        embed_result = embedding_service.embed_documents(
+                            documents=docs_to_embed,
+                            tenant_id=tenant_id,
+                            db=embed_db,
+                            force_reembed=False
+                        )
+                        print(f"[Quartzy CSV] Embedded {embed_result.get('embedded', 0)} documents")
+                finally:
+                    embed_db.close()
+
+            thread = threading.Thread(target=run_embedding)
+            thread.daemon = True
+            thread.start()
+
+            return jsonify({
+                "success": True,
+                "message": f"Imported {saved_count} items from {file.filename}",
+                "documents_created": saved_count,
+                "total_parsed": len(connector_docs)
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        print(f"[Quartzy CSV Upload] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@integration_bp.route('/quartzy/status', methods=['GET'])
+@require_auth
+def quartzy_status():
+    """Get Quartzy connector status"""
+    try:
+        db = get_db()
+        try:
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == g.tenant_id,
+                Connector.connector_type == ConnectorType.QUARTZY,
+                Connector.is_active == True
+            ).first()
+
+            if not connector:
+                return jsonify({
+                    "success": True,
+                    "status": "not_configured",
+                    "connector": None
+                })
+
+            return jsonify({
+                "success": True,
+                "status": connector.status.value,
+                "connector": {
+                    "id": connector.id,
+                    "name": connector.name,
+                    "status": connector.status.value,
+                    "settings": connector.settings,
+                    "last_sync_at": connector.last_sync_at.isoformat() if connector.last_sync_at else None,
+                    "total_items_synced": connector.total_items_synced,
+                    "error_message": connector.error_message
+                }
+            })
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ============================================================================
 # WEBSITE SCRAPER INTEGRATION
 # ============================================================================
 
@@ -2939,7 +3274,8 @@ def sync_connector(connector_type: str):
             "gslides": ConnectorType.GOOGLE_SLIDES,
             "gcalendar": ConnectorType.GOOGLE_CALENDAR,
             "zotero": ConnectorType.ZOTERO,
-            "onedrive": ConnectorType.ONEDRIVE
+            "onedrive": ConnectorType.ONEDRIVE,
+            "quartzy": ConnectorType.QUARTZY
         }
 
         if connector_type not in type_map:
@@ -3139,6 +3475,11 @@ def _run_connector_sync(
                 from connectors.zotero_connector import ZoteroConnector
                 print(f"[Sync] ZoteroConnector imported successfully")
                 ConnectorClass = ZoteroConnector
+            elif connector_type == "quartzy":
+                print(f"[Sync] Importing QuartzyConnector...")
+                from connectors.quartzy_connector import QuartzyConnector
+                print(f"[Sync] QuartzyConnector imported successfully")
+                ConnectorClass = QuartzyConnector
             else:
                 sync_progress[progress_key]["status"] = "error"
                 sync_progress[progress_key]["error"] = f"Unknown connector type: {connector_type}"
@@ -3153,6 +3494,11 @@ def _run_connector_sync(
                 credentials = {
                     "api_key": connector.access_token,
                     "user_id": connector.settings.get("zotero_user_id") if connector.settings else None
+                }
+            elif connector_type == "quartzy":
+                # Quartzy uses access_token header auth
+                credentials = {
+                    "access_token": connector.access_token
                 }
             else:
                 # Standard OAuth credentials
@@ -3559,7 +3905,7 @@ def _run_connector_sync(
                     # Database Document expects: external_id, source_type, content, title, metadata, source_created_at, etc.
 
                     # Auto-classify research sources as WORK (they're academic papers, not personal)
-                    research_sources = {'pubmed', 'researchgate', 'googlescholar', 'webscraper'}
+                    research_sources = {'pubmed', 'researchgate', 'googlescholar', 'webscraper', 'quartzy', 'quartzy_csv'}
                     is_research = (
                         doc.source.lower() in research_sources or
                         getattr(doc, 'doc_type', None) == 'research_paper'
@@ -4001,7 +4347,8 @@ def get_sync_status(connector_type: str):
                 "notion": ConnectorType.NOTION,
                 "gdrive": ConnectorType.GOOGLE_DRIVE,
                 "zotero": ConnectorType.ZOTERO,
-                "onedrive": ConnectorType.ONEDRIVE
+                "onedrive": ConnectorType.ONEDRIVE,
+                "quartzy": ConnectorType.QUARTZY
             }
 
             if connector_type not in type_map:
@@ -4080,7 +4427,8 @@ def _get_connector_type_map():
         "gslides": ConnectorType.GOOGLE_SLIDES,
         "gcalendar": ConnectorType.GOOGLE_CALENDAR,
         "onedrive": ConnectorType.ONEDRIVE,
-        "zotero": ConnectorType.ZOTERO
+        "zotero": ConnectorType.ZOTERO,
+        "quartzy": ConnectorType.QUARTZY
     }
 
 
@@ -4392,7 +4740,8 @@ def connector_status(connector_type: str):
             "gdocs": ConnectorType.GOOGLE_DOCS,
             "gsheets": ConnectorType.GOOGLE_SHEETS,
             "gslides": ConnectorType.GOOGLE_SLIDES,
-            "gcalendar": ConnectorType.GOOGLE_CALENDAR
+            "gcalendar": ConnectorType.GOOGLE_CALENDAR,
+            "quartzy": ConnectorType.QUARTZY
         }
 
         if connector_type not in type_map:
@@ -4465,7 +4814,8 @@ def update_connector_settings(connector_type: str):
             "gdocs": ConnectorType.GOOGLE_DOCS,
             "gsheets": ConnectorType.GOOGLE_SHEETS,
             "gslides": ConnectorType.GOOGLE_SLIDES,
-            "gcalendar": ConnectorType.GOOGLE_CALENDAR
+            "gcalendar": ConnectorType.GOOGLE_CALENDAR,
+            "quartzy": ConnectorType.QUARTZY
         }
 
         if connector_type not in type_map:

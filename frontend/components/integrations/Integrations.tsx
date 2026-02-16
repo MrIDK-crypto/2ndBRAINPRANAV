@@ -1383,6 +1383,348 @@ const PubMedConfigModal = ({
   )
 }
 
+// Quartzy Configuration Modal Component
+const QuartzyConfigModal = ({
+  isOpen,
+  onClose,
+  onSubmitToken,
+  onSubmitCsv,
+  isLoading
+}: {
+  isOpen: boolean
+  onClose: () => void
+  onSubmitToken: (accessToken: string) => void
+  onSubmitCsv: (file: File) => void
+  isLoading: boolean
+}) => {
+  const [activeTab, setActiveTab] = useState<'api' | 'csv'>('api')
+  const [accessToken, setAccessToken] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState('')
+
+  if (!isOpen) return null
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase()
+      if (ext === 'csv' || ext === 'xlsx' || ext === 'xls') {
+        setSelectedFile(file)
+        setError('')
+      } else {
+        setError('Please upload a .csv or .xlsx file')
+      }
+    }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setSelectedFile(file)
+      setError('')
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          backgroundColor: '#FFFFFF',
+          borderRadius: '16px',
+          padding: '32px',
+          maxWidth: '600px',
+          width: '90%',
+          maxHeight: '90vh',
+          overflow: 'auto',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 style={{
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontSize: '20px',
+          fontWeight: 600,
+          marginBottom: '8px',
+          color: '#111827'
+        }}>
+          Connect Quartzy
+        </h2>
+
+        <p style={{
+          fontFamily: 'Inter, sans-serif',
+          fontSize: '14px',
+          color: '#71717A',
+          marginBottom: '20px'
+        }}>
+          Import lab inventory and order requests from Quartzy.
+        </p>
+
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          gap: '0',
+          marginBottom: '24px',
+          borderBottom: '1px solid #E5E7EB'
+        }}>
+          <button
+            onClick={() => { setActiveTab('api'); setError('') }}
+            style={{
+              padding: '10px 20px',
+              border: 'none',
+              borderBottom: activeTab === 'api' ? '2px solid #3B82F6' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === 'api' ? '#3B82F6' : '#6B7280',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              fontFamily: 'Inter, sans-serif'
+            }}
+          >
+            API Token
+          </button>
+          <button
+            onClick={() => { setActiveTab('csv'); setError('') }}
+            style={{
+              padding: '10px 20px',
+              border: 'none',
+              borderBottom: activeTab === 'csv' ? '2px solid #3B82F6' : '2px solid transparent',
+              backgroundColor: 'transparent',
+              color: activeTab === 'csv' ? '#3B82F6' : '#6B7280',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              fontFamily: 'Inter, sans-serif'
+            }}
+          >
+            CSV Upload
+          </button>
+        </div>
+
+        {/* API Token Tab */}
+        {activeTab === 'api' && (
+          <div>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '14px',
+                fontWeight: 500,
+                display: 'block',
+                marginBottom: '8px'
+              }}>
+                Access Token *
+              </label>
+              <input
+                type="password"
+                value={accessToken}
+                onChange={e => setAccessToken(e.target.value)}
+                placeholder="Paste your Quartzy API access token"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid #D4D4D8',
+                  fontSize: '14px',
+                  fontFamily: 'monospace'
+                }}
+              />
+              <p style={{
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '12px',
+                color: '#71717A',
+                marginTop: '4px'
+              }}>
+                Generate a token in <a href="https://app.quartzy.com/settings" target="_blank" rel="noopener" style={{color: '#3B82F6', textDecoration: 'underline'}}>Quartzy Settings &gt; API</a>
+              </p>
+            </div>
+
+            <div style={{
+              padding: '12px',
+              backgroundColor: '#DBEAFE',
+              borderRadius: '8px',
+              marginBottom: '20px'
+            }}>
+              <p style={{
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '13px',
+                color: '#1E40AF',
+                margin: 0
+              }}>
+                <strong>How it works:</strong> We&apos;ll fetch your inventory items and order requests from the Quartzy API and index them for AI-powered search.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* CSV Upload Tab */}
+        {activeTab === 'csv' && (
+          <div>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              style={{
+                border: `2px dashed ${dragOver ? '#3B82F6' : '#D4D4D8'}`,
+                borderRadius: '12px',
+                padding: '40px 20px',
+                textAlign: 'center',
+                marginBottom: '20px',
+                backgroundColor: dragOver ? '#EFF6FF' : '#FAFAFA',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onClick={() => document.getElementById('quartzy-csv-input')?.click()}
+            >
+              <input
+                id="quartzy-csv-input"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+              />
+              {selectedFile ? (
+                <div>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '16px',
+                    fontWeight: 500,
+                    color: '#111827',
+                    marginBottom: '4px'
+                  }}>
+                    {selectedFile.name}
+                  </p>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '13px',
+                    color: '#6B7280'
+                  }}>
+                    {(selectedFile.size / 1024).toFixed(1)} KB - Click to change
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '16px',
+                    fontWeight: 500,
+                    color: '#374151',
+                    marginBottom: '4px'
+                  }}>
+                    Drop your Quartzy export here
+                  </p>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: '13px',
+                    color: '#9CA3AF'
+                  }}>
+                    Supports .csv and .xlsx files
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div style={{
+              padding: '12px',
+              backgroundColor: '#FEF3C7',
+              borderRadius: '8px',
+              marginBottom: '20px'
+            }}>
+              <p style={{
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '13px',
+                color: '#92400E',
+                margin: 0
+              }}>
+                <strong>Tip:</strong> Export your inventory from Quartzy via Inventory &gt; Export Inventory. The file should have an &quot;Item Name&quot; column.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <p style={{
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '13px',
+            color: '#DC2626',
+            marginBottom: '16px'
+          }}>
+            {error}
+          </p>
+        )}
+
+        {/* Buttons */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: '12px'
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '10px 20px',
+              borderRadius: '8px',
+              border: '1px solid #D4D4D8',
+              backgroundColor: '#fff',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (activeTab === 'api') {
+                if (!accessToken.trim()) {
+                  setError('Please enter an access token')
+                  return
+                }
+                onSubmitToken(accessToken.trim())
+              } else {
+                if (!selectedFile) {
+                  setError('Please select a file')
+                  return
+                }
+                onSubmitCsv(selectedFile)
+              }
+            }}
+            disabled={isLoading || (activeTab === 'api' ? !accessToken.trim() : !selectedFile)}
+            style={{
+              padding: '10px 20px',
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: (activeTab === 'api' ? !accessToken.trim() : !selectedFile) ? '#9ca3af' : '#00BFA5',
+              color: '#fff',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: (activeTab === 'api' ? !accessToken.trim() : !selectedFile) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {isLoading ? 'Processing...' : activeTab === 'api' ? 'Connect & Sync' : 'Upload & Import'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // WebScraper Configuration Modal Component
 const WebScraperConfigModal = ({
   isOpen,
@@ -1705,6 +2047,24 @@ const IntegrationDetailsModal = ({
       ],
       brandColor: '#CC2936',
       docsUrl: 'https://www.zotero.org/support/dev/web_api/v3/start'
+    },
+    quartzy: {
+      fullDescription: 'Quartzy is a lab management platform for ordering supplies and tracking inventory. Connect your Quartzy account via API token or upload a CSV export to import inventory items and order requests into your knowledge base.',
+      features: [
+        'Import inventory items with full metadata',
+        'Import order request history',
+        'Upload CSV/Excel exports from Quartzy',
+        'Automatic AI-powered search via embeddings'
+      ],
+      dataTypes: ['Inventory Items', 'Order Requests', 'Vendor Info', 'Catalog Numbers'],
+      setupSteps: [
+        'Generate an Access Token in Quartzy Settings > API',
+        'Paste the token and click Connect',
+        'Or upload a CSV/Excel export directly',
+        'Items are automatically indexed for AI search'
+      ],
+      brandColor: '#00BFA5',
+      docsUrl: 'https://support.quartzy.com/hc/en-us/articles/5333106670747-Quartzy-API-and-Webhooks'
     },
     powerpoint: {
       fullDescription: 'Import Microsoft PowerPoint presentations to capture knowledge from slides, speaker notes, and embedded content. Great for onboarding materials and company presentations.',
@@ -2343,6 +2703,14 @@ const integrations: Integration[] = [
     category: 'Research',
     connected: false,
     isOAuth: true
+  },
+  {
+    id: 'quartzy',
+    name: 'Quartzy',
+    logo: '/quartzy.png',
+    description: 'Import lab inventory items and order requests from Quartzy into your knowledge base.',
+    category: 'Research',
+    connected: false
   }
 ]
 
@@ -2630,6 +2998,10 @@ export default function Integrations() {
   const [pubmedDateRange, setPubmedDateRange] = useState(5)
   const [pubmedApiKey, setPubmedApiKey] = useState('')
   const [isConfiguringPubmed, setIsConfiguringPubmed] = useState(false)
+
+  // Quartzy configuration modal state
+  const [showQuartzyModal, setShowQuartzyModal] = useState(false)
+  const [isConfiguringQuartzy, setIsConfiguringQuartzy] = useState(false)
 
   // WebScraper configuration modal state
   const [showWebScraperModal, setShowWebScraperModal] = useState(false)
@@ -3750,6 +4122,71 @@ export default function Integrations() {
     }
   }
 
+  const submitQuartzyToken = async (accessToken: string) => {
+    setIsConfiguringQuartzy(true)
+    try {
+      const authToken = getAuthToken()
+      const response = await axios.post(
+        `${API_BASE}/integrations/quartzy/configure`,
+        { access_token: accessToken },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+
+      if (response.data.success) {
+        setShowQuartzyModal(false)
+        setIntegrationsState(prev =>
+          prev.map(int =>
+            int.id === 'quartzy' ? { ...int, connected: true } : int
+          )
+        )
+        setSyncStatus('Quartzy connected! Syncing inventory and orders...')
+        setTimeout(() => startSyncWithProgress('quartzy'), 500)
+      } else {
+        setSyncStatus(`Failed to connect Quartzy: ${response.data.error}`)
+      }
+    } catch (error: any) {
+      setSyncStatus(`Error: ${error.response?.data?.error || error.message}`)
+    } finally {
+      setIsConfiguringQuartzy(false)
+    }
+  }
+
+  const submitQuartzyCsv = async (file: File) => {
+    setIsConfiguringQuartzy(true)
+    try {
+      const authToken = getAuthToken()
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await axios.post(
+        `${API_BASE}/integrations/quartzy/upload-csv`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      )
+
+      if (response.data.success) {
+        setShowQuartzyModal(false)
+        setIntegrationsState(prev =>
+          prev.map(int =>
+            int.id === 'quartzy' ? { ...int, connected: true } : int
+          )
+        )
+        setSyncStatus(`Imported ${response.data.documents_created} items from ${file.name}!`)
+      } else {
+        setSyncStatus(`Failed to import: ${response.data.error}`)
+      }
+    } catch (error: any) {
+      setSyncStatus(`Error: ${error.response?.data?.error || error.message}`)
+    } finally {
+      setIsConfiguringQuartzy(false)
+    }
+  }
+
   const submitWebScraperConfig = async (config: {
     startUrl: string
     maxPages: number
@@ -3869,6 +4306,16 @@ export default function Integrations() {
         await disconnectIntegration(id)
       } else {
         setShowPubMedModal(true)
+      }
+      return
+    }
+
+    // Handle Quartzy configuration
+    if (id === 'quartzy') {
+      if (integration?.connected) {
+        await disconnectIntegration(id)
+      } else {
+        setShowQuartzyModal(true)
       }
       return
     }
@@ -4103,6 +4550,15 @@ export default function Integrations() {
         onClose={() => setShowPubMedModal(false)}
         onSubmit={submitPubMedConfig}
         isLoading={isConfiguringPubmed}
+      />
+
+      {/* Quartzy Configuration Modal */}
+      <QuartzyConfigModal
+        isOpen={showQuartzyModal}
+        onClose={() => setShowQuartzyModal(false)}
+        onSubmitToken={submitQuartzyToken}
+        onSubmitCsv={submitQuartzyCsv}
+        isLoading={isConfiguringQuartzy}
       />
 
       {/* WebScraper Configuration Modal */}

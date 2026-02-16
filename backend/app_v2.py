@@ -106,7 +106,7 @@ def ensure_connector_enum_values():
     not enum VALUES (lowercase). So we need to add 'ZOTERO' not 'zotero'.
     """
     # These must be UPPERCASE - matching the Python enum NAMES
-    enum_values_to_add = ['ZOTERO', 'WEBSCRAPER']
+    enum_values_to_add = ['ZOTERO', 'WEBSCRAPER', 'QUARTZY']
 
     try:
         with engine.connect() as conn:
@@ -154,6 +154,7 @@ from api.github_routes import github_bp
 from api.sync_progress_routes import sync_progress_bp
 from api.email_forwarding_routes import email_forwarding_bp
 from api.admin_routes import admin_bp
+from api.website_routes import website_bp
 
 app.register_blueprint(auth_bp)
 # IMPORTANT: Register github_bp BEFORE integration_bp so /api/integrations/github/* routes
@@ -170,6 +171,7 @@ app.register_blueprint(profile_bp)
 app.register_blueprint(sync_progress_bp)
 app.register_blueprint(email_forwarding_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(website_bp)
 
 print("✓ API blueprints registered")
 
@@ -828,6 +830,19 @@ def search():
         # Check if knowledge base is empty first
         stats = vector_store.get_stats(tenant_id)
         vector_count = stats.get('vector_count', 0)
+        print(f"[SEARCH] Pinecone stats for tenant {tenant_id}: {stats}", flush=True)
+
+        if vector_count == 0:
+            # Double-check: sometimes describe_index_stats is slow to update
+            # Try a quick search to confirm if there's really no data
+            print(f"[SEARCH] WARNING: vector_count=0, attempting verification search...", flush=True)
+            try:
+                test_results = vector_store.search(query="test", tenant_id=tenant_id, top_k=1)
+                if test_results:
+                    print(f"[SEARCH] Verification search found {len(test_results)} results - proceeding with search", flush=True)
+                    vector_count = 1  # Force to continue with search
+            except Exception as e:
+                print(f"[SEARCH] Verification search failed: {e}", flush=True)
 
         if vector_count == 0:
             return jsonify({
