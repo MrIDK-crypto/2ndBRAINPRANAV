@@ -2689,7 +2689,7 @@ def quartzy_upload_csv():
                         title=doc.title,
                         content=doc.content,
                         doc_metadata=doc.metadata,
-                        classification="work",
+                        classification=DocumentClassification.WORK,
                         classification_confidence=1.0,
                         status=DocumentStatus.CLASSIFIED,
                         source_created_at=utc_now()
