@@ -5,6 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { analytics } from '@/utils/analytics'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface ChatConversation {
   id: string
@@ -43,6 +44,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true)
   const pathname = usePathname()
+  const { user: authUser } = useAuth()
+  const isAdmin = authUser?.role === 'admin'
 
   // Determine active item from pathname if not provided
   const getActiveItem = () => {
@@ -97,7 +100,9 @@ export default function Sidebar({
 
   const menuItems = isSharedAccess
     ? allMenuItems.filter(item => !item.adminOnly)
-    : allMenuItems
+    : isAdmin
+      ? allMenuItems
+      : allMenuItems.filter(item => !item.adminOnly)
 
   // SVG icon components
   const renderIcon = (iconId: string, isActive: boolean) => {

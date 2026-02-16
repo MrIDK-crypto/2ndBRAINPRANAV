@@ -8,16 +8,40 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from datetime import datetime, timezone, timedelta
 
-from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector
+from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole
 from services.auth_service import require_auth
 
 # Create blueprint
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
+# Admin emails - these users are always promoted to admin on startup
+ADMIN_EMAILS = [
+    'pranav@use2ndbrain.com',
+]
+
 
 def get_db():
     """Get database session"""
     return SessionLocal()
+
+
+def ensure_admins():
+    """Promote configured admin emails to admin role on startup."""
+    db = get_db()
+    try:
+        for email in ADMIN_EMAILS:
+            user = db.query(User).filter(User.email == email).first()
+            if user and user.role != UserRole.ADMIN:
+                user.role = UserRole.ADMIN
+                db.commit()
+                print(f"[Admin] Promoted {email} to admin")
+            elif user:
+                print(f"[Admin] {email} is already admin")
+    except Exception as e:
+        db.rollback()
+        print(f"[Admin] Error ensuring admins: {e}")
+    finally:
+        db.close()
 
 
 @admin_bp.route('/migrate-tenant', methods=['POST'])

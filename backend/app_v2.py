@@ -154,7 +154,7 @@ from api.profile_routes import profile_bp
 from api.github_routes import github_bp
 from api.sync_progress_routes import sync_progress_bp
 from api.email_forwarding_routes import email_forwarding_bp
-from api.admin_routes import admin_bp
+from api.admin_routes import admin_bp, ensure_admins
 from api.website_routes import website_bp
 from api.share_routes import share_bp
 
@@ -177,6 +177,9 @@ app.register_blueprint(website_bp)
 app.register_blueprint(share_bp)
 
 print("✓ API blueprints registered")
+
+# Ensure configured admin users have admin role
+ensure_admins()
 
 # ============================================================================
 # LEGACY COMPATIBILITY - Import existing routes
