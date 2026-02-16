@@ -17,6 +17,8 @@ interface SidebarProps {
   onItemClick?: (item: string) => void
   // User Props
   userName?: string
+  // Shared Access
+  isSharedAccess?: boolean
   // Chat History Props
   conversations?: ChatConversation[]
   currentConversationId?: string | null
@@ -30,6 +32,7 @@ export default function Sidebar({
   activeItem,
   onItemClick,
   userName = 'User',
+  isSharedAccess = false,
   conversations = [],
   currentConversationId,
   onLoadConversation,
@@ -79,13 +82,17 @@ export default function Sidebar({
 
   // Menu items configuration - Order: Integrations, Documents, Knowledge Gaps, ChatBot, Training Guides
   // Using inline SVG icons for better quality and consistency
-  const menuItems = [
-    { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations' },
-    { id: 'Documents', label: 'Documents', href: '/documents', icon: 'documents' },
-    { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps' },
-    { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot' },
-    { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training' },
+  const allMenuItems = [
+    { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations', adminOnly: true },
+    { id: 'Documents', label: 'Documents', href: '/documents', icon: 'documents', adminOnly: false },
+    { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
+    { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
+    { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
   ]
+
+  const menuItems = isSharedAccess
+    ? allMenuItems.filter(item => !item.adminOnly)
+    : allMenuItems
 
   // SVG icon components
   const renderIcon = (iconId: string, isActive: boolean) => {
@@ -417,7 +424,7 @@ export default function Sidebar({
             marginTop: '20px'
           }}
         >
-          <Link href="/settings">
+          {isSharedAccess ? (
             <div
               style={{
                 display: 'flex',
@@ -425,25 +432,23 @@ export default function Sidebar({
                 gap: '12px',
                 padding: '12px 16px',
                 borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'background-color 0.15s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#F5F3F1'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent'
               }}
             >
               <div style={{
                 width: '40px',
                 height: '40px',
                 borderRadius: '50%',
-                overflow: 'hidden',
                 flexShrink: 0,
-                border: '2px solid #ECEAE8'
+                border: '2px solid #ECEAE8',
+                backgroundColor: '#FBF4F1',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}>
-                <Image src="/Maya.png" alt="User" width={40} height={40} />
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A598" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
               </div>
               <div>
                 <div style={{
@@ -452,18 +457,66 @@ export default function Sidebar({
                   fontWeight: 600,
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
                 }}>
-                  {userName}
+                  Shared Access
                 </div>
                 <div style={{
                   color: '#7A7A7A',
                   fontSize: '12px',
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
                 }}>
-                  Account settings
+                  {userName}
                 </div>
               </div>
             </div>
-          </Link>
+          ) : (
+            <Link href="/settings">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#F5F3F1'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                }}
+              >
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  border: '2px solid #ECEAE8'
+                }}>
+                  <Image src="/Maya.png" alt="User" width={40} height={40} />
+                </div>
+                <div>
+                  <div style={{
+                    color: '#1A1A1A',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                  }}>
+                    {userName}
+                  </div>
+                  <div style={{
+                    color: '#7A7A7A',
+                    fontSize: '12px',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                  }}>
+                    Account settings
+                  </div>
+                </div>
+              </div>
+            </Link>
+          )}
         </div>
       </div>
 

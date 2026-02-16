@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from dotenv import load_dotenv
+from services.auth_service import require_auth
 
 # Load environment variables
 load_dotenv()
@@ -737,6 +738,7 @@ def webscraper_diagnostics():
 # ============================================================================
 
 @app.route('/api/search', methods=['POST'])
+@require_auth
 def search():
     """
     Enhanced RAG search endpoint with:
@@ -754,24 +756,10 @@ def search():
         "enhanced": true  // Enable enhanced features (default: true)
     }
     """
-    from services.auth_service import get_token_from_header, JWTUtils
     from vector_stores.pinecone_store import get_hybrid_store
 
-    # Get tenant from auth token (BYPASSED FOR LOCAL TESTING)
-    auth_header = request.headers.get("Authorization", "")
-    token = get_token_from_header(auth_header)
-    tenant_id = None
-
-    if token:
-        payload, error = JWTUtils.decode_access_token(token)
-        if payload:
-            tenant_id = payload.get("tenant_id")
-            print(f"[SEARCH] Tenant from JWT: {tenant_id}", flush=True)
-
-    # Use local-tenant for testing if no auth token
-    if not tenant_id:
-        tenant_id = "local-tenant"
-        print(f"[SEARCH] Using local-tenant (auth bypassed for testing)", flush=True)
+    tenant_id = g.tenant_id
+    print(f"[SEARCH] Tenant: {tenant_id} (shared={getattr(g, 'is_shared_access', False)})", flush=True)
 
     data = request.get_json() or {}
     query = data.get('query', '')

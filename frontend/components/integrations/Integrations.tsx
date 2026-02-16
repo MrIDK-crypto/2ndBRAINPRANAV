@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import Sidebar from '../shared/Sidebar'
 import Image from 'next/image'
 import axios from 'axios'
@@ -3043,7 +3044,15 @@ const IntegrationCard = ({
 }
 
 export default function Integrations() {
-  const { user, token } = useAuth()
+  const { user, token, isSharedAccess } = useAuth()
+  const router = useRouter()
+
+  // Redirect shared users away from integrations page
+  useEffect(() => {
+    if (isSharedAccess) {
+      router.replace('/documents')
+    }
+  }, [isSharedAccess, router])
   const { startSync: globalStartSync } = useSyncProgress()
   const [activeItem, setActiveItem] = useState('Integrations')
   const [activeTab, setActiveTab] = useState('All Integrations')

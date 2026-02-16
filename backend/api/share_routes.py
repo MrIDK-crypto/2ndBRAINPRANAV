@@ -90,6 +90,54 @@ def require_share_token(f):
 
 
 # ============================================================================
+# TOKEN VALIDATION (no auth - entry point for shared access)
+# ============================================================================
+
+@share_bp.route('/validate', methods=['GET'])
+def validate_share_token_endpoint():
+    """
+    Validate a share token and return tenant info.
+    Used by the frontend landing page before redirecting into the main app.
+    Query param: ?token=<raw_token>
+    """
+    token = request.args.get('token')
+    if not token:
+        return jsonify({"success": False, "error": "Token required"}), 400
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    db = get_db()
+    try:
+        link = db.query(TenantShareLink).filter(
+            TenantShareLink.token_hash == token_hash,
+            TenantShareLink.is_active == True
+        ).first()
+
+        if not link or not link.is_valid:
+            return jsonify({"success": False, "error": "Invalid or expired share link"}), 401
+
+        tenant = db.query(Tenant).filter(Tenant.id == link.tenant_id).first()
+        if not tenant or not tenant.is_active:
+            return jsonify({"success": False, "error": "Organization is inactive"}), 403
+
+        return jsonify({
+            "success": True,
+            "tenant": {
+                "id": tenant.id,
+                "name": tenant.name,
+                "slug": tenant.slug if hasattr(tenant, 'slug') else "",
+            },
+            "permissions": link.permissions or {},
+            "share_link_id": link.id,
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
+# ============================================================================
 # MANAGEMENT ENDPOINTS (JWT auth required)
 # ============================================================================
 

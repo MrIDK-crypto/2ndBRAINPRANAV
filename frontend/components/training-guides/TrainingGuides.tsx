@@ -20,12 +20,12 @@ const warmTheme = {
 }
 
 export default function TrainingGuides() {
-  const { user } = useAuth()
+  const { user, isSharedAccess } = useAuth()
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: warmTheme.pageBg }}>
       {/* Sidebar */}
-      <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
+      <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} isSharedAccess={isSharedAccess} />
 
       {/* Main Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>

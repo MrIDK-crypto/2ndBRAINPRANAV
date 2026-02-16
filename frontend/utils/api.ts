@@ -48,6 +48,12 @@ async function apiRequest<T = unknown>(
     const token = sessionManager.getAccessToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      // Fallback: use share token if available
+      const shareToken = sessionManager.getShareToken();
+      if (shareToken) {
+        headers['X-Share-Token'] = shareToken;
+      }
     }
   }
 
@@ -60,6 +66,11 @@ async function apiRequest<T = unknown>(
 
   // Handle 401 Unauthorized - try to refresh token
   if (response.status === 401 && !isRetry && !skipAuth) {
+    // Don't attempt refresh for shared sessions
+    if (sessionManager.isSharedSession()) {
+      throw new Error('Share link is invalid or expired. Please request a new link.');
+    }
+
     console.log('[API] Received 401, attempting token refresh...');
 
     const refreshed = await sessionManager.refreshAccessToken();

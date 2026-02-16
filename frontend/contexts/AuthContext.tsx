@@ -40,6 +40,7 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   isEmailVerified: boolean
+  isSharedAccess: boolean
   login: (email: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>
   signup: (email: string, password: string, fullName: string, organizationName?: string, inviteCode?: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
@@ -57,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [refreshToken, setRefreshToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isSharedAccess, setIsSharedAccess] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
@@ -67,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTenant(null)
     setToken(null)
     setRefreshToken(null)
+    setIsSharedAccess(false)
     router.push('/login')
   }, [router])
 
@@ -92,58 +95,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!user && !isPublicRoute) {
         // Not authenticated and not on public page -> redirect to login
         router.push('/login')
-      } else if (user && !user.email_verified && !isPublicRoute && !isVerificationPending) {
-        // Authenticated but email NOT verified -> redirect to verification pending
+      } else if (user && !isSharedAccess && !user.email_verified && !isPublicRoute && !isVerificationPending) {
+        // Authenticated but email NOT verified -> redirect to verification pending (skip for shared users)
         router.push('/verification-pending')
-      } else if (user && user.email_verified && isVerificationPending) {
+      } else if (user && !isSharedAccess && user.email_verified && isVerificationPending) {
         // Email is verified but on verification pending page -> redirect to integrations
         router.push('/integrations')
-      } else if (user && user.email_verified && pathname === '/login') {
+      } else if (user && !isSharedAccess && user.email_verified && pathname === '/login') {
         // Authenticated and verified but on login page -> redirect to integrations
         router.push('/integrations')
       }
     }
-  }, [user, isLoading, pathname, router])
+  }, [user, isLoading, isSharedAccess, pathname, router])
 
   const checkAuth = async () => {
-    // Check if we have stored auth data
+    // Check if we have stored auth data (JWT)
     const storedToken = sessionManager.getAccessToken()
     const storedUserId = sessionManager.getUserId()
 
-    if (!storedToken || !storedUserId) {
+    if (storedToken && storedUserId) {
+      try {
+        // Verify token with backend
+        const response = await fetch(`${API_URL}/api/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${storedToken}`
+          },
+          credentials: 'include'
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+          setUser(data.user)
+          setTenant(data.tenant)
+          setToken(storedToken)
+          setRefreshToken(sessionManager.getRefreshToken())
+          setIsSharedAccess(false)
+        } else {
+          // Token invalid, clear storage
+          sessionManager.clearSession()
+        }
+      } catch (err) {
+        console.error('[Auth] Auth check failed:', err)
+        // Keep stored data if server is down (offline mode)
+        setToken(storedToken)
+        setRefreshToken(sessionManager.getRefreshToken())
+      }
+
       setIsLoading(false)
       return
     }
 
-    try {
-      // Verify token with backend
-      const response = await fetch(`${API_URL}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${storedToken}`
-        },
-        credentials: 'include'
+    // Fallback: check for shared session
+    if (sessionManager.isSharedSession()) {
+      const tenantName = sessionManager.getShareTenantName()
+      const tenantId = sessionManager.getTenantId()
+
+      setUser({
+        id: 'shared-viewer',
+        email: 'shared@portal',
+        full_name: `${tenantName || 'Shared'} Viewer`,
+        role: 'viewer',
+        tenant_id: tenantId || '',
+        email_verified: true,
+        mfa_enabled: false,
+        created_at: new Date().toISOString(),
+        is_active: true,
       })
-
-      const data = await response.json()
-
-      if (data.success) {
-        setUser(data.user)
-        setTenant(data.tenant)
-        setToken(storedToken)
-        setRefreshToken(sessionManager.getRefreshToken())
-      } else {
-        // Token invalid, clear storage
-        sessionManager.clearSession()
-      }
-    } catch (err) {
-      console.error('[Auth] Auth check failed:', err)
-      // Keep stored data if server is down (offline mode)
-      // But we need to at least set basic state
-      setToken(storedToken)
-      setRefreshToken(sessionManager.getRefreshToken())
-    } finally {
-      setIsLoading(false)
+      setTenant({
+        id: tenantId || '',
+        name: tenantName || 'Shared Portal',
+        slug: '',
+        plan: 'shared',
+        storage_used_bytes: 0,
+        storage_limit_bytes: 0,
+        created_at: new Date().toISOString(),
+        is_active: true,
+      })
+      setToken(null)
+      setRefreshToken(null)
+      setIsSharedAccess(true)
     }
+
+    setIsLoading(false)
   }
 
   const login = async (email: string, password: string, rememberMe: boolean = false): Promise<{ success: boolean; error?: string }> => {
@@ -168,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTenant(data.tenant)
         setToken(accessToken)
         setRefreshToken(refreshTok)
+        setIsSharedAccess(false)
 
         // Initialize session manager with remember me option
         sessionManager.initializeSession(accessToken, refreshTok, {
@@ -254,7 +289,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await sessionManager.logout()
+      if (!isSharedAccess) {
+        await sessionManager.logout()
+      } else {
+        sessionManager.clearSession()
+      }
     } catch (err) {
       console.error('[Auth] Logout error:', err)
     } finally {
@@ -262,6 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTenant(null)
       setToken(null)
       setRefreshToken(null)
+      setIsSharedAccess(false)
       router.push('/login')
     }
   }
@@ -304,6 +344,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         isEmailVerified: user?.email_verified ?? false,
+        isSharedAccess,
         login,
         signup,
         logout,
@@ -327,8 +368,23 @@ export function useAuth() {
 export function useAuthHeaders() {
   const { token } = useAuth()
 
+  if (token) {
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  }
+
+  // Fallback to share token
+  const shareToken = sessionManager.getShareToken()
+  if (shareToken) {
+    return {
+      'X-Share-Token': shareToken,
+      'Content-Type': 'application/json'
+    }
+  }
+
   return {
-    'Authorization': token ? `Bearer ${token}` : '',
     'Content-Type': 'application/json'
   }
 }

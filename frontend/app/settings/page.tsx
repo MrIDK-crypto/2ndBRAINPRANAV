@@ -27,9 +27,16 @@ const theme = {
 }
 
 export default function SettingsPage() {
-  const { user, logout, isLoading: authLoading } = useAuth()
+  const { user, logout, isLoading: authLoading, isSharedAccess } = useAuth()
   const authHeaders = useAuthHeaders()
   const router = useRouter()
+
+  // Redirect shared users away from settings page
+  useEffect(() => {
+    if (isSharedAccess) {
+      router.replace('/documents')
+    }
+  }, [isSharedAccess, router])
 
   const [fullName, setFullName] = useState('')
   const [savingProfile, setSavingProfile] = useState(false)

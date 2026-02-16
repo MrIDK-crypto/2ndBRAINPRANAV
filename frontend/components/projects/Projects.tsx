@@ -182,7 +182,7 @@ const ProjectCard = ({
 }
 
 export default function Projects() {
-  const { user } = useAuth()
+  const { user, isSharedAccess } = useAuth()
   const [activeItem, setActiveItem] = useState('Projects')
   const [projects, setProjects] = useState<Project[]>([])
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
@@ -248,7 +248,7 @@ export default function Projects() {
 
   return (
     <div className="flex h-screen bg-primary overflow-hidden">
-      <Sidebar activeItem={activeItem} onItemClick={setActiveItem} userName={user?.full_name?.split(' ')[0] || 'User'} />
+      <Sidebar activeItem={activeItem} onItemClick={setActiveItem} userName={user?.full_name?.split(' ')[0] || 'User'} isSharedAccess={isSharedAccess} />
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}

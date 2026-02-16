@@ -255,7 +255,7 @@ export default function Documents() {
   const [linkCopied, setLinkCopied] = useState(false)
 
   const authHeaders = useAuthHeaders()
-  const { token, user, logout } = useAuth()
+  const { token, user, logout, isSharedAccess } = useAuth()
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -1039,7 +1039,7 @@ export default function Documents() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
       {/* Sidebar */}
-      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} />
+      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} isSharedAccess={isSharedAccess} />
 
       {/* Main Content */}
       <main style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
@@ -1058,6 +1058,7 @@ export default function Documents() {
           }}>
             Documents
           </h1>
+          {!isSharedAccess && (
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -1219,6 +1220,7 @@ export default function Documents() {
               Share
             </button>
           </div>
+          )}
         </div>
 
         {/* Folders Section */}
