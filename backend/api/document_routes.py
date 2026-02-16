@@ -76,7 +76,7 @@ def list_documents():
             needs_review = request.args.get('needs_review', '').lower() == 'true'
             search = request.args.get('search', '').strip()
             source_type = request.args.get('source_type')
-            limit = min(int(request.args.get('limit', 50)), 200)
+            limit = min(int(request.args.get('limit', 1000)), 10000)
             offset = int(request.args.get('offset', 0))
             sort = request.args.get('sort', 'created_at')
             order = request.args.get('order', 'desc')

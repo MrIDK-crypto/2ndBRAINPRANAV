@@ -104,16 +104,26 @@ def analyze_gaps():
         "project_id": "...",  // Analyze specific project
         "force": false,  // Force re-analysis
         "include_pending": true,  // Include pending/classified docs (default true)
-        "mode": "v3" | "code" | "intelligent" | "goalfirst" | "multistage" | "simple",  // Analysis mode
+        "mode": "research" | "v3" | "code" | "intelligent" | "goalfirst" | "multistage" | "simple",  // Analysis mode
         "max_documents": 100  // Max docs to analyze (for cost control)
     }
 
     Modes:
+    - "research" (FOR RESEARCH LABS - RECOMMENDED): Multi-source gap detection
+      Designed specifically for research labs. Analyzes protocols, Slack, emails,
+      Notion, GitHub, and papers together to find:
+      - Cross-source contradictions (protocol says X, Slack says Y)
+      - Person-locked knowledge ("Ask Sarah, she knows")
+      - Unanswered questions from communications
+      - Protocol completeness (missing concentrations, times, temps)
+      - Tribal knowledge (tips shared informally, not documented)
+      - Reproducibility risks (antibody lot numbers, passage limits)
+
     - "code" (FOR GITHUB): Code-aware gap detection for repositories
       Detects: TODOs/FIXMEs, undocumented functions, missing error handling,
       API documentation gaps, magic values, security issues, architecture concerns
 
-    - "v3" (DEFAULT - RECOMMENDED): Enhanced 6-stage GPT-4 analysis
+    - "v3": Enhanced 6-stage GPT-4 analysis
       Stage 1: Deep Document Extraction (GPT-4 semantic understanding)
       Stage 2: Knowledge Graph Assembly (entity resolution)
       Stage 3: Multi-Analyzer Gap Detection (8 specialized analyzers)
@@ -316,6 +326,14 @@ def analyze_gaps():
                     project_id=project_id,
                     max_documents=max_documents
                 )
+            elif mode == 'research':
+                print(f"[GapAnalysis] *** RESEARCH MODE SELECTED ***")
+                result = service.analyze_gaps_research(
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    max_documents=max_documents
+                )
+                print(f"[GapAnalysis] Research mode completed, result: {result}")
             else:  # simple or v3
                 result = service.analyze_gaps(
                     tenant_id=tenant_id,
@@ -428,9 +446,35 @@ def list_gaps():
                 offset=offset
             )
 
+            # Enrich gaps with source document titles
+            gaps_data = []
+            for gap in gaps:
+                gap_dict = gap.to_dict(include_answers=False)
+
+                # Check if source_documents already exists in context (from research mode)
+                context = gap_dict.get('context') or {}
+                if context.get('source_documents'):
+                    # Research mode already stored titles
+                    gap_dict['source_documents'] = context['source_documents']
+                else:
+                    # Legacy: resolve document IDs to titles
+                    doc_ids = context.get('analyzed_documents') or context.get('source_docs') or []
+                    if doc_ids:
+                        source_docs = db.query(Document.id, Document.title).filter(
+                            Document.id.in_(doc_ids)
+                        ).all()
+                        gap_dict['source_documents'] = [
+                            {'id': doc.id, 'title': doc.title or 'Untitled'}
+                            for doc in source_docs
+                        ]
+                    else:
+                        gap_dict['source_documents'] = []
+
+                gaps_data.append(gap_dict)
+
             return jsonify({
                 "success": True,
-                "gaps": [gap.to_dict(include_answers=False) for gap in gaps],
+                "gaps": gaps_data,
                 "pagination": {
                     "total": total,
                     "limit": limit,

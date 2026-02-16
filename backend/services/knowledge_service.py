@@ -1995,3 +1995,256 @@ Respond in JSON format:
             "total_answers": total_answers or 0,
             "voice_answers": voice_answers or 0
         }
+
+    def analyze_gaps_research(
+        self,
+        tenant_id: str,
+        project_id: Optional[str] = None,
+        force_reanalyze: bool = False,
+        include_pending: bool = True,
+        max_documents: int = 100
+    ) -> GapAnalysisResult:
+        """
+        Analyze documents using Research Lab Multi-Source Gap Detection.
+
+        This method is specifically designed for research labs and analyzes
+        multiple document types (protocols, emails, Slack, code, papers)
+        to find knowledge gaps.
+
+        Features:
+        - Cross-source contradiction detection
+        - Person-locked knowledge identification
+        - Unanswered question mining
+        - Protocol completeness checking
+        - Tribal knowledge capture
+        - Reproducibility risk assessment
+
+        Args:
+            tenant_id: Tenant ID
+            project_id: Optional project to analyze
+            force_reanalyze: Re-analyze even if gaps exist
+            include_pending: Include pending documents
+            max_documents: Maximum documents to analyze
+
+        Returns:
+            GapAnalysisResult with research-specific gaps
+        """
+        from sqlalchemy import or_
+        from services.research_gap_detector import get_research_gap_detector
+
+        logger.info(f"[Research] Starting multi-source gap analysis for tenant {tenant_id}")
+
+        # Get documents - include multiple statuses
+        if include_pending:
+            query = self.db.query(Document).filter(
+                Document.tenant_id == tenant_id,
+                Document.is_deleted == False,
+                or_(
+                    and_(
+                        Document.status == DocumentStatus.CONFIRMED,
+                        Document.classification == DocumentClassification.WORK
+                    ),
+                    and_(
+                        Document.status == DocumentStatus.CLASSIFIED,
+                        Document.classification == DocumentClassification.WORK
+                    ),
+                    Document.status == DocumentStatus.PENDING
+                )
+            )
+        else:
+            query = self.db.query(Document).filter(
+                Document.tenant_id == tenant_id,
+                Document.status == DocumentStatus.CONFIRMED,
+                Document.classification == DocumentClassification.WORK,
+                Document.is_deleted == False
+            )
+
+        if project_id:
+            query = query.filter(Document.project_id == project_id)
+
+        documents = query.order_by(Document.created_at.desc()).limit(max_documents).all()
+
+        if not documents:
+            logger.warning(f"[Research] No documents found for tenant {tenant_id}")
+            return GapAnalysisResult(
+                gaps=[],
+                total_documents_analyzed=0,
+                categories_found={}
+            )
+
+        logger.info(f"[Research] Found {len(documents)} documents for analysis")
+
+        # Initialize detector and add documents
+        detector = get_research_gap_detector()
+        detector.clear()  # Clear previous analysis
+
+        # Determine document type by analyzing title, content, and source_type
+        def get_doc_type(source_type: str, title: str = '', content: str = '') -> str:
+            source_type = (source_type or '').lower()
+            title_lower = (title or '').lower()
+            content_preview = (content or '')[:2000].lower()
+
+            # First check source_type for known integrations
+            if 'slack' in source_type:
+                return 'slack'
+            elif 'email' in source_type or 'gmail' in source_type or 'outlook' in source_type:
+                return 'email'
+            elif 'notion' in source_type:
+                return 'notion'
+            elif 'github' in source_type:
+                return 'github'
+
+            # For manual uploads or unknown sources, infer from title and content
+            # Check for protocol indicators
+            protocol_keywords = ['protocol', 'sop', 'procedure', 'method', 'workflow',
+                               'step-by-step', 'lyse cells', 'incubate', 'centrifuge',
+                               'harvest', 'treat cells', 'wash with', 'add buffer',
+                               'μl', 'ml', 'hours', 'minutes', 'rpm', '°c']
+            if any(kw in title_lower for kw in protocol_keywords[:7]):
+                return 'protocol'
+            if sum(1 for kw in protocol_keywords if kw in content_preview) >= 3:
+                return 'protocol'
+
+            # Check for research paper indicators
+            paper_keywords = ['abstract', 'introduction', 'methods', 'results',
+                            'discussion', 'references', 'doi:', 'et al',
+                            'figure 1', 'table 1', 'manuscript', 'journal']
+            if any(kw in title_lower for kw in ['manuscript', 'paper', 'review', 'article']):
+                return 'paper'
+            if sum(1 for kw in paper_keywords if kw in content_preview) >= 3:
+                return 'paper'
+
+            # Check for presentation indicators
+            if any(kw in title_lower for kw in ['presentation', 'slides', 'pptx', '.ppt']):
+                return 'presentation'
+
+            # Check for code indicators
+            code_keywords = ['def ', 'function ', 'class ', 'import ', 'const ',
+                           'readme', '.py', '.js', '.ts', 'git']
+            if sum(1 for kw in code_keywords if kw in content_preview) >= 2:
+                return 'github'
+
+            return 'other'
+
+        # Add documents to detector
+        docs_added = 0
+        for doc in documents:
+            content = doc.content or ''
+
+            # Also include structured summary if available
+            if doc.structured_summary:
+                summary = doc.structured_summary
+                summary_text = f"\n\nSUMMARY: {summary.get('summary', '')}"
+                if summary.get('key_topics'):
+                    summary_text += f"\nTopics: {', '.join(summary['key_topics'])}"
+                if summary.get('decisions'):
+                    summary_text += f"\nDecisions: {'; '.join(summary['decisions'])}"
+                content = summary_text + "\n\nFULL CONTENT:\n" + content
+
+            if len(content.strip()) > 50:
+                doc_type = get_doc_type(doc.source_type, doc.title or '', content)
+                print(f"[Research] *** Document '{doc.title}' detected as type: {doc_type} ***")
+                detector.add_document(
+                    doc_id=doc.id,
+                    title=doc.title or 'Untitled',
+                    content=content,
+                    doc_type=doc_type,
+                    metadata={
+                        'sender': doc.sender,
+                        'created_at': doc.source_created_at.isoformat() if doc.source_created_at else None
+                    }
+                )
+                docs_added += 1
+
+        logger.info(f"[Research] Added {docs_added} documents to detector")
+
+        if docs_added == 0:
+            return GapAnalysisResult(
+                gaps=[],
+                total_documents_analyzed=len(documents),
+                categories_found={'error': 'No documents with content'}
+            )
+
+        try:
+            # Run analysis
+            result = detector.analyze()
+
+            # Convert to knowledge gaps
+            gaps_data = detector.to_knowledge_gaps(result, project_id)
+
+            # Save gaps to database
+            category_counts = {}
+            saved_gaps = []
+
+            # Map research categories to database categories
+            category_map = {
+                'protocol_incomplete': GapCategory.TECHNICAL,
+                'chat_not_documented': GapCategory.CONTEXT,
+                'question_unanswered': GapCategory.CONTEXT,
+                'contradiction': GapCategory.DECISION,
+                'reference_missing': GapCategory.CONTEXT,
+                'person_locked': GapCategory.RELATIONSHIP,
+                'code_undocumented': GapCategory.TECHNICAL,
+                'method_no_protocol': GapCategory.PROCESS,
+                'outdated': GapCategory.TIMELINE,
+                'tribal_knowledge': GapCategory.CONTEXT,
+                'reproducibility_risk': GapCategory.TECHNICAL,
+                'troubleshooting_missing': GapCategory.PROCESS,
+                'statistical_unclear': GapCategory.TECHNICAL,
+                'time_sensitive': GapCategory.TIMELINE
+            }
+
+            for gap_data in gaps_data[:50]:  # Limit to top 50 gaps
+                category_str = gap_data.get('category', 'protocol_incomplete')
+                category = category_map.get(category_str, GapCategory.CONTEXT)
+
+                category_counts[category.value] = category_counts.get(category.value, 0) + 1
+
+                gap = KnowledgeGap(
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    title=gap_data.get('title', 'Unknown Gap')[:200],
+                    description=gap_data.get('description', '')[:2000],
+                    category=category,
+                    priority=min(max(gap_data.get('priority', 3), 1), 5),
+                    status=GapStatus.OPEN,
+                    questions=gap_data.get('questions', []),
+                    context={
+                        **gap_data.get('context', {}),
+                        'research_category': category_str,
+                        'analysis_type': 'research_multi_source'
+                    }
+                )
+                self.db.add(gap)
+                saved_gaps.append(gap)
+
+            self.db.commit()
+
+            # Log stats
+            stats = result.get('stats', {})
+            logger.info(f"[Research] Analysis complete:")
+            logger.info(f"  - Documents analyzed: {stats.get('documents_analyzed', 0)}")
+            logger.info(f"  - Entities extracted: {stats.get('entities_extracted', 0)}")
+            logger.info(f"  - Gaps detected: {stats.get('gaps_detected', 0)}")
+            logger.info(f"  - Gaps saved: {len(saved_gaps)}")
+
+            return GapAnalysisResult(
+                gaps=[{
+                    "id": g.id,
+                    "title": g.title,
+                    "category": g.category.value,
+                    "priority": g.priority,
+                    "questions_count": len(g.questions)
+                } for g in saved_gaps],
+                total_documents_analyzed=len(documents),
+                categories_found=category_counts
+            )
+
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"[Research] Analysis failed: {e}", exc_info=True)
+            return GapAnalysisResult(
+                gaps=[],
+                total_documents_analyzed=len(documents),
+                categories_found={'error': str(e)}
+            )

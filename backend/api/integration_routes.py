@@ -1770,27 +1770,27 @@ def onedrive_callback():
             db.commit()
             print(f"[OneDrive Callback] Successfully saved connector")
 
-            # Auto-sync on first connection
-            if is_first_connection:
-                connector_id = connector.id
-                sync_tenant_id = tenant_id
-                sync_user_id = user_id
-
-                def run_initial_sync():
-                    _run_connector_sync(
-                        connector_id=connector_id,
-                        connector_type="onedrive",
-                        since=None,
-                        tenant_id=sync_tenant_id,
-                        user_id=sync_user_id,
-                        full_sync=True
-                    )
-
-                thread = threading.Thread(target=run_initial_sync)
-                thread.daemon = True
-                thread.start()
-
-                print(f"[OneDrive Callback] Started auto-sync for first-time connection")
+            # Auto-sync DISABLED - user should manually trigger sync
+            # if is_first_connection:
+            #     connector_id = connector.id
+            #     sync_tenant_id = tenant_id
+            #     sync_user_id = user_id
+            #
+            #     def run_initial_sync():
+            #         _run_connector_sync(
+            #             connector_id=connector_id,
+            #             connector_type="onedrive",
+            #             since=None,
+            #             tenant_id=sync_tenant_id,
+            #             user_id=sync_user_id,
+            #             full_sync=True
+            #         )
+            #
+            #     thread = threading.Thread(target=run_initial_sync)
+            #     thread.daemon = True
+            #     thread.start()
+            #
+            #     print(f"[OneDrive Callback] Started auto-sync for first-time connection")
 
             return redirect(f"{FRONTEND_URL}/integrations?success=onedrive")
 
@@ -3346,11 +3346,21 @@ def sync_connector(connector_type: str):
                     "sync_id": (already_syncing.settings or {}).get('current_sync_id')
                 }), 409
 
-            connector = db.query(Connector).filter(
-                Connector.tenant_id == g.tenant_id,
-                Connector.connector_type == type_map[connector_type],
-                Connector.status == ConnectorStatus.CONNECTED
-            ).first()
+            # Retry logic for race condition after OAuth callback
+            # (connector may not be visible immediately after creation)
+            connector = None
+            for attempt in range(3):
+                connector = db.query(Connector).filter(
+                    Connector.tenant_id == g.tenant_id,
+                    Connector.connector_type == type_map[connector_type],
+                    Connector.status == ConnectorStatus.CONNECTED
+                ).first()
+                if connector:
+                    break
+                if attempt < 2:
+                    print(f"[Sync] Connector not found, retrying in 1s (attempt {attempt + 1}/3)...", flush=True)
+                    time.sleep(1)
+                    db.expire_all()  # Clear SQLAlchemy cache
 
             if not connector:
                 return jsonify({
@@ -3988,10 +3998,16 @@ def _run_connector_sync(
                     if is_research:
                         # Research papers are always WORK
                         classification = DocumentClassification.WORK
-                        status = DocumentStatus.CLASSIFIED  # Skip manual review
+                        status = DocumentStatus.CONFIRMED
                         classification_confidence = 1.0
                         classification_reason = f"Auto-classified as WORK: {doc.source} research content"
                         print(f"[Sync] Auto-classified research document as WORK: {doc.title[:50]}")
+                    elif doc.source in ('onedrive', 'gdrive', 'box', 'notion', 'github'):
+                        # Cloud storage and known work sources auto-confirm as WORK
+                        classification = DocumentClassification.WORK
+                        status = DocumentStatus.CONFIRMED
+                        classification_confidence = 0.9
+                        classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
                     else:
                         # Other sources need AI classification
                         classification = DocumentClassification.UNKNOWN

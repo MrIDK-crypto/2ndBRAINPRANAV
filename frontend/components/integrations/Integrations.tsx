@@ -13,7 +13,7 @@ import { FileText, Clock, FolderGit2, Mail, CheckCircle2 } from 'lucide-react'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
-  : 'http://localhost:5003/api'
+  : 'http://localhost:5002/api'
 
 // Wellspring-Inspired Warm Design System
 const warmTheme = {
@@ -3287,6 +3287,8 @@ export default function Integrations() {
     const success = urlParams.get('success')
     const error = urlParams.get('error')
 
+    console.log('[OAuthCallback] URL params:', { success, error, fullUrl: window.location.href })
+
     if (success === 'slack') {
       setSyncStatus('Slack connected! Select which channels to sync.')
       setIntegrationsState(prev =>
@@ -3325,6 +3327,7 @@ export default function Integrations() {
       // Show repository selection modal instead of auto-starting sync
       setTimeout(() => fetchGitHubRepos(), 500)
     } else if (success === 'onedrive') {
+      console.log('[OAuthCallback] OneDrive success detected!')
       // Mark OneDrive and related Microsoft apps as connected
       setIntegrationsState(prev =>
         prev.map(int =>
@@ -3333,7 +3336,13 @@ export default function Integrations() {
       )
       window.history.replaceState({}, '', '/integrations')
       // Auto-start sync with progress for OneDrive
-      setTimeout(() => startSyncWithProgress('onedrive'), 500)
+      console.log('[OAuthCallback] Scheduling startSyncWithProgress in 500ms...')
+      const token = localStorage.getItem('accessToken')
+      console.log('[OAuthCallback] Token available:', !!token, 'Length:', token?.length)
+      setTimeout(() => {
+        console.log('[OAuthCallback] setTimeout fired, calling startSyncWithProgress...')
+        startSyncWithProgress('onedrive')
+      }, 500)
     } else if (success === 'notion') {
       setIntegrationsState(prev =>
         prev.map(int =>
@@ -3946,7 +3955,9 @@ export default function Integrations() {
   // Start sync with progress tracking
   // Supports both single repository (legacy) and multiple repositories
   const startSyncWithProgress = async (integrationId: string, repository?: string, repositories?: string[]) => {
+    console.log(`[Sync] ========================================`)
     console.log(`[Sync] Starting sync for: ${integrationId}${repository ? ` (repo: ${repository})` : ''}${repositories ? ` (${repositories.length} repos)` : ''}`)
+    console.log(`[Sync] API_BASE: ${API_BASE}`)
 
     // Check if this connector has a sync running in background
     // If so, re-open the progress modal instead of starting a new sync
@@ -3965,8 +3976,10 @@ export default function Integrations() {
     }
 
     const token = getAuthToken()
+    console.log(`[Sync] Token exists: ${!!token}, Length: ${token?.length || 0}`)
     if (!token) {
-      console.error('[Sync] No auth token found')
+      console.error('[Sync] No auth token found - ABORTING')
+      setSyncStatus('Error: Not logged in. Please refresh and try again.')
       return
     }
 

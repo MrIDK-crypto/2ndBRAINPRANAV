@@ -37,11 +37,7 @@ class OneDriveConnector(BaseConnector):
     REQUIRED_CREDENTIALS = ["access_token", "refresh_token"]
     OPTIONAL_SETTINGS = {
         "folder_ids": [],  # Specific folders to sync (empty = root)
-        "file_types": [
-            ".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf",
-            ".txt", ".md", ".csv", ".html", ".htm", ".json", ".xml",
-            ".rtf", ".odt", ".ods", ".odp", ".tex", ".log", ".yaml", ".yml"
-        ],
+        "file_types": [".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf"],
         "max_file_size_mb": 50,
         "include_shared": True
     }
@@ -53,16 +49,12 @@ class OneDriveConnector(BaseConnector):
         super().__init__(config)
         self.access_token = None
 
-    # Scopes for personal Microsoft accounts (OneDrive Personal)
-    # Note: MSAL automatically adds offline_access, openid, profile
-    SCOPES = ["Files.ReadWrite", "User.Read"]
-
     @classmethod
     def _get_oauth_config(cls) -> Dict:
         return {
             "client_id": os.getenv("MICROSOFT_CLIENT_ID", ""),
             "client_secret": os.getenv("MICROSOFT_CLIENT_SECRET", ""),
-            "tenant": os.getenv("MICROSOFT_TENANT_ID", "consumers"),
+            "tenant": os.getenv("MICROSOFT_TENANT_ID", "common"),
             "redirect_uri": os.getenv("MICROSOFT_REDIRECT_URI", "http://localhost:5003/api/integrations/onedrive/callback")
         }
 
@@ -81,8 +73,11 @@ class OneDriveConnector(BaseConnector):
             client_credential=config["client_secret"]
         )
 
+        # Generate auth URL
+        scopes = ["Files.Read.All", "User.Read"]
+
         auth_url = app.get_authorization_request_url(
-            cls.SCOPES,
+            scopes,
             state=state,
             redirect_uri=redirect_uri
         )
@@ -108,7 +103,7 @@ class OneDriveConnector(BaseConnector):
             # Exchange code for token
             result = app.acquire_token_by_authorization_code(
                 code,
-                scopes=cls.SCOPES,
+                scopes=["Files.Read.All", "User.Read"],
                 redirect_uri=redirect_uri
             )
 
@@ -126,7 +121,7 @@ class OneDriveConnector(BaseConnector):
         except Exception as e:
             return None, str(e)
 
-    def connect(self) -> bool:
+    async def connect(self) -> bool:
         """Connect to OneDrive"""
         if not ONEDRIVE_AVAILABLE:
             self._set_error("MSAL not installed. Run: pip install msal")
@@ -148,25 +143,6 @@ class OneDriveConnector(BaseConnector):
 
             user_data = response.json()
             self.sync_stats["user"] = user_data.get("displayName", "Unknown")
-            print(f"[OneDrive] Connected as: {user_data.get('displayName')} ({user_data.get('userPrincipalName', user_data.get('mail', 'unknown'))})", flush=True)
-
-            # Check drive info
-            drive_response = requests.get(
-                f"{self.GRAPH_ENDPOINT}/me/drive",
-                headers={"Authorization": f"Bearer {self.access_token}"}
-            )
-            if drive_response.status_code == 200:
-                drive_data = drive_response.json()
-                drive_type = drive_data.get("driveType", "unknown")
-                drive_id = drive_data.get("id", "unknown")
-                quota = drive_data.get("quota", {})
-                used = quota.get("used", 0) / (1024*1024)
-                total = quota.get("total", 0) / (1024*1024*1024)
-                print(f"[OneDrive] Drive type: {drive_type}, id: {drive_id}, used: {used:.1f}MB / {total:.1f}GB", flush=True)
-                self._drive_id = drive_id
-            else:
-                print(f"[OneDrive] WARNING: /me/drive returned {drive_response.status_code}: {drive_response.text[:200]}", flush=True)
-                self._drive_id = None
 
             self.status = ConnectorStatus.CONNECTED
             self._clear_error()
@@ -176,13 +152,13 @@ class OneDriveConnector(BaseConnector):
             self._set_error(f"Failed to connect: {str(e)}")
             return False
 
-    def disconnect(self) -> bool:
+    async def disconnect(self) -> bool:
         """Disconnect from OneDrive"""
         self.access_token = None
         self.status = ConnectorStatus.DISCONNECTED
         return True
 
-    def test_connection(self) -> bool:
+    async def test_connection(self) -> bool:
         """Test OneDrive connection"""
         if not self.access_token:
             return False
@@ -196,10 +172,10 @@ class OneDriveConnector(BaseConnector):
         except Exception:
             return False
 
-    def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """Sync files from OneDrive"""
         if not self.access_token:
-            self.connect()
+            await self.connect()
 
         if self.status != ConnectorStatus.CONNECTED:
             return []
@@ -214,11 +190,11 @@ class OneDriveConnector(BaseConnector):
             if folder_ids:
                 # Sync specific folders
                 for folder_id in folder_ids:
-                    folder_docs = self._sync_folder(folder_id, since)
+                    folder_docs = await self._sync_folder(folder_id, since)
                     documents.extend(folder_docs)
             else:
                 # Sync root folder
-                folder_docs = self._sync_folder("root", since)
+                folder_docs = await self._sync_folder("root", since)
                 documents.extend(folder_docs)
 
             # Update stats
@@ -236,40 +212,27 @@ class OneDriveConnector(BaseConnector):
 
         return documents
 
-    def _sync_folder(self, folder_id: str, since: Optional[datetime]) -> List[Document]:
+    async def _sync_folder(self, folder_id: str, since: Optional[datetime]) -> List[Document]:
         """Sync files from a folder recursively"""
         documents = []
 
         try:
-            # Build URL - try multiple endpoint formats for compatibility
-            urls_to_try = []
+            # Get files in folder
+            # For root folder, use /me/drive/root/children (works for personal OneDrive)
+            # For other folders, use /me/drive/items/{id}/children
             if folder_id == "root":
-                urls_to_try.append(f"{self.GRAPH_ENDPOINT}/me/drive/root/children")
-                # Fallback: use drive ID if available
-                if hasattr(self, '_drive_id') and self._drive_id:
-                    urls_to_try.append(f"{self.GRAPH_ENDPOINT}/drives/{self._drive_id}/root/children")
-                urls_to_try.append(f"{self.GRAPH_ENDPOINT}/me/drive/items/root/children")
+                url = f"{self.GRAPH_ENDPOINT}/me/drive/root/children"
             else:
-                urls_to_try.append(f"{self.GRAPH_ENDPOINT}/me/drive/items/{folder_id}/children")
+                url = f"{self.GRAPH_ENDPOINT}/me/drive/items/{folder_id}/children"
+            response = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {self.access_token}"}
+            )
 
-            # Try each URL format until one works
-            url = None
-            response = None
-            for try_url in urls_to_try:
-                print(f"[OneDrive] Trying: {try_url}", flush=True)
-                response = requests.get(
-                    try_url,
-                    headers={"Authorization": f"Bearer {self.access_token}"}
-                )
-                if response.status_code == 200:
-                    url = try_url
-                    print(f"[OneDrive] Success with: {try_url}", flush=True)
-                    break
-                else:
-                    print(f"[OneDrive] {try_url} returned {response.status_code}: {response.text[:200]}", flush=True)
-
-            if not url or response.status_code != 200:
-                error_text = response.text if response else "No response"
+            if response.status_code != 200:
+                error_text = response.text
+                print(f"[OneDrive] Failed to list folder {folder_id}: {error_text}", flush=True)
+                # Parse error message from Microsoft Graph API response
                 try:
                     error_data = response.json().get("error", {})
                     error_msg = error_data.get("message", error_text[:200])
@@ -277,60 +240,57 @@ class OneDriveConnector(BaseConnector):
                     error_msg = f"HTTP {response.status_code}: {error_text[:200]}"
                 raise Exception(f"OneDrive API error: {error_msg}")
 
-            # Process first page and then paginate
-            while True:
-                data = response.json()
-                items = data.get("value", [])
-                print(f"[OneDrive] Folder {folder_id}: got {len(items)} items", flush=True)
+            items = response.json().get("value", [])
 
-                for item in items:
-                    if "folder" in item:
-                        subfolder_name = item.get("name", "unknown")
-                        print(f"[OneDrive] Entering subfolder: {subfolder_name}", flush=True)
-                        subfolder_docs = self._sync_folder(item["id"], since)
-                        documents.extend(subfolder_docs)
+            # Process files FIRST (they're in root and accessible)
+            for item in items:
+                # Check if it's a file
+                if "file" in item:
+                    # Check file type
+                    name = item.get("name", "")
+                    file_types = self.config.settings.get("file_types") or self.OPTIONAL_SETTINGS["file_types"]
 
-                    elif "file" in item:
-                        name = item.get("name", "")
-                        file_types = self.config.settings.get("file_types", self.OPTIONAL_SETTINGS["file_types"])
+                    if any(name.lower().endswith(ext) for ext in file_types):
+                        # Check file size
+                        size_mb = item.get("size", 0) / (1024 * 1024)
+                        max_size = self.config.settings.get("max_file_size_mb") or self.OPTIONAL_SETTINGS["max_file_size_mb"]
 
-                        if any(name.lower().endswith(ext) for ext in file_types):
-                            print(f"[OneDrive] Found matching file: {name}", flush=True)
-                            size_mb = item.get("size", 0) / (1024 * 1024)
-                            max_size = self.config.settings.get("max_file_size_mb", 50)
+                        if size_mb > max_size:
+                            print(f"[OneDrive] Skipping {name} - too large ({size_mb:.1f}MB)", flush=True)
+                            continue
 
-                            if size_mb > max_size:
-                                print(f"[OneDrive] Skipping {name} - too large ({size_mb:.1f}MB)")
-                                continue
+                        # Check modification time
+                        modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
 
-                            modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
+                        if since and modified < since:
+                            continue
 
-                            if since and modified < since:
-                                continue
+                        # Download and parse file
+                        doc = await self._download_and_parse(item)
+                        if doc:
+                            documents.append(doc)
+                            print(f"[OneDrive] Parsed {len(documents)} files so far...", flush=True)
 
-                            doc = self._download_and_parse(item)
-                            if doc:
-                                documents.append(doc)
-
-                # Check for next page
-                next_link = data.get("@odata.nextLink")
-                if not next_link:
-                    break
-                print(f"[OneDrive] Fetching next page...", flush=True)
-                response = requests.get(
-                    next_link,
-                    headers={"Authorization": f"Bearer {self.access_token}"}
-                )
-                if response.status_code != 200:
-                    print(f"[OneDrive] Pagination failed: {response.status_code}", flush=True)
-                    break
+            # DISABLED: Skip subfolders for faster sync - only sync root folder files
+            # To enable recursive sync, uncomment this block
+            # for item in items:
+            #     if "folder" in item:
+            #         try:
+            #             import time
+            #             time.sleep(0.5)  # Rate limit protection
+            #             subfolder_docs = await self._sync_folder(item["id"], since)
+            #             documents.extend(subfolder_docs)
+            #         except Exception as folder_err:
+            #             print(f"[OneDrive] Skipping folder {item.get('name')}: {folder_err}", flush=True)
+            #             continue
+            print(f"[OneDrive] Skipping subfolders (root-only mode)", flush=True)
 
         except Exception as e:
             print(f"[OneDrive] Error syncing folder {folder_id}: {e}", flush=True)
 
         return documents
 
-    def _download_and_parse(self, item: Dict) -> Optional[Document]:
+    async def _download_and_parse(self, item: Dict) -> Optional[Document]:
         """Download and parse a file"""
         try:
             file_id = item["id"]
@@ -338,22 +298,22 @@ class OneDriveConnector(BaseConnector):
             download_url = item.get("@microsoft.graph.downloadUrl")
 
             if not download_url:
-                print(f"[OneDrive] No download URL for {name}")
+                print(f"[OneDrive] No download URL for {name}", flush=True)
                 return None
 
-            print(f"[OneDrive] Downloading {name}...")
+            print(f"[OneDrive] Downloading {name}...", flush=True)
 
             # Download file
             response = requests.get(download_url)
 
             if response.status_code != 200:
-                print(f"[OneDrive] Failed to download {name}")
+                print(f"[OneDrive] Failed to download {name}", flush=True)
                 return None
 
             file_content = response.content
 
             # Parse based on file type
-            content_text = self._parse_file(name, file_content)
+            content_text = await self._parse_file(name, file_content)
 
             if not content_text:
                 return None
@@ -382,37 +342,24 @@ class OneDriveConnector(BaseConnector):
             print(f"[OneDrive] Error parsing {item.get('name')}: {e}")
             return None
 
-    def _parse_file(self, filename: str, content: bytes) -> Optional[str]:
-        """Parse file content based on type. Tries Mistral Document AI first, falls back to local parsers."""
+    async def _parse_file(self, filename: str, content: bytes) -> Optional[str]:
+        """Parse file content based on type"""
         try:
             lower_name = filename.lower()
 
-            # Plain text files - decode directly (no need for Mistral)
-            if lower_name.endswith((
-                ".txt", ".md", ".csv", ".html", ".htm", ".json", ".xml",
-                ".rtf", ".log", ".yaml", ".yml", ".tex"
-            )):
-                return self._parse_text(content)
-
-            # For binary document files, try Mistral Document AI first
-            if lower_name.endswith((".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".ods", ".odp")):
-                try:
-                    from parsers.document_parser import DocumentParser
-                    parser = DocumentParser()
-                    parsed = parser.parse_file_bytes(content, filename)
-                    if parsed:
-                        print(f"[OneDrive] Parsed {filename} with Mistral Document AI: {len(parsed)} chars")
-                        return parsed
-                except Exception as e:
-                    print(f"[OneDrive] Mistral unavailable for {filename}: {e}")
-
-            # Fallback to local parsers
+            # PowerPoint
             if lower_name.endswith((".pptx", ".ppt")):
                 return self._parse_powerpoint(content)
+
+            # Excel
             elif lower_name.endswith((".xlsx", ".xls")):
                 return self._parse_excel(content)
+
+            # Word
             elif lower_name.endswith((".docx", ".doc")):
                 return self._parse_word(content)
+
+            # PDF
             elif lower_name.endswith(".pdf"):
                 return self._parse_pdf(content)
 
@@ -420,18 +367,6 @@ class OneDriveConnector(BaseConnector):
 
         except Exception as e:
             print(f"[OneDrive] Parse error for {filename}: {e}")
-            return None
-
-    def _parse_text(self, content: bytes) -> Optional[str]:
-        """Parse plain text file"""
-        try:
-            # Try UTF-8 first, then fallback to latin-1
-            try:
-                return content.decode("utf-8")
-            except UnicodeDecodeError:
-                return content.decode("latin-1")
-        except Exception as e:
-            print(f"[OneDrive] Text parse error: {e}")
             return None
 
     def _parse_powerpoint(self, content: bytes) -> Optional[str]:
@@ -516,24 +451,18 @@ class OneDriveConnector(BaseConnector):
         """Get document type based on filename"""
         lower_name = filename.lower()
 
-        if lower_name.endswith((".pptx", ".ppt", ".odp")):
+        if lower_name.endswith((".pptx", ".ppt")):
             return "presentation"
-        elif lower_name.endswith((".xlsx", ".xls", ".csv", ".ods")):
+        elif lower_name.endswith((".xlsx", ".xls")):
             return "spreadsheet"
-        elif lower_name.endswith((".docx", ".doc", ".odt", ".rtf")):
+        elif lower_name.endswith((".docx", ".doc")):
             return "document"
         elif lower_name.endswith(".pdf"):
             return "pdf"
-        elif lower_name.endswith((".txt", ".md", ".log", ".tex")):
-            return "text"
-        elif lower_name.endswith((".html", ".htm", ".xml")):
-            return "webpage"
-        elif lower_name.endswith((".json", ".yaml", ".yml")):
-            return "data"
 
         return "file"
 
-    def get_document(self, doc_id: str) -> Optional[Document]:
+    async def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a specific document by ID"""
         # Implementation would fetch single file by ID
         return None

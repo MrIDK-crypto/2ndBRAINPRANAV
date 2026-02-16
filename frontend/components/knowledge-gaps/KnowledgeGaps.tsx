@@ -36,7 +36,8 @@ const fonts = {
 
 interface KnowledgeGap {
   id: string
-  description: string
+  title?: string  // Main question with document name
+  description: string  // Detailed description
   project: string
   answered?: boolean
   answer?: string
@@ -50,6 +51,7 @@ interface KnowledgeGap {
   estimated_time?: number
   flagged?: boolean
   skipped?: boolean
+  source_documents?: { id: string; title: string }[]
 }
 
 // Standalone FocusCard Component - OUTSIDE the main component
@@ -134,7 +136,7 @@ function FocusCard({
           marginBottom: '32px',
           letterSpacing: '-0.01em',
         }}>
-          {gap.description}
+          {gap.title || gap.description}
         </h2>
 
         {/* Context Box - LLM Summarized */}
@@ -166,6 +168,49 @@ function FocusCard({
             </p>
           )}
         </div>
+
+        {/* Source Documents */}
+        {gap.source_documents && gap.source_documents.length > 0 && (
+          <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.muted} strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.muted, textTransform: 'uppercase', fontFamily: fonts.sans }}>
+                Based on {gap.source_documents.length} document{gap.source_documents.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {gap.source_documents.slice(0, 5).map((doc, idx) => (
+                <a
+                  key={idx}
+                  href={`/documents?highlight=${doc.id}`}
+                  style={{
+                    fontSize: '12px',
+                    color: theme.accent,
+                    background: theme.accentLight,
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontFamily: fonts.sans,
+                    maxWidth: '200px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    textDecoration: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  [{doc.title}]
+                </a>
+              ))}
+              {gap.source_documents.length > 5 && (
+                <span style={{ fontSize: '12px', color: theme.muted, padding: '4px 8px', fontFamily: fonts.sans }}>
+                  +{gap.source_documents.length - 5} more
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div style={{ marginTop: 'auto', paddingTop: '32px', display: 'flex', gap: '12px' }}>
@@ -500,9 +545,12 @@ export default function KnowledgeGaps() {
               if (cleanText) {
                 const gapId = `${gap.id}_${qIndex}`
                 const answerObj = gap.answers?.find((a: any) => a.question_index === qIndex)
+                // Use the gap title (which includes document name) as the display text
+                const displayText = gap.title || cleanText
                 allGaps.push({
                   id: gapId,
-                  description: cleanText,
+                  title: gap.title,  // Keep original title with document name
+                  description: displayText,
                   project: groupName,
                   answered: gap.status === 'answered',
                   answer: answerObj?.answer_text || '',
@@ -510,6 +558,7 @@ export default function KnowledgeGaps() {
                   priority: priorityStr,
                   context: cleanContext,
                   estimated_time: estTime,
+                  source_documents: gap.source_documents,
                 })
                 initialAnswers[gapId] = answerObj?.answer_text || ''
               }
@@ -535,7 +584,7 @@ export default function KnowledgeGaps() {
   const generateQuestions = async () => {
     setGenerating(true)
     try {
-      await axios.post(`${API_BASE}/knowledge/analyze`, { force: true, include_pending: true, mode: 'intelligent' }, { headers: authHeaders })
+      await axios.post(`${API_BASE}/knowledge/analyze`, { force: true, include_pending: true, mode: 'research' }, { headers: authHeaders })
       await loadKnowledgeGaps()
     } catch (error) {
       console.error('Error analyzing:', error)
@@ -939,7 +988,7 @@ export default function KnowledgeGaps() {
                     </div>
                   </div>
                   <h3 style={{ fontFamily: fonts.serif, fontSize: '18px', fontWeight: 600, color: theme.ink, margin: '0 0 12px', lineHeight: 1.4 }}>
-                    {gap.description}
+                    {gap.title || gap.description}
                   </h3>
                   {/* Context */}
                   <div style={{
