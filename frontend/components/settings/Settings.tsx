@@ -278,7 +278,7 @@ export default function Settings() {
 
         {/* Content */}
         <div style={{ flex: 1, padding: '32px 40px', overflow: 'auto' }}>
-          <div style={{ maxWidth: '640px' }}>
+          <div style={{ maxWidth: '100%' }}>
 
             {/* Save/Error Message */}
             {saveMessage && (
