@@ -79,13 +79,12 @@ kombu==5.3.4
 spacy==3.7.2
 # Note: en_core_web_sm model is downloaded in Dockerfile, not via pip
 
-# Topic Modeling & Advanced NLP
-bertopic
+# Search Reranking & NLP
+# Install CPU-only PyTorch first (saves ~3GB vs GPU version with nvidia CUDA libs)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 rank-bm25
 sentence-transformers
-transformers
-hdbscan
-umap-learn
 
 # Web Scraper - Self-hosted (requests + BeautifulSoup + OCR)
 html2text>=2024.2.26

@@ -340,6 +340,7 @@ class NotionConnector(BaseConnector):
             has_more = True
             start_cursor = None
             block_count = 0
+            first_request = True
 
             while has_more and block_count < max_blocks:
                 params = {"block_id": page_id, "page_size": 100}
@@ -347,8 +348,17 @@ class NotionConnector(BaseConnector):
                     params["start_cursor"] = start_cursor
 
                 response = self.client.blocks.children.list(**params)
+                results = response.get("results", [])
 
-                for block in response.get("results", []):
+                # Log empty results on first request (helps debug permission issues)
+                if first_request and not results:
+                    print(f"[Notion] WARNING: blocks.children.list returned 0 blocks for page {page_id}. "
+                          f"This may indicate the integration lacks 'Read content' capability. "
+                          f"Check integration settings at https://www.notion.so/my-integrations")
+                first_request = False
+
+                for block in results:
+                    block_type = block.get("type", "unknown")
                     text = self._extract_block_text(block)
                     if text:
                         content_parts.append(text)
@@ -362,8 +372,17 @@ class NotionConnector(BaseConnector):
                 has_more = response.get("has_more", False)
                 start_cursor = response.get("next_cursor")
 
+            if depth == 0:
+                print(f"[Notion] Page {page_id}: extracted {block_count} blocks, {len(content_parts)} text parts")
+
         except Exception as e:
-            print(f"[Notion] Error fetching blocks for {page_id}: {e}")
+            error_str = str(e)
+            if "403" in error_str or "restricted" in error_str.lower():
+                print(f"[Notion] PERMISSION ERROR for page {page_id}: {e}")
+                print(f"[Notion] The integration needs 'Read content' capability. "
+                      f"Enable it at https://www.notion.so/my-integrations")
+            else:
+                print(f"[Notion] Error fetching blocks for {page_id}: {e}")
 
         return "\n".join(content_parts)
 
