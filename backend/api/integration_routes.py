@@ -3904,7 +3904,7 @@ def _run_connector_sync(
                     # Database Document expects: external_id, source_type, content, title, metadata, source_created_at, etc.
 
                     # Auto-classify research sources as WORK (they're academic papers, not personal)
-                    research_sources = {'pubmed', 'researchgate', 'googlescholar', 'webscraper', 'quartzy', 'quartzy_csv'}
+                    research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv'}
                     is_research = (
                         doc.source.lower() in research_sources or
                         getattr(doc, 'doc_type', None) == 'research_paper'

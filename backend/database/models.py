@@ -78,8 +78,6 @@ class ConnectorType(PyEnum):
     GOOGLE_CALENDAR = "google_calendar"
     NOTION = "notion"
     PUBMED = "pubmed"
-    RESEARCHGATE = "researchgate"
-    GOOGLESCHOLAR = "googlescholar"
     WEBSCRAPER = "webscraper"
     FIRECRAWL = "firecrawl"
     ZOTERO = "zotero"

@@ -2120,42 +2120,6 @@ const IntegrationDetailsModal = ({
       brandColor: '#326599',
       docsUrl: 'https://pubmed.ncbi.nlm.nih.gov/help/'
     },
-    researchgate: {
-      fullDescription: 'ResearchGate is a professional network for scientists and researchers. Connect to import publications, access research datasets, and capture insights from the scientific community.',
-      features: [
-        'Import your publications and papers',
-        'Access shared research datasets',
-        'Track research metrics and citations',
-        'Capture Q&A discussions'
-      ],
-      dataTypes: ['Publications', 'Datasets', 'Preprints', 'Q&A', 'Profiles'],
-      setupSteps: [
-        'Authenticate with ResearchGate',
-        'Select publications to import',
-        'Configure dataset access',
-        'Begin research sync'
-      ],
-      brandColor: '#00D0AF',
-      docsUrl: 'https://www.researchgate.net/help'
-    },
-    googlescholar: {
-      fullDescription: 'Google Scholar provides a simple way to broadly search for scholarly literature. Import academic papers, theses, books, and conference papers from across all disciplines.',
-      features: [
-        'Search across multiple disciplines',
-        'Import papers with full citations',
-        'Track citation counts and metrics',
-        'Access related articles and authors'
-      ],
-      dataTypes: ['Papers', 'Theses', 'Books', 'Patents', 'Court Opinions'],
-      setupSteps: [
-        'Configure search preferences',
-        'Set up topic alerts',
-        'Select papers to import',
-        'Enable continuous monitoring'
-      ],
-      brandColor: '#4285F4',
-      docsUrl: 'https://scholar.google.com/intl/en/scholar/help.html'
-    }
   }
 
   const details = integrationDetails[integration.id] || {
@@ -2676,22 +2640,6 @@ const integrations: Integration[] = [
     name: 'PubMed',
     logo: '/pubmed.png',
     description: 'Access millions of biomedical literature citations and abstracts from MEDLINE.',
-    category: 'Research',
-    connected: false
-  },
-  {
-    id: 'researchgate',
-    name: 'ResearchGate',
-    logo: '/researchgate.png',
-    description: 'Connect with researchers and access scientific publications and datasets.',
-    category: 'Research',
-    connected: false
-  },
-  {
-    id: 'googlescholar',
-    name: 'Google Scholar',
-    logo: '/googlescholar.png',
-    description: 'Search scholarly literature across disciplines and sources worldwide.',
     category: 'Research',
     connected: false
   },
@@ -4330,15 +4278,6 @@ export default function Integrations() {
       return
     }
 
-    // Handle ResearchGate and Google Scholar (not implemented)
-    if (id === 'researchgate' || id === 'googlescholar') {
-      const name = id === 'researchgate' ? 'ResearchGate' : 'Google Scholar'
-      setSyncStatus(
-        `${name} does not provide a public API. Please use PubMed or manual exports instead.`
-      )
-      setTimeout(() => setSyncStatus(null), 5000)
-      return
-    }
 
     // Handle Excel and PowerPoint - use Microsoft 365 (OneDrive) OAuth
     if (id === 'excel' || id === 'powerpoint') {
