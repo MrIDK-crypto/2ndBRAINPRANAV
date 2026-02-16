@@ -334,27 +334,33 @@ class GDriveConnector(BaseConnector):
                     text = file_content.decode('utf-8', errors='ignore')
                     return re.sub('<[^<]+?>', '', text)
 
-            elif mime_type == 'application/pdf':
-                # Return placeholder - PDF parsing can be added later
+            elif mime_type in ('application/pdf', ) or 'wordprocessingml' in mime_type or 'spreadsheetml' in mime_type:
+                # Use Mistral Document AI (with local fallback) for PDF, DOCX, XLSX
+                try:
+                    from parsers.document_parser import DocumentParser
+                    parser = DocumentParser()
+                    parsed = parser.parse_file_bytes(file_content, filename)
+                    if parsed:
+                        return parsed
+                except Exception as e:
+                    print(f"[GDrive] Mistral parse failed for {filename}: {e}")
+                # Fallback for DOCX
+                if 'wordprocessingml' in mime_type:
+                    try:
+                        import docx
+                        doc = docx.Document(io.BytesIO(file_content))
+                        return '\n'.join([p.text for p in doc.paragraphs])
+                    except Exception:
+                        pass
+                # Fallback for XLSX
+                if 'spreadsheetml' in mime_type:
+                    try:
+                        import pandas as pd
+                        df = pd.read_excel(io.BytesIO(file_content))
+                        return df.to_string()
+                    except Exception:
+                        pass
                 return None
-
-            elif 'wordprocessingml' in mime_type:
-                try:
-                    import docx
-                    doc = docx.Document(io.BytesIO(file_content))
-                    return '\n'.join([p.text for p in doc.paragraphs])
-                except Exception as e:
-                    print(f"[GDrive] DOCX parsing failed: {e}")
-                    return None
-
-            elif 'spreadsheetml' in mime_type:
-                try:
-                    import pandas as pd
-                    df = pd.read_excel(io.BytesIO(file_content))
-                    return df.to_string()
-                except Exception as e:
-                    print(f"[GDrive] XLSX parsing failed: {e}")
-                    return None
 
             return None
 

@@ -332,7 +332,7 @@ class ZoteroConnector(BaseConnector):
                 if content_type == 'application/pdf':
                     try:
                         pdf_bytes = self.zot.file(item_key)
-                        pdf_content = self._extract_pdf_text(pdf_bytes)
+                        pdf_content = self._extract_pdf_text(pdf_bytes, filename or "document.pdf")
                         print(f"[Zotero] Extracted {len(pdf_content)} chars from standalone PDF", flush=True)
                     except Exception as pdf_err:
                         print(f"[Zotero] Failed to extract standalone PDF: {pdf_err}", flush=True)
@@ -543,7 +543,7 @@ class ZoteroConnector(BaseConnector):
                         print(f"[Zotero] Downloaded {len(pdf_bytes)} bytes", flush=True)
 
                         # Extract text from PDF - NO LIMITS
-                        text = self._extract_pdf_text(pdf_bytes)
+                        text = self._extract_pdf_text(pdf_bytes, filename)
                         if text:
                             print(f"[Zotero] Extracted {len(text)} chars from {filename}", flush=True)
                             return text  # Return full content, no limit
@@ -562,8 +562,23 @@ class ZoteroConnector(BaseConnector):
             traceback.print_exc()
             return ""
 
-    def _extract_pdf_text(self, pdf_bytes: bytes) -> str:
-        """Extract text from PDF bytes"""
+    def _extract_pdf_text(self, pdf_bytes: bytes, filename: str = "document.pdf") -> str:
+        """Extract text from PDF bytes. Tries Mistral Document AI first, falls back to PyPDF2."""
+        # Try Mistral Document AI first
+        try:
+            from parsers.document_parser import DocumentParser
+            parser = DocumentParser()
+            parsed = parser.parse_file_bytes(pdf_bytes, filename)
+            if parsed:
+                print(f"[Zotero] Parsed PDF with Mistral Document AI: {len(parsed)} chars", flush=True)
+                return parsed
+        except Exception as e:
+            print(f"[Zotero] Mistral unavailable, falling back to PyPDF2: {e}", flush=True)
+
+        # Fallback to PyPDF2
+        if not PYPDF2_AVAILABLE:
+            return ""
+
         try:
             pdf_file = io.BytesIO(pdf_bytes)
             reader = PyPDF2.PdfReader(pdf_file)

@@ -383,37 +383,38 @@ class OneDriveConnector(BaseConnector):
             return None
 
     def _parse_file(self, filename: str, content: bytes) -> Optional[str]:
-        """Parse file content based on type"""
+        """Parse file content based on type. Tries Mistral Document AI first, falls back to local parsers."""
         try:
             lower_name = filename.lower()
 
-            # PowerPoint
-            if lower_name.endswith((".pptx", ".ppt")):
-                return self._parse_powerpoint(content)
-
-            # Excel
-            elif lower_name.endswith((".xlsx", ".xls")):
-                return self._parse_excel(content)
-
-            # Word
-            elif lower_name.endswith((".docx", ".doc")):
-                return self._parse_word(content)
-
-            # PDF
-            elif lower_name.endswith(".pdf"):
-                return self._parse_pdf(content)
-
-            # Plain text files (txt, md, csv, html, json, xml, etc.)
-            elif lower_name.endswith((
+            # Plain text files - decode directly (no need for Mistral)
+            if lower_name.endswith((
                 ".txt", ".md", ".csv", ".html", ".htm", ".json", ".xml",
                 ".rtf", ".log", ".yaml", ".yml", ".tex"
             )):
                 return self._parse_text(content)
 
-            # ODF formats
-            elif lower_name.endswith((".odt", ".ods", ".odp")):
-                print(f"[OneDrive] ODF format not yet supported: {filename}")
-                return None
+            # For binary document files, try Mistral Document AI first
+            if lower_name.endswith((".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".odt", ".ods", ".odp")):
+                try:
+                    from parsers.document_parser import DocumentParser
+                    parser = DocumentParser()
+                    parsed = parser.parse_file_bytes(content, filename)
+                    if parsed:
+                        print(f"[OneDrive] Parsed {filename} with Mistral Document AI: {len(parsed)} chars")
+                        return parsed
+                except Exception as e:
+                    print(f"[OneDrive] Mistral unavailable for {filename}: {e}")
+
+            # Fallback to local parsers
+            if lower_name.endswith((".pptx", ".ppt")):
+                return self._parse_powerpoint(content)
+            elif lower_name.endswith((".xlsx", ".xls")):
+                return self._parse_excel(content)
+            elif lower_name.endswith((".docx", ".doc")):
+                return self._parse_word(content)
+            elif lower_name.endswith(".pdf"):
+                return self._parse_pdf(content)
 
             return None
 

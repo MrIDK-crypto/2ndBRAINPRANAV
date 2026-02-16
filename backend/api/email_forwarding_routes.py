@@ -61,7 +61,7 @@ def fetch_emails():
                 tenant_id=tenant_id,
                 db=db,
                 config=config,
-                max_emails=50
+                max_emails=100
             )
 
             # Embed newly created documents to Pinecone
@@ -186,7 +186,7 @@ def fetch_emails_public():
             tenant_id=tenant_id,
             db=db,
             config=config,
-            max_emails=10  # Reduced from 50 to make it faster for testing
+            max_emails=100
         )
 
         # Embed newly created documents to Pinecone

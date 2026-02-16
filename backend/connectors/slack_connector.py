@@ -5,6 +5,7 @@ Connects to Slack API to extract messages for knowledge capture.
 
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+import requests as http_requests
 
 from .base_connector import BaseConnector, ConnectorConfig, ConnectorStatus, Document
 
@@ -336,7 +337,7 @@ Time: {timestamp.isoformat() if timestamp else 'Unknown'}
                     "url": att.get("title_link")
                 })
 
-            # Extract file info
+            # Extract file info and parse file content
             files = []
             for file in message.get("files", []):
                 files.append({
@@ -344,6 +345,12 @@ Time: {timestamp.isoformat() if timestamp else 'Unknown'}
                     "type": file.get("filetype"),
                     "url": file.get("url_private")
                 })
+
+                # Download and parse file content
+                parsed = self._download_and_parse_slack_file(file)
+                if parsed:
+                    fname = file.get("name", "file")
+                    content += f"\n\n--- Attached File: {fname} ---\n{parsed}\n--- End of {fname} ---"
 
             return Document(
                 doc_id=f"slack_{channel['id']}_{message['ts']}",
@@ -408,6 +415,53 @@ Time: {timestamp.isoformat() if timestamp else 'Unknown'}
             text = text.replace(f"<@{user_id}>", f"@{name}")
 
         return text
+
+    # =========================================================================
+    # FILE DOWNLOAD & PARSING
+    # =========================================================================
+
+    def _download_and_parse_slack_file(self, file_info: Dict) -> Optional[str]:
+        """Download a Slack file and parse its content using Mistral Document AI"""
+        url = file_info.get("url_private")
+        filename = file_info.get("name", "")
+        filetype = file_info.get("filetype", "")
+
+        if not url or not filename:
+            return None
+
+        # Skip non-document file types (images without OCR value, videos, etc.)
+        import os
+        ext = os.path.splitext(filename)[1].lower()
+        parseable = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
+                     ".txt", ".csv", ".md", ".json", ".xml", ".html", ".htm",
+                     ".rtf", ".odt", ".ods", ".odp", ".png", ".jpg", ".jpeg"}
+        if ext not in parseable:
+            return None
+
+        try:
+            # Download file using bot token for auth
+            token = self.config.credentials.get("access_token") or self.config.credentials.get("bot_token")
+            resp = http_requests.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=60
+            )
+            resp.raise_for_status()
+            file_bytes = resp.content
+            print(f"[Slack] Downloaded file {filename}: {len(file_bytes)} bytes")
+
+            # Parse with Mistral Document AI (with local fallback)
+            from parsers.document_parser import DocumentParser
+            parser = DocumentParser()
+            parsed = parser.parse_file_bytes(file_bytes, filename)
+            if parsed:
+                print(f"[Slack] Parsed {filename}: {len(parsed)} chars")
+                return parsed
+
+        except Exception as e:
+            print(f"[Slack] Failed to download/parse file {filename}: {e}")
+
+        return None
 
     # =========================================================================
     # SYNCHRONOUS VERSIONS (for gevent compatibility)
@@ -652,6 +706,12 @@ Time: {timestamp.isoformat() if timestamp else 'Unknown'}
                     "type": file.get("filetype"),
                     "url": file.get("url_private")
                 })
+
+                # Download and parse file content
+                parsed = self._download_and_parse_slack_file(file)
+                if parsed:
+                    fname = file.get("name", "file")
+                    content += f"\n\n--- Attached File: {fname} ---\n{parsed}\n--- End of {fname} ---"
 
             return Document(
                 doc_id=f"slack_{channel['id']}_{message['ts']}",

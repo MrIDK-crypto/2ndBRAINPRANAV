@@ -5,6 +5,7 @@ Falls back to traditional parsers if Azure Document AI is unavailable
 """
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Dict, Optional
 import warnings
@@ -133,6 +134,46 @@ class DocumentParser:
             return None
 
         return None
+
+    def parse_file_bytes(self, file_bytes: bytes, filename: str) -> Optional[str]:
+        """
+        Parse file bytes using Mistral Document AI (with local fallback).
+        Saves bytes to temp file, calls self.parse(), returns content string.
+
+        Args:
+            file_bytes: Raw file content as bytes
+            filename: Original filename (used to determine file type)
+
+        Returns:
+            Extracted text string, or None if parsing failed
+        """
+        ext = Path(filename).suffix.lower()
+        if not ext:
+            return None
+
+        # Plain text files - decode directly
+        if ext in ('.txt', '.md', '.csv', '.json', '.xml', '.html', '.htm'):
+            try:
+                return file_bytes.decode('utf-8', errors='ignore')
+            except Exception:
+                return None
+
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+
+            result = self.parse(tmp_path)
+            if result and result.get('content'):
+                return result['content']
+            return None
+        except Exception as e:
+            print(f"[DocumentParser] parse_file_bytes error for {filename}: {e}")
+            return None
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     def _parse_pdf(self, file_path: str) -> Dict:
         """Extract text from PDF"""

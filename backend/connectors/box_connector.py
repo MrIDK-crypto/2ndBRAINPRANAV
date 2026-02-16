@@ -705,22 +705,18 @@ class BoxConnector(BaseConnector):
                 except Exception as s3_err:
                     log_error("BoxConnector", "S3 upload error", error=s3_err, file_name=file_name)
 
-            # Extract content if possible using LlamaParse
+            # Extract content using Azure Mistral Document AI (with local fallback)
             if file_ext.lower() in self.EXTRACTABLE_TYPES and file_bytes:
-                log_info("BoxConnector", "Parsing file with LlamaParse", file_name=file_name, type=file_ext)
+                log_info("BoxConnector", "Parsing file with Mistral Document AI", file_name=file_name, type=file_ext)
                 try:
-                    from services.document_parser import get_document_parser
-                    parser = get_document_parser()
-
-                    if parser.is_supported(f".{file_ext.lstrip('.')}"):
-                        content = await parser.parse_bytes(
-                            file_bytes=file_bytes,
-                            file_name=file_name,
-                            file_extension=file_ext.lstrip('.')
-                        )
+                    from parsers.document_parser import DocumentParser
+                    parser = DocumentParser()
+                    parsed = parser.parse_file_bytes(file_bytes, file_name)
+                    if parsed:
+                        content = parsed
                         log_info("BoxConnector", "Content extracted", file_name=file_name, chars=len(content))
                     else:
-                        log_warning("BoxConnector", "Unsupported file type", file_ext=file_ext)
+                        log_warning("BoxConnector", "No content extracted", file_name=file_name)
 
                 except Exception as extract_err:
                     log_error("BoxConnector", "Content extraction failed", error=extract_err, file_name=file_name)
@@ -764,6 +760,7 @@ class BoxConnector(BaseConnector):
                 metadata=metadata,
                 timestamp=modified_at or created_at,
                 author=author,
+                url=f"https://app.box.com/file/{file_obj.id}",
                 doc_type="document"
             )
 
@@ -933,6 +930,7 @@ class BoxConnector(BaseConnector):
                 metadata=metadata,
                 timestamp=modified_at or created_at,
                 author=created_by.login if created_by else None,
+                url=f"https://app.box.com/file/{file_obj.id}",
                 doc_type="document"
             )
 

@@ -94,7 +94,7 @@ class EmailForwardingService:
         except Exception as e:
             raise Exception(f"Failed to connect to IMAP: {str(e)}")
 
-    def fetch_new_emails(self, tenant_id: str, max_emails: int = 50) -> Dict:
+    def fetch_new_emails(self, tenant_id: str, max_emails: int = 100) -> Dict:
         """
         Fetch new unread emails from forwarding inbox
 
