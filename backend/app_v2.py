@@ -154,7 +154,7 @@ from api.profile_routes import profile_bp
 from api.github_routes import github_bp
 from api.sync_progress_routes import sync_progress_bp
 from api.email_forwarding_routes import email_forwarding_bp
-from api.admin_routes import admin_bp, ensure_admins
+from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
 from api.share_routes import share_bp
 
@@ -180,6 +180,9 @@ print("✓ API blueprints registered")
 
 # Ensure configured admin users have admin role
 ensure_admins()
+
+# Fix any existing conversations with no title
+fix_untitled_conversations()
 
 # ============================================================================
 # LEGACY COMPATIBILITY - Import existing routes

@@ -44,6 +44,46 @@ def ensure_admins():
         db.close()
 
 
+def fix_untitled_conversations():
+    """Retroactively generate titles for conversations that have messages but no title."""
+    import re
+    db = get_db()
+    try:
+        untitled = db.query(ChatConversation).filter(
+            ChatConversation.title == None
+        ).all()
+
+        fixed = 0
+        for conv in untitled:
+            # Find the first user message in this conversation
+            first_msg = db.query(ChatMessage).filter(
+                ChatMessage.conversation_id == conv.id,
+                ChatMessage.role == 'user'
+            ).order_by(ChatMessage.created_at.asc()).first()
+
+            if first_msg and first_msg.content:
+                cleaned = first_msg.content.strip()
+                cleaned = re.sub(r'https?://\S+', '', cleaned)
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+                if cleaned and len(cleaned) >= 3:
+                    if len(cleaned) <= 50:
+                        conv.title = cleaned
+                    else:
+                        truncated = cleaned[:50]
+                        last_space = truncated.rfind(' ')
+                        conv.title = (truncated[:last_space] + "...") if last_space > 20 else (truncated + "...")
+                    fixed += 1
+
+        if fixed > 0:
+            db.commit()
+            print(f"[Admin] Fixed {fixed} untitled conversations")
+    except Exception as e:
+        db.rollback()
+        print(f"[Admin] Error fixing untitled conversations: {e}")
+    finally:
+        db.close()
+
+
 @admin_bp.route('/migrate-tenant', methods=['POST'])
 @require_auth
 def migrate_tenant():

@@ -217,12 +217,13 @@ export default function ChatInterface() {
     }
   }
 
-  // Save message to current conversation
-  const saveMessage = async (role: 'user' | 'assistant', content: string, sources?: any[]) => {
-    if (!currentConversationId) return
+  // Save message to a conversation (pass convId explicitly to avoid stale state)
+  const saveMessage = async (role: 'user' | 'assistant', content: string, sources?: any[], convId?: string) => {
+    const targetId = convId || currentConversationId
+    if (!targetId) return
     try {
       await axios.post(
-        `${API_BASE}/chat/conversations/${currentConversationId}/messages`,
+        `${API_BASE}/chat/conversations/${targetId}/messages`,
         { role, content, sources: sources || [] },
         { headers: getAuthHeaders() }
       )
@@ -377,9 +378,9 @@ export default function ChatInterface() {
       }
     }
 
-    // Save user message to conversation
+    // Save user message to conversation (pass convId explicitly since state may not have updated yet)
     if (convId) {
-      saveMessage('user', queryText)
+      await saveMessage('user', queryText, undefined, convId)
     }
 
     try {
@@ -529,7 +530,7 @@ export default function ChatInterface() {
 
       // Save AI response to conversation and refresh sidebar
       if (convId) {
-        saveMessage('assistant', cleanedAnswer, aiSources)
+        saveMessage('assistant', cleanedAnswer, aiSources, convId)
         // Refresh conversation list so sidebar shows updated titles/timestamps
         fetchConversations()
       }
