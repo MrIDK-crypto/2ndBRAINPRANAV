@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { analytics } from '@/utils/analytics'
 
 interface ChatConversation {
   id: string
@@ -50,6 +51,7 @@ export default function Sidebar({
     if (pathname === '/documents') return 'Documents'
     if (pathname === '/knowledge-gaps') return 'Knowledge Gaps'
     if (pathname === '/training-guides') return 'Training Videos'
+    if (pathname === '/analytics') return 'Analytics'
     if (pathname === '/' || pathname === '/chat') return 'ChatBot'
     return 'ChatBot'
   }
@@ -57,6 +59,7 @@ export default function Sidebar({
   const currentActive = getActiveItem()
 
   const handleClick = (item: string) => {
+    analytics.sidebarClick(item)
     if (onItemClick) {
       onItemClick(item)
     }
@@ -88,6 +91,8 @@ export default function Sidebar({
     { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
     { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
     { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
+    { id: 'Website Builder', label: 'Website Builder', href: '/integrations?tab=website-builder', icon: 'website', adminOnly: false },
+    { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
   ]
 
   const menuItems = isSharedAccess
@@ -137,6 +142,22 @@ export default function Sidebar({
         return (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="5,3 19,12 5,21 5,3" />
+          </svg>
+        )
+      case 'website':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+        )
+      case 'analytics':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
           </svg>
         )
       default:

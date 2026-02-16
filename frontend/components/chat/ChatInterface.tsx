@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { sessionManager } from '@/utils/sessionManager'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { analytics } from '@/utils/analytics'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
@@ -134,7 +135,13 @@ export default function ChatInterface() {
   // Chat History State
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(() => {
+    // Restore last conversation from localStorage
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('2ndBrain_currentConversationId') || null
+    }
+    return null
+  })
 
   // Auth headers for API calls
   const getAuthHeaders = () => {
@@ -265,10 +272,27 @@ export default function ChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  // Fetch conversations on mount and when token changes
+  // Persist currentConversationId to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (currentConversationId) {
+        localStorage.setItem('2ndBrain_currentConversationId', currentConversationId)
+      } else {
+        localStorage.removeItem('2ndBrain_currentConversationId')
+      }
+    }
+  }, [currentConversationId])
+
+  // Fetch conversations on mount and auto-load last conversation
   useEffect(() => {
     if (token) {
-      fetchConversations()
+      fetchConversations().then(() => {
+        // Auto-load last conversation if we have one saved and no messages loaded yet
+        const savedId = typeof window !== 'undefined' ? localStorage.getItem('2ndBrain_currentConversationId') : null
+        if (savedId && messages.length === 0) {
+          loadConversation(savedId)
+        }
+      })
     }
   }, [token, fetchConversations])
 
@@ -276,6 +300,9 @@ export default function ChatInterface() {
   const handleNewChat = () => {
     setMessages([])
     setCurrentConversationId(null)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('2ndBrain_currentConversationId')
+    }
   }
 
   // Show loading while checking auth (after all hooks)
@@ -318,6 +345,9 @@ export default function ChatInterface() {
     const queryText = inputValue
     setInputValue('')
     setIsLoading(true)
+
+    // Track analytics
+    analytics.chatQuestion(queryText.length)
 
     let uploadedDocIds: string[] = []
 
@@ -371,8 +401,9 @@ export default function ChatInterface() {
     }
 
     try {
-      // Build conversation history for context (last 5 messages)
-      const conversationHistory = messages.slice(-10).map(m => ({
+      // Build conversation history for context - include recent messages for memory
+      const allCurrentMessages = [...messages, userMessage]
+      const conversationHistory = allCurrentMessages.slice(-20).map(m => ({
         role: m.isUser ? 'user' : 'assistant',
         content: m.text
       }))
@@ -498,9 +529,11 @@ export default function ChatInterface() {
       }
       setMessages(prev => [...prev, aiMessage])
 
-      // Save AI response to conversation
+      // Save AI response to conversation and refresh sidebar
       if (convId) {
         saveMessage('assistant', cleanedAnswer, aiSources)
+        // Refresh conversation list so sidebar shows updated titles/timestamps
+        fetchConversations()
       }
     } catch (error: any) {
       console.error('Error:', error)
@@ -700,8 +733,7 @@ export default function ChatInterface() {
       }, {
         headers: getAuthHeaders()
       })
-      // Visual feedback - could add toast notification here
-      console.log(`Feedback recorded: ${rating}`)
+      analytics.feedbackGiven(rating)
     } catch (error) {
       console.error('Error submitting feedback:', error)
     }

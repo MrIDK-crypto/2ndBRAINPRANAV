@@ -1524,19 +1524,40 @@ export default function Documents() {
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 120px 48px',
+                gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 120px 48px',
                 gap: '16px',
                 padding: '12px 20px',
                 backgroundColor: '#F0EEEC',
                 borderBottom: `1px solid ${colors.border}`,
+                alignItems: 'center',
               }}>
-                <div>
-                  <input
-                    type="checkbox"
-                    checked={selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0}
-                    onChange={toggleSelectAll}
-                    style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#C9A598' }}
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', flexShrink: 0 }}>
+                  <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0}
+                      onChange={toggleSelectAll}
+                      style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                    />
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '4px',
+                      border: (selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0) ? '2px solid #C9A598' : '2px solid #B0ADA9',
+                      backgroundColor: (selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0) ? '#C9A598' : 'transparent',
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0,
+                    }}>
+                      {(selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0) && (
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path d="M2.5 6L5 8.5L9.5 3.5" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </span>
+                  </label>
                 </div>
                 {[
                   { label: 'Document', field: 'name' },
@@ -1578,7 +1599,7 @@ export default function Documents() {
                       key={doc.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '24px 2fr 1fr 1fr 1fr 120px 48px',
+                        gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 120px 48px',
                         gap: '16px',
                         padding: '16px 20px',
                         alignItems: 'center',
@@ -1602,13 +1623,33 @@ export default function Documents() {
                         }
                       }}
                     >
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedDocs.has(doc.id)}
-                          onChange={() => toggleDocSelection(doc.id)}
-                          style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#C9A598' }}
-                        />
+                      <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', flexShrink: 0 }}>
+                        <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedDocs.has(doc.id)}
+                            onChange={() => toggleDocSelection(doc.id)}
+                            style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+                          />
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '4px',
+                            border: selectedDocs.has(doc.id) ? '2px solid #C9A598' : '2px solid #B0ADA9',
+                            backgroundColor: selectedDocs.has(doc.id) ? '#C9A598' : 'transparent',
+                            transition: 'all 0.15s ease',
+                            flexShrink: 0,
+                          }}>
+                            {selectedDocs.has(doc.id) && (
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <path d="M2.5 6L5 8.5L9.5 3.5" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </span>
+                        </label>
                       </div>
 
                       {/* Document Name */}
