@@ -4,6 +4,7 @@ Syncs pages and databases from Notion workspaces
 """
 
 import os
+import io
 import base64
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
@@ -426,6 +427,123 @@ class NotionConnector(BaseConnector):
             cell_texts.append(cell_text)
         return "| " + " | ".join(cell_texts) + " |"
 
+    def _get_file_url(self, block_data: Dict) -> str:
+        """Extract the download URL from a file/pdf block's data"""
+        media_type = block_data.get("type", "")
+        if media_type == "external":
+            return block_data.get("external", {}).get("url", "")
+        elif media_type == "file":
+            return block_data.get("file", {}).get("url", "")
+        return ""
+
+    def _download_and_parse_file(self, url: str, filename: str) -> Optional[str]:
+        """Download a file from Notion's S3 URL and parse its content"""
+        if not url:
+            return None
+
+        ext = os.path.splitext(filename)[1].lower() if filename else ""
+        supported = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".txt", ".csv", ".md"}
+        if ext not in supported:
+            print(f"[Notion] Skipping unsupported file type: {filename} ({ext})")
+            return None
+
+        try:
+            print(f"[Notion] Downloading file: {filename}")
+            resp = requests.get(url, timeout=60)
+            resp.raise_for_status()
+            content = resp.content
+            print(f"[Notion] Downloaded {len(content)} bytes for {filename}")
+
+            if ext == ".pdf":
+                return self._parse_pdf(content, filename)
+            elif ext in (".docx", ".doc"):
+                return self._parse_word(content, filename)
+            elif ext in (".pptx", ".ppt"):
+                return self._parse_powerpoint(content, filename)
+            elif ext in (".xlsx", ".xls"):
+                return self._parse_excel(content, filename)
+            elif ext in (".txt", ".csv", ".md"):
+                try:
+                    return content.decode("utf-8")
+                except UnicodeDecodeError:
+                    return content.decode("latin-1")
+
+        except requests.exceptions.RequestException as e:
+            print(f"[Notion] Failed to download {filename}: {e}")
+        except Exception as e:
+            print(f"[Notion] Error parsing {filename}: {e}")
+
+        return None
+
+    def _parse_pdf(self, content: bytes, filename: str) -> Optional[str]:
+        """Parse PDF file bytes into text"""
+        try:
+            import PyPDF2
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+            text_parts = []
+            for page in pdf_reader.pages:
+                text = page.extract_text()
+                if text:
+                    text_parts.append(text)
+            result = "\n\n".join(text_parts)
+            print(f"[Notion] Parsed PDF {filename}: {len(result)} chars from {len(pdf_reader.pages)} pages")
+            return result
+        except Exception as e:
+            print(f"[Notion] PDF parse error for {filename}: {e}")
+            return None
+
+    def _parse_word(self, content: bytes, filename: str) -> Optional[str]:
+        """Parse Word document bytes into text"""
+        try:
+            from docx import Document as DocxDocument
+            doc = DocxDocument(io.BytesIO(content))
+            paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+            result = "\n\n".join(paragraphs)
+            print(f"[Notion] Parsed Word {filename}: {len(result)} chars")
+            return result
+        except Exception as e:
+            print(f"[Notion] Word parse error for {filename}: {e}")
+            return None
+
+    def _parse_powerpoint(self, content: bytes, filename: str) -> Optional[str]:
+        """Parse PowerPoint file bytes into text"""
+        try:
+            from pptx import Presentation
+            prs = Presentation(io.BytesIO(content))
+            text_parts = []
+            for i, slide in enumerate(prs.slides, 1):
+                slide_text = f"\n--- Slide {i} ---\n"
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text:
+                        slide_text += shape.text + "\n"
+                text_parts.append(slide_text)
+            result = "\n".join(text_parts)
+            print(f"[Notion] Parsed PowerPoint {filename}: {len(result)} chars from {len(prs.slides)} slides")
+            return result
+        except Exception as e:
+            print(f"[Notion] PowerPoint parse error for {filename}: {e}")
+            return None
+
+    def _parse_excel(self, content: bytes, filename: str) -> Optional[str]:
+        """Parse Excel file bytes into text"""
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+            text_parts = []
+            for sheet_name in wb.sheetnames:
+                sheet = wb[sheet_name]
+                text_parts.append(f"\n--- Sheet: {sheet_name} ---\n")
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = "\t".join(str(cell) if cell is not None else "" for cell in row)
+                    if row_text.strip():
+                        text_parts.append(row_text)
+            result = "\n".join(text_parts)
+            print(f"[Notion] Parsed Excel {filename}: {len(result)} chars from {len(wb.sheetnames)} sheets")
+            return result
+        except Exception as e:
+            print(f"[Notion] Excel parse error for {filename}: {e}")
+            return None
+
     def _extract_block_text(self, block: Dict) -> str:
         """Extract text from any Notion block type"""
         block_type = block.get("type", "")
@@ -488,12 +606,29 @@ class NotionConnector(BaseConnector):
             info = self._get_media_info(block_data)
             return f"[Audio: {info}]" if info else "[Audio]"
         elif block_type == "file":
-            info = self._get_media_info(block_data)
+            url = self._get_file_url(block_data)
             name = block_data.get("name", "")
-            return f"[File: {name or info}]" if (name or info) else "[File]"
+            parsed = self._download_and_parse_file(url, name) if url and name else None
+            if parsed:
+                return f"--- Attached File: {name} ---\n{parsed}\n--- End of {name} ---"
+            return f"[File: {name or url}]" if (name or url) else "[File]"
         elif block_type == "pdf":
-            info = self._get_media_info(block_data)
-            return f"[PDF: {info}]" if info else "[PDF]"
+            url = self._get_file_url(block_data)
+            caption = self._get_media_info(block_data)
+            # Derive filename from caption or URL
+            pdf_name = caption if caption and caption.endswith(".pdf") else ""
+            if not pdf_name and url:
+                # Extract filename from S3 URL path
+                try:
+                    from urllib.parse import urlparse, unquote
+                    path = urlparse(url).path
+                    pdf_name = unquote(path.split("/")[-1]) if path else "document.pdf"
+                except:
+                    pdf_name = "document.pdf"
+            parsed = self._download_and_parse_file(url, pdf_name) if url else None
+            if parsed:
+                return f"--- Attached PDF: {pdf_name} ---\n{parsed}\n--- End of {pdf_name} ---"
+            return f"[PDF: {caption or url}]" if (caption or url) else "[PDF]"
 
         # --- Link/reference blocks ---
         elif block_type == "bookmark":
