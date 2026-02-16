@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from datetime import datetime, timezone, timedelta
 
-from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole, Tenant
+from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole, Tenant, GapStatus
 from services.auth_service import require_auth
 
 # Create blueprint
@@ -347,7 +347,7 @@ def get_tenant_stats():
 
         answered_gaps = db.query(KnowledgeGap).filter(
             KnowledgeGap.tenant_id == tenant_id,
-            KnowledgeGap.status == 'answered'
+            KnowledgeGap.status == GapStatus.ANSWERED
         ).count()
 
         # Also check local-tenant for migration needs
@@ -477,7 +477,7 @@ def get_analytics():
         ).count()
         answered_gaps = db.query(KnowledgeGap).filter(
             KnowledgeGap.tenant_id == tenant_id,
-            KnowledgeGap.status == 'answered'
+            KnowledgeGap.status == GapStatus.ANSWERED
         ).count()
 
         # --- Chat Metrics (last N days) ---
@@ -526,7 +526,8 @@ def get_analytics():
             Document.tenant_id == tenant_id
         ).group_by(Document.classification).all()
         for classification, count in class_rows:
-            classification_breakdown[classification or 'unclassified'] = count
+            key = classification.value if hasattr(classification, 'value') else (str(classification) if classification else 'unclassified')
+            classification_breakdown[key] = count
 
         # --- Knowledge Gap Metrics ---
         recent_gaps = db.query(KnowledgeGap).filter(
@@ -542,7 +543,8 @@ def get_analytics():
             KnowledgeGap.tenant_id == tenant_id
         ).group_by(KnowledgeGap.category).all()
         for category, count in gap_rows:
-            gap_category_breakdown[str(category) if category else 'uncategorized'] = count
+            key = category.value if hasattr(category, 'value') else (str(category) if category else 'uncategorized')
+            gap_category_breakdown[key] = count
 
         # --- Integration Metrics ---
         integrations = []
@@ -552,9 +554,9 @@ def get_analytics():
             ).all()
             for c in connector_rows:
                 integrations.append({
-                    'type': c.connector_type,
-                    'status': str(c.status) if c.status else 'unknown',
-                    'last_synced': c.last_synced_at.isoformat() if c.last_synced_at else None,
+                    'type': c.connector_type.value if hasattr(c.connector_type, 'value') else str(c.connector_type),
+                    'status': c.status.value if hasattr(c.status, 'value') else (str(c.status) if c.status else 'unknown'),
+                    'last_synced': c.last_sync_at.isoformat() if c.last_sync_at else None,
                     'documents_synced': c.total_items_synced or 0,
                 })
         except Exception:
