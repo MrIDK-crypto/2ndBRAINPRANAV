@@ -61,6 +61,52 @@ interface Metrics {
   period_days: number
 }
 
+function generateEmptyTimeline(days: number): Array<{ date: string; questions_asked: number; documents_added: number }> {
+  const timeline = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    timeline.push({
+      date: d.toISOString().split('T')[0],
+      questions_asked: 0,
+      documents_added: 0,
+    })
+  }
+  return timeline
+}
+
+const emptyMetrics = (days: number): Metrics => ({
+  overview: {
+    total_users: 0,
+    total_documents: 0,
+    embedded_documents: 0,
+    total_conversations: 0,
+    total_messages: 0,
+    total_gaps: 0,
+    answered_gaps: 0,
+    embedding_coverage: 0,
+    gap_resolution_rate: 0,
+  },
+  chat: {
+    conversations_last_period: 0,
+    messages_last_period: 0,
+    questions_asked: 0,
+    avg_messages_per_conversation: 0,
+  },
+  documents: {
+    added_last_period: 0,
+    by_source: {},
+    by_classification: {},
+  },
+  knowledge_gaps: {
+    detected_last_period: 0,
+    by_category: {},
+  },
+  integrations: [],
+  activity_timeline: generateEmptyTimeline(days),
+  period_days: days,
+})
+
 export default function AnalyticsPage() {
   const { user, token } = useAuth()
   const [metrics, setMetrics] = useState<Metrics | null>(null)
@@ -70,6 +116,8 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (token) {
       fetchMetrics()
+    } else {
+      setLoading(false)
     }
   }, [token, period])
 
@@ -81,13 +129,19 @@ export default function AnalyticsPage() {
       })
       if (response.data.success) {
         setMetrics(response.data.metrics)
+      } else {
+        setMetrics(null)
       }
     } catch (error) {
       console.error('Error fetching analytics:', error)
+      setMetrics(null)
     } finally {
       setLoading(false)
     }
   }
+
+  // Always use real metrics if available, otherwise show zeroed-out layout
+  const m = metrics || emptyMetrics(period)
 
   const StatCard = ({ title, value, subtitle, icon }: { title: string; value: string | number; subtitle?: string; icon: React.ReactNode }) => (
     <div style={{
@@ -194,33 +248,61 @@ export default function AnalyticsPage() {
             }} />
             <style jsx>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
           </div>
-        ) : metrics ? (
+        ) : (
           <>
             {/* Overview Stats */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
               <StatCard
                 title="Questions Asked"
-                value={metrics.chat.questions_asked}
+                value={m.chat.questions_asked}
                 subtitle={`Last ${period} days`}
                 icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>}
               />
               <StatCard
                 title="Documents"
-                value={metrics.overview.total_documents}
-                subtitle={`${metrics.overview.embedding_coverage}% indexed`}
+                value={m.overview.total_documents}
+                subtitle={`${m.overview.embedding_coverage}% indexed`}
                 icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>}
               />
               <StatCard
                 title="Knowledge Gaps"
-                value={metrics.overview.total_gaps}
-                subtitle={`${metrics.overview.gap_resolution_rate}% resolved`}
+                value={m.overview.total_gaps}
+                subtitle={`${m.overview.gap_resolution_rate}% resolved`}
                 icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
               />
               <StatCard
                 title="Conversations"
-                value={metrics.overview.total_conversations}
-                subtitle={`Avg ${metrics.chat.avg_messages_per_conversation} msgs each`}
+                value={m.overview.total_conversations}
+                subtitle={`Avg ${m.chat.avg_messages_per_conversation} msgs each`}
                 icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>}
+              />
+            </div>
+
+            {/* Second row of stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
+              <StatCard
+                title="Total Users"
+                value={m.overview.total_users}
+                subtitle="Active accounts"
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>}
+              />
+              <StatCard
+                title="Total Messages"
+                value={m.overview.total_messages}
+                subtitle={`${m.chat.messages_last_period} in last ${period}d`}
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>}
+              />
+              <StatCard
+                title="Docs Added"
+                value={m.documents.added_last_period}
+                subtitle={`Last ${period} days`}
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>}
+              />
+              <StatCard
+                title="Gaps Detected"
+                value={m.knowledge_gaps.detected_last_period}
+                subtitle={`Last ${period} days`}
+                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
               />
             </div>
 
@@ -235,12 +317,18 @@ export default function AnalyticsPage() {
               <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px' }}>
                 Activity Timeline (Last {period} Days)
               </h3>
-              <BarChart
-                data={metrics.activity_timeline.map(d => ({
-                  label: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-                  value: d.questions_asked + d.documents_added,
-                }))}
-              />
+              {m.activity_timeline.length > 0 ? (
+                <BarChart
+                  data={m.activity_timeline.map(d => ({
+                    label: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    value: d.questions_asked + d.documents_added,
+                  }))}
+                />
+              ) : (
+                <div style={{ height: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: colors.textMuted, fontSize: '14px' }}>
+                  No activity yet
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '16px', marginTop: '12px', justifyContent: 'center' }}>
                 <span style={{ fontSize: '12px', color: colors.textMuted, display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ width: '8px', height: '8px', borderRadius: '2px', backgroundColor: colors.primary }} />
@@ -260,12 +348,13 @@ export default function AnalyticsPage() {
                 <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px' }}>
                   Documents by Source
                 </h3>
-                {Object.entries(metrics.documents.by_source).length > 0 ? (
+                {Object.entries(m.documents.by_source).length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {Object.entries(metrics.documents.by_source)
+                    {Object.entries(m.documents.by_source)
                       .sort((a, b) => b[1] - a[1])
                       .map(([source, count]) => {
-                        const pct = Math.round((count / metrics!.overview.total_documents) * 100)
+                        const total = m.overview.total_documents || 1
+                        const pct = Math.round((count / total) * 100)
                         return (
                           <div key={source}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -280,7 +369,13 @@ export default function AnalyticsPage() {
                       })}
                   </div>
                 ) : (
-                  <p style={{ fontSize: '14px', color: colors.textMuted }}>No documents yet</p>
+                  <div style={{ padding: '24px 0', textAlign: 'center' }}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={colors.border} strokeWidth="1.5" style={{ margin: '0 auto 12px' }}>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
+                    </svg>
+                    <p style={{ fontSize: '14px', color: colors.textMuted, margin: 0 }}>No documents yet</p>
+                    <p style={{ fontSize: '12px', color: colors.textMuted, margin: '4px 0 0' }}>Connect an integration to start syncing</p>
+                  </div>
                 )}
               </div>
 
@@ -294,9 +389,9 @@ export default function AnalyticsPage() {
                 <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px' }}>
                   Connected Integrations
                 </h3>
-                {metrics.integrations.length > 0 ? (
+                {m.integrations.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {metrics.integrations.map((integration, idx) => (
+                    {m.integrations.map((integration, idx) => (
                       <div key={idx} style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -323,24 +418,31 @@ export default function AnalyticsPage() {
                     ))}
                   </div>
                 ) : (
-                  <p style={{ fontSize: '14px', color: colors.textMuted }}>No integrations connected</p>
+                  <div style={{ padding: '24px 0', textAlign: 'center' }}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={colors.border} strokeWidth="1.5" style={{ margin: '0 auto 12px' }}>
+                      <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+                    </svg>
+                    <p style={{ fontSize: '14px', color: colors.textMuted, margin: 0 }}>No integrations connected</p>
+                    <p style={{ fontSize: '12px', color: colors.textMuted, margin: '4px 0 0' }}>Go to Integrations to connect Gmail, Slack, etc.</p>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Gap Categories */}
-            {Object.keys(metrics.knowledge_gaps.by_category).length > 0 && (
-              <div style={{
-                padding: '28px',
-                backgroundColor: colors.cardBg,
-                borderRadius: '16px',
-                border: `1px solid ${colors.border}`,
-              }}>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px' }}>
-                  Knowledge Gaps by Category
-                </h3>
+            {/* Knowledge Gaps by Category */}
+            <div style={{
+              padding: '28px',
+              backgroundColor: colors.cardBg,
+              borderRadius: '16px',
+              border: `1px solid ${colors.border}`,
+              marginBottom: '24px',
+            }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px' }}>
+                Knowledge Gaps by Category
+              </h3>
+              {Object.entries(m.knowledge_gaps.by_category).length > 0 ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                  {Object.entries(metrics.knowledge_gaps.by_category)
+                  {Object.entries(m.knowledge_gaps.by_category)
                     .sort((a, b) => b[1] - a[1])
                     .map(([category, count]) => (
                       <div key={category} style={{
@@ -355,13 +457,57 @@ export default function AnalyticsPage() {
                       </div>
                     ))}
                 </div>
+              ) : (
+                <div style={{ padding: '16px 0', textAlign: 'center' }}>
+                  <p style={{ fontSize: '14px', color: colors.textMuted, margin: 0 }}>No knowledge gaps detected yet</p>
+                  <p style={{ fontSize: '12px', color: colors.textMuted, margin: '4px 0 0' }}>Run a gap analysis from the Knowledge Gaps page</p>
+                </div>
+              )}
+            </div>
+
+            {/* Embedding Coverage */}
+            <div style={{
+              padding: '28px',
+              backgroundColor: colors.cardBg,
+              borderRadius: '16px',
+              border: `1px solid ${colors.border}`,
+            }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px' }}>
+                Embedding Coverage
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '13px', color: colors.textSecondary }}>
+                      {m.overview.embedded_documents} of {m.overview.total_documents} documents indexed
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: colors.primary }}>
+                      {m.overview.embedding_coverage}%
+                    </span>
+                  </div>
+                  <div style={{ height: '8px', backgroundColor: '#F0EEEC', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${m.overview.embedding_coverage}%`,
+                      height: '100%',
+                      backgroundColor: colors.primary,
+                      borderRadius: '4px',
+                      transition: 'width 0.5s ease',
+                    }} />
+                  </div>
+                </div>
               </div>
-            )}
+              <div style={{ display: 'flex', gap: '24px', marginTop: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: colors.success }} />
+                  <span style={{ fontSize: '12px', color: colors.textMuted }}>Indexed: {m.overview.embedded_documents}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: colors.border }} />
+                  <span style={{ fontSize: '12px', color: colors.textMuted }}>Pending: {m.overview.total_documents - m.overview.embedded_documents}</span>
+                </div>
+              </div>
+            </div>
           </>
-        ) : (
-          <div style={{ textAlign: 'center', padding: '80px', color: colors.textMuted }}>
-            No analytics data available
-          </div>
         )}
       </div>
     </div>
