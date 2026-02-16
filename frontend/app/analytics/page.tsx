@@ -123,6 +123,7 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState(30)
   const [tenants, setTenants] = useState<TenantOption[]>([])
   const [selectedTenant, setSelectedTenant] = useState<string>('')
+  const [apiError, setApiError] = useState<string | null>(null)
 
   const isAllowed = user?.email === ALLOWED_EMAIL
 
@@ -155,6 +156,7 @@ export default function AnalyticsPage() {
 
   const fetchMetrics = async () => {
     setLoading(true)
+    setApiError(null)
     try {
       let url = `${API_BASE}/admin/analytics?days=${period}`
       if (selectedTenant) {
@@ -166,10 +168,14 @@ export default function AnalyticsPage() {
       if (response.data.success) {
         setMetrics(response.data.metrics)
       } else {
+        setApiError(response.data.error || 'API returned unsuccessful response')
         setMetrics(null)
       }
-    } catch (error) {
-      console.error('Error fetching analytics:', error)
+    } catch (error: any) {
+      const errMsg = error.response?.data?.error || error.response?.data?.debug?.traceback || error.message || 'Unknown error'
+      const status = error.response?.status || 'no status'
+      setApiError(`${status}: ${errMsg}`)
+      console.error('Analytics API error:', status, error.response?.data || error.message)
       setMetrics(null)
     } finally {
       setLoading(false)
@@ -331,6 +337,23 @@ export default function AnalyticsPage() {
           </div>
         ) : (
           <>
+            {/* API Error Banner */}
+            {apiError && (
+              <div style={{
+                padding: '16px 20px',
+                backgroundColor: '#FEF2F2',
+                border: '1px solid #FECACA',
+                borderRadius: '12px',
+                marginBottom: '24px',
+                fontSize: '13px',
+                color: '#991B1B',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+              }}>
+                <strong>Analytics API Error:</strong> {apiError}
+              </div>
+            )}
             {/* Overview Stats */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
               <StatCard

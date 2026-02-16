@@ -621,6 +621,7 @@ def get_analytics():
                 "integrations": integrations,
                 "activity_timeline": activity_timeline,
                 "period_days": days,
+                "debug_tenant_id": tenant_id,
             }
         })
 
@@ -629,7 +630,12 @@ def get_analytics():
         traceback.print_exc()
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": str(e),
+            "debug": {
+                "tenant_id": g.tenant_id if hasattr(g, 'tenant_id') else None,
+                "user_id": g.user_id if hasattr(g, 'user_id') else None,
+                "traceback": traceback.format_exc()[-500:]
+            }
         }), 500
     finally:
         db.close()
