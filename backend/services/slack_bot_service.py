@@ -175,6 +175,14 @@ def markdown_to_slack(text: str) -> str:
     # Strip trailing "Sources Used: [...]" line (we show sources separately)
     text = re.sub(r'\n*Sources?\s*Used:?\s*\[?[\d,\s\[\]Source]*\]?\.?\s*$', '', text, flags=re.IGNORECASE)
 
+    # Protect existing Slack <url|text> links from being mangled by table detection
+    # The | in <https://example.com|Title> would be treated as a table cell separator
+    _protected_links = []
+    def _save_link(match):
+        _protected_links.append(match.group(0))
+        return f"__SLACKLINK_{len(_protected_links)-1}__"
+    text = re.sub(r'<https?://[^>]+\|[^>]+>', _save_link, text)
+
     lines = text.split('\n')
     converted = []
     in_table = False
@@ -240,6 +248,11 @@ def markdown_to_slack(text: str) -> str:
 
     # Clean up excessive blank lines
     result = re.sub(r'\n{3,}', '\n\n', result)
+
+    # Restore protected Slack links
+    for i, link in enumerate(_protected_links):
+        result = result.replace(f"__SLACKLINK_{i}__", link)
+
     return result.strip()
 
 
@@ -777,7 +790,7 @@ class SlackBotService:
                 return ''
             link = self._get_source_link(
                 info['source_type'], info['metadata'],
-                info['external_id'], PORTAL
+                info['external_id'], PORTAL, info['doc_id']
             )
             name = info['title'][:45]
             if link:
@@ -786,8 +799,27 @@ class SlackBotService:
 
         # Replace [Source 1], [Source 2], etc.
         answer = re.sub(r'\[Source (\d+)\]', replace_source, answer)
-        # Also handle [Sources 1, 2] or [Source 1, 2] patterns
-        answer = re.sub(r'\[Sources?\s+[\d,\s]+\]', '', answer)
+
+        # Handle [Sources 1, 2, 3] or [Source 1, 2] patterns → expand to individual links
+        def replace_multi_source(match):
+            nums = re.findall(r'\d+', match.group(0))
+            parts = []
+            for num in nums:
+                info = source_map.get(num)
+                if not info:
+                    continue
+                link = self._get_source_link(
+                    info['source_type'], info['metadata'],
+                    info['external_id'], PORTAL, info['doc_id']
+                )
+                name = info['title'][:45]
+                if link:
+                    parts.append(f"<{link}|{name}>")
+                else:
+                    parts.append(f"*{name}*")
+            return ', '.join(parts) if parts else ''
+
+        answer = re.sub(r'\[Sources?\s+[\d,\s]+\]', replace_multi_source, answer)
         return answer
 
     def _format_search_results(
@@ -847,10 +879,11 @@ class SlackBotService:
                 metadata = source.get('metadata', {})
                 source_type = metadata.get('source_type', '') or source.get('source_type', '') or 'document'
                 external_id = metadata.get('external_id', '') or source.get('external_id', '')
+                doc_id = source.get('doc_id', '')
                 type_label = self._get_source_type_label(source_type)
                 display_title = title[:50] + "..." if len(title) > 50 else title
 
-                link = self._get_source_link(source_type, metadata, external_id, PORTAL_URL)
+                link = self._get_source_link(source_type, metadata, external_id, PORTAL_URL, doc_id)
                 if link:
                     source_parts.append(f"<{link}|{display_title}> {type_label}")
                 else:
@@ -871,8 +904,11 @@ class SlackBotService:
 
         return blocks
 
-    def _get_source_link(self, source_type: str, metadata: Dict, external_id: str, portal_url: str) -> str:
-        """Build a hyperlink URL for a source based on its type."""
+    def _get_source_link(self, source_type: str, metadata: Dict, external_id: str, portal_url: str, doc_id: str = '') -> str:
+        """Build a hyperlink URL for a source based on its type.
+
+        Priority: Slack deep link > Gmail deep link > DB source_url > portal fallback
+        """
         # Slack messages — deep link to the message
         if source_type == 'slack':
             team_domain = metadata.get('team_domain', '')
@@ -886,8 +922,46 @@ class SlackBotService:
         if source_type == 'gmail' and external_id:
             return f"https://mail.google.com/mail/u/0/#inbox/{external_id}"
 
-        # Everything else — link to the portal chat page
-        return f"{portal_url}/chat"
+        # Look up document's original source_url from the database
+        if doc_id:
+            url = self._lookup_source_url(doc_id)
+            if url:
+                return url
+
+        # Fallback — portal documents page
+        return f"{portal_url}/documents"
+
+    def _lookup_source_url(self, doc_id: str) -> Optional[str]:
+        """Look up a document's source_url from the database. Uses per-request cache."""
+        # Use instance-level cache to avoid repeated DB queries within one message
+        if not hasattr(self, '_source_url_cache'):
+            self._source_url_cache = {}
+        if doc_id in self._source_url_cache:
+            return self._source_url_cache[doc_id]
+
+        try:
+            from database.models import Document
+            db = SessionLocal()
+            try:
+                doc = db.query(Document.source_url, Document.doc_metadata).filter(
+                    Document.id == doc_id
+                ).first()
+                if doc:
+                    url = doc.source_url
+                    # Also check doc_metadata for url fields if source_url is empty
+                    if not url and doc.doc_metadata:
+                        meta = doc.doc_metadata if isinstance(doc.doc_metadata, dict) else {}
+                        url = meta.get('url') or meta.get('web_url') or meta.get('webViewLink') or ''
+                    self._source_url_cache[doc_id] = url or ''
+                    return url or ''
+                self._source_url_cache[doc_id] = ''
+                return ''
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[SlackBot] Error looking up source_url for {doc_id}: {e}", flush=True)
+            self._source_url_cache[doc_id] = ''
+            return ''
 
     def _get_source_title(self, source: Dict) -> str:
         """
