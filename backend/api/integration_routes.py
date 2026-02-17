@@ -3954,12 +3954,7 @@ def _run_connector_sync(
                     sync_progress[progress_key]["status"] = "completed"
                     sync_progress[progress_key]["progress"] = 100
                     sync_progress[progress_key]["message"] = f"All {original_count} documents already synced"
-                    save_sync_state({
-                        "connector_type": connector_type,
-                        "connector_id": connector_id,
-                        "status": "completed",
-                        "message": f"All {original_count} documents already synced"
-                    })
+                    # Note: save_sync_state was removed - state is managed via progress_service
 
                     # Update connector status to CONNECTED (important for background thread)
                     connector.status = ConnectorStatus.CONNECTED

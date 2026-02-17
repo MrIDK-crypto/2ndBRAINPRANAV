@@ -45,36 +45,14 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
   const emailSentRef = useRef<Set<string>>(new Set())
 
   // Send email notification
+  // NOTE: Email is now sent automatically by the backend when sync completes
+  // This function is kept for backward compatibility but does nothing
   const sendEmailNotification = useCallback(async (syncId: string, connectorType: string) => {
-    if (emailSentRef.current.has(syncId)) return
-
-    const sync = activeSyncs.get(syncId)
-    if (!sync?.emailWhenDone) return
-
-    try {
-      const token = localStorage.getItem('accessToken')
-      if (!token) return
-
-      console.log('[GlobalSync] Sending email notification for', syncId)
-      const response = await fetch(`${API_BASE}/sync-progress/${syncId}/notify`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      })
-
-      const data = await response.json()
-      if (response.ok && data.success) {
-        console.log('[GlobalSync] Email sent successfully')
-        emailSentRef.current.add(syncId)
-      } else {
-        console.error('[GlobalSync] Email failed:', data.error)
-      }
-    } catch (err) {
-      console.error('[GlobalSync] Email error:', err)
-    }
-  }, [activeSyncs])
+    // Backend handles email sending via subscribe-email endpoint
+    // No need to call /notify endpoint - it would cause duplicate emails
+    console.log('[GlobalSync] Email will be sent by backend for', syncId)
+    emailSentRef.current.add(syncId)
+  }, [])
 
   // Start tracking a sync
   const startSync = useCallback((syncId: string, connectorType: string, emailWhenDone = false) => {

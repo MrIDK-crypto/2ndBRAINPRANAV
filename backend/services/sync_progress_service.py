@@ -84,6 +84,13 @@ class SyncProgressService:
         # Event queues for SSE subscribers (using thread-safe queue)
         self._subscribers: Dict[str, List[queue.Queue]] = defaultdict(list)
 
+        # Track user email subscriptions for batch completion notification
+        # Maps user_id -> email address (user wants email when ALL their syncs complete)
+        self._user_email_subscriptions: Dict[str, str] = {}
+
+        # Track which users have already received their batch email (prevents duplicates)
+        self._email_sent_for_user: set = set()
+
         # Cleanup old syncs after this duration (seconds)
         self._cleanup_age = 3600  # 1 hour
 
@@ -105,6 +112,9 @@ class SyncProgressService:
             sync_id: Unique identifier for this sync
         """
         sync_id = str(uuid.uuid4())
+
+        # NOTE: Don't clear email_sent flag here - only clear when user explicitly subscribes
+        # This prevents duplicate emails when user runs multiple syncs in sequence
 
         self._progress[sync_id] = SyncProgress(
             sync_id=sync_id,
@@ -222,21 +232,47 @@ class SyncProgressService:
             self._emit_event(sync_id, 'progress')
 
     def subscribe_email(self, sync_id: str, email: str):
-        """Subscribe an email for notification when sync completes"""
+        """Subscribe an email for notification when ALL syncs for this user complete"""
         if sync_id not in self._progress:
             print(f"[SyncProgress] WARNING: Cannot subscribe email - sync_id {sync_id} not found")
             return False
 
-        self._progress[sync_id].notify_email = email
-        print(f"[SyncProgress] Email notification subscribed for {sync_id}: {email}")
+        progress = self._progress[sync_id]
+        user_id = progress.user_id
+
+        # Clear the email_sent flag when user explicitly subscribes
+        # This allows them to receive a new email for this batch of syncs
+        self._email_sent_for_user.discard(user_id)
+
+        # Store at user level - will notify when ALL syncs complete
+        self._user_email_subscriptions[user_id] = email
+        # Also store on the sync for backward compatibility
+        progress.notify_email = email
+
+        print(f"[SyncProgress] Email notification subscribed for user {user_id}: {email} (will notify when ALL syncs complete)")
         return True
+
+    def get_active_syncs_for_user(self, user_id: str) -> List[SyncProgress]:
+        """Get all active (non-completed) syncs for a user"""
+        return [
+            p for p in self._progress.values()
+            if p.user_id == user_id and p.status not in ('complete', 'completed', 'error')
+        ]
+
+    def get_completed_syncs_for_user(self, user_id: str) -> List[SyncProgress]:
+        """Get all completed syncs for a user (for aggregated notification)"""
+        return [
+            p for p in self._progress.values()
+            if p.user_id == user_id and p.status in ('complete', 'completed', 'error')
+            and p.completed_at is not None
+        ]
 
     def complete_sync(
         self,
         sync_id: str,
         error_message: Optional[str] = None
     ):
-        """Mark sync as complete or failed, send email notification if subscribed"""
+        """Mark sync as complete or failed, send email notification when ALL user syncs complete"""
         if sync_id not in self._progress:
             return
 
@@ -256,64 +292,121 @@ class SyncProgressService:
 
         print(f"[SyncProgress] Completed sync: {sync_id} - {progress.status}")
 
-        # Send email notification if subscribed (server-side, works even if browser closed)
-        # Check in-memory first, then fall back to database (handles race conditions + multi-worker)
-        notify_email = progress.notify_email
+        # Check if ALL syncs for this user are complete
+        user_id = progress.user_id
+        active_syncs = self.get_active_syncs_for_user(user_id)
+
+        if active_syncs:
+            print(f"[SyncProgress] User {user_id} still has {len(active_syncs)} active syncs - waiting to send email")
+            return
+
+        # All syncs complete! Check for email subscription
+        notify_email = self._user_email_subscriptions.get(user_id)
 
         if not notify_email:
             # Fallback: check database for notify_email persisted by subscribe endpoint
             try:
-                from database.models import SessionLocal, Connector
+                from database.models import SessionLocal, Connector, User
+                from sqlalchemy.orm.attributes import flag_modified
                 db = SessionLocal()
                 try:
-                    connectors = db.query(Connector).filter(
-                        Connector.tenant_id == progress.tenant_id
-                    ).all()
-                    for c in connectors:
-                        settings = c.settings or {}
-                        if settings.get('current_sync_id') == sync_id and settings.get('notify_email'):
-                            notify_email = settings['notify_email']
-                            print(f"[SyncProgress] Found notify_email in DB: {notify_email}")
-                            # Clear it so we don't re-send on next check
-                            settings.pop('notify_email', None)
-                            c.settings = settings
-                            from sqlalchemy.orm.attributes import flag_modified
-                            flag_modified(c, 'settings')
+                    # First check User.preferences (preferred method)
+                    user = db.query(User).filter(User.id == user_id).first()
+                    if user and user.preferences:
+                        prefs = user.preferences
+                        if prefs.get('sync_notify_enabled') and prefs.get('sync_notify_email'):
+                            notify_email = prefs['sync_notify_email']
+                            print(f"[SyncProgress] Found notify_email in User.preferences: {notify_email}")
+                            # Clear after use
+                            prefs['sync_notify_enabled'] = False
+                            user.preferences = prefs
+                            flag_modified(user, 'preferences')
                             db.commit()
-                            break
+
+                    # Fallback to Connector.settings if still not found
+                    if not notify_email:
+                        connectors = db.query(Connector).filter(
+                            Connector.tenant_id == progress.tenant_id
+                        ).all()
+                        for c in connectors:
+                            settings = c.settings or {}
+                            if settings.get('notify_email'):
+                                notify_email = settings['notify_email']
+                                print(f"[SyncProgress] Found notify_email in Connector.settings: {notify_email}")
+                                # Clear it so we don't re-send
+                                settings.pop('notify_email', None)
+                                c.settings = settings
+                                flag_modified(c, 'settings')
+                                db.commit()
+                                break
                 finally:
                     db.close()
             except Exception as db_err:
                 print(f"[SyncProgress] DB fallback for notify_email failed: {db_err}")
 
         if notify_email:
-            try:
-                from services.email_notification_service import get_email_service
-                email_service = get_email_service()
-                duration = 0.0
-                if progress.started_at and progress.completed_at:
-                    duration = (progress.completed_at - progress.started_at).total_seconds()
+            # Check if email was already sent for this user (prevents duplicates from multiple complete_sync calls)
+            if user_id in self._email_sent_for_user:
+                print(f"[SyncProgress] Email already sent for user {user_id}, skipping duplicate")
+                return
 
-                success = email_service.send_sync_complete_notification(
-                    user_email=notify_email,
-                    connector_type=progress.connector_type,
-                    total_items=progress.total_items,
-                    processed_items=progress.processed_items,
-                    failed_items=progress.failed_items,
-                    duration_seconds=duration,
-                    error_message=error_message
-                )
-                if success:
-                    print(f"[SyncProgress] Email notification sent to {notify_email}")
-                else:
-                    print(f"[SyncProgress] Email notification failed (SMTP not configured or send error)")
-            except Exception as e:
-                print(f"[SyncProgress] Failed to send email notification: {e}")
+            # Mark as sent BEFORE sending to prevent race conditions
+            self._email_sent_for_user.add(user_id)
 
-        # Log subscriber count
-        sub_count = len(self._subscribers.get(sync_id, []))
-        if sub_count > 0:
-            print(f"[SyncProgress] {sub_count} subscribers will receive terminal event and disconnect")
+            # All syncs complete - send aggregated email
+            self._send_batch_completion_email(user_id, notify_email)
+            # Clear the subscription after sending
+            self._user_email_subscriptions.pop(user_id, None)
+
+    def _send_batch_completion_email(self, user_id: str, email: str):
+        """Send email notification for all completed syncs"""
+        completed_syncs = self.get_completed_syncs_for_user(user_id)
+        if not completed_syncs:
+            return
+
+        try:
+            from services.email_notification_service import get_email_service
+            email_service = get_email_service()
+
+            # Aggregate stats from all syncs
+            total_items = sum(s.total_items for s in completed_syncs)
+            processed_items = sum(s.processed_items for s in completed_syncs)
+            failed_items = sum(s.failed_items for s in completed_syncs)
+            connector_types = list(set(s.connector_type for s in completed_syncs))
+
+            # Calculate total duration
+            earliest_start = min((s.started_at for s in completed_syncs if s.started_at), default=None)
+            latest_end = max((s.completed_at for s in completed_syncs if s.completed_at), default=None)
+            total_duration = 0.0
+            if earliest_start and latest_end:
+                total_duration = (latest_end - earliest_start).total_seconds()
+
+            # Check for any errors
+            errors = [s.error_message for s in completed_syncs if s.error_message]
+            error_message = "; ".join(errors) if errors else None
+
+            # Format connector list
+            connector_str = ", ".join(c.title() for c in connector_types)
+            if len(connector_types) > 1:
+                connector_str = f"All Integrations ({connector_str})"
+
+            print(f"[SyncProgress] Sending batch completion email for {len(completed_syncs)} syncs: {connector_str}")
+
+            success = email_service.send_sync_complete_notification(
+                user_email=email,
+                connector_type=connector_str,
+                total_items=total_items,
+                processed_items=processed_items,
+                failed_items=failed_items,
+                duration_seconds=total_duration,
+                error_message=error_message
+            )
+            if success:
+                print(f"[SyncProgress] Batch email notification sent to {email}")
+            else:
+                print(f"[SyncProgress] Batch email notification failed (SMTP not configured or send error)")
+        except Exception as e:
+            print(f"[SyncProgress] Failed to send batch email notification: {e}")
 
     def get_progress(self, sync_id: str) -> Optional[Dict]:
         """Get current progress for a sync"""

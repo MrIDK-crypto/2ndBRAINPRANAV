@@ -289,22 +289,48 @@ def get_progress(sync_id: str):
 
 
 @sync_progress_bp.route('/<sync_id>/subscribe-email', methods=['POST', 'OPTIONS'])
-@require_auth
 def subscribe_email(sync_id: str):
     """
-    Subscribe for email notification when sync completes.
+    Subscribe for email notification when ALL syncs complete.
     Called when user checks "Email me when done" checkbox.
-    The email is sent server-side when sync completes, even if browser is closed.
+    The email is sent server-side when ALL syncs complete, even if browser is closed.
 
-    Persists to BOTH in-memory service AND database (Connector.settings)
-    so it survives race conditions and multi-worker deployments.
+    Persists to:
+    1. In-memory service (works if sync is on this worker)
+    2. User.preferences (survives multi-worker, race conditions)
+    3. Connector.settings (backward compatibility)
 
     POST /api/sync-progress/<sync_id>/subscribe-email
 
     Returns:
         { "success": true, "message": "Email notification subscribed" }
     """
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    # Require auth for POST
+    from functools import wraps
+    from api.auth_routes import require_auth as auth_check
+
+    # Manual auth check for POST
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({"success": False, "error": "Authorization required"}), 401
+
+    token = auth_header.split(' ', 1)[1]
+    try:
+        from database.config import JWT_SECRET_KEY, JWT_ALGORITHM
+        import jwt
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        g.user_id = payload.get('sub')
+        g.tenant_id = payload.get('tenant_id')
+        g.email = payload.get('email')
+    except Exception as e:
+        return jsonify({"success": False, "error": "Invalid token"}), 401
+
     from database.models import SessionLocal, User, Connector
+    from sqlalchemy.orm.attributes import flag_modified
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == g.user_id).first()
@@ -317,34 +343,38 @@ def subscribe_email(sync_id: str):
         service = get_sync_progress_service()
         service.subscribe_email(sync_id, email)
 
-        # 2) ALSO persist to database (survives multi-worker, race conditions)
-        # Find connector with this sync_id
+        # 2) Store in User.preferences for multi-worker support
+        prefs = user.preferences or {}
+        prefs['sync_notify_email'] = email
+        prefs['sync_notify_enabled'] = True
+        user.preferences = prefs
+        flag_modified(user, 'preferences')
+
+        # 3) ALSO persist to Connector.settings (backward compatibility)
         connectors = db.query(Connector).filter(
             Connector.tenant_id == g.tenant_id
         ).all()
 
-        db_persisted = False
         for connector in connectors:
             settings = connector.settings or {}
             if settings.get('current_sync_id') == sync_id:
                 settings['notify_email'] = email
                 connector.settings = settings
-                from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(connector, 'settings')
-                db.commit()
-                db_persisted = True
-                print(f"[SubscribeEmail] Persisted notify_email to DB for sync {sync_id}")
+                print(f"[SubscribeEmail] Persisted notify_email to connector for sync {sync_id}")
                 break
 
-        if not db_persisted:
-            print(f"[SubscribeEmail] No connector found in DB for sync {sync_id}, in-memory only")
+        db.commit()
+        print(f"[SubscribeEmail] Email subscription saved for user {g.user_id}: {email}")
 
         return jsonify({
             "success": True,
-            "message": f"Email notification will be sent to {email} when sync completes"
+            "message": f"Email notification will be sent to {email} when all syncs complete"
         })
     except Exception as e:
         print(f"[SubscribeEmail] Error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         db.close()
