@@ -79,6 +79,10 @@ kombu==5.3.4
 spacy==3.7.2
 # Note: en_core_web_sm model is downloaded in Dockerfile, not via pip
 
+# Code Parsing (tree-sitter for AST-based code understanding)
+tree-sitter==0.21.3
+tree-sitter-languages==1.10.2
+
 # Search Reranking & NLP
 # Install CPU-only PyTorch first (saves ~3GB vs GPU version with nvidia CUDA libs)
 --extra-index-url https://download.pytorch.org/whl/cpu

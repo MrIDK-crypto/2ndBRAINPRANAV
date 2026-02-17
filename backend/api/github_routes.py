@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from database.models import SessionLocal, Connector, Document, DocumentClassification, DocumentStatus, ConnectorType, ConnectorStatus, SyncMetrics, DocumentChunk, KnowledgeGap
 from connectors.github_connector import GitHubConnector
 from services.code_analysis_service import CodeAnalysisService
+from services.code_analysis_service_v2 import CodeAnalysisServiceV2
 from services.auth_service import require_auth
 from services.extraction_service import ExtractionService
 from services.embedding_service import EmbeddingService
@@ -201,8 +202,8 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
                       max_files_to_analyze: int, progress_service, sync_id: str,
                       repo_num: int, total_repos: int, docs_processed_so_far: int, total_expected_docs: int):
     """
-    Sync a single repository and return the created documents.
-    Used by _run_github_sync_multi for multi-repo syncs.
+    Sync a single repository using V2 tree-sitter pipeline.
+    Creates per-function/class documents + diagram documents.
     """
     import time
 
@@ -211,34 +212,26 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
 
     owner, repo_name = repository.split('/', 1)
 
-    # Fetch repository code
+    # Fetch repository code — fetch ALL files (no cap for V2)
     progress_service.update_progress(
         sync_id,
         stage=f'Repo {repo_num}/{total_repos}: Fetching {repository}...',
-        current_item=f'Fetching code files...'
+        current_item=f'Fetching all code files...'
     )
 
-    code_files = github.fetch_repository_code(owner=owner, repo=repo_name, max_files=max_files)
+    code_files = github.fetch_repository_code(owner=owner, repo=repo_name, max_files=max(max_files, 500))
     if not code_files:
-        print(f"[GitHub Sync] No code files in {repository}")
+        print(f"[GitHub Sync V2] No code files in {repository}")
         return []
 
     file_count = len(code_files)
-    print(f"[GitHub Sync] Fetched {file_count} code files from {repository}")
+    print(f"[GitHub Sync V2] Fetched {file_count} code files from {repository}")
 
-    # Determine how many files to analyze individually (smart limit)
-    if file_count <= 20:
-        files_to_analyze = file_count  # Analyze all for small repos
-    elif file_count <= 50:
-        files_to_analyze = min(30, file_count)
-    else:
-        files_to_analyze = min(40, file_count)
-
-    # Update progress - AI analysis
+    # Update progress - tree-sitter parsing + AI analysis
     progress_service.update_progress(
         sync_id,
-        stage=f'Repo {repo_num}/{total_repos}: AI analyzing {file_count} files...',
-        current_item=f'Running AI analysis on {repository}...'
+        stage=f'Repo {repo_num}/{total_repos}: Parsing & analyzing {file_count} files...',
+        current_item=f'tree-sitter parsing + AI analysis on {repository}...'
     )
 
     # Get repo description
@@ -246,14 +239,25 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
     repo_info = next((r for r in repos if r['full_name'].lower() == repository.lower()), None)
     repo_description = repo_info['description'] if repo_info else None
 
-    # Analyze repository with LLM
-    analyzer = CodeAnalysisService()
-    analysis = analyzer.analyze_repository(
-        repo_name=repository,
-        repo_description=repo_description,
-        code_files=code_files,
-        max_files_to_analyze=max_files_to_analyze
-    )
+    # V2 Analysis: tree-sitter + function-level LLM + diagrams
+    try:
+        analyzer = CodeAnalysisServiceV2()
+        analysis = analyzer.analyze_repository(
+            repo_name=repository,
+            repo_description=repo_description,
+            code_files=code_files,
+        )
+    except Exception as e:
+        print(f"[GitHub Sync V2] V2 analysis failed: {e}, falling back to V1")
+        import traceback
+        traceback.print_exc()
+        analyzer_v1 = CodeAnalysisService()
+        analysis = analyzer_v1.analyze_repository(
+            repo_name=repository,
+            repo_description=repo_description,
+            code_files=code_files,
+            max_files_to_analyze=max_files_to_analyze
+        )
 
     # Delete existing documents for this repository to prevent duplicates
     repo_prefix = f"github_{repository.replace('/', '_')}"
@@ -262,7 +266,7 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
         Document.external_id.like(f"{repo_prefix}%")
     ).all()
     if existing_docs:
-        print(f"[GitHub Sync] Deleting {len(existing_docs)} existing documents for {repository}")
+        print(f"[GitHub Sync V2] Deleting {len(existing_docs)} existing documents for {repository}")
         for doc in existing_docs:
             db.delete(doc)
         db.commit()
@@ -276,13 +280,14 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
 
     documents_created = []
 
-    # 1. Main documentation document
+    # 1. Main documentation document (includes diagrams in markdown)
     doc_main = Document(
         tenant_id=tenant_id,
         connector_id=connector.id,
         title=f"{repository} - Technical Documentation",
         content=analysis['documentation'],
         source_type='github',
+        source_url=f"https://github.com/{repository}",
         sender_email=connector.settings.get('github_user'),
         external_id=f"github_{repository.replace('/', '_')}_docs",
         doc_metadata={'repository': repository, 'analysis_type': 'comprehensive_documentation', 'stats': analysis['stats']},
@@ -295,24 +300,34 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
     documents_created.append(doc_main)
 
     # 2. Repository overview document
+    overview = analysis.get('repository_overview', {})
+    tech_stack = overview.get('tech_stack', [])
+    if isinstance(tech_stack, dict):
+        tech_stack = list(tech_stack.keys())
+    patterns = overview.get('patterns', [])
+    if isinstance(patterns, dict):
+        patterns = list(patterns.keys())
+
     overview_content = f"""# {repository} - Repository Overview
 
 ## Purpose
-{analysis['repository_overview']['purpose']}
+{overview.get('purpose', 'N/A')}
 
 ## Architecture
-{analysis['repository_overview']['architecture']}
+{overview.get('architecture', 'N/A')}
 
 ## Technology Stack
-{chr(10).join(f'- {tech}' for tech in analysis['repository_overview']['tech_stack'])}
+{chr(10).join(f'- {tech}' for tech in tech_stack)}
 
 ## Design Patterns
-{chr(10).join(f'- {pattern}' for pattern in analysis['repository_overview']['patterns'])}
+{chr(10).join(f'- {p}' for p in patterns)}
 
 ## Statistics
 - Total Files: {analysis['stats']['total_files']}
 - Analyzed Files: {analysis['stats']['analyzed_files']}
+- Code Units Explained: {analysis['stats'].get('explained_units', 'N/A')}
 - Total Lines: {analysis['stats']['total_lines']:,}
+- Diagrams Generated: {analysis['stats'].get('diagrams_generated', 0)}
 """
 
     doc_overview = Document(
@@ -321,6 +336,7 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
         title=f"{repository} - Overview",
         content=overview_content,
         source_type='github',
+        source_url=f"https://github.com/{repository}",
         sender_email=connector.settings.get('github_user'),
         external_id=f"github_{repository.replace('/', '_')}_overview",
         doc_metadata={'repository': repository, 'analysis_type': 'overview'},
@@ -332,15 +348,68 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
     db.add(doc_overview)
     documents_created.append(doc_overview)
 
-    # 3. Individual file analyses (smart limit based on repo size)
-    for file_analysis in analysis['file_analyses'][:files_to_analyze]:
-        file_content = f"""# {file_analysis.get('file_path', 'Unknown file')}
+    # 3. Per-function/class documents (V2: the key improvement)
+    code_units = analysis.get('code_units', [])
+    if code_units:
+        print(f"[GitHub Sync V2] Creating {len(code_units)} code unit documents")
+        for unit in code_units:
+            # Content: explanation + code (explanation first for better embedding)
+            unit_content = f"""# {unit['name']}
+
+**Type:** {unit['unit_type']} | **File:** {unit['file_path']} | **Lines:** {unit['line_start']}-{unit['line_end']}
+
+## Explanation
+{unit['explanation']}
+
+## Key Details
+{chr(10).join(f'- {d}' for d in unit.get('key_details', []))}
+
+## Source Code ({unit.get('language', '')})
+
+```{unit.get('language', '')}
+{unit['code'][:15000]}
+```
+"""
+            safe_name = unit['name'].replace('/', '_').replace('.', '_').replace('<', '').replace('>', '')
+            safe_file = unit['file_path'].replace('/', '_')
+            external_id = f"github_{repository.replace('/', '_')}_unit_{safe_file}_{safe_name}"
+
+            # Build GitHub URL with line numbers
+            github_file_url = f"https://github.com/{repository}/blob/main/{unit['file_path']}#L{unit['line_start']}-L{unit['line_end']}"
+
+            doc_unit = Document(
+                tenant_id=tenant_id,
+                connector_id=connector.id,
+                title=f"{repository} - {unit['file_path']}:{unit['name']}",
+                content=unit_content,
+                source_type='github',
+                source_url=github_file_url,
+                sender_email=connector.settings.get('github_user'),
+                external_id=external_id[:500],  # Safety cap on external_id length
+                doc_metadata={
+                    'repository': repository,
+                    'file_path': unit['file_path'],
+                    'unit_type': unit['unit_type'],
+                    'unit_name': unit['name'],
+                    'line_start': unit['line_start'],
+                    'line_end': unit['line_end'],
+                    'language': unit.get('language', ''),
+                    'analysis_type': 'code_unit',
+                },
+                status=DocumentStatus.CLASSIFIED,
+                classification=DocumentClassification.WORK,
+                classification_confidence=1.0,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(doc_unit)
+            documents_created.append(doc_unit)
+    else:
+        # V1 fallback: file-level analyses
+        for file_analysis in analysis.get('file_analyses', [])[:40]:
+            file_content = f"""# {file_analysis.get('file_path', 'Unknown file')}
 
 ## Summary
 {file_analysis.get('summary', 'No summary available')}
-
-## Language
-{file_analysis.get('language', 'Unknown')}
 
 ## Key Functions/Classes
 {chr(10).join(f'- {func}' for func in file_analysis.get('key_functions', []))}
@@ -351,26 +420,109 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
 ## Business Logic
 {file_analysis.get('business_logic', 'No business logic described')}
 """
+            doc_file = Document(
+                tenant_id=tenant_id,
+                connector_id=connector.id,
+                title=f"{repository} - {file_analysis['file_path']}",
+                content=file_content,
+                source_type='github',
+                sender_email=connector.settings.get('github_user'),
+                external_id=f"github_{repository.replace('/', '_')}_{file_analysis['file_path'].replace('/', '_')}",
+                doc_metadata={'repository': repository, 'file_path': file_analysis['file_path'], 'analysis_type': 'file_analysis'},
+                status=DocumentStatus.CLASSIFIED,
+                classification=DocumentClassification.WORK,
+                classification_confidence=1.0,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(doc_file)
+            documents_created.append(doc_file)
 
-        doc_file = Document(
-            tenant_id=tenant_id,
-            connector_id=connector.id,
-            title=f"{repository} - {file_analysis['file_path']}",
-            content=file_content,
-            source_type='github',
-            sender_email=connector.settings.get('github_user'),
-            external_id=f"github_{repository.replace('/', '_')}_{file_analysis['file_path'].replace('/', '_')}",
-            doc_metadata={'repository': repository, 'file_path': file_analysis['file_path'], 'analysis_type': 'file_analysis'},
-            status=DocumentStatus.CLASSIFIED,
-            classification=DocumentClassification.WORK,
-            classification_confidence=1.0,
-            created_at=datetime.now(timezone.utc)
-        )
-        db.add(doc_file)
-        documents_created.append(doc_file)
+    # 4. Diagram documents (NEW: searchable and retrievable by chatbot)
+    diagrams = analysis.get('diagrams', [])
+    if diagrams:
+        print(f"[GitHub Sync V2] Creating {len(diagrams)} diagram documents")
+        for idx, diagram in enumerate(diagrams):
+            diagram_content = f"""# {diagram['title']}
+
+## Description
+{diagram['description']}
+
+## Diagram
+
+```mermaid
+{diagram['mermaid']}
+```
+"""
+            safe_type = diagram.get('diagram_type', 'diagram')
+            doc_diagram = Document(
+                tenant_id=tenant_id,
+                connector_id=connector.id,
+                title=diagram['title'],
+                content=diagram_content,
+                source_type='github',
+                source_url=f"https://github.com/{repository}",
+                sender_email=connector.settings.get('github_user'),
+                external_id=f"github_{repository.replace('/', '_')}_diagram_{safe_type}_{idx}",
+                doc_metadata={
+                    'repository': repository,
+                    'analysis_type': 'diagram',
+                    'diagram_type': safe_type,
+                },
+                status=DocumentStatus.CLASSIFIED,
+                classification=DocumentClassification.WORK,
+                classification_confidence=1.0,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(doc_diagram)
+            documents_created.append(doc_diagram)
+
+    # 5. Flow documents (NEW: cross-file walkthroughs that match conversational queries)
+    flows = analysis.get('flows', [])
+    if flows:
+        print(f"[GitHub Sync V2] Creating {len(flows)} flow documents")
+        for idx, flow in enumerate(flows):
+            steps_text = '\n'.join(flow.get('steps', []))
+            files_text = ', '.join(flow.get('files_involved', []))
+            concepts_text = ', '.join(flow.get('key_concepts', []))
+
+            flow_content = f"""# {flow['title']}
+
+## Description
+{flow.get('description', '')}
+
+## Step-by-Step Walkthrough
+{steps_text}
+
+## Files Involved
+{files_text}
+
+## Key Concepts
+{concepts_text}
+"""
+            doc_flow = Document(
+                tenant_id=tenant_id,
+                connector_id=connector.id,
+                title=f"{repository} - Flow: {flow['title'][:80]}",
+                content=flow_content,
+                source_type='github',
+                source_url=f"https://github.com/{repository}",
+                sender_email=connector.settings.get('github_user'),
+                external_id=f"github_{repository.replace('/', '_')}_flow_{idx}",
+                doc_metadata={
+                    'repository': repository,
+                    'analysis_type': 'flow',
+                    'files_involved': flow.get('files_involved', []),
+                },
+                status=DocumentStatus.CLASSIFIED,
+                classification=DocumentClassification.WORK,
+                classification_confidence=1.0,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(doc_flow)
+            documents_created.append(doc_flow)
 
     db.commit()
-    print(f"[GitHub Sync] Created {len(documents_created)} documents for {repository}")
+    print(f"[GitHub Sync V2] Created {len(documents_created)} documents for {repository}")
 
     # Extract structured summaries and embed
     extraction_service = ExtractionService()
@@ -383,19 +535,19 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
         try:
             extraction_service.extract_document(doc, db)
         except Exception as e:
-            print(f"[GitHub Sync] Extraction failed for {doc.title}: {e}")
+            print(f"[GitHub Sync V2] Extraction failed for {doc.title}: {e}")
 
         # Embed - pass Document object, not ID
         try:
             embedding_service.embed_documents([doc], tenant_id, db)
         except Exception as e:
-            print(f"[GitHub Sync] Embedding failed for {doc.title}: {e}")
+            print(f"[GitHub Sync V2] Embedding failed for {doc.title}: {e}")
 
         # Update progress
         current_processed = docs_processed_so_far + i + 1
         progress_service.update_progress(
             sync_id,
-            total_items=total_expected_docs,
+            total_items=max(total_expected_docs, len(documents_created)),
             processed_items=current_processed,
             current_item=f'{repository}: {doc.title[:40]}...'
         )
@@ -589,24 +741,33 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
         )
         repo_description = repo_info['description'] if repo_info else None
 
-        # Analyze repository with LLM
-        print(f"[GitHub Sync] Analyzing repository with LLM")
+        # Analyze repository with V2 (tree-sitter + function-level LLM)
+        print(f"[GitHub Sync] Analyzing repository with V2 pipeline")
         try:
-            analyzer = CodeAnalysisService()
+            analyzer = CodeAnalysisServiceV2()
             analysis = analyzer.analyze_repository(
                 repo_name=repository,
                 repo_description=repo_description,
                 code_files=code_files,
-                max_files_to_analyze=max_files_to_analyze
             )
         except Exception as e:
-            print(f"[GitHub Sync] LLM analysis failed: {e}")
-            progress_service.update_progress(
-                sync_id,
-                status='error',
-                error_message=f'AI analysis failed: {str(e)}'
-            )
-            return
+            print(f"[GitHub Sync] V2 analysis failed: {e}, falling back to V1")
+            try:
+                analyzer_v1 = CodeAnalysisService()
+                analysis = analyzer_v1.analyze_repository(
+                    repo_name=repository,
+                    repo_description=repo_description,
+                    code_files=code_files,
+                    max_files_to_analyze=max_files_to_analyze
+                )
+            except Exception as e2:
+                print(f"[GitHub Sync] V1 also failed: {e2}")
+                progress_service.update_progress(
+                    sync_id,
+                    status='error',
+                    error_message=f'AI analysis failed: {str(e2)}'
+                )
+                return
 
         # Update progress - AI done, creating documents
         progress_service.update_progress(

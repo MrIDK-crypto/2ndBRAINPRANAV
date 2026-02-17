@@ -9,6 +9,7 @@ import { sessionManager } from '@/utils/sessionManager'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { analytics } from '@/utils/analytics'
+import mermaid from 'mermaid'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
@@ -46,6 +47,62 @@ const warmTheme = {
   border: '#F0EEEC',
   borderDark: '#E8E5E2',
   statusSuccess: '#9CB896',
+}
+
+// Initialize Mermaid for diagram rendering
+if (typeof window !== 'undefined') {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral',
+    securityLevel: 'loose',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  })
+}
+
+// Mermaid diagram renderer component
+const MermaidDiagram = ({ code }: { code: string }) => {
+  const containerRef = React.useRef<HTMLDivElement>(null)
+  const [svg, setSvg] = React.useState<string>('')
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    const renderDiagram = async () => {
+      try {
+        const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`
+        const { svg: renderedSvg } = await mermaid.render(id, code.trim())
+        setSvg(renderedSvg)
+        setError(null)
+      } catch (e: any) {
+        setError(e.message || 'Failed to render diagram')
+        // Still show the raw mermaid code as fallback
+      }
+    }
+    renderDiagram()
+  }, [code])
+
+  if (error) {
+    return (
+      <pre style={{ backgroundColor: '#1E1E2E', color: '#CDD6F4', borderRadius: '12px', padding: '16px', overflow: 'auto', margin: '12px 0', fontSize: '13px' }}>
+        <code>{code}</code>
+      </pre>
+    )
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        backgroundColor: '#FFFFFF',
+        borderRadius: '12px',
+        padding: '16px',
+        margin: '12px 0',
+        border: '1px solid #E5E7EB',
+        overflow: 'auto',
+        textAlign: 'center',
+      }}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  )
 }
 
 const WelcomeCard = ({ icon, title, description, onClick }: any) => (
@@ -436,24 +493,25 @@ export default function ChatInterface() {
       cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n').trim()
 
       // Build source name mapping for inline citations
-      const sourceMapData: { [key: string]: { name: string; doc_id: string } } = {}
+      const sourceMapData: { [key: string]: { name: string; doc_id: string; source_url: string } } = {}
       response.data.sources?.forEach((s: any, idx: number) => {
         // Never use raw doc_id/chunk_id as display name — use title or generic label
         const sourceName = s.metadata?.file_name || s.title || s.metadata?.title || s.metadata?.subject || `Source ${idx + 1}`
         const doc_id = s.doc_id || s.chunk_id || ''
-        // Clean up source name - get just the filename
-        const cleanName = sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName
-        sourceMapData[`Source ${idx + 1}`] = { name: cleanName, doc_id }
-        sourceMapData[cleanName] = { name: cleanName, doc_id }
+        const source_url = s.source_url || ''
+        // Clean up source name - get just the filename, strip colons (used as marker delimiters)
+        const cleanName = (sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName).replace(/:/g, ' -')
+        sourceMapData[`Source ${idx + 1}`] = { name: cleanName, doc_id, source_url }
+        sourceMapData[cleanName] = { name: cleanName, doc_id, source_url }
       })
 
       // Replace [Source X] with placeholder markers that we'll render as links
-      // Use a special marker format: [[SOURCE:name:doc_id]]
+      // Use a special marker format: [[SOURCE:name:doc_id:source_url]]
       cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+)\]/g, (match: string, num: string) => {
         const key = `Source ${num}`
         const source = sourceMapData[key]
         if (source) {
-          return `[[SOURCE:${source.name}:${source.doc_id}]]`
+          return `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]`
         }
         // No mapping — remove the raw [Source N] text entirely so it doesn't clutter the answer
         return ''
@@ -463,8 +521,8 @@ export default function ChatInterface() {
         const source1 = sourceMapData[`Source ${num1}`]
         const source2 = sourceMapData[`Source ${num2}`]
         const parts = []
-        if (source1) parts.push(`[[SOURCE:${source1.name}:${source1.doc_id}]]`)
-        if (source2) parts.push(`[[SOURCE:${source2.name}:${source2.doc_id}]]`)
+        if (source1) parts.push(`[[SOURCE:${source1.name}:${source1.doc_id}:${source1.source_url || ''}]]`)
+        if (source2) parts.push(`[[SOURCE:${source2.name}:${source2.doc_id}:${source2.source_url || ''}]]`)
         return parts.length > 0 ? parts.join(', ') : ''
       })
       // Handle [Source 1, 2] or [Source 1, 2, 3] shorthand format
@@ -475,7 +533,7 @@ export default function ChatInterface() {
           const markers = numbers
             .map((n: string) => {
               const source = sourceMapData[`Source ${n.trim()}`]
-              return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : null
+              return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
             })
             .filter(Boolean)
           return markers.join(', ')
@@ -489,7 +547,7 @@ export default function ChatInterface() {
           const markers = numbers
             .map((n: string) => {
               const source = sourceMapData[`Source ${n.trim()}`]
-              return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : null
+              return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
             })
             .filter(Boolean)
           return markers.join(', ')
@@ -500,7 +558,7 @@ export default function ChatInterface() {
         /\[Source (\d+):\s*[^\]]+\]/g,
         (match: string, num: string) => {
           const source = sourceMapData[`Source ${num}`]
-          return source ? `[[SOURCE:${source.name}:${source.doc_id}]]` : ''
+          return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
         }
       )
 
@@ -521,7 +579,8 @@ export default function ChatInterface() {
         subject: s.metadata?.file_name || s.title || s.metadata?.title || s.metadata?.subject || `Source ${idx + 1}`,
         project: s.metadata?.project || 'Unknown',
         score: s.rerank_score || s.score,
-        content: s.content?.substring(0, 200) + '...'
+        content: s.content?.substring(0, 200) + '...',
+        source_url: s.source_url || ''
       }))
 
       const aiMessage: Message = {
@@ -628,8 +687,12 @@ export default function ChatInterface() {
     const shareToken = sessionManager.getShareToken()
     const authToken = sourceToken || shareToken
     const processedText = text.replace(
-      /\[\[SOURCE:([^:]+):([^\]]+)\]\]/g,
-      (match: string, name: string, docId: string) => {
+      /\[\[SOURCE:([^:]+):([^:\]]+):?([^\]]*)\]\]/g,
+      (match: string, name: string, docId: string, sourceUrl: string) => {
+        // Use source_url directly if available (e.g., GitHub file links)
+        if (sourceUrl) {
+          return `[${name}](${sourceUrl})`
+        }
         const hasValidDocId = docId && docId.length >= 32
         if (hasValidDocId && authToken) {
           const tokenParam = sourceToken
@@ -648,8 +711,13 @@ export default function ChatInterface() {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          // Style code blocks — pre handles the container, code just renders text
+          // Style code blocks — detect mermaid and render as diagrams
           code: ({ className, children, ...props }: any) => {
+            const isMermaid = className === 'language-mermaid'
+            if (isMermaid) {
+              const codeStr = String(children).replace(/\n$/, '')
+              return <MermaidDiagram code={codeStr} />
+            }
             // If inside a pre (block code) — className is set for language-tagged blocks
             if (className) {
               return (
@@ -666,11 +734,18 @@ export default function ChatInterface() {
             )
           },
           // Style pre blocks (code containers) — all block code goes through pre
-          pre: ({ children }: any) => (
-            <pre style={{ backgroundColor: '#1E1E2E', color: '#CDD6F4', borderRadius: '12px', padding: '16px', overflow: 'auto', margin: '12px 0', fontSize: '13px', lineHeight: '1.6', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, monospace' }}>
-              {children}
-            </pre>
-          ),
+          pre: ({ children }: any) => {
+            // Check if child is a MermaidDiagram (already rendered)
+            const childProps = React.Children.toArray(children)?.[0] as any
+            if (childProps?.type === MermaidDiagram) {
+              return <>{children}</>
+            }
+            return (
+              <pre style={{ backgroundColor: '#1E1E2E', color: '#CDD6F4', borderRadius: '12px', padding: '16px', overflow: 'auto', margin: '12px 0', fontSize: '13px', lineHeight: '1.6', fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, monospace' }}>
+                {children}
+              </pre>
+            )
+          },
           // Style paragraphs
           p: ({ children }: any) => (
             <p className="mb-3 last:mb-0">{children}</p>
@@ -931,9 +1006,12 @@ export default function ChatInterface() {
                             const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
                             // Only create clickable link if doc_id exists and looks like a valid UUID
                             const hasValidDocId = source.doc_id && source.doc_id.length >= 32
-                            const sourceViewUrl = hasValidDocId
-                              ? `${API_BASE}/documents/${encodeURIComponent(source.doc_id)}/view${sourceToken ? `?token=${encodeURIComponent(sourceToken)}` : ''}`
-                              : null
+                            // Use source_url directly if available (e.g., GitHub file links), otherwise fall back to document view
+                            const sourceViewUrl = source.source_url
+                              ? source.source_url
+                              : hasValidDocId
+                                ? `${API_BASE}/documents/${encodeURIComponent(source.doc_id)}/view${sourceToken ? `?token=${encodeURIComponent(sourceToken)}` : ''}`
+                                : null
                             return (
                             <div key={idx} className="group relative inline-block">
                               {sourceViewUrl ? (

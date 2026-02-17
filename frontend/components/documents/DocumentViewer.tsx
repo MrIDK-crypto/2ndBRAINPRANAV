@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { colors, shadows, Z_INDEX, getSourceTypeInfo } from './constants'
 
 interface DocumentViewerProps {
   document: {
@@ -38,8 +39,8 @@ function renderMarkdownContent(content: string): React.ReactNode {
         <pre
           key={key++}
           style={{
-            backgroundColor: '#1E293B',
-            color: '#E2E8F0',
+            backgroundColor: '#2D2D2D',
+            color: '#E8E0DB',
             padding: '16px',
             borderRadius: '8px',
             overflow: 'auto',
@@ -81,19 +82,19 @@ function renderMarkdownContent(content: string): React.ReactNode {
     // Headers
     if (line.startsWith('# ')) {
       elements.push(
-        <h1 key={key++} style={{ fontSize: '24px', fontWeight: 700, color: '#111827', margin: '24px 0 12px', borderBottom: '1px solid #E5E7EB', paddingBottom: '8px' }}>
+        <h1 key={key++} style={{ fontSize: '24px', fontWeight: 700, color: colors.textPrimary, margin: '24px 0 12px', borderBottom: `1px solid ${colors.border}`, paddingBottom: '8px' }}>
           {line.slice(2)}
         </h1>
       )
     } else if (line.startsWith('## ')) {
       elements.push(
-        <h2 key={key++} style={{ fontSize: '20px', fontWeight: 600, color: '#1F2937', margin: '20px 0 10px' }}>
+        <h2 key={key++} style={{ fontSize: '20px', fontWeight: 600, color: colors.textPrimary, margin: '20px 0 10px' }}>
           {line.slice(3)}
         </h2>
       )
     } else if (line.startsWith('### ')) {
       elements.push(
-        <h3 key={key++} style={{ fontSize: '16px', fontWeight: 600, color: '#374151', margin: '16px 0 8px' }}>
+        <h3 key={key++} style={{ fontSize: '16px', fontWeight: 600, color: colors.textSecondary, margin: '16px 0 8px' }}>
           {line.slice(4)}
         </h3>
       )
@@ -101,7 +102,7 @@ function renderMarkdownContent(content: string): React.ReactNode {
     // List items
     else if (line.startsWith('- ') || line.startsWith('* ')) {
       elements.push(
-        <li key={key++} style={{ color: '#4B5563', fontSize: '14px', lineHeight: '1.6', marginLeft: '20px', marginBottom: '4px' }}>
+        <li key={key++} style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '1.6', marginLeft: '20px', marginBottom: '4px' }}>
           {renderInlineCode(line.slice(2))}
         </li>
       )
@@ -111,7 +112,7 @@ function renderMarkdownContent(content: string): React.ReactNode {
       const match = line.match(/^(\d+)\.\s(.*)/)
       if (match) {
         elements.push(
-          <li key={key++} style={{ color: '#4B5563', fontSize: '14px', lineHeight: '1.6', marginLeft: '20px', marginBottom: '4px', listStyleType: 'decimal' }}>
+          <li key={key++} style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '1.6', marginLeft: '20px', marginBottom: '4px', listStyleType: 'decimal' }}>
             {renderInlineCode(match[2])}
           </li>
         )
@@ -124,7 +125,7 @@ function renderMarkdownContent(content: string): React.ReactNode {
     // Regular paragraphs
     else {
       elements.push(
-        <p key={key++} style={{ color: '#4B5563', fontSize: '14px', lineHeight: '1.7', margin: '8px 0' }}>
+        <p key={key++} style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '1.7', margin: '8px 0' }}>
           {renderInlineCode(line)}
         </p>
       )
@@ -146,8 +147,8 @@ function renderInlineCode(text: string): React.ReactNode {
         <code
           key={i}
           style={{
-            backgroundColor: '#F1F5F9',
-            color: '#0F172A',
+            backgroundColor: colors.primaryLight,
+            color: colors.textPrimary,
             padding: '2px 6px',
             borderRadius: '4px',
             fontSize: '13px',
@@ -172,6 +173,14 @@ function renderInlineCode(text: string): React.ReactNode {
   })
 }
 
+// Classification badge colors using warm palette
+const classificationBadgeColors: Record<string, { bg: string; text: string }> = {
+  work: { bg: colors.classificationWork, text: '#FFFFFF' },
+  personal: { bg: colors.classificationPersonal, text: '#FFFFFF' },
+  spam: { bg: colors.classificationSpam, text: '#FFFFFF' },
+  unknown: { bg: colors.classificationUnknown, text: '#FFFFFF' },
+}
+
 export default function DocumentViewer({ document, onClose }: DocumentViewerProps) {
   const [activeTab, setActiveTab] = useState<'content' | 'raw'>('content')
 
@@ -192,42 +201,21 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
     return document.source_url || document.metadata?.url || document.metadata?.source_url || null
   }
 
-  // Get source icon/label based on source type
-  const getSourceInfo = () => {
-    const sourceType = document.source_type?.toLowerCase() || ''
-    const icons: Record<string, { icon: string; label: string; color: string }> = {
-      notion: { icon: '📝', label: 'Notion', color: '#000000' },
-      gdrive: { icon: '📁', label: 'Google Drive', color: '#4285F4' },
-      github: { icon: '💻', label: 'GitHub', color: '#333333' },
-      box: { icon: '📦', label: 'Box', color: '#0061D5' },
-      slack: { icon: '💬', label: 'Slack', color: '#4A154B' },
-      gmail: { icon: '✉️', label: 'Gmail', color: '#EA4335' },
-      zotero: { icon: '📚', label: 'Zotero', color: '#CC2936' },
-      webscraper: { icon: '🌐', label: 'Web Page', color: '#2563EB' }
-    }
-    return icons[sourceType] || { icon: '📄', label: sourceType.toUpperCase() || 'Document', color: '#6B7280' }
-  }
+  // Use shared source type map
+  const sourceInfo = getSourceTypeInfo(document.source_type)
 
   // Format classification for display
   const getClassificationBadge = () => {
     if (!document.classification) return null
-
-    const colors: Record<string, { bg: string; text: string }> = {
-      work: { bg: '#22C55E', text: '#FFFFFF' },
-      personal: { bg: '#F59E0B', text: '#FFFFFF' },
-      spam: { bg: '#EF4444', text: '#FFFFFF' },
-      unknown: { bg: '#6B7280', text: '#FFFFFF' }
-    }
-
-    const color = colors[document.classification] || colors.unknown
+    const badge = classificationBadgeColors[document.classification] || classificationBadgeColors.unknown
 
     return (
       <span
         style={{
           padding: '4px 12px',
           borderRadius: '16px',
-          backgroundColor: color.bg,
-          color: color.text,
+          backgroundColor: badge.bg,
+          color: badge.text,
           fontSize: '11px',
           fontWeight: 600,
           textTransform: 'uppercase',
@@ -250,7 +238,6 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
   }
 
   const sourceUrl = getSourceUrl()
-  const sourceInfo = getSourceInfo()
 
   // For GitHub/code documents, show content viewer
   // For other documents without URL, also show content viewer
@@ -264,21 +251,21 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
         backdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1000,
+        zIndex: Z_INDEX.modal,
         padding: '20px'
       }}
       onClick={onClose}
     >
       <div
         style={{
-          backgroundColor: '#FFFFFF',
+          backgroundColor: colors.pageBg,
           borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          boxShadow: shadows.lg,
           maxWidth: showContentViewer ? '900px' : '600px',
           width: '100%',
           maxHeight: '90vh',
@@ -295,8 +282,8 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
             alignItems: 'flex-start',
             justifyContent: 'space-between',
             padding: '20px 24px',
-            borderBottom: '1px solid #E5E7EB',
-            backgroundColor: isCodeDocument ? '#0F172A' : '#F9FAFB'
+            borderBottom: `1px solid ${colors.border}`,
+            backgroundColor: isCodeDocument ? '#2D2D2D' : colors.cardBg
           }}
         >
           <div style={{ flex: 1, paddingRight: '16px' }}>
@@ -304,7 +291,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               <span style={{ fontSize: '24px' }}>{sourceInfo.icon}</span>
               <span
                 style={{
-                  color: isCodeDocument ? '#60A5FA' : sourceInfo.color,
+                  color: isCodeDocument ? colors.primary : sourceInfo.color,
                   fontSize: '12px',
                   fontWeight: 600,
                   textTransform: 'uppercase',
@@ -314,14 +301,14 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
                 {sourceInfo.label}
               </span>
               {isCodeDocument && document.metadata?.repository && (
-                <span style={{ color: '#94A3B8', fontSize: '12px' }}>
+                <span style={{ color: colors.textMuted, fontSize: '12px' }}>
                   • {document.metadata.repository}
                 </span>
               )}
             </div>
             <h2
               style={{
-                color: isCodeDocument ? '#F1F5F9' : '#111827',
+                color: isCodeDocument ? '#F0EEEC' : colors.textPrimary,
                 fontSize: '18px',
                 fontWeight: 600,
                 lineHeight: '1.4',
@@ -333,7 +320,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               {getClassificationBadge()}
-              <span style={{ color: isCodeDocument ? '#94A3B8' : '#6B7280', fontSize: '13px' }}>
+              <span style={{ color: isCodeDocument ? colors.textMuted : colors.textSecondary, fontSize: '13px' }}>
                 {formatDate(document.source_created_at)}
               </span>
             </div>
@@ -344,7 +331,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               width: '36px',
               height: '36px',
               borderRadius: '8px',
-              backgroundColor: isCodeDocument ? '#1E293B' : '#F3F4F6',
+              backgroundColor: isCodeDocument ? '#3D3D3D' : colors.border,
               border: 'none',
               cursor: 'pointer',
               display: 'flex',
@@ -353,40 +340,40 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               flexShrink: 0,
               transition: 'background-color 0.15s'
             }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isCodeDocument ? '#334155' : '#E5E7EB'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isCodeDocument ? '#1E293B' : '#F3F4F6'}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isCodeDocument ? '#4D4D4D' : colors.borderLight}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isCodeDocument ? '#3D3D3D' : colors.border}
           >
-            <span style={{ color: isCodeDocument ? '#94A3B8' : '#6B7280', fontSize: '20px', lineHeight: 1 }}>×</span>
+            <span style={{ color: isCodeDocument ? colors.textMuted : colors.textSecondary, fontSize: '20px', lineHeight: 1 }}>×</span>
           </button>
         </div>
 
         {/* Tabs for code documents */}
         {showContentViewer && (
-          <div style={{ display: 'flex', borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+          <div style={{ display: 'flex', borderBottom: `1px solid ${colors.border}`, backgroundColor: colors.cardBg }}>
             <button
               onClick={() => setActiveTab('content')}
               style={{
                 padding: '12px 20px',
                 border: 'none',
-                backgroundColor: activeTab === 'content' ? '#FFFFFF' : 'transparent',
-                borderBottom: activeTab === 'content' ? '2px solid #2563EB' : '2px solid transparent',
-                color: activeTab === 'content' ? '#2563EB' : '#6B7280',
+                backgroundColor: activeTab === 'content' ? colors.pageBg : 'transparent',
+                borderBottom: activeTab === 'content' ? `2px solid ${colors.primary}` : '2px solid transparent',
+                color: activeTab === 'content' ? colors.primary : colors.textMuted,
                 fontWeight: 500,
                 fontSize: '14px',
                 cursor: 'pointer',
                 transition: 'all 0.15s'
               }}
             >
-              📖 Formatted
+              Formatted
             </button>
             <button
               onClick={() => setActiveTab('raw')}
               style={{
                 padding: '12px 20px',
                 border: 'none',
-                backgroundColor: activeTab === 'raw' ? '#FFFFFF' : 'transparent',
-                borderBottom: activeTab === 'raw' ? '2px solid #2563EB' : '2px solid transparent',
-                color: activeTab === 'raw' ? '#2563EB' : '#6B7280',
+                backgroundColor: activeTab === 'raw' ? colors.pageBg : 'transparent',
+                borderBottom: activeTab === 'raw' ? `2px solid ${colors.primary}` : '2px solid transparent',
+                color: activeTab === 'raw' ? colors.primary : colors.textMuted,
                 fontWeight: 500,
                 fontSize: '14px',
                 cursor: 'pointer',
@@ -403,7 +390,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
           style={{
             flex: 1,
             overflow: 'auto',
-            backgroundColor: '#FFFFFF'
+            backgroundColor: colors.pageBg
           }}
         >
           {showContentViewer ? (
@@ -415,8 +402,8 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               ) : (
                 <pre
                   style={{
-                    backgroundColor: '#1E293B',
-                    color: '#E2E8F0',
+                    backgroundColor: '#2D2D2D',
+                    color: '#E8E0DB',
                     padding: '20px',
                     borderRadius: '8px',
                     overflow: 'auto',
@@ -448,7 +435,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
                   width: '80px',
                   height: '80px',
                   borderRadius: '16px',
-                  backgroundColor: '#EEF2FF',
+                  backgroundColor: colors.primaryLight,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -459,7 +446,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               </div>
               <h3
                 style={{
-                  color: '#111827',
+                  color: colors.textPrimary,
                   fontSize: '16px',
                   fontWeight: 600,
                   marginBottom: '8px'
@@ -469,7 +456,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               </h3>
               <p
                 style={{
-                  color: '#6B7280',
+                  color: colors.textSecondary,
                   fontSize: '14px',
                   marginBottom: '24px',
                   maxWidth: '360px'
@@ -487,20 +474,20 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
                   gap: '8px',
                   padding: '14px 28px',
                   borderRadius: '10px',
-                  backgroundColor: '#2563EB',
+                  backgroundColor: colors.primary,
                   color: '#FFFFFF',
                   fontSize: '15px',
                   fontWeight: 600,
                   textDecoration: 'none',
                   transition: 'background-color 0.15s, transform 0.1s',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.2)'
+                  boxShadow: shadows.sm
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#1D4ED8'
+                  e.currentTarget.style.backgroundColor = colors.primaryHover
                   e.currentTarget.style.transform = 'translateY(-1px)'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#2563EB'
+                  e.currentTarget.style.backgroundColor = colors.primary
                   e.currentTarget.style.transform = 'translateY(0)'
                 }}
               >
@@ -528,7 +515,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
                   width: '80px',
                   height: '80px',
                   borderRadius: '16px',
-                  backgroundColor: '#F3F4F6',
+                  backgroundColor: colors.cardBg,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -539,7 +526,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               </div>
               <h3
                 style={{
-                  color: '#111827',
+                  color: colors.textPrimary,
                   fontSize: '16px',
                   fontWeight: 600,
                   marginBottom: '8px'
@@ -549,7 +536,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               </h3>
               <p
                 style={{
-                  color: '#6B7280',
+                  color: colors.textSecondary,
                   fontSize: '14px',
                   marginBottom: '16px'
                 }}
@@ -559,14 +546,14 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               {document.summary && (
                 <div
                   style={{
-                    backgroundColor: '#F9FAFB',
+                    backgroundColor: colors.cardBg,
                     borderRadius: '8px',
                     padding: '16px',
                     maxWidth: '100%',
                     textAlign: 'left'
                   }}
                 >
-                  <p style={{ color: '#374151', fontSize: '14px', lineHeight: '1.6' }}>
+                  <p style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: '1.6' }}>
                     {document.summary}
                   </p>
                 </div>
@@ -582,12 +569,12 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '16px 24px',
-            borderTop: '1px solid #E5E7EB',
-            backgroundColor: '#F9FAFB',
+            borderTop: `1px solid ${colors.border}`,
+            backgroundColor: colors.cardBg,
             gap: '12px'
           }}
         >
-          <div style={{ fontSize: '13px', color: '#6B7280' }}>
+          <div style={{ fontSize: '13px', color: colors.textMuted }}>
             {document.content && `${document.content.length.toLocaleString()} characters`}
           </div>
           <button
@@ -595,16 +582,16 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
             style={{
               padding: '10px 20px',
               borderRadius: '8px',
-              backgroundColor: '#E5E7EB',
-              color: '#374151',
+              backgroundColor: colors.border,
+              color: colors.textPrimary,
               border: 'none',
               cursor: 'pointer',
               fontSize: '14px',
               fontWeight: 500,
               transition: 'background-color 0.15s'
             }}
-            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#D1D5DB'}
-            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#E5E7EB'}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.borderLight}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.border}
           >
             Close
           </button>

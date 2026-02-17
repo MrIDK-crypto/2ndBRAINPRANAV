@@ -1209,16 +1209,31 @@ def search():
                 boost_doc_ids=boost_doc_ids  # Boost newly uploaded docs
             )
 
-            # Format sources for response
+            # Format sources for response — enrich with source_url from DB
             sources = []
             if include_sources:
-                for src in result.get('sources', []):
+                # Batch lookup source_url for all doc_ids
+                raw_sources = result.get('sources', [])
+                doc_ids = [s.get('doc_id', '') for s in raw_sources if s.get('doc_id')]
+                source_url_map = {}
+                if doc_ids:
+                    try:
+                        docs_with_urls = db.query(Document.id, Document.source_url).filter(
+                            Document.id.in_(doc_ids)
+                        ).all()
+                        source_url_map = {str(d.id): d.source_url for d in docs_with_urls if d.source_url}
+                    except Exception:
+                        pass  # Graceful fallback — no URLs is fine
+
+                for src in raw_sources:
+                    doc_id = src.get('doc_id', '')
                     sources.append({
-                        "doc_id": src.get('doc_id', ''),
+                        "doc_id": doc_id,
                         "title": src.get('title', 'Untitled'),
                         "content_preview": (src.get('content', '') or src.get('content_preview', ''))[:300],
                         "score": src.get('rerank_score', src.get('score', 0)),
-                        "metadata": src.get('metadata', {})
+                        "metadata": src.get('metadata', {}),
+                        "source_url": source_url_map.get(doc_id, '')
                     })
 
             # Build response

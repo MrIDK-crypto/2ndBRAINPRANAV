@@ -7,42 +7,16 @@ import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import DocumentViewer from './DocumentViewer'
 import Sidebar from '../shared/Sidebar'
+import {
+  colors, shadows, Z_INDEX,
+  CATEGORIES, MOVE_CATEGORIES, CATEGORY_TO_CLASSIFICATION,
+  CODE_EXTENSIONS, CODE_EXTENSIONS_REGEX, MEETING_KEYWORDS,
+  SOURCE_TYPE_MAP, getSourceTypeInfo,
+  ACCEPTED_FILE_TYPES, DISPLAY_PAGE_SIZE, API_FETCH_LIMIT, SUMMARY_WORD_LIMIT,
+  formatFileSize,
+} from './constants'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
-
-// Wellspring-Inspired Warm Design System
-const colors = {
-  // Primary - Warm Coral/Salmon
-  primary: '#D4A59A',
-  primaryHover: '#C4958A',
-  primaryLight: '#FBF4F1',
-
-  // Backgrounds - Warm Cream/Off-white
-  pageBg: '#FAF9F7',
-  cardBg: '#F7F5F3',
-
-  // Text - Warm Tones
-  textPrimary: '#2D2D2D',
-  textSecondary: '#6B6B6B',
-  textMuted: '#9A9A9A',
-
-  // Borders & Dividers - Very Subtle
-  border: '#F0EEEC',
-  borderLight: '#F7F5F3',
-
-  // Status Colors - Soft Muted Palette
-  statusActive: '#D4A59A',     // Warm coral
-  statusSuccess: '#9CB896',    // Soft sage green
-  statusPending: '#E8E8E8',    // Light gray
-  statusArchived: '#BEBEBE',   // Medium gray
-  statusAccent: '#F0E6E3',     // Very light coral
-}
-
-const shadows = {
-  sm: '0 1px 3px 0 rgba(0, 0, 0, 0.04)',
-  md: '0 4px 12px -2px rgba(0, 0, 0, 0.06)',
-  lg: '0 8px 24px -4px rgba(0, 0, 0, 0.08)',
-}
 
 interface Document {
   id: string
@@ -63,6 +37,7 @@ interface Document {
   score?: number
   classificationConfidence?: number
   embedded_at?: string | null
+  fileSize?: number
 }
 
 interface FullDocument {
@@ -81,13 +56,14 @@ interface FullDocument {
   source_url?: string
 }
 
-// Status mapping for visual indicators - Warm theme
+// Status mapping for visual indicators
 const getStatusInfo = (classification?: string, sourceType?: string) => {
   if (classification === 'work') return { label: 'Active', color: colors.statusActive }
   if (classification === 'personal') return { label: 'Personal', color: colors.statusPending }
   if (classification === 'spam') return { label: 'Archived', color: colors.statusArchived }
-  if (sourceType === 'webscraper' || sourceType === 'firecrawl') return { label: 'Scraped', color: colors.statusSuccess }
-  if (sourceType === 'github') return { label: 'Code', color: colors.statusAccent }
+  const srcInfo = getSourceTypeInfo(sourceType)
+  if (srcInfo.docType === 'Web Page') return { label: 'Scraped', color: colors.statusSuccess }
+  if (srcInfo.docType === 'Code') return { label: 'Code', color: colors.statusAccent }
   return { label: 'Pending', color: colors.textMuted }
 }
 
@@ -174,7 +150,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   }
 
   // Code files
-  if (['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'h', 'css', 'html', 'json', 'xml', 'yaml', 'yml', 'md', 'sh', 'rb', 'go', 'rs'].includes(ext) || fileType.includes('code')) {
+  if (CODE_EXTENSIONS.has(ext) || fileType.includes('code')) {
     return {
       color: iconColor,
       bgColor: '#F0EEEC',
@@ -238,7 +214,7 @@ export default function Documents() {
   const [viewingDocument, setViewingDocument] = useState<FullDocument | null>(null)
   const [loadingDocument, setLoadingDocument] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [displayLimit, setDisplayLimit] = useState(50)
+  const [displayLimit, setDisplayLimit] = useState(DISPLAY_PAGE_SIZE)
   const [sortField, setSortField] = useState<string>('created')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [activeFilters, setActiveFilters] = useState<string[]>([])
@@ -318,7 +294,7 @@ export default function Documents() {
 
   const loadDocuments = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/documents?limit=100`, {
+      const response = await axios.get(`${API_BASE}/documents?limit=${API_FETCH_LIMIT}`, {
         headers: authHeaders
       })
 
@@ -329,26 +305,24 @@ export default function Documents() {
           const title = doc.title?.toLowerCase() || ''
           const sourceType = doc.source_type?.toLowerCase() || ''
           const classification = doc.classification?.toLowerCase() || ''
-          const folderPath = doc.metadata?.folder_path?.toLowerCase() || ''
 
-          // Categorization logic
-          if (sourceType === 'webscraper' || sourceType === 'firecrawl' || sourceType?.includes('webscraper') || sourceType?.includes('firecrawl')) {
+          // Categorization logic using shared constants
+          const srcInfo = getSourceTypeInfo(doc.source_type)
+          if (srcInfo.docType === 'Web Page') {
             category = 'Web Scraper'
-          } else if (sourceType === 'github' || sourceType?.includes('code') || /\.(js|ts|py|jsx|tsx|java|cpp|go|rs)$/i.test(title)) {
+          } else if (sourceType === 'github' || sourceType?.includes('code') || CODE_EXTENSIONS_REGEX.test(title)) {
             category = 'Code'
           } else if (classification === 'personal' || classification === 'spam') {
             category = 'Personal Items'
           } else if (classification === 'work') {
-            if (/meeting|schedule|agenda|discussion/i.test(title)) {
+            if (MEETING_KEYWORDS.test(title)) {
               category = 'Meetings'
             } else {
               category = 'Documents'
             }
-          } else if (sourceType === 'box' || sourceType === 'file' || sourceType === 'notion' || sourceType === 'gdrive' || sourceType === 'zotero') {
-            // Cloud storage and knowledge base sources default to Documents (Work)
+          } else if (['box', 'file', 'notion', 'gdrive', 'zotero', 'onedrive'].includes(sourceType)) {
             category = 'Documents'
           } else if (classification === 'unknown' || !classification) {
-            // Unclassified documents default to Documents instead of Other/Personal
             category = 'Documents'
           }
 
@@ -358,40 +332,31 @@ export default function Documents() {
             displayName = displayName.split(' - ').pop() || displayName
           }
 
-          // Quick summary
+          // Quick summary using shared constant
           let quickSummary = ''
           if (sourceType === 'github') {
             quickSummary = 'GitHub Repository'
           } else if (doc.summary?.trim()) {
-            quickSummary = doc.summary.split(' ').slice(0, 8).join(' ')
-            if (doc.summary.split(' ').length > 8) quickSummary += '...'
+            const words = doc.summary.split(' ')
+            quickSummary = words.slice(0, SUMMARY_WORD_LIMIT).join(' ')
+            if (words.length > SUMMARY_WORD_LIMIT) quickSummary += '...'
           } else if (doc.content?.trim()) {
-            const words = doc.content.trim().split(/\s+/).slice(0, 8).join(' ')
-            quickSummary = words + '...'
+            quickSummary = doc.content.trim().split(/\s+/).slice(0, SUMMARY_WORD_LIMIT).join(' ') + '...'
           } else {
-            quickSummary = `${sourceType || 'Document'} file`
+            quickSummary = `${srcInfo.label} file`
           }
 
-          // Document type
-          let docType = 'Document'
-          if (sourceType === 'github') docType = 'Code'
-          else if (sourceType === 'webscraper' || sourceType === 'firecrawl') docType = 'Web Page'
-          else if (sourceType === 'email') docType = 'Email'
-          else if (sourceType === 'box') docType = 'Box File'
+          // Document type from shared source map
+          const docType = srcInfo.docType
 
-          // Calculate work likelihood score from classification confidence
-          // Higher score = more likely WORK, Lower score = more likely PERSONAL
-          // If classified as work, score = confidence (high confidence = high work score)
-          // If classified as personal/spam, score = 100 - confidence (high personal confidence = low work score)
-          let workScore = 50 // Default for unknown
+          // Work likelihood score from classification confidence
+          let workScore = 50
           if (doc.classification_confidence !== null && doc.classification_confidence !== undefined) {
             const confidence = doc.classification_confidence * 100
             if (classification === 'work') {
               workScore = Math.round(confidence)
             } else if (classification === 'personal' || classification === 'spam') {
               workScore = Math.round(100 - confidence)
-            } else {
-              workScore = 50 // Unknown classification
             }
           }
 
@@ -406,19 +371,19 @@ export default function Documents() {
             selected: false,
             classification: doc.classification,
             source_type: doc.source_type,
-            url: doc.source_url || doc.metadata?.url || doc.metadata?.source_url,
+            url: doc.source_url,
             content: doc.content,
             summary: doc.summary,
             quickSummary,
             score: workScore,
             classificationConfidence: doc.classification_confidence,
-            embedded_at: doc.embedded_at || null
+            embedded_at: doc.embedded_at || null,
+            fileSize: doc.file_size || 0,
           }
         })
 
         setDocuments(docs)
       } else {
-        // If API fails, show sample documents
         setDocuments([])
       }
     } catch (error) {
@@ -588,20 +553,44 @@ export default function Documents() {
   }
 
   const handleMoveToCategory = async (docId: string, newCategory: string) => {
-    // For now, this updates the local state. In production, you'd call an API to update the category.
+    const classification = CATEGORY_TO_CLASSIFICATION[newCategory] || 'unknown'
+
+    // Optimistic update
     setDocuments(prev => prev.map(doc =>
-      doc.id === docId ? { ...doc, category: newCategory as Document['category'] } : doc
+      doc.id === docId ? { ...doc, category: newCategory as Document['category'], classification } : doc
     ))
     setOpenMenuId(null)
+
+    try {
+      await axios.put(`${API_BASE}/documents/${docId}/classify`, {
+        classification
+      }, { headers: authHeaders })
+    } catch (error) {
+      console.error('Error updating document category:', error)
+      loadDocuments()
+    }
   }
 
   const handleBulkMoveToCategory = async (newCategory: string) => {
     if (selectedDocs.size === 0) return
+    const classification = CATEGORY_TO_CLASSIFICATION[newCategory] || 'unknown'
+    const docIds = Array.from(selectedDocs)
 
+    // Optimistic update
     setDocuments(prev => prev.map(doc =>
-      selectedDocs.has(doc.id) ? { ...doc, category: newCategory as Document['category'] } : doc
+      selectedDocs.has(doc.id) ? { ...doc, category: newCategory as Document['category'], classification } : doc
     ))
     setSelectedDocs(new Set())
+
+    try {
+      await axios.post(`${API_BASE}/documents/bulk/classify`, {
+        document_ids: docIds,
+        classification
+      }, { headers: authHeaders })
+    } catch (error) {
+      console.error('Error bulk updating categories:', error)
+      loadDocuments()
+    }
   }
 
   const handleFindGaps = async (mode: 'simple' | 'code' = 'simple') => {
@@ -691,15 +680,23 @@ export default function Documents() {
     }
   }
 
-  const counts = {
-    all: documents.length,
-    meetings: documents.filter(d => d.category === 'Meetings').length,
-    documents: documents.filter(d => d.category === 'Documents').length,
-    personal: documents.filter(d => d.category === 'Personal Items').length,
-    code: documents.filter(d => d.category === 'Code').length,
-    other: documents.filter(d => d.category === 'Other Items').length,
-    webscraper: documents.filter(d => d.category === 'Web Scraper').length
-  }
+  const { counts, sizes } = useMemo(() => {
+    const c = { all: 0, meetings: 0, documents: 0, personal: 0, code: 0, other: 0, webscraper: 0 }
+    const s = { all: 0, meetings: 0, documents: 0, personal: 0, code: 0, other: 0, webscraper: 0 }
+    for (const d of documents) {
+      c.all++
+      s.all += d.fileSize || 0
+      switch (d.category) {
+        case 'Meetings':       c.meetings++;   s.meetings += d.fileSize || 0; break
+        case 'Documents':      c.documents++;  s.documents += d.fileSize || 0; break
+        case 'Personal Items': c.personal++;   s.personal += d.fileSize || 0; break
+        case 'Code':           c.code++;       s.code += d.fileSize || 0; break
+        case 'Other Items':    c.other++;      s.other += d.fileSize || 0; break
+        case 'Web Scraper':    c.webscraper++; s.webscraper += d.fileSize || 0; break
+      }
+    }
+    return { counts: c, sizes: s }
+  }, [documents])
 
   // Folder Card Component
   const FolderCard = ({ title, count, size, active, onClick, iconType }: {
@@ -710,7 +707,7 @@ export default function Documents() {
     onClick: () => void
     iconType: 'all' | 'work' | 'code' | 'web' | 'personal'
   }) => {
-    const iconColor = active ? '#C9A598' : '#7A7A7A'
+    const iconColor = active ? colors.primaryHover : '#7A7A7A'
     const bgColor = active ? colors.primaryLight : '#F7F5F3'
 
     const icons = {
@@ -925,15 +922,6 @@ export default function Documents() {
 
   // Action Menu Component - with Move to category options
   const ActionMenu = ({ docId, docName }: { docId: string; docName: string }) => {
-    const categories = [
-      { label: 'Documents', value: 'Documents' },
-      { label: 'Code', value: 'Code' },
-      { label: 'Meetings', value: 'Meetings' },
-      { label: 'Web Scraper', value: 'Web Scraper' },
-      { label: 'Personal Items', value: 'Personal Items' },
-      { label: 'Other Items', value: 'Other Items' },
-    ]
-
     return (
       <div style={{ position: 'relative' }} ref={openMenuId === docId ? menuRef : null}>
         <button
@@ -974,7 +962,7 @@ export default function Documents() {
             borderRadius: '8px',
             boxShadow: shadows.lg,
             minWidth: '180px',
-            zIndex: 100,
+            zIndex: Z_INDEX.dropdown,
             overflow: 'hidden',
           }}>
             {/* View Options */}
@@ -1006,7 +994,7 @@ export default function Documents() {
             <div style={{ padding: '6px 14px', fontSize: '11px', fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase' }}>
               Move to
             </div>
-            {categories.map((cat) => (
+            {MOVE_CATEGORIES.map((cat) => (
               <button
                 key={cat.value}
                 onClick={(e) => { e.stopPropagation(); handleMoveToCategory(docId, cat.value) }}
@@ -1134,12 +1122,12 @@ export default function Documents() {
                     top: '100%',
                     left: 0,
                     marginTop: '4px',
-                    backgroundColor: '#FAF9F7',
+                    backgroundColor: colors.pageBg,
                     borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    boxShadow: shadows.md,
                     border: `1px solid ${colors.border}`,
                     minWidth: '160px',
-                    zIndex: 100,
+                    zIndex: Z_INDEX.dropdown,
                     overflow: 'hidden'
                   }}
                 >
@@ -1240,35 +1228,7 @@ export default function Documents() {
               }}>
                 Folders
               </h2>
-              <button style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px 10px',
-                backgroundColor: 'transparent',
-                border: 'none',
-                color: colors.primary,
-                fontSize: '13px',
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}>
-                + New folder
-              </button>
             </div>
-            <button style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 10px',
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: colors.primary,
-              fontSize: '13px',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}>
-              + View all
-            </button>
           </div>
 
           <div style={{
@@ -1280,7 +1240,7 @@ export default function Documents() {
             <FolderCard
               title="All Documents"
               count={counts.all}
-              size={`${Math.floor(counts.all * 0.8)} MB`}
+              size={formatFileSize(sizes.all)}
               active={activeCategory === 'All Items'}
               onClick={() => setActiveCategory('All Items')}
               iconType="all"
@@ -1288,7 +1248,7 @@ export default function Documents() {
             <FolderCard
               title="Work Documents"
               count={counts.documents}
-              size={`${Math.floor(counts.documents * 1.2)} MB`}
+              size={formatFileSize(sizes.documents)}
               active={activeCategory === 'Documents'}
               onClick={() => setActiveCategory('Documents')}
               iconType="work"
@@ -1296,7 +1256,7 @@ export default function Documents() {
             <FolderCard
               title="Code Files"
               count={counts.code}
-              size={`${Math.floor(counts.code * 0.5)} MB`}
+              size={formatFileSize(sizes.code)}
               active={activeCategory === 'Code'}
               onClick={() => setActiveCategory('Code')}
               iconType="code"
@@ -1304,7 +1264,7 @@ export default function Documents() {
             <FolderCard
               title="Web Scraper"
               count={counts.webscraper}
-              size={`${Math.floor(counts.webscraper * 0.3)} MB`}
+              size={formatFileSize(sizes.webscraper)}
               active={activeCategory === 'Web Scraper'}
               onClick={() => setActiveCategory('Web Scraper')}
               iconType="web"
@@ -1312,7 +1272,7 @@ export default function Documents() {
             <FolderCard
               title="Personal & Other"
               count={counts.personal + counts.other}
-              size={`${Math.floor((counts.personal + counts.other) * 0.6)} MB`}
+              size={formatFileSize(sizes.personal + sizes.other)}
               active={activeCategory === 'Personal Items' || activeCategory === 'Other Items'}
               onClick={() => setActiveCategory('Personal Items')}
               iconType="personal"
@@ -1322,7 +1282,7 @@ export default function Documents() {
 
         {/* Files Section */}
         <div style={{
-          backgroundColor: '#F7F5F3',
+          backgroundColor: colors.cardBg,
           borderRadius: '12px',
           border: `1px solid ${colors.border}`,
           boxShadow: shadows.sm,
@@ -1337,10 +1297,6 @@ export default function Documents() {
             borderBottom: `1px solid ${colors.border}`,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <FilterPill label="Sort by: latest" />
-              <FilterPill label="Filter keywords" />
-              <FilterPill label="Type" />
-              <FilterPill label="Source" />
               {activeFilters.map(filter => (
                 <FilterPill
                   key={filter}
@@ -1377,12 +1333,9 @@ export default function Documents() {
                     }}
                   >
                     <option value="">Move to...</option>
-                    <option value="Documents">Documents</option>
-                    <option value="Code">Code</option>
-                    <option value="Meetings">Meetings</option>
-                    <option value="Web Scraper">Web Scraper</option>
-                    <option value="Personal Items">Personal Items</option>
-                    <option value="Other Items">Other Items</option>
+                    {MOVE_CATEGORIES.map(cat => (
+                      <option key={cat.value} value={cat.value}>{cat.label}</option>
+                    ))}
                   </select>
                   {/* Bulk Delete Button */}
                   <button
@@ -1401,7 +1354,7 @@ export default function Documents() {
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#9A9A9A'}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.textMuted}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.statusArchived}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1527,7 +1480,7 @@ export default function Documents() {
                 gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 120px 48px',
                 gap: '16px',
                 padding: '12px 20px',
-                backgroundColor: '#F0EEEC',
+                backgroundColor: colors.border,
                 borderBottom: `1px solid ${colors.border}`,
                 alignItems: 'center',
               }}>
@@ -1546,8 +1499,8 @@ export default function Documents() {
                       width: '18px',
                       height: '18px',
                       borderRadius: '4px',
-                      border: (selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0) ? '2px solid #C9A598' : '2px solid #B0ADA9',
-                      backgroundColor: (selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0) ? '#C9A598' : 'transparent',
+                      border: (selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0) ? `2px solid ${colors.primary}` : `2px solid ${colors.textMuted}`,
+                      backgroundColor: (selectedDocs.size === filteredDocuments.slice(0, displayLimit).length && filteredDocuments.length > 0) ? colors.primary : 'transparent',
                       transition: 'all 0.15s ease',
                       flexShrink: 0,
                     }}>
@@ -1638,8 +1591,8 @@ export default function Documents() {
                             width: '18px',
                             height: '18px',
                             borderRadius: '4px',
-                            border: selectedDocs.has(doc.id) ? '2px solid #C9A598' : '2px solid #B0ADA9',
-                            backgroundColor: selectedDocs.has(doc.id) ? '#C9A598' : 'transparent',
+                            border: selectedDocs.has(doc.id) ? `2px solid ${colors.primary}` : `2px solid ${colors.textMuted}`,
+                            backgroundColor: selectedDocs.has(doc.id) ? colors.primary : 'transparent',
                             transition: 'all 0.15s ease',
                             flexShrink: 0,
                           }}>
@@ -1706,18 +1659,18 @@ export default function Documents() {
                         gap: '8px',
                         padding: '4px 10px',
                         borderRadius: '12px',
-                        backgroundColor: doc.embedded_at ? '#F4F7F2' : '#FDF8F6',
+                        backgroundColor: doc.embedded_at ? colors.searchableActiveBg : colors.searchableInactiveBg,
                       }}>
                         <div style={{
                           width: '6px',
                           height: '6px',
                           borderRadius: '50%',
-                          backgroundColor: doc.embedded_at ? '#A3B899' : '#C9A598',
+                          backgroundColor: doc.embedded_at ? colors.searchableActiveDot : colors.searchableInactiveDot,
                         }} />
                         <span style={{
                           fontSize: '12px',
                           fontWeight: 500,
-                          color: doc.embedded_at ? '#7A8F70' : '#B8958A',
+                          color: doc.embedded_at ? colors.searchableActiveText : colors.searchableInactiveText,
                         }}>
                           {doc.embedded_at ? 'In Chatbot' : 'Not Indexed'}
                         </span>
@@ -1741,7 +1694,7 @@ export default function Documents() {
                   borderTop: `1px solid ${colors.border}`,
                 }}>
                   <button
-                    onClick={() => setDisplayLimit(prev => prev + 50)}
+                    onClick={() => setDisplayLimit(prev => prev + DISPLAY_PAGE_SIZE)}
                     style={{
                       padding: '10px 24px',
                       backgroundColor: 'transparent',
@@ -1785,7 +1738,7 @@ export default function Documents() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000,
+          zIndex: Z_INDEX.modal,
         }}>
           <div style={{
             backgroundColor: colors.cardBg,
@@ -1805,7 +1758,7 @@ export default function Documents() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
+        accept={ACCEPTED_FILE_TYPES}
         onChange={handleFileUpload}
         style={{ display: 'none' }}
       />
@@ -1823,7 +1776,7 @@ export default function Documents() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1000,
+            zIndex: Z_INDEX.modal,
           }}
           onClick={() => {
             setShowShareModal(false)

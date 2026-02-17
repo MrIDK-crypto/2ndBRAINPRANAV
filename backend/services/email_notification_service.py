@@ -17,8 +17,12 @@ SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
 SMTP_USER = os.getenv('SMTP_USER') or os.getenv('FORWARD_EMAIL_ADDRESS', '')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD') or os.getenv('FORWARD_EMAIL_PASSWORD', '')
 # CRITICAL: Gmail SMTP can only send from the authenticated account.
-# Fall back to SMTP_USER (the Gmail address) instead of noreply@2ndbrain.ai
-SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or SMTP_USER or 'noreply@2ndbrain.ai'
+# If using Gmail, force from address to match SMTP_USER to avoid SMTPSenderRefused
+_configured_from = os.getenv('SMTP_FROM_EMAIL') or SMTP_USER or 'noreply@2ndbrain.ai'
+if 'gmail' in SMTP_HOST.lower() and SMTP_USER and _configured_from != SMTP_USER:
+    SMTP_FROM_EMAIL = SMTP_USER  # Gmail rejects sends from non-authenticated addresses
+else:
+    SMTP_FROM_EMAIL = _configured_from
 SMTP_FROM_NAME = os.getenv('SMTP_FROM_NAME', '2nd Brain')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3006')
 
