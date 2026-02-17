@@ -444,7 +444,7 @@ export default function KnowledgeGaps() {
   const [submittingId, setSubmittingId] = useState<string | null>(null)
 
   const authHeaders = useAuthHeaders()
-  const { user, isSharedAccess } = useAuth()
+  const { user } = useAuth()
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -752,7 +752,7 @@ export default function KnowledgeGaps() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: theme.pageBg }}>
-      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} isSharedAccess={isSharedAccess} />
+      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* Progress Bar */}
@@ -838,7 +838,6 @@ export default function KnowledgeGaps() {
               </button>
             </div>
 
-            {!isSharedAccess && (
             <button
               onClick={generateQuestions}
               disabled={generating}
@@ -857,7 +856,6 @@ export default function KnowledgeGaps() {
             >
               {generating ? 'Analyzing...' : 'Find Gaps'}
             </button>
-            )}
           </div>
         </header>
 
@@ -884,16 +882,14 @@ export default function KnowledgeGaps() {
               </div>
               <h2 style={{ fontFamily: fonts.serif, fontSize: '28px', color: theme.ink, margin: '0 0 12px' }}>No knowledge gaps yet</h2>
               <p style={{ fontFamily: fonts.sans, fontSize: '15px', color: theme.muted, maxWidth: '400px' }}>
-                {isSharedAccess ? 'No knowledge gaps have been identified yet.' : 'Analyze your documents to identify knowledge gaps.'}
+                Analyze your documents to identify knowledge gaps.
               </p>
-              {!isSharedAccess && (
               <button onClick={generateQuestions} disabled={generating} style={{
                 marginTop: '32px', padding: '16px 32px', background: theme.accent, border: 'none',
                 borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.sans,
               }}>
                 {generating ? 'Analyzing...' : 'Analyze Documents'}
               </button>
-              )}
             </div>
           ) : filteredGaps.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '80px', background: theme.accentLight, borderRadius: '20px', maxWidth: '600px', margin: '0 auto' }}>

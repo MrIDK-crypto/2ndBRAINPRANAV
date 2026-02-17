@@ -353,8 +353,14 @@ class AuthService:
                         error_code="TENANT_NOT_FOUND"
                     )
 
-                # Check if email matches invitation (optional - could allow any email)
-                # For now, we'll be flexible and allow any email to use the invitation
+                # Enforce email match - signup email must match the invited email
+                if invitation.recipient_email and email != invitation.recipient_email.lower().strip():
+                    return AuthResult(
+                        success=False,
+                        error="You must sign up with the email address this invitation was sent to",
+                        error_code="EMAIL_MISMATCH"
+                    )
+
                 user_role = invitation.role  # Use the role specified in the invitation
                 print(f"[Auth] Signup via invitation for tenant: {tenant.name}")
 
@@ -408,7 +414,7 @@ class AuthService:
                 action="user.signup",
                 resource_type="user",
                 resource_id=user.id,
-                details={"email": email, "organization": org_name},
+                details={"email": email, "organization": tenant.name},
                 ip_address=ip_address,
                 user_agent=user_agent
             )
@@ -1497,70 +1503,29 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
 
 def require_auth(f):
-    """Decorator for requiring authentication (JWT or share token)"""
+    """Decorator for requiring authentication (JWT only)"""
     from functools import wraps
     from flask import request, jsonify, g
 
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Try JWT first
         token = get_token_from_header(request.headers.get("Authorization", ""))
 
-        if token:
-            payload, error = JWTUtils.decode_access_token(token)
-            if error:
-                return jsonify({"error": error}), 401
+        if not token:
+            return jsonify({"error": "Missing authorization token"}), 401
 
-            # Store user info in Flask g object
-            g.user_id = payload.get("sub")
-            g.tenant_id = payload.get("tenant_id")
-            g.email = payload.get("email")
-            g.role = payload.get("role")
-            g.is_shared_access = False
+        payload, error = JWTUtils.decode_access_token(token)
+        if error:
+            return jsonify({"error": error}), 401
 
-            return f(*args, **kwargs)
+        # Store user info in Flask g object
+        g.user_id = payload.get("sub")
+        g.tenant_id = payload.get("tenant_id")
+        g.email = payload.get("email")
+        g.role = payload.get("role")
+        g.is_shared_access = False
 
-        # Fallback: try share token
-        share_token = request.headers.get('X-Share-Token')
-        if share_token:
-            import hashlib
-            from database.models import SessionLocal, TenantShareLink, Tenant, utc_now as _utc_now
-
-            token_hash = hashlib.sha256(share_token.encode()).hexdigest()
-            db = SessionLocal()
-            try:
-                link = db.query(TenantShareLink).filter(
-                    TenantShareLink.token_hash == token_hash,
-                    TenantShareLink.is_active == True
-                ).first()
-
-                if not link or not link.is_valid:
-                    return jsonify({"error": "Invalid or expired share link"}), 401
-
-                tenant = db.query(Tenant).filter(Tenant.id == link.tenant_id).first()
-                if not tenant or not tenant.is_active:
-                    return jsonify({"error": "Organization is inactive"}), 403
-
-                g.user_id = f"shared-{link.id[:8]}"
-                g.tenant_id = link.tenant_id
-                g.email = "shared@portal"
-                g.role = "viewer"
-                g.is_shared_access = True
-                g.share_permissions = link.permissions or {}
-
-                # Track access
-                link.access_count = (link.access_count or 0) + 1
-                link.last_accessed_at = _utc_now()
-                db.commit()
-            except Exception:
-                db.rollback()
-                raise
-            finally:
-                db.close()
-
-            return f(*args, **kwargs)
-
-        return jsonify({"error": "Missing authorization token"}), 401
+        return f(*args, **kwargs)
 
     return decorated
 

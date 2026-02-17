@@ -51,7 +51,7 @@ CORS(app,
          r"/api/*": {
              "origins": list(set(_cors_origins)),
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization", "X-Share-Token"]
+             "allow_headers": ["Content-Type", "Authorization"]
          }
      })
 
@@ -169,7 +169,7 @@ from api.syncs_routes import syncs_bp
 from api.email_forwarding_routes import email_forwarding_bp
 from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
-from api.share_routes import share_bp
+# share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
 # IMPORTANT: Register github_bp BEFORE integration_bp so /api/integrations/github/* routes
@@ -188,7 +188,7 @@ app.register_blueprint(syncs_bp)
 app.register_blueprint(email_forwarding_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
-app.register_blueprint(share_bp)
+# share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")
 
@@ -1105,7 +1105,7 @@ def search():
     from vector_stores.pinecone_store import get_hybrid_store
 
     tenant_id = g.tenant_id
-    print(f"[SEARCH] Tenant: {tenant_id} (shared={getattr(g, 'is_shared_access', False)})", flush=True)
+    print(f"[SEARCH] Tenant: {tenant_id}", flush=True)
 
     data = request.get_json() or {}
     query = data.get('query', '')

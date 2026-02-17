@@ -223,15 +223,16 @@ export default function Documents() {
   const [analyzingGaps, setAnalyzingGaps] = useState(false)
   const [showGapsMenu, setShowGapsMenu] = useState(false)
 
-  // Share modal state
-  const [showShareModal, setShowShareModal] = useState(false)
-  const [shareLink, setShareLink] = useState<string | null>(null)
-  const [generatingLink, setGeneratingLink] = useState(false)
-  const [existingLinks, setExistingLinks] = useState<{id: string, label: string | null, access_count: number, created_at: string | null}[]>([])
-  const [linkCopied, setLinkCopied] = useState(false)
+  // Invite modal state
+  const [showInviteModal, setShowInviteModal] = useState(false)
+  const [inviteEmails, setInviteEmails] = useState('')
+  const [inviteMessage, setInviteMessage] = useState('')
+  const [sendingInvites, setSendingInvites] = useState(false)
+  const [inviteResult, setInviteResult] = useState<{sent: string[], failed: {email: string, reason: string}[]} | null>(null)
+  const [existingInvitations, setExistingInvitations] = useState<{id: string, recipient_email: string, status: string, created_at: string | null}[]>([])
 
   const authHeaders = useAuthHeaders()
-  const { token, user, logout, isSharedAccess } = useAuth()
+  const { token, user, logout } = useAuth()
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -626,57 +627,50 @@ export default function Documents() {
     }
   }
 
-  const fetchExistingLinks = async () => {
+  const fetchInvitations = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/shared/links`, { headers: authHeaders })
+      const response = await axios.get(`${API_BASE}/auth/invitations`, { headers: authHeaders })
       if (response.data.success) {
-        setExistingLinks(response.data.links || [])
+        setExistingInvitations(response.data.invitations || [])
       }
     } catch (error) {
-      console.error('Error fetching share links:', error)
+      console.error('Error fetching invitations:', error)
     }
   }
 
-  const handleGenerateLink = async () => {
-    setGeneratingLink(true)
+  const handleSendInvites = async () => {
+    const emails = inviteEmails.split(/[,\n]/).map(e => e.trim()).filter(e => e)
+    if (emails.length === 0) return
+
+    setSendingInvites(true)
+    setInviteResult(null)
     try {
-      const response = await axios.post(`${API_BASE}/shared/links`, {}, { headers: authHeaders })
-      if (response.data.success) {
-        setShareLink(response.data.share_url)
-        fetchExistingLinks()
+      const response = await axios.post(`${API_BASE}/auth/invite`, {
+        emails,
+        message: inviteMessage || undefined
+      }, { headers: authHeaders })
+      if (response.data) {
+        setInviteResult({ sent: response.data.sent || [], failed: response.data.failed || [] })
+        if (response.data.sent?.length > 0) {
+          setInviteEmails('')
+          setInviteMessage('')
+          fetchInvitations()
+        }
       }
     } catch (error: any) {
-      console.error('Error generating share link:', error)
+      const msg = error?.response?.data?.error || 'Failed to send invitations'
+      setInviteResult({ sent: [], failed: [{ email: emails.join(', '), reason: msg }] })
     } finally {
-      setGeneratingLink(false)
+      setSendingInvites(false)
     }
   }
 
-  const handleCopyLink = async () => {
-    if (!shareLink) return
+  const handleRevokeInvitation = async (invitationId: string) => {
     try {
-      await navigator.clipboard.writeText(shareLink)
-      setLinkCopied(true)
-      setTimeout(() => setLinkCopied(false), 2000)
-    } catch {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea')
-      textArea.value = shareLink
-      document.body.appendChild(textArea)
-      textArea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textArea)
-      setLinkCopied(true)
-      setTimeout(() => setLinkCopied(false), 2000)
-    }
-  }
-
-  const handleRevokeLink = async (linkId: string) => {
-    try {
-      await axios.delete(`${API_BASE}/shared/links/${linkId}`, { headers: authHeaders })
-      setExistingLinks(prev => prev.filter(l => l.id !== linkId))
+      await axios.delete(`${API_BASE}/auth/invitations/${invitationId}`, { headers: authHeaders })
+      setExistingInvitations(prev => prev.filter(i => i.id !== invitationId))
     } catch (error) {
-      console.error('Error revoking share link:', error)
+      console.error('Error revoking invitation:', error)
     }
   }
 
@@ -1027,7 +1021,7 @@ export default function Documents() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
       {/* Sidebar */}
-      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} isSharedAccess={isSharedAccess} />
+      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} />
 
       {/* Main Content */}
       <main style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
@@ -1046,7 +1040,6 @@ export default function Documents() {
           }}>
             Documents
           </h1>
-          {!isSharedAccess && (
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -1173,8 +1166,9 @@ export default function Documents() {
                 </div>
               )}
             </div>
+            {user?.role === 'admin' && (
             <button
-              onClick={() => { setShowShareModal(true); fetchExistingLinks() }}
+              onClick={() => { setShowInviteModal(true); fetchInvitations() }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1198,17 +1192,16 @@ export default function Documents() {
                 e.currentTarget.style.borderColor = colors.border
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="18" cy="5" r="3"/>
-                <circle cx="6" cy="12" r="3"/>
-                <circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="8.5" cy="7" r="4"/>
+                <line x1="20" y1="8" x2="20" y2="14"/>
+                <line x1="23" y1="11" x2="17" y2="11"/>
               </svg>
-              Share
+              Invite Members
             </button>
+            )}
           </div>
-          )}
         </div>
 
         {/* Folders Section */}
@@ -1763,8 +1756,8 @@ export default function Documents() {
         style={{ display: 'none' }}
       />
 
-      {/* Share Modal */}
-      {showShareModal && (
+      {/* Invite Members Modal */}
+      {showInviteModal && (
         <div
           style={{
             position: 'fixed',
@@ -1778,121 +1771,136 @@ export default function Documents() {
             justifyContent: 'center',
             zIndex: Z_INDEX.modal,
           }}
-          onClick={() => {
-            setShowShareModal(false)
-            setShareLink(null)
-          }}
+          onClick={() => { setShowInviteModal(false); setInviteResult(null) }}
         >
           <div
             style={{
               backgroundColor: colors.cardBg,
               borderRadius: '16px',
               padding: '32px',
-              maxWidth: '480px',
+              maxWidth: '520px',
               width: '90%',
               boxShadow: shadows.lg,
+              maxHeight: '85vh',
+              overflowY: 'auto',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '20px', fontWeight: 600, color: colors.textPrimary, margin: 0 }}>
-                Share Knowledge Portal
+                Invite Team Members
               </h2>
               <button
-                onClick={() => {
-                  setShowShareModal(false)
-                  setShareLink(null)
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: colors.textMuted,
-                  padding: '4px',
-                }}
+                onClick={() => { setShowInviteModal(false); setInviteResult(null) }}
+                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: colors.textMuted, padding: '4px' }}
               >
-                ×
+                &times;
               </button>
             </div>
 
-            <p style={{ color: colors.textSecondary, fontSize: '14px', marginBottom: '24px' }}>
-              Anyone with this link can view your knowledge portal — documents, chatbot, and knowledge gaps.
+            <p style={{ color: colors.textSecondary, fontSize: '14px', marginBottom: '20px' }}>
+              Invite people by email. They will create an account and join your organization with full access to documents, chatbot, knowledge gaps, and integrations.
             </p>
 
-            {/* Generate Link Button */}
-            {!shareLink && (
-              <button
-                onClick={handleGenerateLink}
-                disabled={generatingLink}
+            {/* Email Input */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: colors.textPrimary, marginBottom: '6px' }}>
+                Email addresses
+              </label>
+              <textarea
+                value={inviteEmails}
+                onChange={(e) => setInviteEmails(e.target.value)}
+                placeholder="Enter emails separated by commas or new lines&#10;e.g. alice@lab.edu, bob@lab.edu"
+                rows={3}
                 style={{
                   width: '100%',
-                  padding: '12px 20px',
+                  padding: '10px 14px',
                   fontSize: '14px',
-                  fontWeight: 600,
-                  backgroundColor: generatingLink ? colors.textMuted : colors.primary,
-                  border: 'none',
+                  border: `1px solid ${colors.border}`,
                   borderRadius: '8px',
-                  color: '#fff',
-                  cursor: generatingLink ? 'not-allowed' : 'pointer',
-                  marginBottom: '20px',
+                  backgroundColor: colors.pageBg,
+                  color: colors.textPrimary,
+                  outline: 'none',
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                  fontFamily: 'inherit',
                 }}
-              >
-                {generatingLink ? 'Generating...' : 'Generate Share Link'}
-              </button>
-            )}
+                onFocus={(e) => { e.target.style.borderColor = colors.primary }}
+                onBlur={(e) => { e.target.style.borderColor = colors.border }}
+              />
+            </div>
 
-            {/* Generated Link Display */}
-            {shareLink && (
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    readOnly
-                    value={shareLink}
-                    style={{
-                      flex: 1,
-                      padding: '10px 14px',
-                      fontSize: '13px',
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '8px',
-                      backgroundColor: colors.pageBg,
-                      color: colors.textPrimary,
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                  />
-                  <button
-                    onClick={handleCopyLink}
-                    style={{
-                      padding: '10px 16px',
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      backgroundColor: linkCopied ? colors.statusSuccess : colors.primary,
-                      border: 'none',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'background-color 0.2s',
-                    }}
-                  >
-                    {linkCopied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
+            {/* Personal Message */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: colors.textPrimary, marginBottom: '6px' }}>
+                Personal message <span style={{ fontWeight: 400, color: colors.textMuted }}>(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={inviteMessage}
+                onChange={(e) => setInviteMessage(e.target.value)}
+                placeholder="Welcome to our knowledge base!"
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  fontSize: '14px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  backgroundColor: colors.pageBg,
+                  color: colors.textPrimary,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => { e.target.style.borderColor = colors.primary }}
+                onBlur={(e) => { e.target.style.borderColor = colors.border }}
+              />
+            </div>
+
+            {/* Send Button */}
+            <button
+              onClick={handleSendInvites}
+              disabled={sendingInvites || !inviteEmails.trim()}
+              style={{
+                width: '100%',
+                padding: '12px 20px',
+                fontSize: '14px',
+                fontWeight: 600,
+                backgroundColor: (sendingInvites || !inviteEmails.trim()) ? colors.textMuted : colors.primary,
+                border: 'none',
+                borderRadius: '8px',
+                color: '#fff',
+                cursor: (sendingInvites || !inviteEmails.trim()) ? 'not-allowed' : 'pointer',
+                marginBottom: '16px',
+              }}
+            >
+              {sendingInvites ? 'Sending invitations...' : 'Send Invitations'}
+            </button>
+
+            {/* Result Feedback */}
+            {inviteResult && (
+              <div style={{ marginBottom: '16px' }}>
+                {inviteResult.sent.length > 0 && (
+                  <div style={{ padding: '10px 14px', backgroundColor: '#F0FDF4', borderRadius: '8px', marginBottom: '8px', fontSize: '13px', color: '#166534' }}>
+                    Invitation sent to: {inviteResult.sent.join(', ')}
+                  </div>
+                )}
+                {inviteResult.failed.length > 0 && inviteResult.failed.map((f, i) => (
+                  <div key={i} style={{ padding: '10px 14px', backgroundColor: '#FEF2F2', borderRadius: '8px', marginBottom: '4px', fontSize: '13px', color: '#991B1B' }}>
+                    {f.email}: {f.reason}
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* Existing Links */}
-            {existingLinks.length > 0 && (
-              <div>
+            {/* Existing Invitations List */}
+            {existingInvitations.length > 0 && (
+              <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: '16px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>
-                  Active Links
+                  Invitations
                 </div>
-                {existingLinks.map((link) => (
+                {existingInvitations.map((inv) => (
                   <div
-                    key={link.id}
+                    key={inv.id}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1904,33 +1912,36 @@ export default function Documents() {
                       fontSize: '13px',
                     }}
                   >
-                    <div>
-                      <span style={{ color: colors.textPrimary, fontWeight: 500 }}>
-                        {link.label || 'Share Link'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                      <span style={{ color: colors.textPrimary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {inv.recipient_email}
                       </span>
-                      <span style={{ color: colors.textMuted, marginLeft: '8px' }}>
-                        {link.access_count} view{link.access_count !== 1 ? 's' : ''}
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        flexShrink: 0,
+                        backgroundColor: inv.status === 'accepted' ? '#DCFCE7' : inv.status === 'revoked' ? '#FEE2E2' : '#FEF3C7',
+                        color: inv.status === 'accepted' ? '#166534' : inv.status === 'revoked' ? '#991B1B' : '#92400E',
+                      }}>
+                        {inv.status}
                       </span>
-                      {link.created_at && (
-                        <span style={{ color: colors.textMuted, marginLeft: '8px' }}>
-                          · {new Date(link.created_at).toLocaleDateString()}
+                      {inv.created_at && (
+                        <span style={{ color: colors.textMuted, fontSize: '12px', flexShrink: 0 }}>
+                          {new Date(inv.created_at).toLocaleDateString()}
                         </span>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleRevokeLink(link.id)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        fontSize: '16px',
-                        cursor: 'pointer',
-                        color: colors.textMuted,
-                        padding: '2px 6px',
-                      }}
-                      title="Revoke link"
-                    >
-                      ×
-                    </button>
+                    {inv.status === 'pending' && (
+                      <button
+                        onClick={() => handleRevokeInvitation(inv.id)}
+                        style={{ background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer', color: colors.textMuted, padding: '2px 6px' }}
+                        title="Revoke invitation"
+                      >
+                        &times;
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1938,10 +1949,7 @@ export default function Documents() {
 
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
               <button
-                onClick={() => {
-                  setShowShareModal(false)
-                  setShareLink(null)
-                }}
+                onClick={() => { setShowInviteModal(false); setInviteResult(null) }}
                 style={{
                   padding: '10px 20px',
                   fontSize: '14px',

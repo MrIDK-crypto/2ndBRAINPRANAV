@@ -5,7 +5,6 @@ import Sidebar from '../shared/Sidebar'
 import Image from 'next/image'
 import axios from 'axios'
 import { useAuth } from '@/contexts/AuthContext'
-import { sessionManager } from '@/utils/sessionManager'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { analytics } from '@/utils/analytics'
@@ -171,7 +170,7 @@ const WelcomeCard = ({ icon, title, description, onClick }: any) => (
 )
 
 export default function ChatInterface() {
-  const { user, token, tenant, isLoading: authLoading, logout, isSharedAccess } = useAuth()
+  const { user, token, tenant, isLoading: authLoading, logout } = useAuth()
   const [activeItem, setActiveItem] = useState('ChatBot')
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -202,11 +201,6 @@ export default function ChatInterface() {
   const getAuthHeaders = () => {
     if (token) {
       return { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-    }
-    // Fallback to share token
-    const shareToken = sessionManager.getShareToken()
-    if (shareToken) {
-      return { 'X-Share-Token': shareToken, 'Content-Type': 'application/json' }
     }
     return { 'Content-Type': 'application/json' }
   }
@@ -684,8 +678,6 @@ export default function ChatInterface() {
   const renderMarkdownMessage = (text: string) => {
     // Pre-process: Convert [[SOURCE:name:doc_id]] markers into markdown links
     const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-    const shareToken = sessionManager.getShareToken()
-    const authToken = sourceToken || shareToken
     const processedText = text.replace(
       /\[\[SOURCE:([^:]+):([^:\]]+):?([^\]]*)\]\]/g,
       (match: string, name: string, docId: string, sourceUrl: string) => {
@@ -694,11 +686,8 @@ export default function ChatInterface() {
           return `[${name}](${sourceUrl})`
         }
         const hasValidDocId = docId && docId.length >= 32
-        if (hasValidDocId && authToken) {
-          const tokenParam = sourceToken
-            ? `token=${encodeURIComponent(sourceToken)}`
-            : `share_token=${encodeURIComponent(shareToken || '')}`
-          const url = `${API_BASE}/documents/${encodeURIComponent(docId)}/view?${tokenParam}`
+        if (hasValidDocId && sourceToken) {
+          const url = `${API_BASE}/documents/${encodeURIComponent(docId)}/view?token=${encodeURIComponent(sourceToken)}`
           return `[${name}](${url})`
         } else if (hasValidDocId) {
           return `[${name}](${API_BASE}/documents/${encodeURIComponent(docId)}/view)`
@@ -851,7 +840,6 @@ export default function ChatInterface() {
         activeItem={activeItem}
         onItemClick={setActiveItem}
         userName={user?.full_name?.split(' ')[0] || 'User'}
-        isSharedAccess={isSharedAccess}
         conversations={conversations}
         currentConversationId={currentConversationId}
         onLoadConversation={loadConversation}

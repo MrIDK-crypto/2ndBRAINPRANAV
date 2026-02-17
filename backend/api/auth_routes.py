@@ -1174,56 +1174,58 @@ def verification_status():
 @require_auth
 def send_invitation():
     """
-    Send an invitation email to invite someone to join your lab/organization.
-    The invited user will join the SAME TENANT as the inviter, giving them
-    access to shared documents and knowledge.
+    Send invitation email(s) to invite people to join your organization.
+    Supports batch invites (multiple emails at once).
 
     Request body:
     {
-        "email": "colleague@example.com",
-        "message": "Optional personal message",
-        "name": "Optional recipient name"
+        "emails": ["a@example.com", "b@example.com"],
+        "email": "single@example.com",       // legacy single-email support
+        "message": "Optional personal message"
     }
 
     Response:
     {
         "success": true,
-        "message": "Invitation sent to colleague@example.com",
-        "invitation_id": "..."
+        "sent": ["a@example.com", "b@example.com"],
+        "failed": [{"email": "c@example.com", "reason": "Already a member"}]
     }
     """
     import os
     import secrets
     import hashlib
     import smtplib
-    from datetime import timedelta
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
     from database.models import Invitation, InvitationStatus, utc_now
 
+    # Only admins can invite
+    if g.role and g.role != 'admin':
+        return jsonify({"success": False, "error": "Only admins can send invitations"}), 403
+
     try:
         data = request.json or {}
-        recipient_email = data.get('email', '').strip().lower()
         personal_message = data.get('message', '').strip()
-        recipient_name = data.get('name', '').strip()
 
-        if not recipient_email:
-            return jsonify({
-                "success": False,
-                "error": "Email address is required"
-            }), 400
+        # Support both "emails" (array) and "email" (single string)
+        raw_emails = data.get('emails', [])
+        if not raw_emails and data.get('email'):
+            raw_emails = [data['email']]
+        if isinstance(raw_emails, str):
+            # Handle comma-separated string
+            raw_emails = [e.strip() for e in raw_emails.split(',') if e.strip()]
 
-        # Validate email format
-        is_valid, email_error = EmailValidator.validate(recipient_email)
-        if not is_valid:
-            return jsonify({
-                "success": False,
-                "error": email_error or "Invalid email address format"
-            }), 400
+        # Deduplicate and normalize
+        emails = list(dict.fromkeys([e.strip().lower() for e in raw_emails if e.strip()]))
+
+        if not emails:
+            return jsonify({"success": False, "error": "At least one email address is required"}), 400
+
+        if len(emails) > 20:
+            return jsonify({"success": False, "error": "Maximum 20 invitations at once"}), 400
 
         db = get_db()
         try:
-            # Get inviter info
             inviter = db.query(User).filter(User.id == g.user_id).first()
             if not inviter:
                 return jsonify({"success": False, "error": "User not found"}), 404
@@ -1236,201 +1238,230 @@ def send_invitation():
             sender_email = inviter.email
             org_name = tenant.name
 
-            # Check if user already exists in this tenant
-            existing_user = db.query(User).filter(
-                User.tenant_id == g.tenant_id,
-                User.email == recipient_email
-            ).first()
-            if existing_user:
-                return jsonify({
-                    "success": False,
-                    "error": f"{recipient_email} is already a member of {org_name}"
-                }), 400
-
-            # Check for existing pending invitation
-            existing_invitation = db.query(Invitation).filter(
-                Invitation.tenant_id == g.tenant_id,
-                Invitation.recipient_email == recipient_email,
-                Invitation.status == InvitationStatus.PENDING
-            ).first()
-
-            if existing_invitation and existing_invitation.is_valid:
-                return jsonify({
-                    "success": False,
-                    "error": f"An invitation has already been sent to {recipient_email}"
-                }), 400
-
-            # Generate secure invitation token
-            token = secrets.token_urlsafe(32)
-            token_hash = hashlib.sha256(token.encode()).hexdigest()
-
-            # Create invitation record (expires in 7 days)
-            invitation = Invitation(
-                tenant_id=g.tenant_id,
-                inviter_id=g.user_id,
-                recipient_email=recipient_email,
-                recipient_name=recipient_name or None,
-                token_hash=token_hash,
-                message=personal_message or None,
-                expires_at=utc_now() + timedelta(days=7)
-            )
-            db.add(invitation)
-            db.commit()
-
             # Email configuration
             SMTP_HOST = os.getenv('SMTP_HOST', 'smtp.gmail.com')
             SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-            SMTP_USER = os.getenv('SMTP_USER', '')
-            SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
-            SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or SMTP_USER
+            SMTP_USER = os.getenv('SMTP_USER') or os.getenv('FORWARD_EMAIL_ADDRESS', '')
+            SMTP_PASSWORD = os.getenv('SMTP_PASSWORD') or os.getenv('FORWARD_EMAIL_PASSWORD', '')
+            _configured_from = os.getenv('SMTP_FROM_EMAIL') or SMTP_USER
+            if 'gmail' in SMTP_HOST.lower() and SMTP_USER and _configured_from != SMTP_USER:
+                SMTP_FROM_EMAIL = SMTP_USER
+            else:
+                SMTP_FROM_EMAIL = _configured_from
             FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3006')
 
             if not SMTP_USER or not SMTP_PASSWORD:
-                return jsonify({
-                    "success": False,
-                    "error": "Email service not configured"
-                }), 500
+                return jsonify({"success": False, "error": "Email service not configured"}), 500
 
-            # Build signup URL with invitation token
-            signup_url = f"{FRONTEND_URL}/signup?invite={token}"
+            sent = []
+            failed = []
 
-            # Create invitation email
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"{sender_name} invited you to join {org_name} on 2nd Brain"
-            msg['From'] = f"2nd Brain <{SMTP_FROM_EMAIL}>"
-            msg['To'] = recipient_email
+            for recipient_email in emails:
+                # Validate email format
+                is_valid, email_error = EmailValidator.validate(recipient_email)
+                if not is_valid:
+                    failed.append({"email": recipient_email, "reason": email_error or "Invalid email format"})
+                    continue
 
-            # Personal message section
-            personal_section = ""
-            if personal_message:
-                personal_section = f"""
+                # Check if already a member
+                existing_user = db.query(User).filter(
+                    User.tenant_id == g.tenant_id,
+                    User.email == recipient_email
+                ).first()
+                if existing_user:
+                    failed.append({"email": recipient_email, "reason": "Already a member"})
+                    continue
+
+                # Check for existing pending invitation
+                existing_invitation = db.query(Invitation).filter(
+                    Invitation.tenant_id == g.tenant_id,
+                    Invitation.recipient_email == recipient_email,
+                    Invitation.status == InvitationStatus.PENDING
+                ).first()
+                if existing_invitation and existing_invitation.is_valid:
+                    failed.append({"email": recipient_email, "reason": "Invitation already sent"})
+                    continue
+
+                # Check if email already has an account in another org
+                existing_account = db.query(User).filter(
+                    User.email == recipient_email,
+                    User.is_active == True
+                ).first()
+                if existing_account:
+                    failed.append({"email": recipient_email, "reason": "This email already has an account in another organization"})
+                    continue
+
+                # Generate token and create invitation (no expiry)
+                token = secrets.token_urlsafe(32)
+                token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+                invitation = Invitation(
+                    tenant_id=g.tenant_id,
+                    inviter_id=g.user_id,
+                    recipient_email=recipient_email,
+                    token_hash=token_hash,
+                    message=personal_message or None,
+                    expires_at=None
+                )
+                db.add(invitation)
+                db.flush()
+
+                # Build signup URL
+                signup_url = f"{FRONTEND_URL}/signup?invite={token}"
+
+                # Send email
+                try:
+                    msg = MIMEMultipart('alternative')
+                    msg['Subject'] = f"{sender_name} invited you to join {org_name} on 2nd Brain"
+                    msg['From'] = f"2nd Brain <{SMTP_FROM_EMAIL}>"
+                    msg['To'] = recipient_email
+
+                    personal_section = ""
+                    if personal_message:
+                        personal_section = f"""
                 <div style="background-color: #F3F4F6; padding: 16px; border-radius: 8px; margin-bottom: 24px;">
-                    <p style="font-style: italic; color: #374151; margin: 0;">"{personal_message}"</p>
-                    <p style="color: #6B7280; margin: 8px 0 0 0; font-size: 14px;">— {sender_name}</p>
+                    <p style="font-style: italic; color: #374151; margin: 0;">&ldquo;{personal_message}&rdquo;</p>
+                    <p style="color: #6B7280; margin: 8px 0 0 0; font-size: 14px;">&mdash; {sender_name}</p>
                 </div>
                 """
 
-            html_content = f"""
-<!DOCTYPE html>
+                    html_content = f"""<!DOCTYPE html>
 <html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #F8FAFC;">
     <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
         <div style="background-color: #FFFFFF; border-radius: 16px; padding: 40px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-            <!-- Logo/Header -->
             <div style="text-align: center; margin-bottom: 32px;">
-                <h1 style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;">
-                    2nd Brain
-                </h1>
-                <p style="color: #6B7280; margin-top: 8px; font-size: 16px;">
-                    AI-Powered Knowledge Management
-                </p>
+                <h1 style="font-size: 28px; font-weight: 700; color: #111827; margin: 0;">2nd Brain</h1>
+                <p style="color: #6B7280; margin-top: 8px; font-size: 16px;">AI-Powered Knowledge Management</p>
             </div>
-
-            <!-- Invitation Message -->
             <div style="text-align: center; margin-bottom: 32px;">
-                <p style="font-size: 18px; color: #111827; margin: 0 0 16px 0;">
-                    <strong>{sender_name}</strong> has invited you to join
-                </p>
-                <p style="font-size: 24px; font-weight: 700; color: #2563EB; margin: 0;">
-                    {org_name}
-                </p>
-                <p style="color: #6B7280; margin-top: 8px; font-size: 14px;">
-                    on 2nd Brain
-                </p>
+                <p style="font-size: 18px; color: #111827; margin: 0 0 16px 0;"><strong>{sender_name}</strong> has invited you to join</p>
+                <p style="font-size: 24px; font-weight: 700; color: #2563EB; margin: 0;">{org_name}</p>
+                <p style="color: #6B7280; margin-top: 8px; font-size: 14px;">on 2nd Brain</p>
             </div>
-
             {personal_section}
-
-            <!-- Benefits of Joining -->
             <div style="margin-bottom: 32px;">
                 <h2 style="font-size: 16px; color: #111827; margin-bottom: 16px;">By joining, you'll have access to:</h2>
                 <ul style="color: #374151; padding-left: 20px; line-height: 1.8;">
-                    <li><strong>Shared Knowledge Base</strong> - All documents, emails, and research collected by your team</li>
+                    <li><strong>Shared Knowledge Base</strong> - All documents, emails, and research</li>
                     <li><strong>AI-Powered Search</strong> - Find answers across your organization's knowledge</li>
                     <li><strong>Knowledge Gap Analysis</strong> - Discover what information is missing</li>
-                    <li><strong>Collaborative Features</strong> - Work together with your lab/team</li>
+                    <li><strong>Integrations</strong> - Connect Gmail, Slack, Google Drive, and more</li>
                 </ul>
             </div>
-
-            <!-- CTA Button -->
             <div style="text-align: center; margin-bottom: 32px;">
-                <a href="{signup_url}" style="display: inline-block; background-color: #2563EB; color: #FFFFFF; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">
-                    Accept Invitation
-                </a>
+                <a href="{signup_url}" style="display: inline-block; background-color: #2563EB; color: #FFFFFF; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Accept Invitation</a>
             </div>
-
-            <!-- Expiration Notice -->
-            <p style="text-align: center; color: #9CA3AF; font-size: 13px; margin-bottom: 24px;">
-                This invitation expires in 7 days.
-            </p>
-
-            <!-- Footer -->
             <div style="text-align: center; padding-top: 24px; border-top: 1px solid #E5E7EB;">
-                <p style="color: #9CA3AF; font-size: 14px; margin: 0;">
-                    Questions? Reply to this email or contact {sender_email}
-                </p>
+                <p style="color: #9CA3AF; font-size: 14px; margin: 0;">Questions? Reply to this email or contact {sender_email}</p>
             </div>
         </div>
     </div>
 </body>
-</html>
-"""
+</html>"""
 
-            text_content = f"""
-{sender_name} has invited you to join {org_name} on 2nd Brain!
+                    text_content = f"""{sender_name} has invited you to join {org_name} on 2nd Brain!
 
 {f'"{personal_message}"' if personal_message else ''}
 
 By joining, you'll have access to:
-- Shared Knowledge Base - All documents, emails, and research collected by your team
+- Shared Knowledge Base - All documents, emails, and research
 - AI-Powered Search - Find answers across your organization's knowledge
 - Knowledge Gap Analysis - Discover what information is missing
-- Collaborative Features - Work together with your lab/team
+- Integrations - Connect Gmail, Slack, Google Drive, and more
 
 Accept your invitation: {signup_url}
-
-This invitation expires in 7 days.
 
 Questions? Contact {sender_email}
 """
 
-            msg.attach(MIMEText(text_content, 'plain'))
-            msg.attach(MIMEText(html_content, 'html'))
+                    msg.attach(MIMEText(text_content, 'plain'))
+                    msg.attach(MIMEText(html_content, 'html'))
 
-            # Send email
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASSWORD)
-                server.sendmail(SMTP_FROM_EMAIL, recipient_email, msg.as_string())
+                    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+                        server.starttls()
+                        server.login(SMTP_USER, SMTP_PASSWORD)
+                        server.sendmail(SMTP_FROM_EMAIL, recipient_email, msg.as_string())
 
-            print(f"[Invite] Invitation sent from {sender_email} to {recipient_email} for tenant {tenant.name}")
+                    sent.append(recipient_email)
+                    print(f"[Invite] Sent to {recipient_email} for tenant {org_name}")
+
+                except smtplib.SMTPException as smtp_err:
+                    print(f"[Invite] SMTP error for {recipient_email}: {smtp_err}")
+                    failed.append({"email": recipient_email, "reason": "Failed to send email"})
+                    continue
+
+            db.commit()
 
             return jsonify({
-                "success": True,
-                "message": f"Invitation sent to {recipient_email}",
-                "invitation_id": invitation.id
+                "success": len(sent) > 0,
+                "sent": sent,
+                "failed": failed,
+                "message": f"Sent {len(sent)} invitation(s)" + (f", {len(failed)} failed" if failed else "")
             })
 
         finally:
             db.close()
 
-    except smtplib.SMTPException as e:
-        print(f"[Invite] SMTP error: {str(e)}")
-        return jsonify({
-            "success": False,
-            "error": "Failed to send email. Please try again later."
-        }), 500
-
     except Exception as e:
         print(f"[Invite] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@auth_bp.route('/invitations', methods=['GET'])
+@require_auth
+def list_invitations():
+    """List all invitations for the current tenant (admin only)."""
+    if g.role and g.role != 'admin':
+        return jsonify({"success": False, "error": "Only admins can view invitations"}), 403
+
+    from database.models import Invitation
+
+    db = get_db()
+    try:
+        invitations = db.query(Invitation).filter(
+            Invitation.tenant_id == g.tenant_id
+        ).order_by(Invitation.created_at.desc()).all()
+
         return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+            "success": True,
+            "invitations": [inv.to_dict() for inv in invitations]
+        })
+    finally:
+        db.close()
+
+
+@auth_bp.route('/invitations/<invitation_id>', methods=['DELETE'])
+@require_auth
+def revoke_invitation(invitation_id):
+    """Revoke a pending invitation (admin only)."""
+    if g.role and g.role != 'admin':
+        return jsonify({"success": False, "error": "Only admins can revoke invitations"}), 403
+
+    from database.models import Invitation, InvitationStatus, utc_now
+
+    db = get_db()
+    try:
+        invitation = db.query(Invitation).filter(
+            Invitation.id == invitation_id,
+            Invitation.tenant_id == g.tenant_id
+        ).first()
+
+        if not invitation:
+            return jsonify({"success": False, "error": "Invitation not found"}), 404
+
+        if invitation.status != InvitationStatus.PENDING:
+            return jsonify({"success": False, "error": f"Cannot revoke invitation with status: {invitation.status.value}"}), 400
+
+        invitation.status = InvitationStatus.REVOKED
+        db.commit()
+
+        return jsonify({"success": True, "message": f"Invitation to {invitation.recipient_email} revoked"})
+    finally:
+        db.close()
 
 
 @auth_bp.route('/invitation/<token>', methods=['GET'])

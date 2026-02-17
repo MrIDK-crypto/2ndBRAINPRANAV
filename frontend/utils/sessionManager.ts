@@ -20,8 +20,6 @@ const SESSION_CONFIG = {
     TENANT_ID: 'tenantId',
     SESSION_START: 'sessionStart',
     REMEMBER_ME: 'rememberMe',
-    SHARE_TOKEN: 'shareToken',
-    SHARE_TENANT_NAME: 'shareTenantName',
   },
 };
 
@@ -377,40 +375,6 @@ class SessionManager {
     const minutes = Math.floor(remaining / 60000);
     const seconds = Math.floor((remaining % 60000) / 1000);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
-  // ========================================
-  // SHARED ACCESS
-  // ========================================
-
-  /**
-   * Initialize a shared session (no JWT, just share token)
-   */
-  initializeSharedSession(shareToken: string, tenantInfo: {
-    id: string;
-    name: string;
-    slug: string;
-  }): void {
-    localStorage.setItem(SESSION_CONFIG.STORAGE_KEYS.SHARE_TOKEN, shareToken);
-    localStorage.setItem(SESSION_CONFIG.STORAGE_KEYS.TENANT_ID, tenantInfo.id);
-    localStorage.setItem(SESSION_CONFIG.STORAGE_KEYS.SHARE_TENANT_NAME, tenantInfo.name);
-    localStorage.setItem(SESSION_CONFIG.STORAGE_KEYS.USER_NAME, `${tenantInfo.name} Viewer`);
-    localStorage.setItem(SESSION_CONFIG.STORAGE_KEYS.USER_ID, 'shared-viewer');
-    // No inactivity/refresh timers for shared sessions
-  }
-
-  getShareToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(SESSION_CONFIG.STORAGE_KEYS.SHARE_TOKEN);
-  }
-
-  getShareTenantName(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(SESSION_CONFIG.STORAGE_KEYS.SHARE_TENANT_NAME);
-  }
-
-  isSharedSession(): boolean {
-    return !!this.getShareToken() && !this.getAccessToken();
   }
 
   // ========================================

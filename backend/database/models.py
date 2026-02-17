@@ -468,8 +468,8 @@ class Invitation(Base):
     # Status
     status = Column(Enum(InvitationStatus), default=InvitationStatus.PENDING, nullable=False)
 
-    # Expiration (7 days default)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
+    # Expiration (null = never expires)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # Usage tracking
     accepted_at = Column(DateTime(timezone=True))
@@ -497,7 +497,7 @@ class Invitation(Base):
         """Check if invitation is valid (pending and not expired)"""
         if self.status != InvitationStatus.PENDING:
             return False
-        if make_aware(self.expires_at) < utc_now():
+        if self.expires_at is not None and make_aware(self.expires_at) < utc_now():
             return False
         return True
 
