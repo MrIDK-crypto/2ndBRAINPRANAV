@@ -413,6 +413,21 @@ class SyncProgressService:
         progress = self._progress.get(sync_id)
         return progress.to_dict() if progress else None
 
+    def get_all_for_tenant(self, tenant_id: str, include_recent_completed: bool = True) -> List[Dict]:
+        """Get all active syncs (and optionally recently completed) for a tenant."""
+        now = datetime.now(timezone.utc)
+        results = []
+        for sync_id, progress in self._progress.items():
+            if progress.tenant_id != tenant_id:
+                continue
+            if progress.status not in ('complete', 'completed', 'error'):
+                results.append(progress.to_dict())
+            elif include_recent_completed and progress.completed_at:
+                age = (now - progress.completed_at).total_seconds()
+                if age < 300:  # 5 minutes
+                    results.append(progress.to_dict())
+        return results
+
     def get_active_by_tenant_type(self, tenant_id: str, connector_type: str) -> Optional[Dict]:
         """Find active sync by tenant and connector type (for polling fallback)"""
         for sync_id, progress in self._progress.items():

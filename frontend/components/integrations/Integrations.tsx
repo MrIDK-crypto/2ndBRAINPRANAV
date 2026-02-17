@@ -14,7 +14,7 @@ import { FileText, Clock, FolderGit2, Mail, CheckCircle2 } from 'lucide-react'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
-  : 'http://localhost:5002/api'
+  : 'http://localhost:5006/api'
 
 // Wellspring-Inspired Warm Design System
 const warmTheme = {
@@ -3053,7 +3053,7 @@ export default function Integrations() {
       router.replace('/documents')
     }
   }, [isSharedAccess, router])
-  const { startSync: globalStartSync } = useSyncProgress()
+  const { startSync: globalStartSync, activeSyncs, dismissSync } = useSyncProgress()
   const [activeItem, setActiveItem] = useState('Integrations')
   const [activeTab, setActiveTab] = useState('All Integrations')
   const [searchQuery, setSearchQuery] = useState('')
@@ -3095,33 +3095,10 @@ export default function Integrations() {
   const [showSlackTokenModal, setShowSlackTokenModal] = useState(false)
   const [isSubmittingToken, setIsSubmittingToken] = useState(false)
 
-  // Sync progress state
-  const [showSyncProgress, setShowSyncProgress] = useState(false)
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
-  // CRITICAL FIX: Use useRef instead of useState to avoid closure issues
-  // useState causes the setInterval callback to capture stale state values
-  const syncPollingInterval = useRef<NodeJS.Timeout | null>(null)
-
-  // SSE-based sync progress modal state (new)
+  // Sync modal state (context handles progress tracking)
   const [syncId, setSyncId] = useState<string | null>(null)
   const [syncingConnector, setSyncingConnector] = useState<string | null>(null)
   const [syncEstimatedSeconds, setSyncEstimatedSeconds] = useState<number | null>(null)
-  // Track syncs running in background (when modal is closed during active sync)
-  // Maps connector type -> syncId so we can re-open the progress modal
-  // Persisted to localStorage so state survives navigation
-  const [backgroundSyncs, setBackgroundSyncs] = useState<{[connector: string]: string}>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('backgroundSyncs')
-      if (saved) {
-        try {
-          return JSON.parse(saved)
-        } catch (e) {
-          return {}
-        }
-      }
-    }
-    return {}
-  })
 
   // Integration details modal state
   const [showDetailsModal, setShowDetailsModal] = useState(false)
@@ -3196,96 +3173,15 @@ export default function Integrations() {
     return localStorage.getItem('accessToken')
   }
 
-  // DISABLED: Auto-resume causes infinite polling loops
-  // Users must manually start syncs - no auto-resume on page load
-  useEffect(() => {
-    // Clear any saved sync state to prevent auto-resume
-    saveSyncState(null)
-
-    // Also clear backgroundSyncs to prevent stale entries from blocking Connect buttons
-    // This ensures a clean state on every page load
-    localStorage.removeItem('backgroundSyncs')
-    setBackgroundSyncs({})
-
-    // CRITICAL: Cleanup function to stop polling when component unmounts
-    return () => {
-      if (syncPollingInterval.current) {
-        clearInterval(syncPollingInterval.current)
-        syncPollingInterval.current = null
+  // Helper: check if a connector is currently syncing (via context)
+  const isConnectorSyncing = (connectorType: string): boolean => {
+    for (const sync of Array.from(activeSyncs.values())) {
+      if (sync.connectorType === connectorType && sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
+        return true
       }
     }
-  }, [])
-
-  // Persist backgroundSyncs to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (Object.keys(backgroundSyncs).length > 0) {
-        localStorage.setItem('backgroundSyncs', JSON.stringify(backgroundSyncs))
-      } else {
-        localStorage.removeItem('backgroundSyncs')
-      }
-    }
-  }, [backgroundSyncs])
-
-  // Save active sync to localStorage when navigating away (component unmount)
-  useEffect(() => {
-    return () => {
-      // On unmount, if there's an active sync, save it to backgroundSyncs in localStorage
-      if (syncId && syncingConnector) {
-        const currentSyncs = JSON.parse(localStorage.getItem('backgroundSyncs') || '{}')
-        currentSyncs[syncingConnector] = syncId
-        localStorage.setItem('backgroundSyncs', JSON.stringify(currentSyncs))
-        console.log(`[Sync] Saved active sync to localStorage on unmount: ${syncingConnector} -> ${syncId}`)
-      }
-    }
-  }, [syncId, syncingConnector])
-
-  // Poll for background sync completion
-  useEffect(() => {
-    if (Object.keys(backgroundSyncs).length === 0) return
-
-    const pollBackgroundSyncs = async () => {
-      const token = getAuthToken()
-      if (!token) return
-
-      for (const connectorId of Object.keys(backgroundSyncs)) {
-        try {
-          const response = await axios.get(
-            `${API_BASE}/integrations/${connectorId}/sync/status`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-
-          if (response.data.success) {
-            const status = response.data.status?.status
-            if (status === 'completed' || status === 'error' || status === 'idle' || !status) {
-              // Sync finished, remove from background syncs
-              setBackgroundSyncs(prev => {
-                const next = { ...prev }
-                delete next[connectorId]
-                return next
-              })
-              // Refresh integration statuses
-              checkIntegrationStatuses()
-            }
-          }
-        } catch (err) {
-          // If error checking status, assume sync is done
-          setBackgroundSyncs(prev => {
-            const next = { ...prev }
-            delete next[connectorId]
-            return next
-          })
-        }
-      }
-    }
-
-    // Poll every 10 seconds (background syncs don't need aggressive polling)
-    const interval = setInterval(pollBackgroundSyncs, 10000)
-    // Also poll immediately
-    pollBackgroundSyncs()
-
-    return () => clearInterval(interval)
-  }, [backgroundSyncs])
+    return false
+  }
 
   // Check integration statuses on mount
   useEffect(() => {
@@ -3469,7 +3365,7 @@ export default function Integrations() {
         // If backend says "syncing" but frontend has no active sync for it, auto-cancel
         for (const apiInt of apiIntegrations) {
           if (apiInt.status === 'syncing') {
-            const hasActiveFrontendSync = syncingConnector === apiInt.type || !!backgroundSyncs[apiInt.type]
+            const hasActiveFrontendSync = syncingConnector === apiInt.type || isConnectorSyncing(apiInt.type)
             if (!hasActiveFrontendSync) {
               console.log(`[Sync] Detected stuck SYNCING connector: ${apiInt.type} — auto-resetting`)
               try {
@@ -3815,51 +3711,17 @@ export default function Integrations() {
     setShowGitHubRepoModal(false)
     setSyncingConnector('github')
 
-    // Show SSE-style progress modal by setting syncId (but use demo data)
-    // We'll use the polling modal instead for demo since it's easier to control
-    let processed = 0
-    const total = 216
-    const startTime = Date.now()
+    // Demo mode: use a fake sync_id and show progress via context
+    const demoSyncId = `demo-${Date.now()}`
+    setSyncId(demoSyncId)
+    globalStartSync(demoSyncId, 'github')
 
-    setSyncProgress({
-      integration: 'github',
-      status: 'syncing',
-      progress: 0,
-      documentsFound: total,
-      documentsParsed: 0,
-      documentsEmbedded: 0,
-      startTime
-    })
-    setShowSyncProgress(true)
-
-    // Animate progress
-    const interval = setInterval(() => {
-      processed += Math.floor(Math.random() * 15) + 5
-      if (processed >= total) {
-        processed = total
-        clearInterval(interval)
-
-        // Complete
-        setSyncProgress(prev => prev ? {
-          ...prev,
-          status: 'completed',
-          progress: 100,
-          documentsParsed: total,
-          documentsEmbedded: total
-        } : null)
-
-        setSyncingConnector(null)
-        setIsDemoMode(false)
-        setDemoStep(0)
-      } else {
-        setSyncProgress(prev => prev ? {
-          ...prev,
-          progress: Math.round((processed / total) * 100),
-          documentsParsed: processed,
-          documentsEmbedded: Math.floor(processed * 0.9)
-        } : null)
-      }
-    }, 800)
+    // Auto-complete after a few seconds
+    setTimeout(() => {
+      setSyncingConnector(null)
+      setIsDemoMode(false)
+      setDemoStep(0)
+    }, 5000)
   }
 
   // Start GitHub sync with selected repositories
@@ -3904,63 +3766,6 @@ export default function Integrations() {
     }
   }
 
-  // Poll for sync status
-  const pollSyncStatus = async (integrationId: string) => {
-    console.log('[DEBUG] pollSyncStatus called for:', integrationId, 'interval:', syncPollingInterval.current)
-    const token = getAuthToken()
-    if (!token) return
-
-    try {
-      const response = await axios.get(`${API_BASE}/integrations/${integrationId}/sync/status`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-
-      if (response.data.success) {
-        const status = response.data.status
-        setSyncProgress({
-          integration: integrationId,
-          status: status.status,
-          progress: status.progress || 0,
-          documentsFound: status.documents_found || 0,
-          documentsParsed: status.documents_parsed || 0,
-          documentsEmbedded: status.documents_embedded || 0,
-          currentFile: status.current_file,
-          error: status.error
-        })
-
-        // Stop polling if completed or error, but keep the completed state visible
-        if (status.status === 'completed' || status.status === 'error') {
-          if (syncPollingInterval.current) {
-            clearInterval(syncPollingInterval.current)
-            syncPollingInterval.current = null
-          }
-
-          // If completed, ensure integration is marked as connected
-          if (status.status === 'completed') {
-            setIntegrationsState(prev =>
-              prev.map(int =>
-                int.id === integrationId ? { ...int, connected: true } : int
-              )
-            )
-          }
-
-          // DISABLED: Don't save state - prevents auto-resume on page load
-          // saveSyncState({
-          //   integration: integrationId,
-          //   status: status.status,
-          //   progress: 100,
-          //   documentsFound: status.documents_found || 0,
-          //   documentsParsed: status.documents_parsed || 0,
-          //   documentsEmbedded: status.documents_embedded || 0,
-          //   completedAt: Date.now()
-          // })
-        }
-      }
-    } catch (error) {
-      console.error('Error polling sync status:', error)
-    }
-  }
-
   // Start sync with progress tracking
   // Supports both single repository (legacy) and multiple repositories
   const startSyncWithProgress = async (integrationId: string, repository?: string, repositories?: string[]) => {
@@ -3968,20 +3773,15 @@ export default function Integrations() {
     console.log(`[Sync] Starting sync for: ${integrationId}${repository ? ` (repo: ${repository})` : ''}${repositories ? ` (${repositories.length} repos)` : ''}`)
     console.log(`[Sync] API_BASE: ${API_BASE}`)
 
-    // Check if this connector has a sync running in background
-    // If so, re-open the progress modal instead of starting a new sync
-    const existingSyncId = backgroundSyncs[integrationId]
-    if (existingSyncId) {
-      console.log(`[Sync] Re-opening existing sync progress for ${integrationId}, syncId: ${existingSyncId}`)
-      setSyncId(existingSyncId)
-      setSyncingConnector(integrationId)
-      // Remove from background syncs since we're showing modal again
-      setBackgroundSyncs(prev => {
-        const next = { ...prev }
-        delete next[integrationId]
-        return next
-      })
-      return
+    // Check if this connector already has an active sync in context
+    // If so, just re-open the modal instead of starting a new sync
+    for (const sync of Array.from(activeSyncs.values())) {
+      if (sync.connectorType === integrationId && sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
+        console.log(`[Sync] Re-opening existing sync progress for ${integrationId}, syncId: ${sync.syncId}`)
+        setSyncId(sync.syncId)
+        setSyncingConnector(integrationId)
+        return
+      }
     }
 
     const token = getAuthToken()
@@ -4062,27 +3862,10 @@ export default function Integrations() {
             setSyncEstimatedSeconds(null)
           }
 
-          // Close old modal if it was showing
-          setShowSyncProgress(false)
-          console.log('[SSE] Using new SSE-based sync progress:', response.data.sync_id)
+          console.log('[Sync] Using polling-based sync progress:', response.data.sync_id)
         } else if (response.data.documents_found !== undefined) {
           // SYNCHRONOUS SYNC: Sync already completed (e.g., Zotero)
-          // Show completion immediately without polling
-          const docsFound = response.data.documents_found || 0
-          const docsCreated = response.data.documents_created || 0
-          const docsUpdated = response.data.documents_updated || 0
-
-          setSyncProgress({
-            integration: integrationId,
-            status: 'completed',
-            progress: 100,
-            documentsFound: docsFound,
-            documentsParsed: docsFound,
-            documentsEmbedded: docsFound,
-            startTime
-          })
-          setShowSyncProgress(true)
-          setSyncStatus(null)
+          setSyncStatus(`Sync completed: ${response.data.documents_created || 0} documents synced`)
 
           // Mark integration as connected
           setIntegrationsState(prev =>
@@ -4091,41 +3874,14 @@ export default function Integrations() {
             )
           )
 
-          console.log(`[Sync] Synchronous sync completed: ${docsCreated} created, ${docsUpdated} updated`)
-
-          // Refresh integrations after a moment
+          console.log(`[Sync] Synchronous sync completed`)
           setTimeout(() => checkIntegrationStatuses(), 1000)
-        } else {
-          // FALLBACK: Use OLD polling-based progress modal
-          setSyncProgress({
-            integration: integrationId,
-            status: 'starting',
-            progress: 0,
-            documentsFound: 0,
-            documentsParsed: 0,
-            documentsEmbedded: 0,
-            startTime
-          })
-          setShowSyncProgress(true)
-          setSyncStatus(null)
-          syncPollingInterval.current = setInterval(() => pollSyncStatus(integrationId), 5000)
-          console.log('[Polling] Using old polling-based progress')
         }
       } else {
-        saveSyncState(null) // Clear saved state on error
-        setSyncProgress(prev => prev ? {
-          ...prev,
-          status: 'error',
-          error: response.data.error || 'Sync failed'
-        } : null)
+        setSyncStatus(`Sync failed: ${response.data.error || 'Unknown error'}`)
       }
     } catch (error: any) {
       console.error(`[Sync] Error:`, error)
-      console.error(`[Sync] Error type:`, error.code || 'unknown')
-      console.error(`[Sync] Error response:`, error.response)
-      console.error(`[Sync] Error request:`, error.request ? 'Request was made' : 'No request')
-      saveSyncState(null) // Clear saved state on error
-
       let errorMsg = 'Unknown error'
       if (error.code === 'ECONNABORTED') {
         errorMsg = 'Request timed out - the server took too long to respond'
@@ -4136,72 +3892,16 @@ export default function Integrations() {
       } else if (error.message) {
         errorMsg = error.message
       }
-
-      console.error(`[Sync] Final error message: ${errorMsg}`)
-      setSyncProgress(prev => prev ? {
-        ...prev,
-        status: 'error',
-        error: errorMsg
-      } : null)
       setSyncStatus(`Sync error: ${errorMsg}`)
     }
   }
 
-  // Minimize sync progress modal - ALWAYS stop polling to prevent infinite loop
-  const minimizeSyncProgress = () => {
-    console.log('[DEBUG] minimizeSyncProgress called, syncPollingInterval:', syncPollingInterval.current)
-    setShowSyncProgress(false)
-    // CRITICAL FIX: Stop polling when minimizing to prevent infinite requests
-    if (syncPollingInterval.current) {
-      console.log('[DEBUG] Clearing interval:', syncPollingInterval.current)
-      clearInterval(syncPollingInterval.current)
-      syncPollingInterval.current = null
-      console.log('[DEBUG] Interval cleared and set to null')
-    } else {
-      console.log('[DEBUG] WARNING: syncPollingInterval is null/undefined, nothing to clear!')
-    }
-    // Backend sync continues in background, but we stop checking status
-  }
-
-  // Close sync progress modal (hide modal but keep completed state for persistence)
-  const closeSyncProgress = () => {
-    setShowSyncProgress(false)
-    // Don't clear syncProgress or saved state - keep it for next time modal opens
-    // State will only be cleared when a new sync starts
-    if (syncPollingInterval.current) {
-      clearInterval(syncPollingInterval.current)
-      syncPollingInterval.current = null
-    }
-  }
-
-  // Smart close - minimize if in progress, full close if completed/error
-  const handleSyncModalClose = () => {
-    if (syncProgress && (syncProgress.status === 'completed' || syncProgress.status === 'error')) {
-      closeSyncProgress()
-    } else {
-      minimizeSyncProgress()
-    }
-  }
-
-  // Cancel sync - stop polling and reset state
-  const cancelSync = () => {
-    // Stop polling immediately
-    if (syncPollingInterval.current) {
-      clearInterval(syncPollingInterval.current)
-      syncPollingInterval.current = null
-    }
-
-    // Clear saved state
-    saveSyncState(null)
-
-    // Reset progress to cancelled
-    setSyncProgress(prev => prev ? {
-      ...prev,
-      status: 'error',
-      error: 'Sync cancelled by user'
-    } : null)
-
-    setSyncStatus('Sync cancelled')
+  // Close sync modal
+  const closeSyncModal = () => {
+    setSyncId(null)
+    setSyncingConnector(null)
+    setSyncEstimatedSeconds(null)
+    checkIntegrationStatuses()
   }
 
   // Generic sync function (legacy - for sync buttons)
@@ -4402,15 +4102,11 @@ export default function Integrations() {
     const integration = integrationsState.find(i => i.id === id)
 
     // Handle CANCEL SYNC: if this integration is currently syncing, stop it
-    // Only consider it "syncing" if it's actually connected - stale backgroundSyncs
-    // entries should not block the Connect button for disconnected integrations
-    const isSyncingThis = (syncingConnector === id || !!backgroundSyncs[id]) && integration?.connected
+    const isSyncingThis = (syncingConnector === id || isConnectorSyncing(id)) && integration?.connected
     if (isSyncingThis) {
       console.log(`[Sync] User clicked Stop Sync for: ${id}`)
       try {
         const token = getAuthToken()
-        // Determine the actual connector type for the API call
-        // (excel/powerpoint use onedrive)
         let cancelType = id
         if (['excel', 'powerpoint'].includes(id)) cancelType = 'onedrive'
 
@@ -4431,26 +4127,15 @@ export default function Integrations() {
         setSyncEstimatedSeconds(null)
       }
 
-      // Clear from background syncs
-      setBackgroundSyncs(prev => {
-        const next = { ...prev }
-        delete next[id]
-        return next
-      })
-
-      // Clear saved sync state
-      saveSyncState(null)
-
-      // Stop polling if any
-      if (syncPollingInterval.current) {
-        clearInterval(syncPollingInterval.current)
-        syncPollingInterval.current = null
+      // Dismiss from context
+      for (const sync of Array.from(activeSyncs.values())) {
+        if (sync.connectorType === id) {
+          dismissSync(sync.syncId)
+        }
       }
 
       setSyncStatus('Sync cancelled')
       setTimeout(() => setSyncStatus(null), 3000)
-
-      // Refresh integration statuses to pick up the reset connector status
       setTimeout(() => checkIntegrationStatuses(), 500)
       return
     }
@@ -4762,8 +4447,8 @@ export default function Integrations() {
                 onToggleConnect={toggleConnect}
                 onViewDetails={openDetailsModal}
                 onSync={syncIntegration}
-                isSyncing={syncProgress?.integration === integration.id && syncProgress?.status !== 'completed' && syncProgress?.status !== 'error'}
-                syncingIntegration={syncingConnector || (backgroundSyncs[integration.id] ? integration.id : undefined) || (syncProgress?.status === 'syncing' ? syncProgress?.integration : undefined)}
+                isSyncing={isConnectorSyncing(integration.id)}
+                syncingIntegration={syncingConnector || (isConnectorSyncing(integration.id) ? integration.id : undefined)}
               />
             ))}
           </div>
@@ -5139,15 +4824,6 @@ export default function Integrations() {
         </div>
       )}
 
-      {/* Sync Progress Modal (Polling-based - Legacy) */}
-      <PollingProgressModal
-        isOpen={showSyncProgress}
-        onClose={handleSyncModalClose}
-        progress={syncProgress}
-        onMinimize={minimizeSyncProgress}
-        onCancel={cancelSync}
-      />
-
       {/* Integration Details Modal */}
       <IntegrationDetailsModal
         isOpen={showDetailsModal}
@@ -5158,37 +4834,13 @@ export default function Integrations() {
         onSync={syncIntegration}
       />
 
-      {/* SSE-based Sync Progress Modal (New) */}
+      {/* Sync Progress Modal */}
       {syncId && syncingConnector && (
         <SyncProgressModal
           syncId={syncId}
           connectorType={syncingConnector}
           initialEstimatedSeconds={syncEstimatedSeconds || undefined}
-          onCloseWhileActive={() => {
-            // User closed modal while sync is still running
-            // Store connector -> syncId mapping so we can re-open the modal
-            if (syncingConnector && syncId) {
-              setBackgroundSyncs(prev => ({
-                ...prev,
-                [syncingConnector]: syncId
-              }))
-            }
-          }}
-          onClose={() => {
-            // Remove from background syncs if it was there
-            if (syncingConnector && backgroundSyncs[syncingConnector]) {
-              setBackgroundSyncs(prev => {
-                const next = { ...prev }
-                delete next[syncingConnector]
-                return next
-              })
-            }
-            setSyncId(null)
-            setSyncingConnector(null)
-            setSyncEstimatedSeconds(null)
-            // Reload integrations to refresh status
-            checkIntegrationStatuses()
-          }}
+          onClose={closeSyncModal}
         />
       )}
 

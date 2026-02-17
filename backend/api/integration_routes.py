@@ -3527,6 +3527,31 @@ def _run_connector_sync(
     if sync_id:
         progress_service.update_progress(sync_id, status='connecting', stage='Connecting to service...')
 
+    # DB persistence helper for multi-worker polling support
+    _last_db_persist_time = [0]
+    def _persist_progress_to_db(db_session, connector_obj, status, stage, total_items=0, processed_items=0, failed_items=0, overall_percent=0, current_item=None, force=False):
+        """Write current progress to Connector.settings['sync_progress'] in DB.
+        Throttled to every 5s unless force=True (for phase transitions)."""
+        now = time.time()
+        if not force and (now - _last_db_persist_time[0]) < 5:
+            return
+        _last_db_persist_time[0] = now
+        try:
+            settings = dict(connector_obj.settings or {})
+            settings['sync_progress'] = {
+                'status': status, 'stage': stage, 'total_items': total_items,
+                'processed_items': processed_items, 'failed_items': failed_items,
+                'overall_percent': round(overall_percent, 1), 'current_item': current_item,
+            }
+            connector_obj.settings = settings
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(connector_obj, 'settings')
+            db_session.commit()
+        except Exception as persist_err:
+            print(f"[Sync] Progress DB persist error (non-fatal): {persist_err}", flush=True)
+            try: db_session.rollback()
+            except Exception: pass
+
     db = get_db()
     try:
         connector = db.query(Connector).filter(
@@ -3924,6 +3949,7 @@ def _run_connector_sync(
                         processed_items=0,
                         overall_percent=0.0
                     )
+                    _persist_progress_to_db(db, connector, 'saving', f'Saving {new_doc_count} new documents...', total_items=new_doc_count, force=True)
 
                 print(f"[Sync] Found {original_count} docs, skipping {original_count - len(documents)} (deleted or existing), processing {len(documents)}")
 
@@ -4120,6 +4146,7 @@ def _run_connector_sync(
                         stage='Extracting document summaries...',
                         overall_percent=33.0
                     )
+                    _persist_progress_to_db(db, connector, 'extracting', 'Extracting document summaries...', total_items=total_committed, processed_items=total_committed, overall_percent=33.0, force=True)
 
                 try:
                     # Query ALL un-embedded documents for this connector (including from previous failed syncs)
@@ -4179,6 +4206,7 @@ def _run_connector_sync(
                                 stage='Embedding documents...',
                                 overall_percent=66.0
                             )
+                            _persist_progress_to_db(db, connector, 'embedding', 'Embedding documents...', overall_percent=66.0, force=True)
 
                         def embedding_progress(cur, total, msg):
                             pct = 66.0 + (cur / total) * 33.0
@@ -4253,8 +4281,7 @@ def _run_connector_sync(
                 # Complete progress tracking
                 if sync_id:
                     progress_service.complete_sync(sync_id)
-                    # Note: Email notifications are now sent via POST /api/sync-progress/<sync_id>/notify
-                    # only when user explicitly enables "Email me when done"
+                    _persist_progress_to_db(db, connector, 'complete', 'Sync complete', overall_percent=100.0, force=True)
 
             finally:
                 # Only close the event loop if we created one (async connectors only)
