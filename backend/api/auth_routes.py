@@ -1282,6 +1282,7 @@ def send_invitation():
             SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
             SMTP_USER = os.getenv('SMTP_USER', '')
             SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+            SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL') or SMTP_USER
             FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3006')
 
             if not SMTP_USER or not SMTP_PASSWORD:
@@ -1296,7 +1297,7 @@ def send_invitation():
             # Create invitation email
             msg = MIMEMultipart('alternative')
             msg['Subject'] = f"{sender_name} invited you to join {org_name} on 2nd Brain"
-            msg['From'] = f"2nd Brain <{SMTP_USER}>"
+            msg['From'] = f"2nd Brain <{SMTP_FROM_EMAIL}>"
             msg['To'] = recipient_email
 
             # Personal message section
@@ -1404,7 +1405,7 @@ Questions? Contact {sender_email}
             with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
                 server.starttls()
                 server.login(SMTP_USER, SMTP_PASSWORD)
-                server.sendmail(SMTP_USER, recipient_email, msg.as_string())
+                server.sendmail(SMTP_FROM_EMAIL, recipient_email, msg.as_string())
 
             print(f"[Invite] Invitation sent from {sender_email} to {recipient_email} for tenant {tenant.name}")
 
