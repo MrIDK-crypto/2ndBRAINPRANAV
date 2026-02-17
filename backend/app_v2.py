@@ -165,6 +165,7 @@ from api.slack_bot_routes import slack_bot_bp
 from api.profile_routes import profile_bp
 from api.github_routes import github_bp
 from api.sync_progress_routes import sync_progress_bp
+from api.syncs_routes import syncs_bp
 from api.email_forwarding_routes import email_forwarding_bp
 from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
@@ -183,6 +184,7 @@ app.register_blueprint(jobs_bp)
 app.register_blueprint(slack_bot_bp)
 app.register_blueprint(profile_bp)
 app.register_blueprint(sync_progress_bp)
+app.register_blueprint(syncs_bp)
 app.register_blueprint(email_forwarding_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
