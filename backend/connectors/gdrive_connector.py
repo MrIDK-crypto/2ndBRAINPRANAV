@@ -238,11 +238,16 @@ class GDriveConnector(BaseConnector):
             name = file['name']
             mime_type = file['mimeType']
 
+            # Skip Google Workspace files — they're handled by dedicated connectors (GDocs, GSheets, GSlides)
+            if mime_type.startswith('application/vnd.google-apps.'):
+                print(f"[GDrive] Skipping Google Workspace file: {name} ({mime_type}) — use dedicated connector", flush=True)
+                return None
+
             content = self._extract_content(file_id, mime_type, name)
 
             if not content:
-                # Return placeholder instead of None so doc still appears
-                content = f"[{self._get_file_type(mime_type)}: {name}]"
+                print(f"[GDrive] No content extracted for {name}, skipping", flush=True)
+                return None
 
             owners = file.get('owners', [])
             owner_names = [o.get('displayName', o.get('emailAddress', '')) for o in owners]

@@ -74,7 +74,7 @@ class OneDriveConnector(BaseConnector):
         )
 
         # Generate auth URL
-        scopes = ["Files.Read.All", "User.Read"]
+        scopes = ["Files.Read.All", "User.Read", "offline_access"]
 
         auth_url = app.get_authorization_request_url(
             scopes,
@@ -240,50 +240,63 @@ class OneDriveConnector(BaseConnector):
                     error_msg = f"HTTP {response.status_code}: {error_text[:200]}"
                 raise Exception(f"OneDrive API error: {error_msg}")
 
-            items = response.json().get("value", [])
+            # Paginate through all items in the folder
+            items = []
+            page_url = url
+            while page_url:
+                resp_json = response.json()
+                items.extend(resp_json.get("value", []))
+                next_link = resp_json.get("@odata.nextLink")
+                if next_link:
+                    response = requests.get(
+                        next_link,
+                        headers={"Authorization": f"Bearer {self.access_token}"}
+                    )
+                    if response.status_code != 200:
+                        print(f"[OneDrive] Pagination failed: {response.status_code}", flush=True)
+                        break
+                else:
+                    break
+                page_url = next_link
 
-            # Process files FIRST (they're in root and accessible)
+            print(f"[OneDrive] Found {len(items)} items in folder {folder_id}", flush=True)
+
+            # Process files
+            file_types = self.config.settings.get("file_types") or self.OPTIONAL_SETTINGS["file_types"]
+            max_size = self.config.settings.get("max_file_size_mb") or self.OPTIONAL_SETTINGS["max_file_size_mb"]
+
             for item in items:
-                # Check if it's a file
                 if "file" in item:
-                    # Check file type
                     name = item.get("name", "")
-                    file_types = self.config.settings.get("file_types") or self.OPTIONAL_SETTINGS["file_types"]
 
                     if any(name.lower().endswith(ext) for ext in file_types):
-                        # Check file size
                         size_mb = item.get("size", 0) / (1024 * 1024)
-                        max_size = self.config.settings.get("max_file_size_mb") or self.OPTIONAL_SETTINGS["max_file_size_mb"]
 
                         if size_mb > max_size:
                             print(f"[OneDrive] Skipping {name} - too large ({size_mb:.1f}MB)", flush=True)
                             continue
 
-                        # Check modification time
                         modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
 
                         if since and modified < since:
                             continue
 
-                        # Download and parse file
                         doc = await self._download_and_parse(item)
                         if doc:
                             documents.append(doc)
                             print(f"[OneDrive] Parsed {len(documents)} files so far...", flush=True)
 
-            # DISABLED: Skip subfolders for faster sync - only sync root folder files
-            # To enable recursive sync, uncomment this block
-            # for item in items:
-            #     if "folder" in item:
-            #         try:
-            #             import time
-            #             time.sleep(0.5)  # Rate limit protection
-            #             subfolder_docs = await self._sync_folder(item["id"], since)
-            #             documents.extend(subfolder_docs)
-            #         except Exception as folder_err:
-            #             print(f"[OneDrive] Skipping folder {item.get('name')}: {folder_err}", flush=True)
-            #             continue
-            print(f"[OneDrive] Skipping subfolders (root-only mode)", flush=True)
+            # Recurse into subfolders
+            for item in items:
+                if "folder" in item:
+                    try:
+                        import time
+                        time.sleep(0.5)  # Rate limit protection
+                        subfolder_docs = await self._sync_folder(item["id"], since)
+                        documents.extend(subfolder_docs)
+                    except Exception as folder_err:
+                        print(f"[OneDrive] Skipping folder {item.get('name')}: {folder_err}", flush=True)
+                        continue
 
         except Exception as e:
             print(f"[OneDrive] Error syncing folder {folder_id}: {e}", flush=True)

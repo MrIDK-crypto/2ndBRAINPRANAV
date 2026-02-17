@@ -578,6 +578,7 @@ class BoxConnector(BaseConnector):
             # === INCREMENTAL SYNC: CHECK IF FILE UNCHANGED ===
             # Check if document already exists with same sha1 hash
             from database.models import SessionLocal, Document as DBDocument
+            existing_doc = None
             db = SessionLocal()
             try:
                 existing_doc = db.query(DBDocument).filter(

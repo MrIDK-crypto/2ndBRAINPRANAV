@@ -174,15 +174,26 @@ class SlackConnector(BaseConnector):
         configured_channels = self.config.settings.get("channels", [])
 
         try:
-            # Get public channels
-            response = self.client.conversations_list(
-                types="public_channel,private_channel",
-                exclude_archived=True
-            )
+            # Get public + private channels with pagination
+            all_channels = []
+            cursor = None
+            while True:
+                kwargs = {
+                    "types": "public_channel,private_channel",
+                    "exclude_archived": True,
+                    "limit": 200,
+                }
+                if cursor:
+                    kwargs["cursor"] = cursor
+                response = self.client.conversations_list(**kwargs)
+                all_channels.extend(response.get("channels", []))
+                cursor = response.get("response_metadata", {}).get("next_cursor")
+                if not cursor:
+                    break
 
-            print(f"[Slack] Found {len(response.get('channels', []))} total channels")
+            print(f"[Slack] Found {len(all_channels)} total channels")
 
-            for channel in response.get("channels", []):
+            for channel in all_channels:
                 print(f"[Slack] Channel: {channel['name']} (is_member={channel.get('is_member')})")
                 if not configured_channels or channel["id"] in configured_channels:
                     if channel.get("is_member"):
@@ -195,15 +206,23 @@ class SlackConnector(BaseConnector):
 
             print(f"[Slack] Total channels to sync: {len(channels)}")
 
-            # Get DMs if enabled
+            # Get DMs if enabled (also paginated)
             if self.config.settings.get("include_dms"):
-                dm_response = self.client.conversations_list(types="im")
-                for dm in dm_response.get("channels", []):
-                    channels.append({
-                        "id": dm["id"],
-                        "name": f"DM with {dm.get('user', 'Unknown')}",
-                        "type": "dm"
-                    })
+                dm_cursor = None
+                while True:
+                    dm_kwargs = {"types": "im", "limit": 200}
+                    if dm_cursor:
+                        dm_kwargs["cursor"] = dm_cursor
+                    dm_response = self.client.conversations_list(**dm_kwargs)
+                    for dm in dm_response.get("channels", []):
+                        channels.append({
+                            "id": dm["id"],
+                            "name": f"DM with {dm.get('user', 'Unknown')}",
+                            "type": "dm"
+                        })
+                    dm_cursor = dm_response.get("response_metadata", {}).get("next_cursor")
+                    if not dm_cursor:
+                        break
 
         except SlackApiError as e:
             print(f"[Slack] Error getting channels: {e.response['error']}")

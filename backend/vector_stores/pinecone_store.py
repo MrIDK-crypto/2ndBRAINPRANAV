@@ -180,7 +180,7 @@ class PineconeVectorStore:
                         embeddings.append(response.data[0].embedding)
                     except Exception as embed_error:
                         print(f"[PineconeVectorStore] Fallback embedding failed: {embed_error}", flush=True)
-                        embeddings.append([0.0] * EMBEDDING_DIMENSIONS)
+                        embeddings.append(None)  # Skip instead of inserting zero vectors
             except Exception as e:
                 print(f"[PineconeVectorStore] Batch embedding error: {type(e).__name__}: {e}", flush=True)
                 # Fall back to individual embeddings
@@ -357,9 +357,12 @@ class PineconeVectorStore:
                     texts = [chunk['content'] for chunk in batch]
                     embeddings = self._get_embeddings_batch(texts)
 
-                    # Prepare vectors
+                    # Prepare vectors (skip chunks with failed embeddings)
                     vectors = []
                     for chunk, embedding in zip(batch, embeddings):
+                        if embedding is None:
+                            print(f"[PineconeVectorStore] Skipping chunk {chunk['doc_id']}:{chunk['chunk_idx']} - embedding failed", flush=True)
+                            continue
                         vector_id = self._generate_vector_id(chunk['doc_id'], chunk['chunk_idx'])
 
                         # Prepare metadata (Pinecone has 40KB limit per vector)
@@ -368,7 +371,7 @@ class PineconeVectorStore:
                             'chunk_idx': chunk['chunk_idx'],
                             'tenant_id': chunk['tenant_id'],  # Critical for isolation
                             'title': chunk['title'][:200] if chunk['title'] else '',
-                            'content_preview': chunk['content'][:500],  # For display
+                            'content_preview': chunk['content'][:2000],  # Full chunk for RAG context
                         }
 
                         # Add custom metadata (with size limits)

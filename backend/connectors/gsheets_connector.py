@@ -202,6 +202,32 @@ class GSheetsConnector(BaseConnector):
 
     def _extract_content(self, file_id: str) -> Optional[str]:
         try:
+            # Try Sheets API for multi-sheet support first
+            try:
+                from googleapiclient.discovery import build
+                sheets_service = build('sheets', 'v4', credentials=self.credentials)
+                spreadsheet = sheets_service.spreadsheets().get(
+                    spreadsheetId=file_id, includeGridData=False
+                ).execute()
+                sheet_names = [s['properties']['title'] for s in spreadsheet.get('sheets', [])]
+
+                all_content = []
+                for sheet_name in sheet_names:
+                    result = sheets_service.spreadsheets().values().get(
+                        spreadsheetId=file_id, range=f"'{sheet_name}'"
+                    ).execute()
+                    rows = result.get('values', [])
+                    if rows:
+                        all_content.append(f"--- Sheet: {sheet_name} ---")
+                        for row in rows[:10000]:  # Safety limit per sheet
+                            all_content.append(','.join(str(cell) for cell in row))
+
+                if all_content:
+                    return '\n'.join(all_content)
+            except Exception as sheets_err:
+                print(f"[GSheets] Sheets API failed, falling back to CSV export: {sheets_err}", flush=True)
+
+            # Fallback: CSV export (first sheet only)
             response = self.service.files().export(fileId=file_id, mimeType=EXPORT_MIME).execute()
             if isinstance(response, bytes):
                 return response.decode('utf-8', errors='ignore')

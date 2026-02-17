@@ -1449,6 +1449,19 @@ def confirm_document(document_id: str):
                 Document.id == document_id
             ).first()
 
+            # Embed newly confirmed WORK docs that haven't been embedded yet
+            if document and document.classification == DocumentClassification.WORK and not document.embedded_at:
+                try:
+                    embedding_service = get_embedding_service()
+                    embedding_service.embed_documents(
+                        document_ids=[document.id],
+                        tenant_id=getattr(g, 'tenant_id', 'local-tenant'),
+                        db=db
+                    )
+                    print(f"[Confirm] Embedded confirmed document: {document.title[:50] if document.title else document.id}")
+                except Exception as embed_err:
+                    print(f"[Confirm] Embedding failed for {document_id}: {embed_err}")
+
             return jsonify({
                 "success": True,
                 "document": document.to_dict() if document else None
@@ -1561,11 +1574,34 @@ def bulk_confirm():
         db = get_db()
         try:
             service = ClassificationService(db)
+            tenant_id = getattr(g, 'tenant_id', 'local-tenant')
             results = service.bulk_confirm(
                 document_ids=document_ids,
-                tenant_id=getattr(g, 'tenant_id', 'local-tenant'),
+                tenant_id=tenant_id,
                 classification=classification
             )
+
+            # Embed newly confirmed WORK docs that haven't been embedded yet
+            try:
+                work_unembedded = db.query(Document).filter(
+                    Document.id.in_(document_ids),
+                    Document.tenant_id == tenant_id,
+                    Document.classification == DocumentClassification.WORK,
+                    Document.embedded_at == None
+                ).all()
+                if work_unembedded:
+                    embed_ids = [d.id for d in work_unembedded]
+                    embedding_service = get_embedding_service()
+                    embedding_service.embed_documents(
+                        document_ids=embed_ids,
+                        tenant_id=tenant_id,
+                        db=db
+                    )
+                    results["embedded"] = len(embed_ids)
+                    print(f"[BulkConfirm] Embedded {len(embed_ids)} confirmed documents")
+            except Exception as embed_err:
+                print(f"[BulkConfirm] Embedding failed: {embed_err}")
+                results["embedding_error"] = str(embed_err)
 
             return jsonify({
                 "success": True,

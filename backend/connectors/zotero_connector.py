@@ -240,11 +240,18 @@ class ZoteroConnector(BaseConnector):
 
             # Update library version for next sync
             try:
-                # Get current library version from headers
-                self.zot.items(limit=1)
-                new_version = self.zot.request.headers.get('Last-Modified-Version')
+                # Get current library version from the last API response
+                # pyzotero stores the last-modified-version in the Zotero object
+                new_version = getattr(self.zot, 'last_modified_version', None)
+                if not new_version:
+                    # Fallback: make a lightweight API call and check response headers
+                    self.zot.items(limit=1)
+                    # pyzotero >= 1.5 stores headers on the response
+                    if hasattr(self.zot, 'last_modified_version'):
+                        new_version = self.zot.last_modified_version
                 if new_version:
-                    self.config.settings['library_version'] = new_version
+                    self.config.settings['library_version'] = str(new_version)
+                    print(f"[Zotero] Updated library version to {new_version}", flush=True)
             except Exception as e:
                 print(f"[Zotero] Could not get library version: {e}", flush=True)
 

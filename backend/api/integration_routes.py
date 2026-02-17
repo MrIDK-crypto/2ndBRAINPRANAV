@@ -3563,6 +3563,8 @@ def _run_connector_sync(
         if not connector:
             sync_progress[progress_key]["status"] = "error"
             sync_progress[progress_key]["error"] = "Connector not found"
+            if sync_id:
+                progress_service.complete_sync(sync_id, error_message="Connector not found in database")
             return
 
         print(f"[Sync] Connector settings: {connector.settings}")
@@ -3641,6 +3643,8 @@ def _run_connector_sync(
             else:
                 sync_progress[progress_key]["status"] = "error"
                 sync_progress[progress_key]["error"] = f"Unknown connector type: {connector_type}"
+                if sync_id:
+                    progress_service.complete_sync(sync_id, error_message=f"Unknown connector type: {connector_type}")
                 return
 
             # Create connector instance
@@ -4149,11 +4153,13 @@ def _run_connector_sync(
                     _persist_progress_to_db(db, connector, 'extracting', 'Extracting document summaries...', total_items=total_committed, processed_items=total_committed, overall_percent=33.0, force=True)
 
                 try:
-                    # Query ALL un-embedded documents for this connector (including from previous failed syncs)
+                    # Query un-embedded documents for this connector (including from previous failed syncs)
+                    # IMPORTANT: Skip PENDING/UNKNOWN docs (Gmail/Slack) — they need user review before embedding
                     un_embedded_docs = db.query(Document).filter(
                         Document.tenant_id == tenant_id,
                         Document.connector_id == connector.id,
-                        Document.embedded_at == None
+                        Document.embedded_at == None,
+                        Document.status != DocumentStatus.PENDING
                     ).all()
 
                     doc_ids = [doc.id for doc in un_embedded_docs]
@@ -4247,6 +4253,13 @@ def _run_connector_sync(
                     import traceback
                     traceback.print_exc()
                     sync_progress[progress_key]["embedding_error"] = str(embed_error)
+                    # Surface embedding errors to user via progress service
+                    if sync_id:
+                        progress_service.update_progress(
+                            sync_id,
+                            status='embedding_error',
+                            stage=f'Documents saved but embedding failed: {str(embed_error)[:200]}',
+                        )
 
                 sync_progress[progress_key]["progress"] = 99
 
