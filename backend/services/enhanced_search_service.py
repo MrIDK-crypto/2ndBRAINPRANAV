@@ -947,8 +947,7 @@ class EnhancedSearchService:
         search_results: Dict,
         validate: bool = True,
         max_context_tokens: int = None,
-        conversation_history: list = None,
-        format_hint: str = None
+        conversation_history: list = None
     ) -> Dict:
         """
         Generate answer with strict citation enforcement and conversation context.
@@ -959,7 +958,6 @@ class EnhancedSearchService:
             validate: Run hallucination detection
             max_context_tokens: Max tokens for context (auto-detected if None)
             conversation_history: Previous messages for multi-turn conversations
-            format_hint: Optional hint for output format ('slack' for concise Slack-friendly answers)
 
         Returns:
             Dict with answer and validation results
@@ -1064,16 +1062,12 @@ Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
                 conversation_context += f"{role}: {content}\n"
             conversation_context += "\n"
 
-        if format_hint == 'slack':
-            format_instructions = """Answer concisely for a Slack message (MUST be under 250 words):
-- Use bullet points, NOT tables
-- Short paragraphs (2-3 sentences max)
-- No markdown tables, horizontal rules, or dividers
-- Get straight to the answer — no preambles like "Based on the documents..."
-- Cite key facts with [Source X]
-- End with "Sources Used: [list numbers]"."""
-        else:
-            format_instructions = """Provide a DETAILED, well-formatted answer:
+        user_prompt = f"""{conversation_context}SOURCE DOCUMENTS:
+{context}
+
+CURRENT QUESTION: {query}
+
+Provide a DETAILED, well-formatted answer:
 - Use numbered steps for processes/procedures
 - Include code blocks for any code content
 - Be thorough - explain concepts fully with examples
@@ -1081,13 +1075,6 @@ Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
 - Cite key facts with [Source X]
 
 End with "Sources Used: [list numbers]"."""
-
-        user_prompt = f"""{conversation_context}SOURCE DOCUMENTS:
-{context}
-
-CURRENT QUESTION: {query}
-
-{format_instructions}"""
 
         try:
             # Build messages array with conversation history
@@ -1157,8 +1144,7 @@ CURRENT QUESTION: {query}
         top_k: int = 10,
         validate: bool = True,
         conversation_history: list = None,
-        boost_doc_ids: list = None,
-        format_hint: str = None
+        boost_doc_ids: list = None
     ) -> Dict:
         """
         Complete enhanced RAG pipeline with conversation history support.
@@ -1229,8 +1215,7 @@ CURRENT QUESTION: {query}
             query=query,
             search_results=search_results,
             validate=validate,
-            conversation_history=conversation_history or [],
-            format_hint=format_hint
+            conversation_history=conversation_history or []
         )
 
         return {

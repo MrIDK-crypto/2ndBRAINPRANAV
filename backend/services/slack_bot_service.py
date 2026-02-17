@@ -324,8 +324,7 @@ class SlackBotService:
             tenant_id=tenant_id,
             vector_store=vector_store,
             top_k=10,
-            conversation_history=conversation_history,
-            format_hint='slack'
+            conversation_history=conversation_history
         )
 
         print(f"[SlackBot] Result: answer_len={len(result.get('answer', ''))}, sources={result.get('num_sources', 0)}", flush=True)
@@ -750,6 +749,47 @@ class SlackBotService:
         except Exception as e:
             print(f"[SlackBot] file_shared error: {e}", flush=True)
 
+    def _hyperlink_sources(self, answer: str, sources: list) -> str:
+        """
+        Replace [Source N] references in the answer text with Slack hyperlinks.
+        E.g. [Source 1] → <https://www.use2ndbrain.com/chat|[Knowledge Vault]>
+        """
+        PORTAL = "https://www.use2ndbrain.com"
+
+        # Build mapping: "1" -> {title, doc_id, source_type, metadata}
+        source_map = {}
+        for idx, src in enumerate(sources, 1):
+            title = self._get_source_title(src)
+            doc_id = src.get('doc_id', '')
+            metadata = src.get('metadata', {})
+            source_type = metadata.get('source_type', '') or src.get('source_type', '')
+            external_id = metadata.get('external_id', '') or src.get('external_id', '')
+            source_map[str(idx)] = {
+                'title': title, 'doc_id': doc_id,
+                'source_type': source_type, 'metadata': metadata,
+                'external_id': external_id,
+            }
+
+        def replace_source(match):
+            num = match.group(1)
+            info = source_map.get(num)
+            if not info:
+                return ''
+            link = self._get_source_link(
+                info['source_type'], info['metadata'],
+                info['external_id'], PORTAL
+            )
+            name = info['title'][:45]
+            if link:
+                return f"<{link}|{name}>"
+            return f"*{name}*"
+
+        # Replace [Source 1], [Source 2], etc.
+        answer = re.sub(r'\[Source (\d+)\]', replace_source, answer)
+        # Also handle [Sources 1, 2] or [Source 1, 2] patterns
+        answer = re.sub(r'\[Sources?\s+[\d,\s]+\]', '', answer)
+        return answer
+
     def _format_search_results(
         self,
         query: str,
@@ -757,39 +797,48 @@ class SlackBotService:
         compact: bool = False
     ) -> List[Dict]:
         """
-        Format search results as clean Slack blocks.
-        Designed to fit in a single message without "Show more" truncation.
+        Format search results as Slack blocks with hyperlinked sources.
+        Comprehensive answer with inline [Source N] → clickable links.
         """
         PORTAL_URL = "https://www.use2ndbrain.com"
         blocks = []
 
-        # Convert markdown answer to Slack mrkdwn
         answer = result.get('answer', 'No answer available')
+        sources = result.get('sources', [])
+
+        # Step 1: Replace [Source N] with hyperlinks BEFORE markdown conversion
+        answer = self._hyperlink_sources(answer, sources)
+
+        # Step 2: Convert markdown to Slack mrkdwn (tables→bullets, headers→bold, etc.)
         slack_answer = markdown_to_slack(answer)
 
-        # Truncate if too long — keep it to one Slack section (max ~2800 chars)
-        if len(slack_answer) > 2800:
-            # Cut at last complete paragraph/bullet before limit
-            truncated = slack_answer[:2800]
-            last_break = max(truncated.rfind('\n\n'), truncated.rfind('\n• '), truncated.rfind('\n- '))
-            if last_break > 1500:
-                truncated = truncated[:last_break]
-            slack_answer = truncated + f"\n\n_<{PORTAL_URL}/chat|Continue reading on the portal...>_"
+        # Step 3: Split into section blocks (max 3000 chars each, up to 3 blocks)
+        chunks = self._chunk_text(slack_answer, 3000)
+        for chunk in chunks[:3]:
+            blocks.append({
+                'type': 'section',
+                'text': {
+                    'type': 'mrkdwn',
+                    'text': chunk
+                }
+            })
 
-        blocks.append({
-            'type': 'section',
-            'text': {
-                'type': 'mrkdwn',
-                'text': slack_answer
-            }
-        })
+        # If answer was truncated, add portal link
+        if len(chunks) > 3:
+            blocks.append({
+                'type': 'section',
+                'text': {
+                    'type': 'mrkdwn',
+                    'text': f"_<{PORTAL_URL}/chat|Read the full answer on the portal...>_"
+                }
+            })
 
-        # Sources section — compact with hyperlinks
-        if result.get('sources'):
+        # Step 4: Compact hyperlinked sources at bottom
+        if sources:
             source_parts = []
             seen_titles = set()
 
-            for source in result['sources'][:8]:
+            for source in sources[:8]:
                 title = self._get_source_title(source)
                 if title in seen_titles:
                     continue
@@ -799,9 +848,8 @@ class SlackBotService:
                 source_type = metadata.get('source_type', '') or source.get('source_type', '') or 'document'
                 external_id = metadata.get('external_id', '') or source.get('external_id', '')
                 type_label = self._get_source_type_label(source_type)
-                display_title = title[:60] + "..." if len(title) > 60 else title
+                display_title = title[:50] + "..." if len(title) > 50 else title
 
-                # Build hyperlink based on source type
                 link = self._get_source_link(source_type, metadata, external_id, PORTAL_URL)
                 if link:
                     source_parts.append(f"<{link}|{display_title}> {type_label}")
