@@ -292,15 +292,8 @@ class SyncProgressService:
 
         print(f"[SyncProgress] Completed sync: {sync_id} - {progress.status}")
 
-        # Check if ALL syncs for this user are complete
+        # Send email immediately for each completed sync (don't wait for other syncs)
         user_id = progress.user_id
-        active_syncs = self.get_active_syncs_for_user(user_id)
-
-        if active_syncs:
-            print(f"[SyncProgress] User {user_id} still has {len(active_syncs)} active syncs - waiting to send email")
-            return
-
-        # All syncs complete! Check for email subscription
         notify_email = self._user_email_subscriptions.get(user_id)
 
         if not notify_email:
@@ -345,18 +338,16 @@ class SyncProgressService:
                 print(f"[SyncProgress] DB fallback for notify_email failed: {db_err}")
 
         if notify_email:
-            # Check if email was already sent for this user (prevents duplicates from multiple complete_sync calls)
-            if user_id in self._email_sent_for_user:
-                print(f"[SyncProgress] Email already sent for user {user_id}, skipping duplicate")
+            # Check if email was already sent for this sync (prevents duplicates from multiple complete_sync calls)
+            if sync_id in self._email_sent_for_user:
+                print(f"[SyncProgress] Email already sent for sync {sync_id}, skipping duplicate")
                 return
 
             # Mark as sent BEFORE sending to prevent race conditions
-            self._email_sent_for_user.add(user_id)
+            self._email_sent_for_user.add(sync_id)
 
-            # All syncs complete - send aggregated email
+            # Send email for this completed sync
             self._send_batch_completion_email(user_id, notify_email)
-            # Clear the subscription after sending
-            self._user_email_subscriptions.pop(user_id, None)
 
     def _send_batch_completion_email(self, user_id: str, email: str):
         """Send email notification for all completed syncs"""
