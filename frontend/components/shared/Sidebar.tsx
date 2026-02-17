@@ -95,7 +95,7 @@ export default function Sidebar({
     { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
     { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
     { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
-    { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: false },
+    { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
   ]
 
   const menuItems = isAdmin

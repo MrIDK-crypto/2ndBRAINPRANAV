@@ -18,19 +18,19 @@ interface InvitationInfo {
   message: string | null
 }
 
-// Catalyst-style color palette with 2nd Brain branding
+// Wellspring-inspired warm color palette
 const colors = {
-  primary: '#1e3a5f',
-  primaryHover: '#152a45',
-  secondary: '#0d9488',
-  background: '#f8fafc',
-  card: '#ffffff',
-  text: '#1e293b',
-  textMuted: '#64748b',
-  border: '#e2e8f0',
+  primary: '#C9A598',
+  primaryHover: '#B8948A',
+  secondary: '#C9A598',
+  background: '#FAF9F7',
+  card: '#FFFFFE',
+  text: '#2D2D2D',
+  textMuted: '#6B6B6B',
+  border: '#F0EEEC',
   error: '#dc2626',
   errorBg: '#fef2f2',
-  success: '#22c55e',
+  success: '#9CB896',
 }
 
 export default function SignupPage() {
