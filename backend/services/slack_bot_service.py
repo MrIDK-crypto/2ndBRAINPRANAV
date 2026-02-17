@@ -170,33 +170,77 @@ _conversation_cache = ConversationCache()
 def markdown_to_slack(text: str) -> str:
     """
     Convert standard Markdown to Slack mrkdwn format.
-    Slack doesn't support ## headers, --- dividers, or ** bold the same way.
+    Handles headers, bold, tables, dividers, links, and blockquotes.
     """
+    # Strip trailing "Sources Used: [...]" line (we show sources separately)
+    text = re.sub(r'\n*Sources?\s*Used:?\s*\[?[\d,\s\[\]Source]*\]?\.?\s*$', '', text, flags=re.IGNORECASE)
+
     lines = text.split('\n')
     converted = []
+    in_table = False
+    table_headers = []
 
     for line in lines:
-        # Convert ### headers to bold text
-        if line.startswith('### '):
-            line = f"*{line[4:].strip()}*"
-        elif line.startswith('## '):
-            line = f"*{line[3:].strip()}*"
-        elif line.startswith('# '):
-            line = f"*{line[2:].strip()}*"
+        stripped = line.strip()
 
-        # Convert **bold** to *bold* (Slack uses single asterisks)
-        line = re.sub(r'\*\*(.+?)\*\*', r'*\1*', line)
+        # Skip horizontal rules and unicode dividers
+        if re.match(r'^[-─━═]{3,}$', stripped) or re.match(r'^\*{3,}$', stripped):
+            continue
 
-        # Convert horizontal rules to divider text
-        if re.match(r'^-{3,}$', line.strip()) or re.match(r'^\*{3,}$', line.strip()):
-            line = '───────────────────'
+        # Skip table separator rows (|---|---|)
+        if re.match(r'^\|[\s\-:]+\|', stripped):
+            continue
+
+        # Handle table header row
+        if stripped.startswith('|') and stripped.endswith('|') and not in_table:
+            cells = [c.strip() for c in stripped.strip('|').split('|') if c.strip()]
+            if cells:
+                table_headers = cells
+                in_table = True
+            continue
+
+        # Handle table data rows -> convert to bullet points
+        if stripped.startswith('|') and stripped.endswith('|') and in_table:
+            cells = [c.strip() for c in stripped.strip('|').split('|') if c.strip()]
+            if cells and table_headers:
+                parts = []
+                for i, cell in enumerate(cells):
+                    if cell and cell != '-' and cell != 'N/A':
+                        header = table_headers[i] if i < len(table_headers) else ''
+                        if header and header != cell:
+                            parts.append(f"{header}: {cell}")
+                        else:
+                            parts.append(cell)
+                if parts:
+                    converted.append(f"• {' | '.join(parts)}")
+            continue
+
+        # End of table
+        if in_table and not stripped.startswith('|'):
+            in_table = False
+            table_headers = []
+
+        # Convert headers to bold
+        if stripped.startswith('### '):
+            line = f"\n*{stripped[4:].strip()}*"
+        elif stripped.startswith('## '):
+            line = f"\n*{stripped[3:].strip()}*"
+        elif stripped.startswith('# '):
+            line = f"\n*{stripped[2:].strip()}*"
+        else:
+            # Convert **bold** to *bold*
+            line = re.sub(r'\*\*(.+?)\*\*', r'*\1*', line)
 
         # Convert [text](url) to <url|text>
         line = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<\2|\1>', line)
 
         converted.append(line)
 
-    return '\n'.join(converted)
+    result = '\n'.join(converted)
+
+    # Clean up excessive blank lines
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    return result.strip()
 
 
 class SlackBotService:
@@ -280,7 +324,8 @@ class SlackBotService:
             tenant_id=tenant_id,
             vector_store=vector_store,
             top_k=10,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            format_hint='slack'
         )
 
         print(f"[SlackBot] Result: answer_len={len(result.get('answer', ''))}, sources={result.get('num_sources', 0)}", flush=True)
@@ -712,59 +757,40 @@ class SlackBotService:
         compact: bool = False
     ) -> List[Dict]:
         """
-        Format search results as Slack blocks with proper mrkdwn formatting.
-
-        Args:
-            query: Original query
-            result: Search result from EnhancedSearchService
-            compact: If True, use compact format
-
-        Returns:
-            list: Slack block kit blocks
+        Format search results as clean Slack blocks.
+        Designed to fit in a single message without "Show more" truncation.
         """
+        PORTAL_URL = "https://www.use2ndbrain.com"
         blocks = []
-
-        # Header
-        blocks.append({
-            'type': 'header',
-            'text': {
-                'type': 'plain_text',
-                'text': f"Results for: {query[:140]}"
-            }
-        })
-
-        blocks.append({'type': 'divider'})
 
         # Convert markdown answer to Slack mrkdwn
         answer = result.get('answer', 'No answer available')
         slack_answer = markdown_to_slack(answer)
 
-        # Remove the trailing "Sources Used: [...]" line from the answer body
-        # (we display sources separately below)
-        slack_answer = re.sub(r'\n*Sources?\s*Used:?\s*\[?[\d,\s]*\]?\.?\s*$', '', slack_answer, flags=re.IGNORECASE)
+        # Truncate if too long — keep it to one Slack section (max ~2800 chars)
+        if len(slack_answer) > 2800:
+            # Cut at last complete paragraph/bullet before limit
+            truncated = slack_answer[:2800]
+            last_break = max(truncated.rfind('\n\n'), truncated.rfind('\n• '), truncated.rfind('\n- '))
+            if last_break > 1500:
+                truncated = truncated[:last_break]
+            slack_answer = truncated + f"\n\n_<{PORTAL_URL}/chat|Continue reading on the portal...>_"
 
-        answer_chunks = self._chunk_text(slack_answer, 3000)  # Slack limit
+        blocks.append({
+            'type': 'section',
+            'text': {
+                'type': 'mrkdwn',
+                'text': slack_answer
+            }
+        })
 
-        for chunk in answer_chunks:
-            blocks.append({
-                'type': 'section',
-                'text': {
-                    'type': 'mrkdwn',
-                    'text': chunk
-                }
-            })
-
-        # Sources section
-        if not compact and result.get('sources'):
-            blocks.append({'type': 'divider'})
-
-            sources_text = "*Sources:*\n"
+        # Sources section — compact with hyperlinks
+        if result.get('sources'):
+            source_parts = []
             seen_titles = set()
 
-            for idx, source in enumerate(result['sources'][:10], 1):
+            for source in result['sources'][:8]:
                 title = self._get_source_title(source)
-
-                # Deduplicate sources with same title
                 if title in seen_titles:
                     continue
                 seen_titles.add(title)
@@ -772,69 +798,48 @@ class SlackBotService:
                 metadata = source.get('metadata', {})
                 source_type = metadata.get('source_type', '') or source.get('source_type', '') or 'document'
                 external_id = metadata.get('external_id', '') or source.get('external_id', '')
-
-                # Slack deep link metadata
-                team_domain = metadata.get('team_domain', '')
-                channel_id = metadata.get('channel_id', '')
-                message_ts = metadata.get('message_ts', '')
-                channel_name = metadata.get('channel_name', '')
-
-                # Source type label
                 type_label = self._get_source_type_label(source_type)
+                display_title = title[:60] + "..." if len(title) > 60 else title
 
-                # Build display title - truncate for Slack
-                display_title = title[:80] + "..." if len(title) > 80 else title
-
-                # Create hyperlinks based on source type
-                if source_type == 'gmail' and external_id:
-                    gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{external_id}"
-                    sources_text += f"{idx}. <{gmail_link}|{display_title}> _{type_label}_\n"
-                elif source_type == 'slack' and team_domain and channel_id and message_ts:
-                    ts_no_dot = message_ts.replace('.', '')
-                    slack_link = f"https://{team_domain}.slack.com/archives/{channel_id}/p{ts_no_dot}"
-                    sources_text += f"{idx}. <{slack_link}|{display_title}> _{type_label}_\n"
+                # Build hyperlink based on source type
+                link = self._get_source_link(source_type, metadata, external_id, PORTAL_URL)
+                if link:
+                    source_parts.append(f"<{link}|{display_title}> {type_label}")
                 else:
-                    sources_text += f"{idx}. {display_title} _{type_label}_\n"
+                    source_parts.append(f"{display_title} {type_label}")
 
-                # Stop after we have enough unique sources displayed
                 if len(seen_titles) >= 5:
                     break
 
-            blocks.append({
-                'type': 'section',
-                'text': {
-                    'type': 'mrkdwn',
-                    'text': sources_text
-                }
-            })
-
-        # Feedback buttons (always shown)
-        blocks.append({
-            'type': 'actions',
-            'elements': [
-                {
-                    'type': 'button',
-                    'text': {
-                        'type': 'plain_text',
-                        'text': 'Helpful'
-                    },
-                    'style': 'primary',
-                    'action_id': 'feedback_helpful',
-                    'value': 'helpful'
-                },
-                {
-                    'type': 'button',
-                    'text': {
-                        'type': 'plain_text',
-                        'text': 'Not helpful'
-                    },
-                    'action_id': 'feedback_not_helpful',
-                    'value': 'not_helpful'
-                }
-            ]
-        })
+            if source_parts:
+                blocks.append({'type': 'divider'})
+                blocks.append({
+                    'type': 'context',
+                    'elements': [{
+                        'type': 'mrkdwn',
+                        'text': "*Sources:*  " + "  |  ".join(source_parts)
+                    }]
+                })
 
         return blocks
+
+    def _get_source_link(self, source_type: str, metadata: Dict, external_id: str, portal_url: str) -> str:
+        """Build a hyperlink URL for a source based on its type."""
+        # Slack messages — deep link to the message
+        if source_type == 'slack':
+            team_domain = metadata.get('team_domain', '')
+            channel_id = metadata.get('channel_id', '')
+            message_ts = metadata.get('message_ts', '')
+            if team_domain and channel_id and message_ts:
+                ts_no_dot = message_ts.replace('.', '')
+                return f"https://{team_domain}.slack.com/archives/{channel_id}/p{ts_no_dot}"
+
+        # Gmail — deep link to the email
+        if source_type == 'gmail' and external_id:
+            return f"https://mail.google.com/mail/u/0/#inbox/{external_id}"
+
+        # Everything else — link to the portal chat page
+        return f"{portal_url}/chat"
 
     def _get_source_title(self, source: Dict) -> str:
         """
