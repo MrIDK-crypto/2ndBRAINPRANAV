@@ -110,8 +110,6 @@ def verify_slack_request():
     """
     if not SLACK_SIGNING_SECRET:
         print("[SlackBot] WARNING: No SLACK_SIGNING_SECRET configured - skipping verification", flush=True)
-        # In development without a signing secret, allow requests through
-        # but log a clear warning. In production, SLACK_SIGNING_SECRET must be set.
         return True
 
     if not signature_verifier:
@@ -124,15 +122,20 @@ def verify_slack_request():
         signature = request.headers.get('X-Slack-Signature', '')
 
         if not timestamp or not signature:
-            print("[SlackBot] REJECTED: Missing signature headers", flush=True)
+            print(f"[SlackBot] REJECTED: Missing signature headers (ts={bool(timestamp)}, sig={bool(signature)})", flush=True)
             return False
 
         # Reject requests older than 5 minutes (replay attack protection)
-        if abs(time.time() - int(timestamp)) > 300:
-            print("[SlackBot] REJECTED: Request timestamp too old (replay attack?)", flush=True)
+        try:
+            ts_diff = abs(time.time() - int(timestamp))
+            if ts_diff > 300:
+                print(f"[SlackBot] REJECTED: Request timestamp too old ({ts_diff:.0f}s)", flush=True)
+                return False
+        except (ValueError, TypeError):
+            print(f"[SlackBot] REJECTED: Invalid timestamp value: {timestamp!r}", flush=True)
             return False
 
-        # Verify HMAC signature
+        # Verify HMAC signature using slack_sdk's SignatureVerifier
         body = request.get_data(as_text=True)
         is_valid = signature_verifier.is_valid(
             body=body,
@@ -141,13 +144,15 @@ def verify_slack_request():
         )
 
         if not is_valid:
-            print("[SlackBot] REJECTED: Invalid HMAC signature", flush=True)
+            print(f"[SlackBot] REJECTED: Invalid HMAC signature (body_len={len(body)}, sig={signature[:20]}...)", flush=True)
             return False
 
         return True
 
     except Exception as e:
+        import traceback
         print(f"[SlackBot] Signature verification error: {e}", flush=True)
+        traceback.print_exc()
         return False
 
 
@@ -406,11 +411,20 @@ def slack_events():
     POST /api/slack/events
     """
     try:
-        data = request.get_json()
+        # Log incoming request for debugging
+        print(f"[SlackBot] === Incoming event request ===", flush=True)
+
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            print(f"[SlackBot] ERROR: Could not parse JSON body", flush=True)
+            return jsonify({'ok': True})
+
+        event_type = data.get('type', 'unknown')
+        print(f"[SlackBot] Event type: {event_type}, team: {data.get('team_id', 'none')}", flush=True)
 
         # Handle URL verification challenge FIRST (before signature verification)
         # This is required by Slack when you first set up the Events URL
-        if data.get('type') == 'url_verification':
+        if event_type == 'url_verification':
             # Still verify signature on challenge requests if possible
             if SLACK_SIGNING_SECRET and not verify_slack_request():
                 return jsonify({'error': 'Invalid signature'}), 403
@@ -420,18 +434,24 @@ def slack_events():
 
         # Verify Slack signature for all other requests
         if not verify_slack_request():
+            print(f"[SlackBot] === Request REJECTED (signature) ===", flush=True)
             return jsonify({'error': 'Invalid signature'}), 403
 
+        print(f"[SlackBot] Signature verification PASSED", flush=True)
+
         # Handle events
-        if data.get('type') == 'event_callback':
+        if event_type == 'event_callback':
             event = data.get('event', {})
             team_id = data.get('team_id')
             event_id = data.get('event_id')
             event_subtype = event.get('type')
 
+            print(f"[SlackBot] Event callback: subtype={event_subtype}, team={team_id}, event_id={event_id}", flush=True)
+            print(f"[SlackBot] Event data: channel={event.get('channel')}, user={event.get('user')}, text={repr(event.get('text', '')[:100])}", flush=True)
+
             # Validate team_id is present and reasonable
             if not team_id or not isinstance(team_id, str) or len(team_id) > 20:
-                print(f"[SlackBot] REJECTED: Invalid team_id in event", flush=True)
+                print(f"[SlackBot] REJECTED: Invalid team_id: {repr(team_id)}", flush=True)
                 return jsonify({'ok': True})
 
             # DEDUPLICATION: Skip if already processed
@@ -441,32 +461,47 @@ def slack_events():
             # CRITICAL: Process in background thread to respond to Slack within 3 seconds
             def process_event_background(team_id, event, event_subtype):
                 try:
+                    print(f"[SlackBot] Background thread started for {event_subtype}", flush=True)
+
                     tenant_id = get_tenant_for_workspace(team_id)
                     if not tenant_id:
-                        print(f"[SlackBot] No tenant found for workspace {team_id}", flush=True)
+                        print(f"[SlackBot] STOP: No tenant found for workspace {team_id}", flush=True)
                         return
+
+                    print(f"[SlackBot] Tenant found: {tenant_id[:8]}...", flush=True)
 
                     bot_token = get_bot_token_for_workspace(team_id)
                     if not bot_token:
-                        print(f"[SlackBot] No bot token for workspace {team_id}", flush=True)
+                        print(f"[SlackBot] STOP: No bot token for workspace {team_id}", flush=True)
                         return
 
+                    print(f"[SlackBot] Bot token found, creating service...", flush=True)
                     bot_service = SlackBotService(bot_token)
 
                     if event_subtype == 'app_mention':
+                        print(f"[SlackBot] Routing to handle_app_mention", flush=True)
                         bot_service.handle_app_mention(tenant_id, event)
                     elif event_subtype == 'message':
                         if not event.get('bot_id') and event.get('channel', '').startswith('D'):
                             # Check if message has files (file upload to bot)
                             if event.get('files'):
+                                print(f"[SlackBot] Routing to handle_file_upload", flush=True)
                                 bot_service.handle_file_upload(tenant_id, event)
                             else:
+                                print(f"[SlackBot] Routing to handle_message (DM)", flush=True)
                                 bot_service.handle_message(tenant_id, event)
+                        else:
+                            print(f"[SlackBot] Skipping message: bot_id={event.get('bot_id')}, channel={event.get('channel', '')[:5]}", flush=True)
                     elif event_subtype == 'file_shared':
                         # File shared in a DM with the bot
                         channel = event.get('channel_id', '')
                         if channel.startswith('D'):
+                            print(f"[SlackBot] Routing to handle_file_shared", flush=True)
                             bot_service.handle_file_shared(tenant_id, event)
+                    else:
+                        print(f"[SlackBot] Unhandled event subtype: {event_subtype}", flush=True)
+
+                    print(f"[SlackBot] Background thread completed for {event_subtype}", flush=True)
 
                 except Exception as e:
                     import traceback
@@ -480,11 +515,15 @@ def slack_events():
             )
             thread.daemon = True
             thread.start()
+        else:
+            print(f"[SlackBot] Ignoring event type: {event_type}", flush=True)
 
         return jsonify({'ok': True})  # Return immediately to Slack
 
     except Exception as e:
+        import traceback
         print(f"[SlackBot] Events error: {e}", flush=True)
+        traceback.print_exc()
         return jsonify({'ok': True})  # Always return 200 to Slack
 
 

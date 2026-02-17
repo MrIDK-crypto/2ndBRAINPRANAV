@@ -350,8 +350,8 @@ class SlackBotService:
 
             print(f"[SlackBot] handle_app_mention: channel={channel}, text={text[:100]}", flush=True)
 
-            # Remove ALL bot mentions from text
-            query = re.sub(r'<@[A-Z0-9]+>', '', text).strip()
+            # Remove ALL bot mentions from text (Slack user IDs can contain lowercase)
+            query = re.sub(r'<@[A-Za-z0-9_]+>', '', text).strip()
 
             if not query:
                 return {
