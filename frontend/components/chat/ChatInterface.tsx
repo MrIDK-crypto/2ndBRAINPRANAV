@@ -137,6 +137,10 @@ export default function ChatInterface() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
 
+  // Feedback & copy state (must be before any conditional returns)
+  const [feedbackState, setFeedbackState] = useState<Record<string, 'up' | 'down'>>({})
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
   // Auth headers for API calls
   const getAuthHeaders = () => {
     if (token) {
@@ -722,9 +726,6 @@ export default function ChatInterface() {
       </ReactMarkdown>
     )
   }
-
-  const [feedbackState, setFeedbackState] = useState<Record<string, 'up' | 'down'>>({})
-  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const handleFeedback = async (message: Message, rating: 'up' | 'down') => {
     // Toggle off if same rating clicked again
