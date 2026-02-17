@@ -223,6 +223,7 @@ export default function Documents() {
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set())
   const [analyzingGaps, setAnalyzingGaps] = useState(false)
   const [showGapsMenu, setShowGapsMenu] = useState(false)
+  const [sourceFilter, setSourceFilter] = useState<string>('all')
 
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false)
@@ -250,12 +251,28 @@ export default function Documents() {
     }
   }, [token])
 
+  // Derive unique source types from loaded documents for the filter dropdown
+  const availableSources = useMemo(() => {
+    const sourceSet = new Set<string>()
+    for (const d of documents) {
+      if (d.source_type) sourceSet.add(d.source_type.toLowerCase())
+    }
+    // Sort alphabetically by display label
+    return Array.from(sourceSet)
+      .map(st => ({ value: st, label: getSourceTypeInfo(st).label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [documents])
+
   // Use useMemo for filtered documents - much faster than useState + useEffect
   const filteredDocuments = useMemo(() => {
     let filtered = [...documents]
 
     if (activeCategory !== 'All Items') {
       filtered = filtered.filter(d => d.category === activeCategory)
+    }
+
+    if (sourceFilter !== 'all') {
+      filtered = filtered.filter(d => d.source_type?.toLowerCase() === sourceFilter)
     }
 
     if (searchQuery.trim()) {
@@ -278,7 +295,7 @@ export default function Documents() {
     })
 
     return filtered
-  }, [documents, activeCategory, searchQuery, sortField, sortDirection])
+  }, [documents, activeCategory, sourceFilter, searchQuery, sortField, sortDirection])
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -1294,6 +1311,14 @@ export default function Documents() {
             borderBottom: `1px solid ${colors.border}`,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {sourceFilter !== 'all' && (
+                <FilterPill
+                  label={`Source: ${getSourceTypeInfo(sourceFilter).label}`}
+                  active
+                  hasClose
+                  onClose={() => setSourceFilter('all')}
+                />
+              )}
               {activeFilters.map(filter => (
                 <FilterPill
                   key={filter}
@@ -1392,6 +1417,28 @@ export default function Documents() {
                 </svg>
                 Clean All Data
               </button>
+              {/* Source Filter */}
+              {availableSources.length > 1 && (
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: sourceFilter !== 'all' ? colors.primaryLight : colors.cardBg,
+                    border: `1px solid ${sourceFilter !== 'all' ? colors.primary : colors.border}`,
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    color: sourceFilter !== 'all' ? colors.primary : colors.textSecondary,
+                    cursor: 'pointer',
+                    fontWeight: sourceFilter !== 'all' ? 500 : 400,
+                  }}
+                >
+                  <option value="all">All Sources</option>
+                  {availableSources.map(src => (
+                    <option key={src.value} value={src.value}>{src.label}</option>
+                  ))}
+                </select>
+              )}
               {/* Search */}
               <div style={{ position: 'relative', minWidth: '200px' }}>
                 <input

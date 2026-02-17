@@ -39,7 +39,7 @@ export default function Sidebar({
   onNewChat,
   isLoadingHistory = false
 }: SidebarProps) {
-  const [isHistoryExpanded, setIsHistoryExpanded] = useState(true)
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false)
   const pathname = usePathname()
   const { user: authUser } = useAuth()
   const isAdmin = authUser?.role === 'admin'
