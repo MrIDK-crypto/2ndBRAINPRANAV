@@ -983,12 +983,74 @@ def slack_channel_check():
             except Exception as e:
                 results["checks"]["join_attempt"] = {"ok": False, "error": str(e)}
 
+        # Check 5: Read recent messages from channel to see @mention messages
+        try:
+            history = client.conversations_history(channel=channel, limit=10)
+            recent_msgs = []
+            for msg in history.get("messages", []):
+                recent_msgs.append({
+                    "ts": msg.get("ts"),
+                    "user": msg.get("user"),
+                    "text": (msg.get("text") or "")[:200],
+                    "bot_id": msg.get("bot_id"),
+                    "subtype": msg.get("subtype"),
+                })
+            results["checks"]["recent_messages"] = {
+                "ok": True,
+                "count": len(recent_msgs),
+                "messages": recent_msgs,
+            }
+        except Exception as e:
+            results["checks"]["recent_messages"] = {"ok": False, "error": str(e)}
+
         db.close()
 
     except Exception as e:
         results["error"] = str(e)
 
     return jsonify(results), 200
+
+
+@app.route('/api/diagnostics/slack-post-test', methods=['POST'])
+def slack_post_test():
+    """
+    Post a test message to a Slack channel to verify chat:write permission.
+    Body: {"channel": "C0AC4B27NAF", "text": "Test message"}
+    """
+    data = request.get_json() or {}
+    channel = data.get("channel")
+    text = data.get("text", "Hello from KnowledgeVault bot! This is a diagnostic test message.")
+
+    if not channel:
+        return jsonify({"error": "channel required in body"}), 400
+
+    try:
+        from database.models import Connector, ConnectorType, SessionLocal
+        from slack_sdk import WebClient
+
+        db = SessionLocal()
+        connector = db.query(Connector).filter(
+            Connector.connector_type == ConnectorType.SLACK,
+            Connector.is_active == True
+        ).first()
+
+        if not connector or not connector.access_token:
+            db.close()
+            return jsonify({"error": "No active Slack connector"}), 404
+
+        client = WebClient(token=connector.access_token)
+        result = client.chat_postMessage(channel=channel, text=text)
+        db.close()
+
+        return jsonify({
+            "ok": result["ok"],
+            "channel": result.get("channel"),
+            "ts": result.get("ts"),
+            "message_text": text,
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/diagnostics/webscraper', methods=['GET'])
