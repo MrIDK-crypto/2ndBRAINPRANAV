@@ -793,6 +793,101 @@ def slack_quick_check():
     return jsonify(results), 200
 
 
+@app.route('/api/diagnostics/slack-simulate', methods=['GET'])
+def slack_simulate_event():
+    """
+    Simulate a full Slack event flow: lookup → search → POST message to Slack.
+    This bypasses Slack's event delivery to test the handler directly.
+
+    Query params:
+        channel: Slack channel ID to post to (required)
+        query: Question to ask (default: "What is knowledge vault?")
+        team_id: Slack team ID (default: auto-detect from DB)
+    """
+    import traceback
+
+    channel = request.args.get("channel")
+    query = request.args.get("query", "What is knowledge vault?")
+    team_id = request.args.get("team_id")
+
+    steps = []
+    def log(name, ok, detail=None, err=None):
+        steps.append({"step": name, "ok": ok, "detail": detail, "error": str(err) if err else None})
+
+    if not channel:
+        return jsonify({
+            "error": "channel param required. Find it in Slack: right-click channel → View channel details → copy the Channel ID at the bottom.",
+            "example": "/api/diagnostics/slack-simulate?channel=C0123ABC&query=hello"
+        }), 400
+
+    # Step 1: Get team_id
+    try:
+        from database.models import Connector, ConnectorType, get_db as _get_db
+        if not team_id:
+            db = next(_get_db())
+            try:
+                c = db.query(Connector).filter(
+                    Connector.connector_type == ConnectorType.SLACK,
+                    Connector.is_active == True
+                ).first()
+                if c:
+                    team_id = (c.settings or {}).get("team_id")
+            finally:
+                db.close()
+        log("1. Team ID", bool(team_id), team_id)
+    except Exception as e:
+        log("1. Team ID", False, err=e)
+        return jsonify({"steps": steps}), 200
+
+    if not team_id:
+        return jsonify({"steps": steps, "error": "No Slack connector found"}), 200
+
+    # Step 2: Tenant + token lookup
+    try:
+        from services.slack_bot_service import (
+            SlackBotService, get_tenant_for_workspace, get_bot_token_for_workspace
+        )
+        tenant_id = get_tenant_for_workspace(team_id)
+        log("2. Tenant lookup", bool(tenant_id), tenant_id[:8] + "..." if tenant_id else None)
+        if not tenant_id:
+            return jsonify({"steps": steps}), 200
+
+        bot_token = get_bot_token_for_workspace(team_id)
+        log("3. Bot token", bool(bot_token))
+        if not bot_token:
+            return jsonify({"steps": steps}), 200
+    except Exception as e:
+        log("2-3. Lookup", False, err=e)
+        return jsonify({"steps": steps, "traceback": traceback.format_exc()}), 200
+
+    # Step 3: Create bot service
+    try:
+        bot_service = SlackBotService(bot_token)
+        log("4. Bot service init", True, f"bot_user_id={bot_service.bot_user_id}")
+    except Exception as e:
+        log("4. Bot service init", False, err=e)
+        return jsonify({"steps": steps, "traceback": traceback.format_exc()}), 200
+
+    # Step 4: Simulate app_mention event
+    try:
+        fake_event = {
+            "type": "app_mention",
+            "user": "U_DIAGNOSTIC",
+            "text": f"<@{bot_service.bot_user_id or 'UBOT'}> {query}",
+            "channel": channel,
+            "ts": str(time.time()),
+        }
+        log("5. Simulated event", True, fake_event["text"][:80])
+
+        bot_service.handle_app_mention(tenant_id, fake_event)
+        log("6. handle_app_mention", True, "Completed - check Slack channel for message")
+    except Exception as e:
+        log("6. handle_app_mention", False, err=e)
+        return jsonify({"steps": steps, "traceback": traceback.format_exc()}), 200
+
+    return jsonify({"steps": steps, "success": True}), 200
+
+
 @app.route('/api/diagnostics/webscraper', methods=['GET'])
 def webscraper_diagnostics():
     """

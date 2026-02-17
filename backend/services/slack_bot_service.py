@@ -222,6 +222,39 @@ class SlackBotService:
         except SlackApiError as e:
             print(f"[SlackBot] Error initializing: {e}", flush=True)
 
+    def _post_message_safe(self, channel: str, text: str, blocks=None, thread_ts=None):
+        """
+        Post a message to Slack with auto-join on 'not_in_channel' error.
+        Catches and logs all errors instead of raising.
+        """
+        kwargs = {'channel': channel, 'text': text}
+        if blocks:
+            kwargs['blocks'] = blocks
+        if thread_ts:
+            kwargs['thread_ts'] = thread_ts
+
+        try:
+            self.client.chat_postMessage(**kwargs)
+            print(f"[SlackBot] Message posted to {channel}", flush=True)
+        except SlackApiError as e:
+            error_code = e.response.get('error', '') if e.response else str(e)
+            print(f"[SlackBot] chat_postMessage error: {error_code}", flush=True)
+
+            # If bot isn't in channel, try to join and retry
+            if error_code in ('not_in_channel', 'channel_not_found'):
+                try:
+                    print(f"[SlackBot] Attempting to join channel {channel}...", flush=True)
+                    self.client.conversations_join(channel=channel)
+                    print(f"[SlackBot] Joined channel {channel}, retrying post...", flush=True)
+                    self.client.chat_postMessage(**kwargs)
+                    print(f"[SlackBot] Message posted after join", flush=True)
+                except SlackApiError as join_err:
+                    print(f"[SlackBot] Join+retry failed: {join_err}", flush=True)
+            else:
+                print(f"[SlackBot] Cannot recover from error: {error_code}", flush=True)
+        except Exception as e:
+            print(f"[SlackBot] Unexpected post error: {e}", flush=True)
+
     def _search_knowledge_base(self, query: str, tenant_id: str, conversation_history: list = None) -> Dict:
         """
         Centralized search method used by all handlers.
@@ -348,16 +381,21 @@ class SlackBotService:
             text = event.get('text', '')
             thread_ts = event.get('thread_ts') or event.get('ts')
 
-            print(f"[SlackBot] handle_app_mention: channel={channel}, text={text[:100]}", flush=True)
+            print(f"[SlackBot] handle_app_mention: channel={channel}, user={user}, text={repr(text[:100])}", flush=True)
 
-            # Remove ALL bot mentions from text (Slack user IDs can contain lowercase)
-            query = re.sub(r'<@[A-Za-z0-9_]+>', '', text).strip()
+            # Remove ALL bot mentions from text
+            # Handles both <@U123> and <@U123|displayname> formats
+            query = re.sub(r'<@[A-Za-z0-9_]+(?:\|[^>]*)?>', '', text).strip()
+
+            print(f"[SlackBot] Extracted query: {repr(query[:100])}", flush=True)
 
             if not query:
-                return {
-                    'channel': channel,
-                    'text': "Hi! Ask me a question about your knowledge base. Example: `@KnowledgeVault What is our pricing model?`"
-                }
+                self._post_message_safe(
+                    channel=channel,
+                    text="Hi! Ask me a question about your knowledge base. Example: `@KnowledgeVault What is our pricing model?`",
+                    thread_ts=event.get('ts')
+                )
+                return None
 
             # Get conversation history for this thread
             history = _conversation_cache.get_history(tenant_id, channel, thread_ts)
@@ -380,7 +418,7 @@ class SlackBotService:
                         'success': True
                     }, compact=False)
 
-                    self.client.chat_postMessage(
+                    self._post_message_safe(
                         channel=channel,
                         text=result['answer'][:100] + '...',  # Fallback text
                         blocks=blocks,
@@ -388,7 +426,7 @@ class SlackBotService:
                     )
                 else:
                     _log_slack_query(tenant_id, query, 'no_results', 'mention')
-                    self.client.chat_postMessage(
+                    self._post_message_safe(
                         channel=channel,
                         text=f"No results found for: _{query}_",
                         thread_ts=event.get('ts')
@@ -396,16 +434,18 @@ class SlackBotService:
 
             except Exception as e:
                 import traceback
-                print(f"[SlackBot] App mention error: {e}", flush=True)
+                print(f"[SlackBot] App mention search error: {e}", flush=True)
                 traceback.print_exc()
-                self.client.chat_postMessage(
+                self._post_message_safe(
                     channel=channel,
-                    text=f"Error searching: {str(e)}",
+                    text=f"Sorry, I encountered an error searching: {str(e)[:200]}",
                     thread_ts=event.get('ts')
                 )
 
         except Exception as e:
+            import traceback
             print(f"[SlackBot] Error handling mention: {e}", flush=True)
+            traceback.print_exc()
             return None
 
     def handle_message(
