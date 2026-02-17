@@ -150,6 +150,31 @@ try:
 except Exception as e:
     print(f"⚠ Enum migration failed (non-fatal): {e}")
 
+# Add missing columns to existing production databases
+def ensure_missing_columns():
+    """Add columns that were added after initial schema creation."""
+    migrations = [
+        ("documents", "feedback_score", "ALTER TABLE documents ADD COLUMN feedback_score FLOAT DEFAULT 0.0"),
+    ]
+    try:
+        with engine.connect() as conn:
+            for table, column, sql in migrations:
+                result = conn.execute(text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = :table AND column_name = :column"
+                ), {"table": table, "column": column})
+                if not result.fetchone():
+                    conn.execute(text(sql))
+                    conn.commit()
+                    print(f"✓ Added column '{column}' to '{table}'")
+    except Exception as e:
+        print(f"⚠ Column migration error (non-fatal): {e}")
+
+try:
+    ensure_missing_columns()
+except Exception as e:
+    print(f"⚠ Column migration failed (non-fatal): {e}")
+
 # ============================================================================
 # REGISTER API BLUEPRINTS
 # ============================================================================

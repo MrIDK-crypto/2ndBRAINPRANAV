@@ -851,10 +851,10 @@ export default function ChatInterface() {
       {/* Main Content - Full page chat */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Chat Area */}
-        <div className="flex-1 flex items-center justify-center px-8 py-2 overflow-hidden" style={{ backgroundColor: warmTheme.chatBg }}>
+        <div className="flex-1 flex items-center justify-center px-8 overflow-hidden" style={{ backgroundColor: warmTheme.chatBg }}>
           <div
-            className="flex flex-col items-center gap-3 rounded-3xl px-5 pt-3 pb-4 h-full max-h-[calc(100vh-24px)] w-full"
-            style={{ maxWidth: '1000px', backgroundColor: '#F7F5F3', border: '1px solid #F0EEEC' }}
+            className="flex flex-col items-center gap-3 rounded-3xl px-5 pt-3 pb-3 w-full"
+            style={{ maxWidth: '1000px', height: '100%', backgroundColor: '#F7F5F3', border: '1px solid #F0EEEC' }}
           >
             {/* Messages or Welcome Screen */}
             {messages.length === 0 ? (

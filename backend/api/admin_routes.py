@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from datetime import datetime, timezone, timedelta
 
-from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole, Tenant, GapStatus
+from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole, Tenant, GapStatus, ConnectorStatus
 from services.auth_service import require_auth
 
 # Create blueprint
@@ -575,7 +575,8 @@ def get_analytics():
         integrations = []
         try:
             connector_rows = db.query(Connector).filter(
-                Connector.tenant_id == tenant_id
+                Connector.tenant_id == tenant_id,
+                Connector.status.notin_([ConnectorStatus.DISCONNECTED, ConnectorStatus.NOT_CONFIGURED])
             ).all()
             for c in connector_rows:
                 integrations.append({
