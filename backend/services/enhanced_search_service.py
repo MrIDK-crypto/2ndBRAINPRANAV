@@ -767,6 +767,29 @@ class EnhancedSearchService:
 
         return embedding
 
+    def _get_feedback_scores(self, doc_ids: list) -> dict:
+        """Batch lookup feedback_score for documents."""
+        if not doc_ids:
+            return {}
+        # Filter out empty strings
+        doc_ids = [d for d in doc_ids if d]
+        if not doc_ids:
+            return {}
+        try:
+            from database.models import SessionLocal, Document
+            db = SessionLocal()
+            try:
+                docs = db.query(Document.id, Document.feedback_score).filter(
+                    Document.id.in_(doc_ids),
+                    Document.feedback_score != 0.0
+                ).all()
+                return {str(d.id): d.feedback_score or 0.0 for d in docs}
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[EnhancedSearch] Feedback score lookup error (non-fatal): {e}", flush=True)
+            return {}
+
     def enhanced_search(
         self,
         query: str,
@@ -852,6 +875,22 @@ class EnhancedSearchService:
                 boost = FreshnessScorer.get_boost(year)
                 result['freshness_boost'] = boost
                 result['score'] = result.get('score', 0) * boost
+
+        # Step 3.6: Feedback-based scoring (reinforcement learning)
+        # Documents that received positive feedback get boosted,
+        # documents with negative feedback get penalized
+        feedback_scores = self._get_feedback_scores(
+            [r.get('doc_id', '') for r in initial_results]
+        )
+        for result in initial_results:
+            doc_id = result.get('doc_id', '')
+            fb_score = feedback_scores.get(doc_id, 0.0)
+            if fb_score != 0:
+                # Convert feedback_score (-5 to +5) to a multiplier (0.75 to 1.25)
+                # This gives a max +/-25% boost/penalty
+                multiplier = 1.0 + (fb_score / 20.0)
+                result['score'] = result.get('score', 0) * multiplier
+                result['feedback_boost'] = multiplier
 
         # Step 3.5: Boost specific documents (e.g., newly uploaded chat attachments)
         if boost_doc_ids:

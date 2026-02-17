@@ -558,7 +558,7 @@ def slack_interactive():
 
 
 def _handle_feedback(payload: dict, tenant_id: str, user_id: str, helpful: bool):
-    """Process feedback button click and update the message."""
+    """Process feedback button click, update document scores (RL), and update the message."""
     try:
         # Get the original message info
         channel = payload.get('channel', {}).get('id')
@@ -568,27 +568,52 @@ def _handle_feedback(payload: dict, tenant_id: str, user_id: str, helpful: bool)
         if not channel or not message_ts:
             return
 
+        # Extract RL data from button value
+        action_value = payload.get('actions', [{}])[0].get('value', '{}')
+        try:
+            rl_data = json.loads(action_value)
+        except (json.JSONDecodeError, TypeError):
+            rl_data = {}
+        query = rl_data.get('q', '')
+        source_doc_ids = rl_data.get('src', [])
+
         # Log the feedback
         feedback_type = "helpful" if helpful else "not helpful"
-        print(f"[SlackBot] Feedback from {user_id}: {feedback_type} (tenant: {tenant_id[:8]}...)", flush=True)
+        print(f"[SlackBot] Feedback from {user_id}: {feedback_type} (tenant: {tenant_id[:8]}..., query: {query[:50]}, docs: {len(source_doc_ids)})", flush=True)
 
-        # Store feedback in database
+        # Store rich feedback in database + update document feedback scores
         try:
-            from database.models import get_db
+            from database.models import get_db, AuditLog, Document
             db = next(get_db())
             try:
-                from database.models import AuditLog
+                # Log rich feedback to AuditLog
                 log = AuditLog(
                     tenant_id=tenant_id,
                     action='slack_bot_feedback',
                     details={
                         'user_id': user_id,
                         'helpful': helpful,
+                        'query': query,
+                        'source_doc_ids': source_doc_ids,
                         'channel': channel,
                         'message_ts': message_ts,
                     }
                 )
                 db.add(log)
+
+                # RL reward signal: update feedback_score on source documents
+                delta = 0.1 if helpful else -0.1
+                for doc_id in source_doc_ids:
+                    if not doc_id:
+                        continue
+                    doc = db.query(Document).filter(
+                        Document.id == doc_id,
+                        Document.tenant_id == tenant_id
+                    ).first()
+                    if doc:
+                        new_score = max(-5.0, min(5.0, (doc.feedback_score or 0.0) + delta))
+                        doc.feedback_score = new_score
+
                 db.commit()
             finally:
                 db.close()

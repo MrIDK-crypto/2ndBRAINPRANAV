@@ -902,6 +902,32 @@ class SlackBotService:
                     }]
                 })
 
+        # Step 5: Feedback buttons
+        # Encode query + source doc_ids in the button value for RL tracking
+        import json as _json
+        source_doc_ids = [s.get('doc_id', '') for s in sources[:10] if s.get('doc_id')]
+        feedback_value = _json.dumps({
+            'q': query[:200],
+            'src': source_doc_ids
+        })
+        blocks.append({
+            'type': 'actions',
+            'elements': [
+                {
+                    'type': 'button',
+                    'text': {'type': 'plain_text', 'text': ':thumbsup: Helpful', 'emoji': True},
+                    'action_id': 'feedback_helpful',
+                    'value': feedback_value
+                },
+                {
+                    'type': 'button',
+                    'text': {'type': 'plain_text', 'text': ':thumbsdown: Not Helpful', 'emoji': True},
+                    'action_id': 'feedback_not_helpful',
+                    'value': feedback_value
+                }
+            ]
+        })
+
         return blocks
 
     def _get_source_link(self, source_type: str, metadata: Dict, external_id: str, portal_url: str, doc_id: str = '') -> str:

@@ -797,6 +797,11 @@ class Document(Base):
     chunk_count = Column(Integer, default=0)
     embedded_at = Column(DateTime(timezone=True))  # When embedded to Pinecone
 
+    # Reinforcement learning feedback score (updated by Slack bot feedback)
+    # Positive = documents that frequently appear in helpful answers
+    # Negative = documents that frequently appear in unhelpful answers
+    feedback_score = Column(Float, default=0.0, index=True)
+
     # Project assignment
     project_id = Column(String(36), ForeignKey("projects.id"), nullable=True)
 
