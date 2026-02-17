@@ -29,11 +29,12 @@ def get_db():
     return SessionLocal()
 
 
-def _run_github_sync_multi(tenant_id: str, connector_id: str, sync_id: str, repositories: list = None, max_files: int = 100, max_files_to_analyze: int = 5, notify_email: str = None):
+def _run_github_sync_multi(tenant_id: str, connector_id: str, sync_id: str, repositories: list = None, max_files: int = 100, max_files_to_analyze: int = 5):
     """
     Background worker for syncing MULTIPLE GitHub repositories.
     Syncs each repo sequentially and tracks overall progress.
-    Optionally sends email notification on completion.
+    Email notification is handled by progress_service.complete_sync() via the
+    standard subscribe-email checkbox flow (same as all other integrations).
     """
     import time
     progress_service = get_sync_progress_service()
@@ -143,11 +144,10 @@ def _run_github_sync_multi(tenant_id: str, connector_id: str, sync_id: str, repo
                     current_item=f'Error syncing {repository}: {str(e)[:50]}'
                 )
 
-        # Final completion
-        sync_duration = time.time() - sync_start_time
+        # Final completion - update progress stats first, then call complete_sync
+        # which triggers the "email me when done" notification flow
         progress_service.update_progress(
             sync_id,
-            status='completed',  # Must be 'completed' (with 'd') for frontend to recognize
             stage=f'Sync complete! {len(all_documents_created)} documents from {total_repos} repos.',
             total_items=len(all_documents_created),
             processed_items=len(all_documents_created)
@@ -161,28 +161,14 @@ def _run_github_sync_multi(tenant_id: str, connector_id: str, sync_id: str, repo
 
         print(f"[GitHub Multi-Sync] Complete: {len(all_documents_created)} documents from {total_repos} repos")
 
-        # Send email notification if requested
-        if notify_email:
-            try:
-                from services.email_notification_service import get_email_service
-                email_service = get_email_service()
-                email_service.send_sync_complete_notification(
-                    user_email=notify_email,
-                    connector_type='github',
-                    total_items=len(all_documents_created),
-                    processed_items=len(all_documents_created),
-                    failed_items=0,
-                    duration_seconds=sync_duration
-                )
-                print(f"[GitHub Multi-Sync] Email notification sent to {notify_email}")
-            except Exception as e:
-                print(f"[GitHub Multi-Sync] Failed to send email notification: {e}")
+        # complete_sync sets status to 'complete', emits SSE event, and sends
+        # the "email me when done" notification if the user subscribed via the checkbox
+        progress_service.complete_sync(sync_id)
 
     except Exception as e:
         print(f"[GitHub Multi-Sync] Fatal error: {e}")
         import traceback
         traceback.print_exc()
-        progress_service.update_progress(sync_id, status='error', error_message=str(e))
 
         # Reset connector status on error
         try:
@@ -193,6 +179,9 @@ def _run_github_sync_multi(tenant_id: str, connector_id: str, sync_id: str, repo
                 db.commit()
         except:
             pass
+
+        # complete_sync with error triggers email notification if user subscribed
+        progress_service.complete_sync(sync_id, error_message=str(e))
 
     finally:
         db.close()
@@ -1002,10 +991,9 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
                 print(f"[GitHub Sync] Warning: Could not record sync metrics: {metric_err}")
                 db.rollback()  # Rollback the failed metric insert
 
-        # Mark complete
+        # Update progress stats first
         progress_service.update_progress(
             sync_id,
-            status='completed',  # Must be 'completed' (with 'd') for frontend to recognize
             stage=f'Sync complete! Created {len(documents_created)} documents.',
             total_items=len(documents_created),
             processed_items=len(documents_created)
@@ -1027,15 +1015,14 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
 
         print(f"[GitHub Sync] Sync complete: {len(documents_created)} documents")
 
+        # complete_sync sets status to 'complete', emits SSE event, and sends
+        # the "email me when done" notification if the user subscribed via the checkbox
+        progress_service.complete_sync(sync_id)
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"[GitHub Sync] Error: {e}")
-        progress_service.update_progress(
-            sync_id,
-            status='error',
-            error_message=str(e)
-        )
         # Also save error to DB for multi-worker SSE fallback
         try:
             connector = db.query(Connector).filter(Connector.id == connector_id).first()
@@ -1056,6 +1043,8 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
                 db.commit()
         except Exception:
             pass
+        # complete_sync with error triggers email notification if user subscribed
+        progress_service.complete_sync(sync_id, error_message=str(e))
     finally:
         db.close()
 
@@ -1437,7 +1426,8 @@ def sync_repository():
             repositories = [data.get('repository')]
         max_files = data.get('max_files', 100)
         max_files_to_analyze = data.get('max_files_to_analyze', 5)
-        notify_email = data.get('notify_email')  # Email to notify on completion
+        # notify_email no longer needed here - email notification is handled by
+        # progress_service.complete_sync() via the standard subscribe-email checkbox flow
 
         db = get_db()
         try:
@@ -1496,7 +1486,7 @@ def sync_repository():
             # Start background thread with repositories array
             thread = threading.Thread(
                 target=_run_github_sync_multi,
-                args=(tenant_id, connector_id, sync_id, repositories, max_files, max_files_to_analyze, notify_email),
+                args=(tenant_id, connector_id, sync_id, repositories, max_files, max_files_to_analyze),
                 daemon=True
             )
             thread.start()
