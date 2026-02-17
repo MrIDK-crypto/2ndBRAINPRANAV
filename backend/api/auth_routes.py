@@ -1291,9 +1291,13 @@ def send_invitation():
                     failed.append({"email": recipient_email, "reason": "This email already has an account in another organization"})
                     continue
 
-                # Generate token and create invitation (no expiry)
+                # Generate token and create invitation (30 day expiry)
+                from datetime import timedelta
                 token = secrets.token_urlsafe(32)
                 token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+                # Set expiration to 30 days from now
+                invitation_expires_at = utc_now() + timedelta(days=30)
 
                 invitation = Invitation(
                     tenant_id=g.tenant_id,
@@ -1301,7 +1305,7 @@ def send_invitation():
                     recipient_email=recipient_email,
                     token_hash=token_hash,
                     message=personal_message or None,
-                    expires_at=None
+                    expires_at=invitation_expires_at
                 )
                 db.add(invitation)
                 db.flush()
