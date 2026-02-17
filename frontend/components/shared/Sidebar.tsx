@@ -63,6 +63,10 @@ export default function Sidebar({
 
   const handleClick = (item: string) => {
     analytics.sidebarClick(item)
+    // Clicking ChatBot should always open a new chat
+    if (item === 'ChatBot' && onNewChat) {
+      onNewChat()
+    }
     if (onItemClick) {
       onItemClick(item)
     }
@@ -94,7 +98,7 @@ export default function Sidebar({
     { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
     { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
     { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
-    { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
+    { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: false },
   ]
 
   const menuItems = isSharedAccess
@@ -420,6 +424,41 @@ export default function Sidebar({
                       <span style={{ fontSize: '10px', color: '#9CA3AF', flexShrink: 0 }}>
                         {formatRelativeTime(conv.last_message_at)}
                       </span>
+
+                      {/* Delete button */}
+                      {onDeleteConversation && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onDeleteConversation(conv.id)
+                          }}
+                          style={{
+                            padding: '2px',
+                            background: 'none',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            color: '#9CA3AF',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: 0,
+                            transition: 'opacity 0.15s, color 0.15s'
+                          }}
+                          className="chat-delete-btn"
+                          title="Delete conversation"
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = '#EF4444'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = '#9CA3AF'
+                          }}
+                        >
+                          <svg style={{ width: '12px', height: '12px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
@@ -537,11 +576,14 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* CSS for spinner animation */}
+      {/* CSS for spinner animation and chat delete hover */}
       <style jsx global>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        div:hover > .chat-delete-btn {
+          opacity: 1 !important;
         }
       `}</style>
     </div>

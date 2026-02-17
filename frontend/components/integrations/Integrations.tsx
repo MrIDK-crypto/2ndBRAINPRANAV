@@ -2827,7 +2827,7 @@ const integrations: Integration[] = [
   {
     id: 'website_builder',
     name: 'Website Builder',
-    logo: '/website-builder.png',
+    logo: '/website-builder.svg',
     description: 'Generate a professional research lab website from your knowledge base documents.',
     category: 'Research',
     connected: false

@@ -887,7 +887,7 @@ export default function ChatInterface() {
                       style={{
                         padding: '16px 20px',
                         borderRadius: '16px',
-                        maxWidth: message.isUser ? '60%' : '75%',
+                        maxWidth: message.isUser ? '60%' : '100%',
                         backgroundColor: message.isUser ? '#FFFFFF' : '#FFFFFF',
                         border: message.isUser ? `1px solid ${warmTheme.border}` : 'none',
                         boxShadow: message.isUser ? '0 1px 3px rgba(0,0,0,0.04)' : 'none'
