@@ -715,6 +715,84 @@ def slack_bot_test():
     return jsonify(results), 200
 
 
+@app.route('/api/diagnostics/slack-check', methods=['GET'])
+def slack_quick_check():
+    """
+    Quick Slack bot diagnostic - no auth required, no team_id needed.
+    Hit this to see all Slack connectors and test their tokens.
+    """
+    from database.models import Connector, ConnectorType, get_db as _get_db
+    from slack_sdk import WebClient
+
+    results = {
+        "env_vars": {
+            "SLACK_CLIENT_ID": bool(os.getenv("SLACK_CLIENT_ID")),
+            "SLACK_CLIENT_SECRET": bool(os.getenv("SLACK_CLIENT_SECRET")),
+            "SLACK_SIGNING_SECRET": bool(os.getenv("SLACK_SIGNING_SECRET")),
+            "SLACK_BOT_TOKEN": bool(os.getenv("SLACK_BOT_TOKEN")),
+        },
+        "connectors": [],
+        "event_url_expected": "https://api.use2ndbrain.com/api/integrations/slack/callback",
+    }
+
+    try:
+        db = next(_get_db())
+        try:
+            connectors = db.query(Connector).filter(
+                Connector.connector_type == ConnectorType.SLACK
+            ).all()
+
+            for c in connectors:
+                settings = c.settings or {}
+                info = {
+                    "id": str(c.id),
+                    "tenant_id": c.tenant_id[:8] + "..." if c.tenant_id else None,
+                    "is_active": c.is_active,
+                    "team_id": settings.get("team_id"),
+                    "team_name": settings.get("team_name"),
+                    "bot_user_id": settings.get("bot_user_id"),
+                    "has_access_token": bool(c.access_token),
+                    "token_preview": c.access_token[:15] + "..." if c.access_token else None,
+                    "token_works": False,
+                    "token_error": None,
+                    "scopes": None,
+                }
+
+                # Test the token
+                if c.access_token:
+                    try:
+                        client = WebClient(token=c.access_token)
+                        auth = client.auth_test()
+                        info["token_works"] = True
+                        info["bot_name"] = auth.get("user")
+                        info["bot_team"] = auth.get("team")
+                        # Check scopes
+                        resp_headers = auth.headers if hasattr(auth, 'headers') else {}
+                        info["scopes"] = resp_headers.get("x-oauth-scopes", "unknown")
+                    except Exception as tok_err:
+                        info["token_error"] = str(tok_err)
+
+                results["connectors"].append(info)
+        finally:
+            db.close()
+    except Exception as e:
+        results["db_error"] = str(e)
+
+    # Also test fallback env token
+    env_token = os.getenv("SLACK_BOT_TOKEN")
+    if env_token:
+        try:
+            client = WebClient(token=env_token)
+            auth = client.auth_test()
+            results["env_token_works"] = True
+            results["env_token_bot"] = auth.get("user")
+        except Exception as e:
+            results["env_token_works"] = False
+            results["env_token_error"] = str(e)
+
+    return jsonify(results), 200
+
+
 @app.route('/api/diagnostics/webscraper', methods=['GET'])
 def webscraper_diagnostics():
     """
