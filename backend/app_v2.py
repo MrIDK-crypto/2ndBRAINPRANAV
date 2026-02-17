@@ -73,6 +73,17 @@ def handle_exception(e):
 def handle_404(e):
     return jsonify({"error": "Not found", "path": request.path}), 404
 
+@app.before_request
+def log_slack_requests():
+    """Log ALL POST requests that might be Slack events for debugging."""
+    if request.method == 'POST':
+        slack_sig = request.headers.get('X-Slack-Signature', '')
+        slack_ts = request.headers.get('X-Slack-Request-Timestamp', '')
+        if slack_sig or slack_ts or 'slack' in request.path.lower():
+            print(f"[GLOBAL-LOG] POST {request.path} from={request.remote_addr} "
+                  f"content_type={request.content_type} len={request.content_length} "
+                  f"slack_sig={'YES' if slack_sig else 'NO'} slack_ts={slack_ts}", flush=True)
+
 @app.after_request
 def log_response(response):
     """Log non-2xx responses for debugging."""
@@ -887,6 +898,97 @@ def slack_simulate_event():
         return jsonify({"steps": steps, "traceback": traceback.format_exc()}), 200
 
     return jsonify({"steps": steps, "success": True}), 200
+
+
+@app.route('/api/diagnostics/slack-channel', methods=['GET'])
+def slack_channel_check():
+    """
+    Check if the bot is a member of a specific channel and verify event delivery prerequisites.
+    Query params: channel (required) - Slack channel ID
+    """
+    channel = request.args.get("channel")
+    if not channel:
+        return jsonify({"error": "channel param required"}), 400
+
+    results = {"channel": channel, "checks": {}}
+
+    try:
+        from services.slack_bot_service import get_bot_token_for_workspace, get_tenant_for_workspace
+        from database.models import Connector, ConnectorType, SessionLocal
+        from slack_sdk import WebClient
+
+        db = SessionLocal()
+        connector = db.query(Connector).filter(
+            Connector.connector_type == ConnectorType.SLACK,
+            Connector.is_active == True
+        ).first()
+
+        if not connector or not connector.access_token:
+            db.close()
+            return jsonify({"error": "No active Slack connector"}), 404
+
+        token = connector.access_token
+        settings = connector.settings or {}
+        results["connector_team_id"] = settings.get("team_id")
+        results["connector_bot_user_id"] = settings.get("bot_user_id")
+        results["connected_via"] = settings.get("connected_via", "oauth")
+
+        client = WebClient(token=token)
+
+        # Check 1: auth.test - verify token and workspace
+        auth = client.auth_test()
+        results["checks"]["auth_test"] = {
+            "ok": auth["ok"],
+            "team": auth.get("team"),
+            "team_id": auth.get("team_id"),
+            "bot_user_id": auth.get("user_id"),
+            "app_id": auth.get("app_id", "not_returned"),
+        }
+
+        bot_user_id = auth.get("user_id")
+
+        # Check 2: conversations.info - get channel details
+        try:
+            ch_info = client.conversations_info(channel=channel)
+            ch = ch_info["channel"]
+            results["checks"]["channel_info"] = {
+                "ok": True,
+                "name": ch.get("name"),
+                "is_member": ch.get("is_member"),
+                "is_private": ch.get("is_private"),
+                "is_archived": ch.get("is_archived"),
+                "num_members": ch.get("num_members"),
+            }
+        except Exception as e:
+            results["checks"]["channel_info"] = {"ok": False, "error": str(e)}
+
+        # Check 3: Check if bot is in conversation members
+        try:
+            members = client.conversations_members(channel=channel, limit=200)
+            member_ids = members.get("members", [])
+            results["checks"]["bot_membership"] = {
+                "ok": True,
+                "bot_in_channel": bot_user_id in member_ids,
+                "total_members": len(member_ids),
+                "bot_user_id": bot_user_id,
+            }
+        except Exception as e:
+            results["checks"]["bot_membership"] = {"ok": False, "error": str(e)}
+
+        # Check 4: Try joining the channel
+        if not results["checks"].get("channel_info", {}).get("is_member"):
+            try:
+                client.conversations_join(channel=channel)
+                results["checks"]["join_attempt"] = {"ok": True, "joined": True}
+            except Exception as e:
+                results["checks"]["join_attempt"] = {"ok": False, "error": str(e)}
+
+        db.close()
+
+    except Exception as e:
+        results["error"] = str(e)
+
+    return jsonify(results), 200
 
 
 @app.route('/api/diagnostics/webscraper', methods=['GET'])
