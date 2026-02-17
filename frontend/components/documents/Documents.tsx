@@ -208,6 +208,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
 
 export default function Documents() {
   const [documents, setDocuments] = useState<Document[]>([])
+  const [totalCount, setTotalCount] = useState<number>(0)
   const [activeCategory, setActiveCategory] = useState<string>('All Items')
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -384,12 +385,15 @@ export default function Documents() {
         })
 
         setDocuments(docs)
+        setTotalCount(response.data.pagination?.total ?? docs.length)
       } else {
         setDocuments([])
+        setTotalCount(0)
       }
     } catch (error) {
       console.error('Error loading documents:', error)
       setDocuments([])
+      setTotalCount(0)
     } finally {
       setLoading(false)
     }
@@ -1232,7 +1236,7 @@ export default function Documents() {
           }}>
             <FolderCard
               title="All Documents"
-              count={counts.all}
+              count={totalCount}
               size={formatFileSize(sizes.all)}
               active={activeCategory === 'All Items'}
               onClick={() => setActiveCategory('All Items')}
@@ -1256,7 +1260,7 @@ export default function Documents() {
             />
             <FolderCard
               title="Web Scraper"
-              count={counts.webscraper}
+              count={totalCount > counts.all ? counts.webscraper + (totalCount - counts.all) : counts.webscraper}
               size={formatFileSize(sizes.webscraper)}
               active={activeCategory === 'Web Scraper'}
               onClick={() => setActiveCategory('Web Scraper')}
