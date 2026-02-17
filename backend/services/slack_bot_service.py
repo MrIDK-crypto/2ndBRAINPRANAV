@@ -28,7 +28,7 @@ def _log_slack_query(tenant_id: str, query: str, result: str, channel_type: str)
             action='slack_bot:question',
             resource_type='slack_bot',
             resource_id=None,
-            changes={
+            details={
                 'query': query[:500],
                 'result': result,
                 'channel_type': channel_type,

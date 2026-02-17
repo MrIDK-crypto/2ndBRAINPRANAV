@@ -962,10 +962,19 @@ def slack_callback():
     """
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
+    # LOG EVERY REQUEST (for debugging event delivery)
+    print(f"[Slack Callback] >>>>>> REQUEST RECEIVED method={request.method} content_type={request.content_type} content_length={request.content_length} remote_addr={request.remote_addr}", flush=True)
+    print(f"[Slack Callback] >>>>>> Headers: X-Slack-Signature={request.headers.get('X-Slack-Signature', 'MISSING')[:30]}... X-Slack-Request-Timestamp={request.headers.get('X-Slack-Request-Timestamp', 'MISSING')}", flush=True)
+
     # Handle POST requests (Slack Events)
     if request.method == 'POST':
         try:
-            data = request.get_json()
+            raw_body = request.get_data(as_text=True)
+            print(f"[Slack Events] Raw body length: {len(raw_body)}, first 200 chars: {raw_body[:200]}", flush=True)
+            data = request.get_json(force=True, silent=True)
+            if not data:
+                print(f"[Slack Events] ERROR: Could not parse JSON from body", flush=True)
+                return jsonify({'ok': True}), 200
             event_type = data.get('type')
 
             # Detailed logging for debugging
@@ -4762,8 +4771,7 @@ def _cascade_delete_connector_data(db, tenant_id: str, connector_id: str, connec
                     connector_id=connector_id,
                     external_id=doc.external_id,
                     source_type=doc.source_type,
-                    original_title=doc.title,
-                    deleted_reason="connector_disconnected"
+                    original_title=doc.title
                 )
                 db.merge(deleted_record)  # Use merge to handle duplicates
             except Exception as e:
