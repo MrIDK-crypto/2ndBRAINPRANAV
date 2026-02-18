@@ -521,8 +521,8 @@ def upload_documents():
 
                         print(f"[Upload] Extracted text length: {len(text) if text else 0}")
 
-                        if not text or len(text.strip()) < 50:
-                            error_msg = f"File content too short (< 50 chars): {filename}"
+                        if not text or len(text.strip()) == 0:
+                            error_msg = f"Could not extract text from: {filename}"
                             print(f"[Upload] {error_msg}")
                             parsing_errors.append(error_msg)
                             continue

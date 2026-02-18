@@ -82,7 +82,7 @@ class DocumentParser:
             if HAS_PPTX:
                 self.supported_formats.append('.pptx')
             if HAS_XLSX:
-                self.supported_formats.append('.xlsx')
+                self.supported_formats.extend(['.xlsx', '.xls', '.xlsm', '.xlsb'])
             if HAS_DOCX:
                 self.supported_formats.append('.docx')
 
@@ -119,7 +119,7 @@ class DocumentParser:
                 result = self._parse_pdf(file_path)
             elif ext == '.pptx' and HAS_PPTX:
                 result = self._parse_pptx(file_path)
-            elif ext == '.xlsx' and HAS_XLSX:
+            elif ext in ('.xlsx', '.xls', '.xlsm', '.xlsb') and HAS_XLSX:
                 result = self._parse_xlsx(file_path)
             elif ext == '.docx' and HAS_DOCX:
                 result = self._parse_docx(file_path)
@@ -232,8 +232,15 @@ class DocumentParser:
         }
 
     def _parse_xlsx(self, file_path: str) -> Dict:
-        """Extract text from Excel with 10K row limit per sheet to prevent memory issues"""
+        """Extract text from Excel files (.xlsx, .xls, .xlsm, .xlsb) with 10K row limit per sheet"""
         MAX_ROWS_PER_SHEET = 10000
+        ext = Path(file_path).suffix.lower()
+
+        # For .xls and .xlsb, use pandas (openpyxl can't read these)
+        if ext in ('.xls', '.xlsb'):
+            return self._parse_excel_pandas(file_path, MAX_ROWS_PER_SHEET)
+
+        # For .xlsx and .xlsm, use openpyxl
         text_parts = []
         total_rows = 0
         truncated_sheets = []
@@ -246,12 +253,10 @@ class DocumentParser:
 
             row_count = 0
             for row in sheet.iter_rows(values_only=True):
-                # Stop if we hit the row limit
                 if row_count >= MAX_ROWS_PER_SHEET:
                     truncated_sheets.append(sheet_name)
                     break
 
-                # Filter out None values and convert to strings
                 row_values = [str(cell) for cell in row if cell is not None and str(cell).strip()]
                 if row_values:
                     sheet_text.append(' | '.join(row_values))
@@ -261,7 +266,8 @@ class DocumentParser:
                 text_parts.append('\n'.join(sheet_text))
                 total_rows += row_count
 
-        # Add warning if any sheets were truncated
+        wb.close()
+
         if truncated_sheets:
             warning = f"\n\n[WARNING] The following sheets exceeded {MAX_ROWS_PER_SHEET:,} rows and were truncated: {', '.join(truncated_sheets)}"
             text_parts.append(warning)
@@ -275,7 +281,56 @@ class DocumentParser:
                 'total_rows': total_rows,
                 'truncated_sheets': truncated_sheets,
                 'max_rows_per_sheet': MAX_ROWS_PER_SHEET,
-                'file_type': 'xlsx'
+                'file_type': ext.lstrip('.')
+            }
+        }
+
+    def _parse_excel_pandas(self, file_path: str, max_rows: int) -> Dict:
+        """Fallback Excel parser using pandas for .xls and .xlsb formats"""
+        import pandas as pd
+
+        text_parts = []
+        total_rows = 0
+        truncated_sheets = []
+
+        try:
+            xls = pd.ExcelFile(file_path)
+            sheet_names = xls.sheet_names
+
+            for sheet_name in sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name, header=None, nrows=max_rows)
+                if len(df) >= max_rows:
+                    truncated_sheets.append(sheet_name)
+
+                sheet_text = [f"[Sheet: {sheet_name}]"]
+                for _, row in df.iterrows():
+                    row_values = [str(v) for v in row if pd.notna(v) and str(v).strip()]
+                    if row_values:
+                        sheet_text.append(' | '.join(row_values))
+                        total_rows += 1
+
+                if len(sheet_text) > 1:
+                    text_parts.append('\n'.join(sheet_text))
+
+            xls.close()
+        except Exception as e:
+            print(f"[DocumentParser] pandas Excel parse error: {e}")
+            return {'content': '', 'metadata': {'error': str(e), 'file_type': Path(file_path).suffix.lstrip('.')}}
+
+        if truncated_sheets:
+            warning = f"\n\n[WARNING] The following sheets exceeded {max_rows:,} rows and were truncated: {', '.join(truncated_sheets)}"
+            text_parts.append(warning)
+
+        content = '\n\n'.join(text_parts)
+
+        return {
+            'content': content,
+            'metadata': {
+                'sheets': len(sheet_names),
+                'total_rows': total_rows,
+                'truncated_sheets': truncated_sheets,
+                'max_rows_per_sheet': max_rows,
+                'file_type': Path(file_path).suffix.lstrip('.')
             }
         }
 
