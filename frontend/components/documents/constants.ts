@@ -64,7 +64,7 @@ export const API_FETCH_LIMIT = 10000
 export const SUMMARY_WORD_LIMIT = 8
 
 // File upload accepted types
-export const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls,.pptx,.ppt,.rtf'
+export const ACCEPTED_FILE_TYPES = '.pdf,.doc,.docx,.txt,.csv,.tsv,.xlsx,.xls,.xlsm,.xlsb,.pptx,.ppt,.rtf,.ods,.numbers,.json,.xml,.html,.htm,.md'
 
 // ============================================================================
 // CATEGORIES
