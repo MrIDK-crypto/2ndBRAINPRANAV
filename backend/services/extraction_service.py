@@ -104,7 +104,7 @@ class ExtractionService:
         Returns:
             Dict with extracted structured information, or None if extraction fails
         """
-        if not content or len(content.strip()) < 50:
+        if not content or len(content.strip()) < 10:
             return None
 
         # Truncate content if too long

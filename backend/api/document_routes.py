@@ -756,9 +756,9 @@ def upload_and_embed():
                         text = parser.parse_pdf_bytes(file_content)
                     elif lower_name.endswith(('.docx', '.doc')):
                         text = parser.parse_word_bytes(file_content)
-                    elif lower_name.endswith('.txt'):
-                        text = file_content.decode('utf-8')
-                    elif lower_name.endswith(('.csv', '.json', '.xml', '.md')):
+                    elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.csv', '.tsv')):
+                        text = parser.parse_file_bytes(file_content, filename)
+                    elif lower_name.endswith(('.txt', '.md', '.json', '.xml')):
                         text = file_content.decode('utf-8')
                     else:
                         # Try to decode as text
@@ -768,7 +768,7 @@ def upload_and_embed():
                             parsing_errors.append(f"Unsupported file type: {filename}")
                             continue
 
-                    if not text or len(text.strip()) < 50:
+                    if not text or len(text.strip()) < 10:
                         parsing_errors.append(f"File content too short: {filename}")
                         continue
 

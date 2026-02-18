@@ -3921,7 +3921,7 @@ def _run_connector_sync(
                 print(f"[Sync] Un-embedded existing documents: {len(un_embedded_existing)} - {un_embedded_ids[:5]}")
 
                 # Delete documents with empty content so they can be re-synced
-                empty_content_docs = [doc for doc in un_embedded_existing if not doc.content or len(doc.content.strip()) < 100]
+                empty_content_docs = [doc for doc in un_embedded_existing if not doc.content or len(doc.content.strip()) < 10]
                 if empty_content_docs:
                     print(f"[Sync] Deleting {len(empty_content_docs)} documents with empty content for re-sync")
                     for doc in empty_content_docs:

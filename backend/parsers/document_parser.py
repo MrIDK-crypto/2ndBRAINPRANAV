@@ -5,9 +5,11 @@ Falls back to traditional parsers if Azure Document AI is unavailable
 """
 
 import os
+import csv
+import io
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -151,8 +153,15 @@ class DocumentParser:
         if not ext:
             return None
 
+        # CSV/TSV files - parse as tabular data
+        if ext in ('.csv', '.tsv'):
+            try:
+                return self._parse_csv_bytes(file_bytes, ext)
+            except Exception:
+                return file_bytes.decode('utf-8', errors='ignore')
+
         # Plain text files - decode directly
-        if ext in ('.txt', '.md', '.csv', '.json', '.xml', '.html', '.htm'):
+        if ext in ('.txt', '.md', '.json', '.xml', '.html', '.htm'):
             try:
                 return file_bytes.decode('utf-8', errors='ignore')
             except Exception:
@@ -231,6 +240,124 @@ class DocumentParser:
             }
         }
 
+    def _format_tabular_data(self, rows: List[List[str]], sheet_name: str, max_rows: int = 10000) -> str:
+        """Format tabular data into AI-readable labeled-row format for RAG retrieval.
+
+        Args:
+            rows: List of rows, each row is a list of cell values as strings.
+                  Row 0 is treated as headers if it looks like a header row.
+            sheet_name: Name of the sheet/table
+            max_rows: Maximum data rows to include
+
+        Returns:
+            Formatted string with column context per row
+        """
+        if not rows:
+            return ''
+
+        # Trim trailing empty columns
+        max_cols = 0
+        for row in rows:
+            last_non_empty = -1
+            for i, cell in enumerate(row):
+                if cell.strip():
+                    last_non_empty = i
+            if last_non_empty + 1 > max_cols:
+                max_cols = last_non_empty + 1
+        if max_cols == 0:
+            return ''
+        rows = [row[:max_cols] for row in rows]
+        # Pad short rows
+        rows = [row + [''] * (max_cols - len(row)) for row in rows]
+
+        # Detect if row 0 is a header row (non-empty, non-numeric strings)
+        first_row = rows[0]
+        is_header = all(
+            cell.strip() and not cell.strip().replace('.', '').replace(',', '').replace('-', '').isdigit()
+            for cell in first_row if cell.strip()
+        ) and any(cell.strip() for cell in first_row)
+
+        if is_header:
+            headers = [cell.strip() or f'Column {chr(65 + i)}' for i, cell in enumerate(first_row)]
+            data_rows = rows[1:]
+        else:
+            headers = [f'Column {chr(65 + i)}' if i < 26 else f'Column {i + 1}' for i in range(max_cols)]
+            data_rows = rows
+
+        # Limit data rows
+        truncated = len(data_rows) > max_rows
+        data_rows = data_rows[:max_rows]
+
+        # Filter out fully empty data rows
+        data_rows = [r for r in data_rows if any(cell.strip() for cell in r)]
+
+        num_cols = len(headers)
+        num_data_rows = len(data_rows)
+
+        parts = []
+        parts.append(f'[Sheet: {sheet_name}]')
+        parts.append(f'Columns: {" | ".join(headers)}')
+        parts.append(f'Rows: {num_data_rows}')
+        parts.append('')
+
+        # For wide sheets (>20 cols), use compact markdown table
+        if num_cols > 20:
+            parts.append('| ' + ' | '.join(headers) + ' |')
+            parts.append('| ' + ' | '.join(['---'] * num_cols) + ' |')
+            for row in data_rows:
+                parts.append('| ' + ' | '.join(cell.strip() for cell in row) + ' |')
+        else:
+            # Labeled-row format (best for RAG)
+            for i, row in enumerate(data_rows, 1):
+                row_lines = [f'Row {i}:']
+                for j, cell in enumerate(row):
+                    val = cell.strip()
+                    if val:
+                        row_lines.append(f'- {headers[j]}: {val}')
+                if len(row_lines) > 1:  # Has at least one non-empty value
+                    parts.append('\n'.join(row_lines))
+                    parts.append('')
+
+        if truncated:
+            parts.append(f'\n[WARNING] Sheet truncated at {max_rows:,} rows.')
+
+        return '\n'.join(parts)
+
+    def _parse_csv_bytes(self, file_bytes: bytes, ext: str = '.csv') -> Optional[str]:
+        """Parse CSV/TSV bytes into AI-readable tabular format"""
+        MAX_ROWS = 10000
+
+        # Decode with BOM handling
+        try:
+            text = file_bytes.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text = file_bytes.decode('latin-1', errors='ignore')
+
+        delimiter = '\t' if ext == '.tsv' else ','
+
+        try:
+            # Sniff the dialect for better delimiter detection
+            sample = text[:8192]
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=',\t;|')
+                reader = csv.reader(io.StringIO(text), dialect)
+            except csv.Error:
+                reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+
+            rows = []
+            for i, row in enumerate(reader):
+                if i >= MAX_ROWS + 1:  # +1 for header
+                    break
+                rows.append([cell.strip() for cell in row])
+
+            if not rows:
+                return file_bytes.decode('utf-8', errors='ignore')
+
+            return self._format_tabular_data(rows, 'Data')
+        except Exception:
+            # Fallback: return raw text
+            return text
+
     def _parse_xlsx(self, file_path: str) -> Dict:
         """Extract text from Excel files (.xlsx, .xls, .xlsm, .xlsb) with 10K row limit per sheet"""
         MAX_ROWS_PER_SHEET = 10000
@@ -249,7 +376,7 @@ class DocumentParser:
 
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
-            sheet_text = [f"[Sheet: {sheet_name}]"]
+            rows_collected = []
 
             row_count = 0
             for row in sheet.iter_rows(values_only=True):
@@ -257,13 +384,15 @@ class DocumentParser:
                     truncated_sheets.append(sheet_name)
                     break
 
-                row_values = [str(cell) for cell in row if cell is not None and str(cell).strip()]
-                if row_values:
-                    sheet_text.append(' | '.join(row_values))
+                # Preserve all cells including empty ones to maintain column alignment
+                row_values = [str(cell).strip() if cell is not None else '' for cell in row]
+                # Skip fully empty rows
+                if any(v for v in row_values):
+                    rows_collected.append(row_values)
                     row_count += 1
 
-            if row_count > 0:
-                text_parts.append('\n'.join(sheet_text))
+            if rows_collected:
+                text_parts.append(self._format_tabular_data(rows_collected, sheet_name, MAX_ROWS_PER_SHEET))
                 total_rows += row_count
 
         wb.close()
@@ -302,15 +431,16 @@ class DocumentParser:
                 if len(df) >= max_rows:
                     truncated_sheets.append(sheet_name)
 
-                sheet_text = [f"[Sheet: {sheet_name}]"]
+                # Collect rows preserving column alignment
+                rows_collected = []
                 for _, row in df.iterrows():
-                    row_values = [str(v) for v in row if pd.notna(v) and str(v).strip()]
-                    if row_values:
-                        sheet_text.append(' | '.join(row_values))
+                    row_values = [str(v).strip() if pd.notna(v) else '' for v in row]
+                    if any(v for v in row_values):
+                        rows_collected.append(row_values)
                         total_rows += 1
 
-                if len(sheet_text) > 1:
-                    text_parts.append('\n'.join(sheet_text))
+                if rows_collected:
+                    text_parts.append(self._format_tabular_data(rows_collected, sheet_name, max_rows))
 
             xls.close()
         except Exception as e:
