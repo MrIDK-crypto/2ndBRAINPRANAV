@@ -3,6 +3,10 @@ Document API Routes
 REST endpoints for document management and classification.
 """
 
+import zipfile
+import io
+import mimetypes
+
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
@@ -32,6 +36,14 @@ document_bp = Blueprint('documents', __name__, url_prefix='/api/documents')
 def get_db():
     """Get database session"""
     return SessionLocal()
+
+
+# Supported file extensions for zip extraction (skip hidden/system files)
+ZIP_SUPPORTED_EXTENSIONS = {
+    '.pdf', '.doc', '.docx', '.txt', '.csv', '.tsv',
+    '.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt',
+    '.rtf', '.ods', '.numbers', '.json', '.xml', '.html', '.htm', '.md'
+}
 
 
 # ============================================================================
@@ -481,16 +493,44 @@ def upload_documents():
 
                 parsing_errors = []  # Track errors for better feedback
 
+                # Build list of (filename, file_content, content_type) tuples to process
+                files_to_process = []
                 for file in files:
                     if file.filename == '':
                         continue
-
-                    # Read file content
                     file_content = file.read()
-                    file.seek(0)  # Reset for potential re-reading
+                    file.seek(0)
 
-                    # Parse based on file type
-                    filename = file.filename
+                    if file.filename.lower().endswith('.zip'):
+                        # Extract zip contents and queue each supported file
+                        try:
+                            with zipfile.ZipFile(io.BytesIO(file_content)) as zf:
+                                for zip_entry in zf.infolist():
+                                    # Skip directories, hidden files, macOS resource forks
+                                    if zip_entry.is_dir():
+                                        continue
+                                    entry_name = zip_entry.filename
+                                    basename = entry_name.split('/')[-1]
+                                    if basename.startswith('.') or '__MACOSX' in entry_name:
+                                        continue
+                                    ext = '.' + basename.rsplit('.', 1)[-1].lower() if '.' in basename else ''
+                                    if ext not in ZIP_SUPPORTED_EXTENSIONS:
+                                        print(f"[Upload] Skipping unsupported zip entry: {entry_name}")
+                                        continue
+                                    entry_bytes = zf.read(zip_entry.filename)
+                                    if len(entry_bytes) == 0:
+                                        continue
+                                    # Use just the basename as the filename
+                                    files_to_process.append((basename, entry_bytes, None))
+                                    print(f"[Upload] Extracted from zip: {basename} ({len(entry_bytes)} bytes)")
+                        except zipfile.BadZipFile:
+                            parsing_errors.append(f"Invalid zip file: {file.filename}")
+                        except Exception as ze:
+                            parsing_errors.append(f"Error extracting zip {file.filename}: {str(ze)}")
+                    else:
+                        files_to_process.append((file.filename, file_content, file.content_type))
+
+                for filename, file_content, content_type in files_to_process:
                     lower_name = filename.lower()
 
                     try:
@@ -540,10 +580,11 @@ def upload_documents():
                                     file_type='documents',
                                     filename=filename
                                 )
+                                ct = content_type or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
                                 file_url, s3_error = s3_service.upload_bytes(
                                     file_bytes=file_content,
                                     s3_key=s3_key,
-                                    content_type=file.content_type
+                                    content_type=ct
                                 )
                                 if file_url:
                                     print(f"[Upload] File uploaded to S3: {file_url}")
