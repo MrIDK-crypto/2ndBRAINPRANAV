@@ -215,6 +215,8 @@ export default function Documents() {
   const [viewingDocument, setViewingDocument] = useState<FullDocument | null>(null)
   const [loadingDocument, setLoadingDocument] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
+  const [uploadFileCount, setUploadFileCount] = useState<number>(0)
   const [displayLimit, setDisplayLimit] = useState(DISPLAY_PAGE_SIZE)
   const [sortField, setSortField] = useState<string>('created')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
@@ -444,6 +446,8 @@ export default function Documents() {
     }
 
     setUploading(true)
+    setUploadProgress(0)
+    setUploadFileCount(files.length)
     try {
       const formData = new FormData()
       for (let i = 0; i < files.length; i++) {
@@ -451,7 +455,11 @@ export default function Documents() {
       }
       // Don't set Content-Type for FormData - browser sets it with boundary automatically
       const response = await axios.post(`${API_BASE}/documents/upload`, formData, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        onUploadProgress: (progressEvent) => {
+          const pct = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1))
+          setUploadProgress(pct)
+        }
       })
       if (response.data.success) {
         loadDocuments()
@@ -465,6 +473,8 @@ export default function Documents() {
       alert(`Upload failed: ${errorMsg}`)
     } finally {
       setUploading(false)
+      setUploadProgress(0)
+      setUploadFileCount(0)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -1293,6 +1303,64 @@ export default function Documents() {
             />
           </div>
         </div>
+
+        {/* Upload Progress Bar */}
+        {uploading && (
+          <div style={{
+            backgroundColor: colors.cardBg,
+            borderRadius: '12px',
+            border: `1px solid ${colors.primary}`,
+            padding: '16px 20px',
+            marginBottom: '16px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={colors.primary} strokeWidth="2" style={{ animation: uploadProgress >= 100 ? 'none' : 'spin 1s linear infinite' }}>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span style={{ fontSize: '14px', fontWeight: 500, color: colors.textPrimary }}>
+                  {uploadProgress >= 100 ? 'Processing files...' : `Uploading ${uploadFileCount} file${uploadFileCount !== 1 ? 's' : ''}...`}
+                </span>
+              </div>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: colors.primary }}>
+                {uploadProgress >= 100 ? 'Almost done' : `${uploadProgress}%`}
+              </span>
+            </div>
+            <div style={{
+              width: '100%',
+              height: '6px',
+              backgroundColor: colors.borderLight,
+              borderRadius: '3px',
+              overflow: 'hidden',
+            }}>
+              {uploadProgress >= 100 ? (
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: '3px',
+                  background: `linear-gradient(90deg, ${colors.primary} 0%, ${colors.primaryHover} 50%, ${colors.primary} 100%)`,
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s ease-in-out infinite',
+                }} />
+              ) : (
+                <div style={{
+                  width: `${uploadProgress}%`,
+                  height: '100%',
+                  backgroundColor: colors.primary,
+                  borderRadius: '3px',
+                  transition: 'width 0.3s ease',
+                }} />
+              )}
+            </div>
+            <style>{`
+              @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+              @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+            `}</style>
+          </div>
+        )}
 
         {/* Files Section */}
         <div style={{
