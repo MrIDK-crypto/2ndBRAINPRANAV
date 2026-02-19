@@ -205,9 +205,24 @@ def get_document(document_id: str):
                     "error": "Document not found"
                 }), 404
 
+            doc_dict = document.to_dict(include_content=True)
+
+            # Generate fresh presigned URL for S3 files
+            s3_key = (doc_dict.get('metadata') or {}).get('s3_key')
+            if s3_key and S3_AVAILABLE:
+                try:
+                    s3_service = get_s3_service()
+                    presigned_url = s3_service.get_presigned_url(s3_key, expiration=3600)
+                    if presigned_url:
+                        if doc_dict.get('metadata') is None:
+                            doc_dict['metadata'] = {}
+                        doc_dict['metadata']['file_url'] = presigned_url
+                except Exception as e:
+                    print(f"[GetDoc] Error generating presigned URL: {e}")
+
             return jsonify({
                 "success": True,
-                "document": document.to_dict(include_content=True)
+                "document": doc_dict
             })
 
         finally:
@@ -571,23 +586,24 @@ def upload_documents():
                             continue
 
                         # Upload original file to S3 if available
-                        file_url = None
+                        s3_file_key = None
                         if S3_AVAILABLE:
                             try:
                                 s3_service = get_s3_service()
-                                s3_key = s3_service.generate_s3_key(
+                                s3_file_key_candidate = s3_service.generate_s3_key(
                                     tenant_id=getattr(g, 'tenant_id', 'local-tenant'),
                                     file_type='documents',
                                     filename=filename
                                 )
                                 ct = content_type or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-                                file_url, s3_error = s3_service.upload_bytes(
+                                uploaded_key, s3_error = s3_service.upload_bytes(
                                     file_bytes=file_content,
-                                    s3_key=s3_key,
+                                    s3_key=s3_file_key_candidate,
                                     content_type=ct
                                 )
-                                if file_url:
-                                    print(f"[Upload] File uploaded to S3: {file_url}")
+                                if uploaded_key:
+                                    s3_file_key = uploaded_key
+                                    print(f"[Upload] File uploaded to S3: {s3_file_key}")
                                 else:
                                     print(f"[Upload] S3 upload failed: {s3_error}")
                             except Exception as e:
@@ -599,8 +615,8 @@ def upload_documents():
                             'uploaded_by': getattr(g, 'user_id', 'local-test-user'),
                             'file_size': len(file_content)
                         }
-                        if file_url:
-                            metadata['file_url'] = file_url
+                        if s3_file_key:
+                            metadata['s3_key'] = s3_file_key
 
                         doc = Document(
                             tenant_id=getattr(g, 'tenant_id', 'local-tenant'),

@@ -73,9 +73,6 @@ class S3Service:
             elif s3_key.endswith('.jpg') or s3_key.endswith('.jpeg'):
                 extra_args['ContentType'] = 'image/jpeg'
 
-            # Make file publicly readable
-            extra_args['ACL'] = 'public-read'
-
             self.s3_client.upload_file(
                 file_path,
                 self.bucket_name,
@@ -83,9 +80,8 @@ class S3Service:
                 ExtraArgs=extra_args
             )
 
-            public_url = f"{self.base_url}/{s3_key}"
-            print(f"[S3] Uploaded: {s3_key} -> {public_url}")
-            return public_url, None
+            print(f"[S3] Uploaded: {s3_key}")
+            return s3_key, None
 
         except ClientError as e:
             error_msg = f"S3 upload failed: {str(e)}"
@@ -117,7 +113,6 @@ class S3Service:
             extra_args = {}
             if content_type:
                 extra_args['ContentType'] = content_type
-            extra_args['ACL'] = 'public-read'
 
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
@@ -126,9 +121,8 @@ class S3Service:
                 **extra_args
             )
 
-            public_url = f"{self.base_url}/{s3_key}"
-            print(f"[S3] Uploaded bytes: {s3_key} -> {public_url}")
-            return public_url, None
+            print(f"[S3] Uploaded bytes: {s3_key}")
+            return s3_key, None
 
         except ClientError as e:
             error_msg = f"S3 upload failed: {str(e)}"
