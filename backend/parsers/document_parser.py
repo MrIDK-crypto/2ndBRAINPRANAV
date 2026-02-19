@@ -176,6 +176,9 @@ class DocumentParser:
             result = self.parse(tmp_path)
             if result and result.get('content'):
                 return result['content']
+            # Return a minimal description for empty files rather than None
+            if ext in ('.xlsx', '.xls', '.xlsm', '.xlsb', '.csv', '.tsv'):
+                return f'[Empty spreadsheet: {filename}]'
             return None
         except Exception as e:
             print(f"[DocumentParser] parse_file_bytes error for {filename}: {e}")
@@ -367,33 +370,46 @@ class DocumentParser:
         if ext in ('.xls', '.xlsb'):
             return self._parse_excel_pandas(file_path, MAX_ROWS_PER_SHEET)
 
-        # For .xlsx and .xlsm, use openpyxl
+        # For .xlsx and .xlsm, try openpyxl first, fall back to pandas
+        try:
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        except Exception as e:
+            print(f"[DocumentParser] openpyxl failed for {Path(file_path).name}: {e}, falling back to pandas")
+            return self._parse_excel_pandas(file_path, MAX_ROWS_PER_SHEET)
+
         text_parts = []
         total_rows = 0
         truncated_sheets = []
+        sheet_names = list(wb.sheetnames)  # Save before close
 
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        try:
+            for sheet_name in sheet_names:
+                sheet = wb[sheet_name]
+                rows_collected = []
 
-        for sheet_name in wb.sheetnames:
-            sheet = wb[sheet_name]
-            rows_collected = []
+                row_count = 0
+                for row in sheet.iter_rows(values_only=True):
+                    if row_count >= MAX_ROWS_PER_SHEET:
+                        truncated_sheets.append(sheet_name)
+                        break
 
-            row_count = 0
-            for row in sheet.iter_rows(values_only=True):
-                if row_count >= MAX_ROWS_PER_SHEET:
-                    truncated_sheets.append(sheet_name)
-                    break
+                    # Preserve all cells including empty ones to maintain column alignment
+                    row_values = [str(cell).strip() if cell is not None else '' for cell in row]
+                    # Skip fully empty rows
+                    if any(v for v in row_values):
+                        rows_collected.append(row_values)
+                        row_count += 1
 
-                # Preserve all cells including empty ones to maintain column alignment
-                row_values = [str(cell).strip() if cell is not None else '' for cell in row]
-                # Skip fully empty rows
-                if any(v for v in row_values):
-                    rows_collected.append(row_values)
-                    row_count += 1
-
-            if rows_collected:
-                text_parts.append(self._format_tabular_data(rows_collected, sheet_name, MAX_ROWS_PER_SHEET))
-                total_rows += row_count
+                if rows_collected:
+                    text_parts.append(self._format_tabular_data(rows_collected, sheet_name, MAX_ROWS_PER_SHEET))
+                    total_rows += row_count
+        except Exception as e:
+            print(f"[DocumentParser] openpyxl iteration failed: {e}, falling back to pandas")
+            try:
+                wb.close()
+            except Exception:
+                pass
+            return self._parse_excel_pandas(file_path, MAX_ROWS_PER_SHEET)
 
         wb.close()
 
@@ -406,7 +422,7 @@ class DocumentParser:
         return {
             'content': content,
             'metadata': {
-                'sheets': len(wb.sheetnames),
+                'sheets': len(sheet_names),
                 'total_rows': total_rows,
                 'truncated_sheets': truncated_sheets,
                 'max_rows_per_sheet': MAX_ROWS_PER_SHEET,

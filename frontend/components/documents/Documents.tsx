@@ -425,7 +425,14 @@ export default function Documents() {
         headers: authHeaders
       })
       if (response.data.success) {
-        setViewingDocument(response.data.document)
+        const doc = response.data.document
+        // For manual uploads with S3 file, open original file in new tab
+        const fileUrl = doc.metadata?.file_url
+        if (fileUrl && doc.source_type === 'manual_upload') {
+          window.open(fileUrl, '_blank')
+        } else {
+          setViewingDocument(doc)
+        }
       }
     } catch (error) {
       console.error('Error loading document:', error)

@@ -502,7 +502,10 @@ def upload_documents():
                         elif lower_name.endswith(('.docx', '.doc')):
                             print(f"[Upload] Parsing Word doc: {filename}")
                             text = parser.parse_word_bytes(file_content)
-                        elif lower_name.endswith(('.txt', '.md', '.csv', '.tsv', '.json', '.xml', '.html', '.htm')):
+                        elif lower_name.endswith(('.csv', '.tsv')):
+                            print(f"[Upload] Parsing spreadsheet: {filename}")
+                            text = parser.parse_file_bytes(file_content, filename)
+                        elif lower_name.endswith(('.txt', '.md', '.json', '.xml', '.html', '.htm')):
                             print(f"[Upload] Parsing text file: {filename}")
                             text = file_content.decode('utf-8', errors='ignore')
                         elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.ods', '.numbers', '.rtf')):
