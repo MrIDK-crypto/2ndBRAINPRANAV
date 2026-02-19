@@ -499,6 +499,15 @@ export default function Login() {
         }}
       >
         <p>&copy; 2026 2nd Brain. All rights reserved.</p>
+        <p style={{ marginTop: '8px' }}>
+          <Link href="/privacy" style={{ color: colors.textMuted, textDecoration: 'none' }}>
+            Privacy Policy
+          </Link>
+          <span style={{ margin: '0 8px' }}>&middot;</span>
+          <Link href="/terms" style={{ color: colors.textMuted, textDecoration: 'none' }}>
+            Terms of Service
+          </Link>
+        </p>
       </footer>
 
       <style jsx>{`
