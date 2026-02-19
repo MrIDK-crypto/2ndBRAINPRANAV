@@ -106,15 +106,22 @@ class DocumentParser:
 
         ext = Path(file_path).suffix.lower()
 
-        # Try Azure Document AI first if available
-        if self.use_azure_doc_ai and self.azure_doc_parser:
+        # Spreadsheet formats: always use traditional parsers (Azure Doc AI doesn't handle tables well)
+        spreadsheet_exts = ('.xlsx', '.xls', '.xlsm', '.xlsb', '.csv', '.tsv', '.ods')
+
+        # Try Azure Document AI first for non-spreadsheet files
+        if self.use_azure_doc_ai and self.azure_doc_parser and ext not in spreadsheet_exts:
             try:
-                return self.azure_doc_parser.parse(file_path)
+                result = self.azure_doc_parser.parse(file_path)
+                # Only return if we got meaningful content
+                if result and result.get('content') and len(result['content'].strip()) > 10:
+                    return result
+                print(f"  ⚠ Azure Document AI returned insufficient content for {Path(file_path).name}")
             except Exception as e:
                 print(f"  ⚠ Azure Document AI failed: {e}")
-                print(f"  Falling back to traditional parser for {Path(file_path).name}")
+            print(f"  Falling back to traditional parser for {Path(file_path).name}")
 
-        # Fall back to traditional parsers
+        # Traditional parsers
         try:
             result = None
             if ext == '.pdf' and HAS_PDF:
