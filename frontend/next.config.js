@@ -11,6 +11,17 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+
+  // Redirect root to login so bots (Google OAuth verification) see privacy links
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: '/login',
+        permanent: false,
+      },
+    ]
+  },
 }
 
 module.exports = nextConfig
