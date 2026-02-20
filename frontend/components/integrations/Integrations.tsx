@@ -3046,7 +3046,7 @@ const IntegrationCard = ({
 export default function Integrations() {
   const { user, token } = useAuth()
   const router = useRouter()
-  const { startSync: globalStartSync, activeSyncs, dismissSync } = useSyncProgress()
+  const { startSync: globalStartSync, activeSyncs, removeSync } = useSyncProgress()
   const [activeItem, setActiveItem] = useState('Integrations')
   const [activeTab, setActiveTab] = useState('All Integrations')
   const [searchQuery, setSearchQuery] = useState('')
@@ -4123,7 +4123,7 @@ export default function Integrations() {
       // Dismiss from context
       for (const sync of Array.from(activeSyncs.values())) {
         if (sync.connectorType === id) {
-          dismissSync(sync.syncId)
+          removeSync(sync.syncId)
         }
       }
 
