@@ -279,6 +279,24 @@ class SlackBotService:
         except SlackApiError as e:
             print(f"[SlackBot] Error initializing: {e}", flush=True)
 
+    def _add_reaction(self, channel: str, timestamp: str, emoji: str = "brain"):
+        """Add a reaction emoji to a message. Fails silently."""
+        try:
+            self.client.reactions_add(channel=channel, timestamp=timestamp, name=emoji)
+        except SlackApiError as e:
+            print(f"[SlackBot] Reaction add error: {e.response.get('error', e)}", flush=True)
+        except Exception as e:
+            print(f"[SlackBot] Reaction error: {e}", flush=True)
+
+    def _remove_reaction(self, channel: str, timestamp: str, emoji: str = "brain"):
+        """Remove a reaction emoji from a message. Fails silently."""
+        try:
+            self.client.reactions_remove(channel=channel, timestamp=timestamp, name=emoji)
+        except SlackApiError as e:
+            print(f"[SlackBot] Reaction remove error: {e.response.get('error', e)}", flush=True)
+        except Exception as e:
+            print(f"[SlackBot] Reaction error: {e}", flush=True)
+
     def _post_message_safe(self, channel: str, text: str, blocks=None, thread_ts=None):
         """
         Post a message to Slack with auto-join on 'not_in_channel' error.
@@ -460,8 +478,15 @@ class SlackBotService:
             # Record user query
             _conversation_cache.add_message(tenant_id, channel, 'user', query, thread_ts)
 
+            # Add thinking reaction
+            message_ts = event.get('ts')
+            self._add_reaction(channel, message_ts, "brain")
+
             try:
                 result = self._search_knowledge_base(query, tenant_id, history)
+
+                # Remove thinking reaction
+                self._remove_reaction(channel, message_ts, "brain")
 
                 if result.get('answer') and 'Error' not in result['answer']:
                     # Record assistant response
@@ -490,6 +515,7 @@ class SlackBotService:
                     )
 
             except Exception as e:
+                self._remove_reaction(channel, message_ts, "brain")
                 import traceback
                 print(f"[SlackBot] App mention search error: {e}", flush=True)
                 traceback.print_exc()
@@ -1278,3 +1304,73 @@ def get_bot_token_for_workspace(team_id: str) -> Optional[str]:
         traceback.print_exc()
         # Fallback to environment variable
         return os.getenv('SLACK_BOT_TOKEN')
+
+
+# ============================================================================
+# SLACK CONNECT: CHANNEL → TENANT MAPPING
+# ============================================================================
+
+# Cache for channel → tenant lookups (avoids DB hit per event)
+_channel_tenant_cache: Dict[str, Optional[str]] = {}
+_channel_cache_lock = threading.Lock()
+_channel_cache_ttl: Dict[str, float] = {}
+CHANNEL_CACHE_TTL_SECONDS = 600  # 10 min
+
+
+def get_tenant_for_channel(channel_id: str) -> Optional[str]:
+    """
+    Look up tenant_id for a Slack Connect shared channel.
+    Returns None if channel is not mapped (falls through to workspace lookup).
+    """
+    if not channel_id:
+        return None
+
+    # Check cache
+    with _channel_cache_lock:
+        if channel_id in _channel_tenant_cache:
+            ts = _channel_cache_ttl.get(channel_id, 0)
+            if time.time() - ts < CHANNEL_CACHE_TTL_SECONDS:
+                cached = _channel_tenant_cache[channel_id]
+                if cached:
+                    print(f"[SlackBot] Channel cache HIT: {channel_id} -> tenant {cached[:8]}...", flush=True)
+                return cached
+            else:
+                del _channel_tenant_cache[channel_id]
+                _channel_cache_ttl.pop(channel_id, None)
+
+    # Query database
+    try:
+        from database.models import ChannelTenantMapping
+        db = SessionLocal()
+        try:
+            mapping = db.query(ChannelTenantMapping).filter(
+                ChannelTenantMapping.channel_id == channel_id,
+                ChannelTenantMapping.is_active == True
+            ).first()
+
+            tenant_id = mapping.tenant_id if mapping else None
+
+            # Cache result (even None, to avoid repeated DB misses)
+            with _channel_cache_lock:
+                _channel_tenant_cache[channel_id] = tenant_id
+                _channel_cache_ttl[channel_id] = time.time()
+
+            if tenant_id:
+                print(f"[SlackBot] Channel mapping found: {channel_id} -> tenant {tenant_id[:8]}...", flush=True)
+            return tenant_id
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[SlackBot] Error looking up channel mapping for {channel_id}: {e}", flush=True)
+        return None
+
+
+def invalidate_channel_cache(channel_id: str = None):
+    """Invalidate channel tenant cache. If channel_id is None, clear all."""
+    with _channel_cache_lock:
+        if channel_id:
+            _channel_tenant_cache.pop(channel_id, None)
+            _channel_cache_ttl.pop(channel_id, None)
+        else:
+            _channel_tenant_cache.clear()
+            _channel_cache_ttl.clear()

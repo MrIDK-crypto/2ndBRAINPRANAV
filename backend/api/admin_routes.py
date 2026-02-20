@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from datetime import datetime, timezone, timedelta
 
-from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole, Tenant, GapStatus, ConnectorStatus
+from database.models import SessionLocal, Document, KnowledgeGap, ChatConversation, ChatMessage, User, AuditLog, Connector, UserRole, Tenant, GapStatus, ConnectorStatus, ChannelTenantMapping
 from services.auth_service import require_auth
 
 # Create blueprint
@@ -710,3 +710,128 @@ def track_event():
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         db.close()
+
+
+@admin_bp.route('/slack-connect/channels', methods=['POST'])
+@require_auth
+def register_slack_connect_channel():
+    """Register a Slack Connect shared channel → tenant mapping."""
+    try:
+        db = get_db()
+        try:
+            # Admin check
+            user = db.query(User).filter(User.id == g.user_id).first()
+            if not user or user.role != UserRole.ADMIN:
+                return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'JSON body required'}), 400
+
+            channel_id = data.get('channel_id', '').strip()
+            tenant_id = data.get('tenant_id', '').strip()
+            channel_name = data.get('channel_name', '').strip()
+
+            if not channel_id or not tenant_id:
+                return jsonify({'success': False, 'error': 'channel_id and tenant_id are required'}), 400
+
+            # Verify tenant exists
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            if not tenant:
+                return jsonify({'success': False, 'error': f'Tenant {tenant_id} not found'}), 404
+
+            # Check for existing mapping
+            existing = db.query(ChannelTenantMapping).filter(
+                ChannelTenantMapping.channel_id == channel_id
+            ).first()
+
+            if existing:
+                existing.tenant_id = tenant_id
+                existing.channel_name = channel_name or existing.channel_name
+                existing.is_active = True
+                db.commit()
+                mapping = existing
+            else:
+                mapping = ChannelTenantMapping(
+                    channel_id=channel_id,
+                    tenant_id=tenant_id,
+                    channel_name=channel_name,
+                )
+                db.add(mapping)
+                db.commit()
+
+            # Invalidate cache
+            from services.slack_bot_service import invalidate_channel_cache
+            invalidate_channel_cache(channel_id)
+
+            print(f"[Admin] Slack Connect channel registered: {channel_id} -> tenant {tenant_id[:8]}...", flush=True)
+
+            return jsonify({
+                'success': True,
+                'mapping': mapping.to_dict(),
+                'tenant_name': tenant.name,
+            }), 201
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[Admin] Error registering channel: {e}", flush=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@admin_bp.route('/slack-connect/channels', methods=['GET'])
+@require_auth
+def list_slack_connect_channels():
+    """List all Slack Connect channel → tenant mappings."""
+    try:
+        db = get_db()
+        try:
+            user = db.query(User).filter(User.id == g.user_id).first()
+            if not user or user.role != UserRole.ADMIN:
+                return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+            mappings = db.query(ChannelTenantMapping).all()
+
+            result = []
+            for m in mappings:
+                d = m.to_dict()
+                tenant = db.query(Tenant).filter(Tenant.id == m.tenant_id).first()
+                d['tenant_name'] = tenant.name if tenant else 'Unknown'
+                result.append(d)
+
+            return jsonify({'success': True, 'channels': result})
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@admin_bp.route('/slack-connect/channels/<channel_id>', methods=['DELETE'])
+@require_auth
+def delete_slack_connect_channel(channel_id):
+    """Remove a Slack Connect channel mapping."""
+    try:
+        db = get_db()
+        try:
+            user = db.query(User).filter(User.id == g.user_id).first()
+            if not user or user.role != UserRole.ADMIN:
+                return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+            mapping = db.query(ChannelTenantMapping).filter(
+                ChannelTenantMapping.channel_id == channel_id
+            ).first()
+
+            if not mapping:
+                return jsonify({'success': False, 'error': 'Channel mapping not found'}), 404
+
+            db.delete(mapping)
+            db.commit()
+
+            from services.slack_bot_service import invalidate_channel_cache
+            invalidate_channel_cache(channel_id)
+
+            print(f"[Admin] Slack Connect channel removed: {channel_id}", flush=True)
+            return jsonify({'success': True, 'message': f'Channel {channel_id} mapping removed'})
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

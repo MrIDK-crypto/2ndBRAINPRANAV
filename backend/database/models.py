@@ -1225,6 +1225,38 @@ class AuditLog(Base):
         return f"<AuditLog {self.action}:{self.resource_type}>"
 
 
+class ChannelTenantMapping(Base):
+    """
+    Maps Slack Connect shared channels to tenants.
+    Each shared channel serves one tenant's knowledge base.
+    """
+    __tablename__ = "channel_tenant_mappings"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    channel_id = Column(String(20), unique=True, nullable=False, index=True)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    channel_name = Column(String(100))  # e.g. "#client-ucla-deptx"
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    tenant = relationship("Tenant", backref="channel_mappings")
+
+    def __repr__(self):
+        return f"<ChannelTenantMapping {self.channel_id} -> {self.tenant_id[:8]}>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "channel_id": self.channel_id,
+            "tenant_id": self.tenant_id,
+            "channel_name": self.channel_name,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 # ============================================================================
 # DATABASE ENGINE & SESSION
 # ============================================================================

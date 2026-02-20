@@ -19,7 +19,8 @@ from services.slack_bot_service import (
     SlackBotService,
     register_slack_workspace,
     get_tenant_for_workspace,
-    get_bot_token_for_workspace
+    get_bot_token_for_workspace,
+    get_tenant_for_channel,
 )
 
 slack_bot_bp = Blueprint('slack_bot', __name__, url_prefix='/api/slack')
@@ -443,9 +444,16 @@ def slack_events():
                 try:
                     print(f"[SlackBot] Background thread started for {event_subtype}", flush=True)
 
-                    tenant_id = get_tenant_for_workspace(team_id)
+                    # Channel-first lookup (Slack Connect shared channels)
+                    channel_id = event.get('channel', '')
+                    tenant_id = get_tenant_for_channel(channel_id)
+
+                    # Fallback to workspace lookup (traditional bot install)
                     if not tenant_id:
-                        print(f"[SlackBot] STOP: No tenant found for workspace {team_id}", flush=True)
+                        tenant_id = get_tenant_for_workspace(team_id)
+
+                    if not tenant_id:
+                        print(f"[SlackBot] STOP: No tenant for channel {channel_id} or workspace {team_id}", flush=True)
                         return
 
                     print(f"[SlackBot] Tenant found: {tenant_id[:8]}...", flush=True)

@@ -92,14 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!user && !isPublicRoute) {
         // Not authenticated and not on public page -> redirect to login
         router.push('/login')
-      } else if (user && !user.email_verified && !isPublicRoute && !isVerificationPending) {
-        // Authenticated but email NOT verified -> redirect to verification pending
+      } else if (user && !user.email_verified && !isPublicRoute && !isVerificationPending && !window.location.hostname.includes('localhost')) {
+        // Authenticated but email NOT verified -> redirect to verification pending (skip on localhost)
         router.push('/verification-pending')
-      } else if (user && user.email_verified && isVerificationPending) {
-        // Email is verified but on verification pending page -> redirect to integrations
+      } else if (user && (user.email_verified || window.location.hostname.includes('localhost')) && isVerificationPending) {
+        // Email is verified (or localhost) but on verification pending page -> redirect to integrations
         router.push('/integrations')
-      } else if (user && user.email_verified && pathname === '/login') {
-        // Authenticated and verified but on login page -> redirect to integrations
+      } else if (user && (user.email_verified || window.location.hostname.includes('localhost')) && pathname === '/login') {
+        // Authenticated and verified (or localhost) but on login page -> redirect to integrations
         router.push('/integrations')
       }
     }
@@ -176,8 +176,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           tenantId: data.user.tenant_id
         }, rememberMe)
 
-        // Redirect based on email verification status
-        if (data.user.email_verified) {
+        // Redirect based on email verification status (skip on localhost)
+        if (data.user.email_verified || window.location.hostname.includes('localhost')) {
           router.push('/integrations')
         } else {
           router.push('/verification-pending')
