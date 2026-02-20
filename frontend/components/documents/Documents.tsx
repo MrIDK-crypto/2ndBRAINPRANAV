@@ -282,19 +282,18 @@ export default function Documents() {
     setClearedNotifications(prev => {
       const next = new Set(prev)
       next.add(docId)
-      localStorage.setItem('2b_cleared_notifs', JSON.stringify([...next]))
+      localStorage.setItem('2b_cleared_notifs', JSON.stringify(Array.from(next)))
       return next
     })
   }, [])
 
   const clearAllNotifications = useCallback(() => {
     const allIds = documents.filter(d => d.embedded_at).map(d => d.id)
-    setClearedNotifications(prev => {
-      const next = new Set([...prev, ...allIds])
-      localStorage.setItem('2b_cleared_notifs', JSON.stringify([...next]))
-      return next
-    })
-  }, [documents])
+    const merged = Array.from(clearedNotifications).concat(allIds)
+    const next = new Set(merged)
+    localStorage.setItem('2b_cleared_notifs', JSON.stringify(Array.from(next)))
+    setClearedNotifications(next)
+  }, [documents, clearedNotifications])
 
   // Derive unique source types from loaded documents for the filter dropdown
   const availableSources = useMemo(() => {
