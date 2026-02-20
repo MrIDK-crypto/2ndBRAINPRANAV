@@ -4913,18 +4913,8 @@ def disconnect_preview(connector_type: str):
 @require_auth
 def disconnect_connector(connector_type: str):
     """
-    Disconnect an integration and delete all associated data.
-
-    This will:
-    1. Delete all documents from this integration
-    2. Delete embeddings from Pinecone
-    3. Delete knowledge gaps that exclusively reference these documents
-    4. Mark the connector as disconnected
-
-    Request body (optional):
-    {
-        "confirm": true  // Required to proceed with deletion
-    }
+    Disconnect an integration. Documents and embeddings are preserved.
+    Only the connector credentials are cleared.
     """
     try:
         type_map = _get_connector_type_map()
@@ -4934,9 +4924,6 @@ def disconnect_connector(connector_type: str):
                 "success": False,
                 "error": f"Invalid connector type: {connector_type}"
             }), 400
-
-        data = request.get_json() or {}
-        confirmed = data.get('confirm', False)
 
         db = get_db()
         try:
@@ -4951,35 +4938,18 @@ def disconnect_connector(connector_type: str):
                     "error": f"{connector_type.title()} not connected"
                 }), 400
 
-            # Get counts first
-            counts = _get_disconnect_counts(db, g.tenant_id, connector.id)
-
-            # If there's data and not confirmed, return warning
-            if (counts['document_count'] > 0 or counts['gap_count'] > 0) and not confirmed:
-                return jsonify({
-                    "success": False,
-                    "requires_confirmation": True,
-                    "counts": counts,
-                    "warning": f"This will permanently delete {counts['document_count']} documents and {counts['gap_count']} knowledge gaps. Send confirm: true to proceed."
-                }), 400
-
-            # Cascade delete all data
-            deletion_result = _cascade_delete_connector_data(
-                db, g.tenant_id, connector.id, connector_type
-            )
-
-            # Disconnect the connector
+            # Disconnect the connector (keep all documents and embeddings)
             connector.is_active = False
             connector.status = ConnectorStatus.DISCONNECTED
             connector.access_token = None
             connector.refresh_token = None
 
             db.commit()
+            print(f"[Disconnect] {connector_type} disconnected for tenant {g.tenant_id}. Documents preserved.", flush=True)
 
             return jsonify({
                 "success": True,
-                "message": f"{connector_type.title()} disconnected",
-                "deleted": deletion_result
+                "message": f"{connector_type.title()} disconnected. Your documents have been preserved."
             })
 
         finally:

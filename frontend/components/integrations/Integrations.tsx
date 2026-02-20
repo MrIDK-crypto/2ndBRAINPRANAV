@@ -3047,11 +3047,7 @@ export default function Integrations() {
   // Website Builder modal state
   const [showWebsiteBuilder, setShowWebsiteBuilder] = useState(false)
 
-  // Disconnect confirmation modal state
-  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false)
-  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null)
-  const [disconnectCounts, setDisconnectCounts] = useState<{document_count: number; gap_count: number; chunk_count: number} | null>(null)
-  const [isLoadingDisconnect, setIsLoadingDisconnect] = useState(false)
+  // Disconnect no longer deletes documents - they are preserved
 
   // Load localStorage state after hydration to avoid mismatch
   useEffect(() => {
@@ -3340,41 +3336,14 @@ export default function Integrations() {
     }
   }
 
-  // Generic disconnect function - now with confirmation
-  const disconnectIntegration = async (integrationId: string, forceConfirm: boolean = false) => {
+  // Generic disconnect function - documents are preserved
+  const disconnectIntegration = async (integrationId: string, _forceConfirm: boolean = false) => {
     const token = getAuthToken()
     if (!token) return
 
     try {
-      // If not forcing confirmation, first get preview counts
-      if (!forceConfirm) {
-        setIsLoadingDisconnect(true)
-        try {
-          const previewResponse = await axios.get(`${API_BASE}/integrations/${integrationId}/disconnect/preview`, {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-
-          if (previewResponse.data.success) {
-            const counts = previewResponse.data.counts
-            // If there's data to delete, show confirmation modal
-            if (counts.document_count > 0 || counts.gap_count > 0) {
-              setDisconnectTarget(integrationId)
-              setDisconnectCounts(counts)
-              setShowDisconnectConfirm(true)
-              setIsLoadingDisconnect(false)
-              return
-            }
-          }
-        } catch (previewError) {
-          // If preview fails (e.g., endpoint not available), proceed without confirmation
-          console.log('Preview endpoint not available, proceeding with disconnect')
-        }
-        setIsLoadingDisconnect(false)
-      }
-
-      // Proceed with disconnect (with confirm flag if there was data)
       await axios.post(`${API_BASE}/integrations/${integrationId}/disconnect`,
-        forceConfirm ? { confirm: true } : {},
+        {},
         { headers: { Authorization: `Bearer ${token}` } }
       )
       setIntegrationsState(prev =>
@@ -3383,39 +3352,11 @@ export default function Integrations() {
         )
       )
 
-      // Clear confirmation state
-      setShowDisconnectConfirm(false)
-      setDisconnectTarget(null)
-      setDisconnectCounts(null)
-
-      setSyncStatus(`${integrationId.charAt(0).toUpperCase() + integrationId.slice(1)} disconnected.`)
+      setSyncStatus(`${integrationId.charAt(0).toUpperCase() + integrationId.slice(1)} disconnected. Your documents have been preserved.`)
     } catch (error: any) {
       console.error(`Error disconnecting ${integrationId}:`, error)
-      // Check if it's a confirmation required response
-      if (error.response?.data?.requires_confirmation) {
-        const counts = error.response.data.counts
-        setDisconnectTarget(integrationId)
-        setDisconnectCounts(counts)
-        setShowDisconnectConfirm(true)
-      } else {
-        setSyncStatus(`Error disconnecting: ${error.response?.data?.error || error.message}`)
-      }
+      setSyncStatus(`Error disconnecting: ${error.response?.data?.error || error.message}`)
     }
-  }
-
-  // Confirm disconnect and delete all data
-  const confirmDisconnect = async () => {
-    if (!disconnectTarget) return
-    setIsLoadingDisconnect(true)
-    await disconnectIntegration(disconnectTarget, true)
-    setIsLoadingDisconnect(false)
-  }
-
-  // Cancel disconnect
-  const cancelDisconnect = () => {
-    setShowDisconnectConfirm(false)
-    setDisconnectTarget(null)
-    setDisconnectCounts(null)
   }
 
   // Fetch Slack channels for selection
@@ -4660,115 +4601,7 @@ export default function Integrations() {
         onSync={syncIntegration}
       />
 
-      {/* Disconnect Confirmation Modal */}
-      {showDisconnectConfirm && disconnectTarget && (
-        <div style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 10000
-        }}>
-          <div style={{
-            background: '#F7F5F3', borderRadius: 16,
-            width: 440, maxWidth: '90vw',
-            boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
-            overflow: 'hidden'
-          }}>
-            {/* Header */}
-            <div style={{
-              padding: '20px 24px',
-              borderBottom: '1px solid #FEE2E2',
-              background: '#FEF2F2'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: '#FEE2E2',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
-                    <path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#991B1B' }}>
-                    Confirm Disconnect
-                  </h2>
-                  <p style={{ margin: '2px 0 0', fontSize: 13, color: '#B91C1C' }}>
-                    This action cannot be undone
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div style={{ padding: '20px 24px' }}>
-              <p style={{ margin: '0 0 16px', fontSize: 14, color: '#374151' }}>
-                Disconnecting <strong>{disconnectTarget.charAt(0).toUpperCase() + disconnectTarget.slice(1)}</strong> will permanently delete:
-              </p>
-
-              <div style={{
-                background: '#FAF9F7',
-                borderRadius: 8,
-                padding: 16,
-                marginBottom: 16
-              }}>
-                {disconnectCounts && (
-                  <ul style={{ margin: 0, padding: '0 0 0 20px', fontSize: 14, color: '#4B5563' }}>
-                    <li style={{ marginBottom: 8 }}>
-                      <strong>{disconnectCounts.document_count}</strong> documents from your knowledge base
-                    </li>
-                    <li style={{ marginBottom: 8 }}>
-                      <strong>{disconnectCounts.gap_count}</strong> knowledge gaps related to these documents
-                    </li>
-                    <li>
-                      All associated embeddings from the vector store
-                    </li>
-                  </ul>
-                )}
-              </div>
-
-              <p style={{ margin: 0, fontSize: 13, color: '#7A7A7A' }}>
-                You can reconnect this integration later, but you will need to sync all data again.
-              </p>
-            </div>
-
-            {/* Footer */}
-            <div style={{
-              padding: '16px 24px',
-              borderTop: '1px solid #ECEAE8',
-              display: 'flex', justifyContent: 'flex-end', gap: 12
-            }}>
-              <button
-                onClick={cancelDisconnect}
-                disabled={isLoadingDisconnect}
-                style={{
-                  padding: '10px 20px', borderRadius: 8,
-                  border: '1px solid #D1D5DB', background: '#fff',
-                  fontSize: 14, fontWeight: 500, cursor: 'pointer',
-                  color: '#374151'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDisconnect}
-                disabled={isLoadingDisconnect}
-                style={{
-                  padding: '10px 20px', borderRadius: 8,
-                  border: 'none', background: '#DC2626',
-                  fontSize: 14, fontWeight: 500, cursor: 'pointer',
-                  color: '#fff',
-                  opacity: isLoadingDisconnect ? 0.7 : 1
-                }}
-              >
-                {isLoadingDisconnect ? 'Disconnecting...' : 'Disconnect & Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Disconnect confirmation modal removed - disconnect now preserves documents */}
     </div>
   )
 }
