@@ -4934,7 +4934,20 @@ def disconnect_connector(connector_type: str):
                     "error": f"{connector_type.title()} not connected"
                 }), 400
 
-            # Get counts first
+            # Firecrawl: preserve documents on disconnect (additive crawls)
+            if connector_type == 'firecrawl':
+                connector.is_active = False
+                connector.status = ConnectorStatus.DISCONNECTED
+                connector.access_token = None
+                connector.refresh_token = None
+                db.commit()
+                print(f"[Disconnect] Firecrawl disconnected for tenant {g.tenant_id}. Documents preserved.", flush=True)
+                return jsonify({
+                    "success": True,
+                    "message": "Website Crawler disconnected. Your crawled pages have been preserved."
+                })
+
+            # All other integrations: confirm + cascade delete
             counts = _get_disconnect_counts(db, g.tenant_id, connector.id)
 
             # If there's data and not confirmed, return warning
