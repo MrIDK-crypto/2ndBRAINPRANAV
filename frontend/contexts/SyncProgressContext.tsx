@@ -76,6 +76,69 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
     emailSentRef.current.add(syncId)
   }, [])
 
+  // Poll for sync status - extracted as reusable function
+  const pollSyncStatus = useCallback(async (syncId: string, connectorType: string) => {
+    const currentToken = localStorage.getItem('accessToken')
+    if (!currentToken) return
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/sync-progress/${syncId}/status`,
+        { headers: { Authorization: `Bearer ${currentToken}` } }
+      )
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setActiveSyncs(prev => {
+            const next = new Map(prev)
+            const existing = next.get(syncId)
+            if (existing) {
+              const status = data.status === 'completed' ? 'complete' : data.status
+              next.set(syncId, {
+                ...existing,
+                status,
+                stage: data.stage || data.current_item || 'Processing...',
+                totalItems: data.total_items ?? existing.totalItems,
+                processedItems: data.processed_items ?? existing.processedItems,
+                percentComplete: data.overall_percent ?? data.percent_complete ?? existing.percentComplete
+              })
+            }
+            return next
+          })
+
+          if (data.status === 'completed' || data.status === 'complete' || data.status === 'error') {
+            const r = syncResourcesRef.current.get(syncId)
+            if (r?.pollInterval) {
+              clearInterval(r.pollInterval)
+              r.pollInterval = null
+            }
+
+            // Check if email should be sent
+            setActiveSyncs(prev => {
+              const sync = prev.get(syncId)
+              if (sync?.emailWhenDone && !emailSentRef.current.has(syncId)) {
+                sendEmailNotification(syncId, connectorType)
+              }
+              return prev
+            })
+
+            // Auto-remove after delay
+            setTimeout(() => {
+              cleanupSync(syncId)
+              setActiveSyncs(prev => {
+                const next = new Map(prev)
+                next.delete(syncId)
+                return next
+              })
+            }, 5000)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[GlobalSync] Poll error for', syncId, ':', err)
+    }
+  }, [cleanupSync, sendEmailNotification])
+
   // Start tracking a sync
   const startSync = useCallback((syncId: string, connectorType: string, emailWhenDone = false) => {
     console.log('[GlobalSync] Starting sync:', syncId, connectorType)
@@ -83,6 +146,12 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
     // Check if this sync is already being tracked
     if (syncResourcesRef.current.has(syncId)) {
       console.log('[GlobalSync] Sync already tracked:', syncId)
+      return
+    }
+
+    const token = localStorage.getItem('accessToken')
+    if (!token) {
+      console.error('[GlobalSync] No token available')
       return
     }
 
@@ -111,10 +180,10 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       return next
     })
 
-    // Setup SSE connection
-    const token = localStorage.getItem('accessToken')
-    if (!token) return
+    // Do immediate status check (don't rely only on SSE)
+    pollSyncStatus(syncId, connectorType)
 
+    // Setup SSE connection
     const es = new EventSource(
       `${API_BASE}/sync-progress/${syncId}/stream?token=${encodeURIComponent(token)}`,
       { withCredentials: true }
@@ -192,72 +261,21 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
     })
     es.addEventListener('error', handleEvent)
 
-    // Handle SSE connection errors - start polling fallback
+    // Handle SSE connection errors - start polling fallback IMMEDIATELY
     es.onerror = () => {
       const res = syncResourcesRef.current.get(syncId)
       if (!res) return
 
       // Only start polling if not already polling
       if (res.pollInterval) return
-      console.log('[GlobalSync] SSE connection lost for', syncId, '- starting polling fallback')
+      console.log('[GlobalSync] SSE connection issue for', syncId, '- starting polling fallback')
 
-      const poll = async () => {
-        try {
-          // Poll using sync_id specific endpoint
-          const response = await fetch(
-            `${API_BASE}/sync-progress/${syncId}/status`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-          if (response.ok) {
-            const data = await response.json()
-            if (data.success) {
-              setActiveSyncs(prev => {
-                const next = new Map(prev)
-                const existing = next.get(syncId)
-                if (existing) {
-                  const status = data.status === 'completed' ? 'complete' : data.status
-                  next.set(syncId, {
-                    ...existing,
-                    status,
-                    stage: data.stage || data.current_item || 'Processing...',
-                    totalItems: data.total_items ?? existing.totalItems,
-                    processedItems: data.processed_items ?? existing.processedItems,
-                    percentComplete: data.overall_percent ?? data.percent_complete ?? existing.percentComplete
-                  })
-                }
-                return next
-              })
-
-              if (data.status === 'completed' || data.status === 'complete' || data.status === 'error') {
-                const r = syncResourcesRef.current.get(syncId)
-                if (r?.pollInterval) {
-                  clearInterval(r.pollInterval)
-                  r.pollInterval = null
-                }
-                // Auto-remove after delay
-                setTimeout(() => {
-                  cleanupSync(syncId)
-                  setActiveSyncs(prev => {
-                    const next = new Map(prev)
-                    next.delete(syncId)
-                    return next
-                  })
-                }, 5000)
-              }
-            }
-          }
-        } catch (err) {
-          console.error('[GlobalSync] Poll error for', syncId, ':', err)
-        }
-      }
-
-      res.pollTimeout = setTimeout(() => {
-        poll()
-        res.pollInterval = setInterval(poll, 3000) // Poll every 3s
-      }, 2000)
+      // Start polling immediately (no delay) - SSE often fails
+      pollSyncStatus(syncId, connectorType)
+      res.pollInterval = setInterval(() => pollSyncStatus(syncId, connectorType), 2000)
     }
 
-  }, [cleanupSync, sendEmailNotification])
+  }, [cleanupSync, sendEmailNotification, pollSyncStatus])
 
   // Update sync
   const updateSync = useCallback((syncId: string, updates: Partial<SyncProgress>) => {
