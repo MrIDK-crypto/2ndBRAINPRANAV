@@ -82,8 +82,8 @@ class ExtractionService:
     we use these pre-extracted summaries.
     """
 
-    # Use gpt-4.1-mini for extraction (faster + cheaper than full gpt-4.1)
-    EXTRACTION_MODEL = os.getenv('AZURE_EXTRACTION_DEPLOYMENT', 'gpt-4.1-mini')
+    # Use extraction-specific model (falls back to main chat model if not set)
+    EXTRACTION_MODEL = os.getenv('AZURE_EXTRACTION_DEPLOYMENT', os.getenv('AZURE_CHAT_DEPLOYMENT', 'gpt-4.1'))
 
     def __init__(self, client=None):
         """Initialize extraction service."""
