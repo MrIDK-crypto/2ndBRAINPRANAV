@@ -30,6 +30,8 @@ class ConnectorConfig:
     last_sync: Optional[datetime] = None
     sync_frequency: int = 3600  # seconds
     enabled: bool = True
+    tenant_id: Optional[str] = None  # Required for multi-tenant isolation
+    connector_id: Optional[str] = None  # Database connector ID for token refresh
 
     def to_dict(self) -> Dict:
         return {
@@ -39,7 +41,9 @@ class ConnectorConfig:
             "settings": self.settings,
             "last_sync": self.last_sync.isoformat() if self.last_sync else None,
             "sync_frequency": self.sync_frequency,
-            "enabled": self.enabled
+            "enabled": self.enabled,
+            "tenant_id": self.tenant_id,
+            "connector_id": self.connector_id
         }
 
     @classmethod
@@ -55,7 +59,9 @@ class ConnectorConfig:
             settings=data.get("settings", {}),
             last_sync=last_sync,
             sync_frequency=data.get("sync_frequency", 3600),
-            enabled=data.get("enabled", True)
+            enabled=data.get("enabled", True),
+            tenant_id=data.get("tenant_id"),
+            connector_id=data.get("connector_id")
         )
 
 

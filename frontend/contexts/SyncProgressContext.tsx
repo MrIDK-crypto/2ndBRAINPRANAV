@@ -2,11 +2,10 @@
 
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react'
 
-// Phase-aware sync progress interface
-export interface SyncProgress {
+interface SyncProgress {
   syncId: string
   connectorType: string
-  status: 'connecting' | 'fetching' | 'syncing' | 'saving' | 'extracting' | 'embedding' | 'parsing' | 'complete' | 'completed' | 'error'
+  status: 'connecting' | 'syncing' | 'parsing' | 'extracting' | 'embedding' | 'complete' | 'completed' | 'error'
   stage: string
   totalItems: number
   processedItems: number
@@ -14,22 +13,15 @@ export interface SyncProgress {
   currentItem?: string
   errorMessage?: string
   percentComplete: number
-  // Phase-aware fields from backend
-  phase: string
-  phaseNumber: number
-  totalPhases: number
-  phaseLabel: string
-  phasePercent: number
-  // UI state
   emailWhenDone: boolean
-  dismissed: boolean
   startedAt: number
 }
 
 interface SyncProgressContextType {
   activeSyncs: Map<string, SyncProgress>
   startSync: (syncId: string, connectorType: string, emailWhenDone?: boolean) => void
-  dismissSync: (syncId: string) => void
+  updateSync: (syncId: string, updates: Partial<SyncProgress>) => void
+  removeSync: (syncId: string) => void
   setEmailWhenDone: (syncId: string, value: boolean) => void
 }
 
@@ -47,132 +39,60 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : 'http://localhost:5006/api'
 
-const STORAGE_KEY = '2ndbrain_active_syncs'
-const POLL_INTERVAL = 2000 // 2 seconds
-
-// Map backend JSON to SyncProgress interface
-function mapBackendSync(data: any, existing?: Partial<SyncProgress>): SyncProgress {
-  return {
-    syncId: data.sync_id || existing?.syncId || '',
-    connectorType: data.connector_type || existing?.connectorType || '',
-    status: data.status || existing?.status || 'connecting',
-    stage: data.stage || data.phase_label || existing?.stage || 'Connecting...',
-    totalItems: data.total_items ?? existing?.totalItems ?? 0,
-    processedItems: data.processed_items ?? existing?.processedItems ?? 0,
-    failedItems: data.failed_items ?? existing?.failedItems ?? 0,
-    currentItem: data.current_item || existing?.currentItem,
-    errorMessage: data.error_message || existing?.errorMessage,
-    percentComplete: data.overall_percent ?? data.percent_complete ?? existing?.percentComplete ?? 0,
-    phase: data.phase || existing?.phase || 'connecting',
-    phaseNumber: data.phase_number ?? existing?.phaseNumber ?? 0,
-    totalPhases: data.total_phases ?? existing?.totalPhases ?? 3,
-    phaseLabel: data.phase_label || existing?.phaseLabel || 'Connecting...',
-    phasePercent: data.phase_percent ?? existing?.phasePercent ?? 0,
-    emailWhenDone: existing?.emailWhenDone ?? false,
-    dismissed: existing?.dismissed ?? false,
-    startedAt: existing?.startedAt ?? Date.now(),
-  }
-}
-
-// localStorage helpers
-function saveToStorage(syncs: Map<string, SyncProgress>) {
-  try {
-    const data: Record<string, { syncId: string; connectorType: string; startedAt: number }> = {}
-    syncs.forEach((sync, id) => {
-      if (sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error' && !sync.dismissed) {
-        data[id] = { syncId: sync.syncId, connectorType: sync.connectorType, startedAt: sync.startedAt }
-      }
-    })
-    if (Object.keys(data).length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-    } else {
-      localStorage.removeItem(STORAGE_KEY)
-    }
-  } catch { /* ignore storage errors */ }
-}
-
-function loadFromStorage(): Record<string, { syncId: string; connectorType: string; startedAt: number }> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return {}
+// Track polling intervals per sync (outside component to persist across renders)
+interface SyncResources {
+  eventSource: EventSource | null
+  pollInterval: NodeJS.Timeout | null
+  pollTimeout: NodeJS.Timeout | null
 }
 
 export function SyncProgressProvider({ children }: { children: React.ReactNode }) {
   const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(new Map())
-  const pollTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
-  const mountedRef = useRef(true)
 
-  // Poll a single sync via GET /api/syncs/{syncId}
-  const pollSync = useCallback((syncId: string) => {
-    const poll = async () => {
-      if (!mountedRef.current) return
+  // Use refs to track resources per sync_id
+  const syncResourcesRef = useRef<Map<string, SyncResources>>(new Map())
+  const emailSentRef = useRef<Set<string>>(new Set())
 
-      try {
-        const token = localStorage.getItem('accessToken')
-        if (!token) return
-
-        const response = await fetch(`${API_BASE}/syncs/${syncId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-
-        if (response.status === 404) {
-          // Sync cleaned up from backend - mark as complete
-          setActiveSyncs(prev => {
-            const next = new Map(prev)
-            const existing = next.get(syncId)
-            if (existing && existing.status !== 'complete' && existing.status !== 'completed') {
-              next.set(syncId, { ...existing, status: 'complete', stage: 'Sync complete', percentComplete: 100, phase: 'complete', phaseLabel: 'Sync complete', phaseNumber: 3 })
-            }
-            return next
-          })
-          // Stop polling
-          const timer = pollTimersRef.current.get(syncId)
-          if (timer) clearInterval(timer)
-          pollTimersRef.current.delete(syncId)
-          return
-        }
-
-        if (!response.ok) return
-
-        const json = await response.json()
-        if (!json.success || !json.sync) return
-
-        const data = json.sync
-
-        setActiveSyncs(prev => {
-          const next = new Map(prev)
-          const existing = next.get(syncId)
-          const updated = mapBackendSync(data, existing)
-          next.set(syncId, updated)
-
-          // Persist to localStorage
-          saveToStorage(next)
-
-          return next
-        })
-
-        // Stop polling if sync is done
-        if (data.status === 'complete' || data.status === 'completed' || data.status === 'error') {
-          const timer = pollTimersRef.current.get(syncId)
-          if (timer) clearInterval(timer)
-          pollTimersRef.current.delete(syncId)
-        }
-      } catch (err) {
-        console.error('[SyncContext] Poll error:', err)
+  // Cleanup resources for a specific sync
+  const cleanupSync = useCallback((syncId: string) => {
+    const resources = syncResourcesRef.current.get(syncId)
+    if (resources) {
+      if (resources.eventSource) {
+        resources.eventSource.close()
       }
+      if (resources.pollInterval) {
+        clearInterval(resources.pollInterval)
+      }
+      if (resources.pollTimeout) {
+        clearTimeout(resources.pollTimeout)
+      }
+      syncResourcesRef.current.delete(syncId)
     }
+  }, [])
 
-    // Poll immediately, then every POLL_INTERVAL
-    poll()
-    const timer = setInterval(poll, POLL_INTERVAL)
-    pollTimersRef.current.set(syncId, timer)
+  // Send email notification (backend handles this now)
+  const sendEmailNotification = useCallback(async (syncId: string, connectorType: string) => {
+    console.log('[GlobalSync] Email will be sent by backend for', syncId)
+    emailSentRef.current.add(syncId)
   }, [])
 
   // Start tracking a sync
   const startSync = useCallback((syncId: string, connectorType: string, emailWhenDone = false) => {
-    console.log('[SyncContext] Starting sync:', syncId, connectorType)
+    console.log('[GlobalSync] Starting sync:', syncId, connectorType)
+
+    // Check if this sync is already being tracked
+    if (syncResourcesRef.current.has(syncId)) {
+      console.log('[GlobalSync] Sync already tracked:', syncId)
+      return
+    }
+
+    // Initialize resources for this sync
+    const resources: SyncResources = {
+      eventSource: null,
+      pollInterval: null,
+      pollTimeout: null
+    }
+    syncResourcesRef.current.set(syncId, resources)
 
     setActiveSyncs(prev => {
       const next = new Map(prev)
@@ -185,37 +105,181 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
         processedItems: 0,
         failedItems: 0,
         percentComplete: 0,
-        phase: 'connecting',
-        phaseNumber: 0,
-        totalPhases: 3,
-        phaseLabel: 'Connecting to service',
-        phasePercent: 0,
         emailWhenDone,
-        dismissed: false,
         startedAt: Date.now()
       })
-      saveToStorage(next)
       return next
     })
 
-    // Start polling
-    pollSync(syncId)
-  }, [pollSync])
+    // Setup SSE connection
+    const token = localStorage.getItem('accessToken')
+    if (!token) return
 
-  // Dismiss a completed/errored sync (user clicked X)
-  const dismissSync = useCallback((syncId: string) => {
-    const timer = pollTimersRef.current.get(syncId)
-    if (timer) {
-      clearInterval(timer)
-      pollTimersRef.current.delete(syncId)
+    const es = new EventSource(
+      `${API_BASE}/sync-progress/${syncId}/stream?token=${encodeURIComponent(token)}`,
+      { withCredentials: true }
+    )
+    resources.eventSource = es
+
+    const handleEvent = (e: MessageEvent) => {
+      try {
+        if (!e.data || e.data === 'undefined' || e.data === 'null') return
+        const data = JSON.parse(e.data)
+        setActiveSyncs(prev => {
+          const next = new Map(prev)
+          const existing = next.get(syncId)
+          if (existing) {
+            next.set(syncId, {
+              ...existing,
+              status: data.status,
+              stage: data.stage || existing.stage,
+              totalItems: data.total_items ?? existing.totalItems,
+              processedItems: data.processed_items ?? existing.processedItems,
+              failedItems: data.failed_items ?? existing.failedItems,
+              currentItem: data.current_item,
+              errorMessage: data.error_message,
+              percentComplete: data.overall_percent ?? data.percent_complete ?? (
+                data.total_items > 0
+                  ? Math.round((data.processed_items / data.total_items) * 100)
+                  : existing.percentComplete
+              )
+            })
+          }
+          return next
+        })
+      } catch (err) {
+        console.error('[GlobalSync] Parse error:', err)
+      }
     }
+
+    es.addEventListener('current_state', handleEvent)
+    es.addEventListener('started', handleEvent)
+    es.addEventListener('progress', handleEvent)
+    es.addEventListener('complete', (e: MessageEvent) => {
+      handleEvent(e)
+
+      // Clear polling resources using the ref
+      const res = syncResourcesRef.current.get(syncId)
+      if (res) {
+        if (res.pollInterval) {
+          clearInterval(res.pollInterval)
+          res.pollInterval = null
+        }
+        if (res.pollTimeout) {
+          clearTimeout(res.pollTimeout)
+          res.pollTimeout = null
+        }
+      }
+
+      // Check if email should be sent
+      setActiveSyncs(prev => {
+        const sync = prev.get(syncId)
+        if (sync?.emailWhenDone && !emailSentRef.current.has(syncId)) {
+          sendEmailNotification(syncId, connectorType)
+        }
+        return prev
+      })
+
+      // Auto-remove after delay
+      setTimeout(() => {
+        cleanupSync(syncId)
+        setActiveSyncs(prev => {
+          const next = new Map(prev)
+          next.delete(syncId)
+          return next
+        })
+      }, 5000)
+    })
+    es.addEventListener('error', handleEvent)
+
+    // Handle SSE connection errors - start polling fallback
+    es.onerror = () => {
+      const res = syncResourcesRef.current.get(syncId)
+      if (!res) return
+
+      // Only start polling if not already polling
+      if (res.pollInterval) return
+      console.log('[GlobalSync] SSE connection lost for', syncId, '- starting polling fallback')
+
+      const poll = async () => {
+        try {
+          // Poll using sync_id specific endpoint
+          const response = await fetch(
+            `${API_BASE}/sync-progress/${syncId}/status`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          )
+          if (response.ok) {
+            const data = await response.json()
+            if (data.success) {
+              setActiveSyncs(prev => {
+                const next = new Map(prev)
+                const existing = next.get(syncId)
+                if (existing) {
+                  const status = data.status === 'completed' ? 'complete' : data.status
+                  next.set(syncId, {
+                    ...existing,
+                    status,
+                    stage: data.stage || data.current_item || 'Processing...',
+                    totalItems: data.total_items ?? existing.totalItems,
+                    processedItems: data.processed_items ?? existing.processedItems,
+                    percentComplete: data.overall_percent ?? data.percent_complete ?? existing.percentComplete
+                  })
+                }
+                return next
+              })
+
+              if (data.status === 'completed' || data.status === 'complete' || data.status === 'error') {
+                const r = syncResourcesRef.current.get(syncId)
+                if (r?.pollInterval) {
+                  clearInterval(r.pollInterval)
+                  r.pollInterval = null
+                }
+                // Auto-remove after delay
+                setTimeout(() => {
+                  cleanupSync(syncId)
+                  setActiveSyncs(prev => {
+                    const next = new Map(prev)
+                    next.delete(syncId)
+                    return next
+                  })
+                }, 5000)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[GlobalSync] Poll error for', syncId, ':', err)
+        }
+      }
+
+      res.pollTimeout = setTimeout(() => {
+        poll()
+        res.pollInterval = setInterval(poll, 3000) // Poll every 3s
+      }, 2000)
+    }
+
+  }, [cleanupSync, sendEmailNotification])
+
+  // Update sync
+  const updateSync = useCallback((syncId: string, updates: Partial<SyncProgress>) => {
     setActiveSyncs(prev => {
       const next = new Map(prev)
-      next.delete(syncId)
-      saveToStorage(next)
+      const existing = next.get(syncId)
+      if (existing) {
+        next.set(syncId, { ...existing, ...updates })
+      }
       return next
     })
   }, [])
+
+  // Remove sync
+  const removeSync = useCallback((syncId: string) => {
+    cleanupSync(syncId)
+    setActiveSyncs(prev => {
+      const next = new Map(prev)
+      next.delete(syncId)
+      return next
+    })
+  }, [cleanupSync])
 
   // Set email preference
   const setEmailWhenDone = useCallback((syncId: string, value: boolean) => {
@@ -227,77 +291,22 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       }
       return next
     })
-
-    // Subscribe email on backend
-    if (value) {
-      const token = localStorage.getItem('accessToken')
-      if (token) {
-        fetch(`${API_BASE}/sync-progress/${syncId}/subscribe-email`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-        }).catch(err => console.error('[SyncContext] Email subscribe error:', err))
-      }
-    }
   }, [])
 
-  // Recovery on mount: check backend for active syncs + localStorage
+  // Cleanup all on unmount
   useEffect(() => {
-    mountedRef.current = true
-
-    const recover = async () => {
-      const token = localStorage.getItem('accessToken')
-      if (!token) return
-
-      try {
-        // 1. Check backend for active syncs
-        const response = await fetch(`${API_BASE}/syncs/active`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-
-        if (response.ok) {
-          const json = await response.json()
-          if (json.success && json.syncs && json.syncs.length > 0) {
-            const recovered = new Map<string, SyncProgress>()
-            for (const s of json.syncs) {
-              const sync = mapBackendSync(s)
-              recovered.set(s.sync_id, sync)
-              // Start polling for active syncs
-              if (s.status !== 'complete' && s.status !== 'completed' && s.status !== 'error') {
-                pollSync(s.sync_id)
-              }
-            }
-            setActiveSyncs(recovered)
-            saveToStorage(recovered)
-            return
-          }
-        }
-
-        // 2. Fallback: check localStorage for syncs that may still be running
-        const stored = loadFromStorage()
-        for (const [syncId, info] of Object.entries(stored)) {
-          // Only recover syncs less than 1 hour old
-          if (Date.now() - info.startedAt < 3600000) {
-            pollSync(syncId)
-          }
-        }
-      } catch (err) {
-        console.error('[SyncContext] Recovery error:', err)
-      }
-    }
-
-    recover()
-
     return () => {
-      mountedRef.current = false
-      // Clean up all poll timers
-      pollTimersRef.current.forEach(timer => clearInterval(timer))
-      pollTimersRef.current.clear()
+      syncResourcesRef.current.forEach((resources, syncId) => {
+        if (resources.eventSource) resources.eventSource.close()
+        if (resources.pollInterval) clearInterval(resources.pollInterval)
+        if (resources.pollTimeout) clearTimeout(resources.pollTimeout)
+      })
+      syncResourcesRef.current.clear()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
-    <SyncProgressContext.Provider value={{ activeSyncs, startSync, dismissSync, setEmailWhenDone }}>
+    <SyncProgressContext.Provider value={{ activeSyncs, startSync, updateSync, removeSync, setEmailWhenDone }}>
       {children}
     </SyncProgressContext.Provider>
   )

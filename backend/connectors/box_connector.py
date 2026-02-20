@@ -313,10 +313,29 @@ class BoxConnector(BaseConnector):
             return False
 
     def _store_tokens(self, access_token: str, refresh_token: str):
-        """Callback to store refreshed tokens"""
+        """Callback to store refreshed tokens - saves to database"""
         self.config.credentials["access_token"] = access_token
         self.config.credentials["refresh_token"] = refresh_token
-        # In production, save to database here
+
+        # Save refreshed tokens to database
+        if self.config.connector_id:
+            try:
+                from database.models import SessionLocal, Connector
+                db = SessionLocal()
+                try:
+                    connector = db.query(Connector).filter(
+                        Connector.id == self.config.connector_id
+                    ).first()
+                    if connector:
+                        connector.access_token = access_token
+                        connector.refresh_token = refresh_token
+                        db.commit()
+                        log_info("BoxConnector", "Refreshed tokens saved to database",
+                                connector_id=self.config.connector_id)
+                finally:
+                    db.close()
+            except Exception as e:
+                log_error("BoxConnector", "Failed to save refreshed tokens to database", error=str(e))
 
     # ========================================================================
     # SYNC OPERATIONS

@@ -1390,11 +1390,14 @@ def box_folders():
 
             config = ConnectorConfig(
                 connector_type="box",
+                user_id=str(g.user_id),
                 credentials={
                     "access_token": connector.access_token,
                     "refresh_token": connector.refresh_token
                 },
-                settings=connector.settings or {}
+                settings=connector.settings or {},
+                tenant_id=g.tenant_id,
+                connector_id=str(connector.id)
             )
 
             box = BoxConnector(config)
@@ -3673,7 +3676,9 @@ def _run_connector_sync(
                 connector_type=connector_type,
                 user_id=user_id,
                 credentials=credentials,
-                settings=connector.settings or {}
+                settings=connector.settings or {},
+                tenant_id=tenant_id,
+                connector_id=str(connector.id)
             )
 
             instance = ConnectorClass(config)
@@ -4815,17 +4820,28 @@ def _cascade_delete_connector_data(db, tenant_id: str, connector_id: str, connec
     print(f"[Disconnect] Deleted {chunks_deleted} document chunks")
 
     # Step 4: Track deleted external IDs (to prevent re-sync)
+    # Deduplicate external_ids first
+    seen_external_ids = set()
     for doc in documents:
-        if doc.external_id:
+        if doc.external_id and doc.external_id not in seen_external_ids:
+            seen_external_ids.add(doc.external_id)
             try:
-                deleted_record = DeletedDocument(
-                    tenant_id=tenant_id,
-                    connector_id=connector_id,
-                    external_id=doc.external_id,
-                    source_type=doc.source_type,
-                    original_title=doc.title
-                )
-                db.merge(deleted_record)  # Use merge to handle duplicates
+                # Check if already exists
+                existing = db.query(DeletedDocument).filter(
+                    DeletedDocument.tenant_id == tenant_id,
+                    DeletedDocument.connector_id == connector_id,
+                    DeletedDocument.external_id == doc.external_id
+                ).first()
+
+                if not existing:
+                    deleted_record = DeletedDocument(
+                        tenant_id=tenant_id,
+                        connector_id=connector_id,
+                        external_id=doc.external_id,
+                        source_type=doc.source_type,
+                        original_title=doc.title
+                    )
+                    db.add(deleted_record)
             except Exception as e:
                 print(f"[Disconnect] Warning: Failed to track deleted doc {doc.external_id}: {e}")
 

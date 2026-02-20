@@ -288,6 +288,86 @@ def get_progress(sync_id: str):
         }), 404
 
 
+@sync_progress_bp.route('/<sync_id>/status', methods=['GET'])
+@require_auth
+def get_progress_status(sync_id: str):
+    """
+    Get current progress status for a sync (polling fallback endpoint).
+
+    GET /api/sync-progress/<sync_id>/status
+
+    Returns flattened status for easy frontend consumption:
+        {
+            "success": true,
+            "sync_id": "...",
+            "status": "syncing",
+            "stage": "Fetching emails...",
+            "total_items": 100,
+            "processed_items": 45,
+            "failed_items": 0,
+            "current_item": "Email from John",
+            "overall_percent": 45,
+            "percent_complete": 45
+        }
+    """
+    service = get_sync_progress_service()
+    progress = service.get_progress(sync_id)
+
+    if progress:
+        # Flatten for frontend
+        return jsonify({
+            "success": True,
+            "sync_id": sync_id,
+            "status": progress.get('status', 'unknown'),
+            "stage": progress.get('stage', ''),
+            "total_items": progress.get('total_items', 0),
+            "processed_items": progress.get('processed_items', 0),
+            "failed_items": progress.get('failed_items', 0),
+            "current_item": progress.get('current_item'),
+            "error_message": progress.get('error_message'),
+            "overall_percent": progress.get('overall_percent', progress.get('percent_complete', 0)),
+            "percent_complete": progress.get('percent_complete', 0)
+        })
+
+    # Fallback: Check database for multi-worker deployments
+    from database.models import SessionLocal, Connector, ConnectorStatus
+    db = SessionLocal()
+    try:
+        # Find connector with this sync_id
+        connectors = db.query(Connector).filter(
+            Connector.tenant_id == g.tenant_id
+        ).all()
+
+        for connector in connectors:
+            settings = connector.settings or {}
+            if settings.get('current_sync_id') == sync_id:
+                sync_prog = settings.get('sync_progress', {})
+                total = sync_prog.get('total_items', 0)
+                processed = sync_prog.get('processed_items', 0)
+                pct = (processed / total * 100) if total > 0 else 0
+
+                return jsonify({
+                    "success": True,
+                    "sync_id": sync_id,
+                    "status": sync_prog.get('status', 'syncing'),
+                    "stage": sync_prog.get('stage', 'Syncing...'),
+                    "total_items": total,
+                    "processed_items": processed,
+                    "failed_items": sync_prog.get('failed_items', 0),
+                    "current_item": sync_prog.get('current_item'),
+                    "error_message": sync_prog.get('error_message'),
+                    "overall_percent": pct,
+                    "percent_complete": pct
+                })
+
+        return jsonify({
+            "success": False,
+            "error": "Sync not found"
+        }), 404
+    finally:
+        db.close()
+
+
 @sync_progress_bp.route('/<sync_id>/subscribe-email', methods=['POST', 'OPTIONS'])
 def subscribe_email(sync_id: str):
     """

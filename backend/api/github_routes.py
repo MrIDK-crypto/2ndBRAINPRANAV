@@ -517,28 +517,51 @@ def _sync_single_repo(db, github, connector, tenant_id: str, repository: str, ma
     extraction_service = ExtractionService()
     embedding_service = EmbeddingService()
 
+    total_docs = len(documents_created)
+
     for i, doc in enumerate(documents_created):
         db.refresh(doc)
+        doc_num = i + 1
 
-        # Extract
+        # Phase 1: Extract
+        progress_service.update_progress(
+            sync_id,
+            status='extracting',
+            stage=f'Extracting summaries ({doc_num}/{total_docs})...',
+            current_item=f'{repository}: Extracting {doc.title[:35]}...'
+        )
         try:
             extraction_service.extract_document(doc, db)
         except Exception as e:
             print(f"[GitHub Sync V2] Extraction failed for {doc.title}: {e}")
 
-        # Embed - pass Document object, not ID
+        # Phase 2: Embed
+        progress_service.update_progress(
+            sync_id,
+            status='embedding',
+            stage=f'Creating embeddings ({doc_num}/{total_docs})...',
+            current_item=f'{repository}: Embedding {doc.title[:35]}...'
+        )
         try:
             embedding_service.embed_documents([doc], tenant_id, db)
         except Exception as e:
             print(f"[GitHub Sync V2] Embedding failed for {doc.title}: {e}")
 
-        # Update progress
-        current_processed = docs_processed_so_far + i + 1
+        # Update overall progress
+        current_processed = docs_processed_so_far + doc_num
+        # Calculate phase-aware percentage:
+        # - Saving/Creating:  0% - 33%
+        # - Extracting:      33% - 66%
+        # - Embedding:       66% - 99%
+        base_pct = (docs_processed_so_far / total_expected_docs * 100) if total_expected_docs > 0 else 0
+        doc_pct = (doc_num / total_docs * 66) if total_docs > 0 else 0  # Extract + embed = 66% of doc processing
+        overall_pct = min(99, base_pct + doc_pct * (100 - base_pct) / 100)
+
         progress_service.update_progress(
             sync_id,
             total_items=max(total_expected_docs, len(documents_created)),
             processed_items=current_processed,
-            current_item=f'{repository}: {doc.title[:40]}...'
+            overall_percent=overall_pct
         )
 
     return documents_created
