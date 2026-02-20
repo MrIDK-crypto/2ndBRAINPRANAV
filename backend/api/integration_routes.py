@@ -3692,7 +3692,7 @@ def _run_connector_sync(
 
             # List of synchronous connectors that don't need event loop
             # Note: firecrawl uses `async def sync()` but internally uses synchronous requests library
-            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar', 'firecrawl', 'onedrive'}
+            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar', 'firecrawl'}
 
             if connector_type not in sync_connectors:
                 print(f"[Sync] Creating event loop for async connector: {connector_type}")
@@ -3820,7 +3820,7 @@ def _run_connector_sync(
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching OneDrive files...')
                     print(f"[Sync] Calling onedrive sync with heartbeat (synchronous)", flush=True)
-                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=True)
                     print(f"[Sync] OneDrive sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'github':
                     # GitHub sync does LLM analysis which takes time - update progress at each stage
