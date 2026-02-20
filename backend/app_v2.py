@@ -35,6 +35,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = 600  # 10 minutes for OAuth flow
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload size
 
 # CORS configuration - use CORS_ORIGINS env var or defaults
 _cors_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
@@ -68,6 +69,10 @@ def handle_exception(e):
     """Global exception handler - logs all unhandled errors."""
     log_error("app", f"Unhandled exception on {request.method} {request.path}", error=e)
     return jsonify({"error": "Internal server error", "message": str(e)}), 500
+
+@app.errorhandler(413)
+def handle_413(e):
+    return jsonify({"error": "File too large. Maximum upload size is 100MB."}), 413
 
 @app.errorhandler(404)
 def handle_404(e):
