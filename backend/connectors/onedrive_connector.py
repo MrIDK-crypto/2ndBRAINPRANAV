@@ -74,7 +74,7 @@ class OneDriveConnector(BaseConnector):
         )
 
         # Generate auth URL
-        scopes = ["Files.Read.All", "User.Read", "offline_access"]
+        scopes = ["Files.Read.All", "User.Read"]
 
         auth_url = app.get_authorization_request_url(
             scopes,
