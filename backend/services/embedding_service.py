@@ -69,16 +69,47 @@ class EmbeddingService:
                 raise
         return self._vector_store
 
+    def _prepare_pinecone_doc(self, doc: 'Document') -> Optional[Dict]:
+        """Prepare a Document model instance for Pinecone ingestion."""
+        if not doc.content:
+            return None
+
+        metadata = {
+            'source_type': doc.source_type or '',
+            'external_id': doc.external_id or '',
+            'sender': doc.sender or '',
+            'classification': doc.classification.value if doc.classification else 'unknown',
+            'created_at': doc.source_created_at.isoformat() if doc.source_created_at else ''
+        }
+
+        # Add Slack-specific metadata for deep links
+        if doc.source_type == 'slack' and doc.doc_metadata:
+            doc_meta = doc.doc_metadata if isinstance(doc.doc_metadata, dict) else {}
+            for key in ('channel_id', 'message_ts', 'team_domain', 'team_id'):
+                if doc_meta.get(key):
+                    metadata[key] = doc_meta[key]
+
+        return {
+            'id': str(doc.id),
+            'content': doc.content,
+            'title': doc.title or '',
+            'metadata': metadata
+        }
+
     def embed_documents(
         self,
         documents: List[Document],
         tenant_id: str,
         db: Session,
         force_reembed: bool = False,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        batch_size: int = 20
     ) -> Dict:
         """
-        Embed documents to Pinecone one at a time with progress tracking.
+        Embed documents to Pinecone in batches for speed.
+
+        Sends batch_size documents at a time to the vector store instead of
+        one at a time. The vector store handles chunking and embedding internally.
 
         Args:
             documents: List of Document model instances
@@ -86,10 +117,12 @@ class EmbeddingService:
             db: Database session for updating embedded_at
             force_reembed: If True, re-embed even if already embedded
             progress_callback: Optional callback(current, total, doc_title) for progress updates
+            batch_size: Number of documents to embed per Pinecone call (default 20)
 
         Returns:
             Dict with embedding stats
         """
+        import time as _time
         print(f"[EmbeddingService] embed_documents called with {len(documents)} documents for tenant {tenant_id}", flush=True)
 
         if not documents:
@@ -109,55 +142,43 @@ class EmbeddingService:
         errors = []
         now = utc_now()
         embedding_model = os.getenv('AZURE_EMBEDDING_DEPLOYMENT', 'text-embedding-3-large')
+        start_time = _time.time()
 
-        for i, doc in enumerate(documents):
-            doc_title = doc.title[:50] if doc.title else f"Document {i+1}"
-
-            # Report progress for every document (including skipped)
-            if progress_callback:
-                progress_callback(i + 1, total, f"Embedding: {doc_title}")
-
-            # Skip if no content
+        # Filter and prepare docs
+        docs_to_embed = []
+        for doc in documents:
             if not doc.content:
                 skipped += 1
                 continue
-
-            # Skip if already embedded
             if not force_reembed and doc.embedded_at:
                 skipped += 1
                 continue
+            pinecone_doc = self._prepare_pinecone_doc(doc)
+            if pinecone_doc:
+                docs_to_embed.append((doc, pinecone_doc))
+            else:
+                skipped += 1
 
-            # Prepare single document for Pinecone
-            metadata = {
-                'source_type': doc.source_type or '',
-                'external_id': doc.external_id or '',
-                'sender': doc.sender or '',
-                'classification': doc.classification.value if doc.classification else 'unknown',
-                'created_at': doc.source_created_at.isoformat() if doc.source_created_at else ''
-            }
+        if not docs_to_embed:
+            return {'success': True, 'total': total, 'embedded': 0, 'skipped': skipped, 'errors': []}
 
-            # Add Slack-specific metadata for deep links
-            if doc.source_type == 'slack' and doc.doc_metadata:
-                doc_meta = doc.doc_metadata if isinstance(doc.doc_metadata, dict) else {}
-                if doc_meta.get('channel_id'):
-                    metadata['channel_id'] = doc_meta['channel_id']
-                if doc_meta.get('message_ts'):
-                    metadata['message_ts'] = doc_meta['message_ts']
-                if doc_meta.get('team_domain'):
-                    metadata['team_domain'] = doc_meta['team_domain']
-                if doc_meta.get('team_id'):
-                    metadata['team_id'] = doc_meta['team_id']
+        print(f"[EmbeddingService] Embedding {len(docs_to_embed)} documents in batches of {batch_size}", flush=True)
 
-            pinecone_doc = {
-                'id': str(doc.id),
-                'content': doc.content,
-                'title': doc.title or '',
-                'metadata': metadata
-            }
+        # Process in batches
+        for batch_start in range(0, len(docs_to_embed), batch_size):
+            batch = docs_to_embed[batch_start:batch_start + batch_size]
+            batch_num = (batch_start // batch_size) + 1
+            total_batches = (len(docs_to_embed) + batch_size - 1) // batch_size
+            pinecone_docs = [pd for _, pd in batch]
+            db_docs = [d for d, _ in batch]
+
+            if progress_callback:
+                progress_callback(skipped + batch_start + len(batch), total,
+                                  f"Embedding batch {batch_num}/{total_batches} ({len(batch)} docs)")
 
             try:
                 result = self.vector_store.embed_and_upsert_documents(
-                    documents=[pinecone_doc],
+                    documents=pinecone_docs,
                     tenant_id=tenant_id,
                     chunk_size=CHUNK_SIZE,
                     chunk_overlap=CHUNK_OVERLAP,
@@ -165,22 +186,28 @@ class EmbeddingService:
                 )
 
                 if result.get('success') or result.get('upserted', 0) > 0:
-                    doc.embedded_at = now
-                    doc.embedding_generated = True
-                    doc.embedding_model = embedding_model
+                    for doc in db_docs:
+                        doc.embedded_at = now
+                        doc.embedding_generated = True
+                        doc.embedding_model = embedding_model
                     embedded_count += result.get('upserted', 0)
                     total_chunks += result.get('total_chunks', 0)
                     db.commit()
+                    print(f"[EmbeddingService] Batch {batch_num}/{total_batches}: {result.get('upserted', 0)} chunks upserted", flush=True)
                 else:
                     doc_errors = result.get('errors', [])
                     if doc_errors:
                         errors.extend(doc_errors)
+                        print(f"[EmbeddingService] Batch {batch_num} had errors: {doc_errors}", flush=True)
 
             except Exception as e:
-                print(f"[EmbeddingService] Error embedding doc {doc.id} ({doc_title}): {e}", flush=True)
-                errors.append(f"Doc {doc_title}: {str(e)}")
+                print(f"[EmbeddingService] Error in batch {batch_num}: {e}", flush=True)
+                errors.append(f"Batch {batch_num}: {str(e)}")
 
-        print(f"[EmbeddingService] Done: embedded={embedded_count} chunks, skipped={skipped}, errors={len(errors)}", flush=True)
+        elapsed = _time.time() - start_time
+        rate = len(docs_to_embed) / elapsed if elapsed > 0 else 0
+        print(f"[EmbeddingService] Done: {embedded_count} chunks from {len(docs_to_embed)} docs, "
+              f"skipped={skipped}, errors={len(errors)}, {elapsed:.1f}s ({rate:.1f} docs/sec)", flush=True)
 
         return {
             'success': len(errors) == 0,
