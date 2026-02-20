@@ -227,6 +227,10 @@ export default function Documents() {
   const [showGapsMenu, setShowGapsMenu] = useState(false)
   const [sourceFilter, setSourceFilter] = useState<string>('all')
 
+  // Notification state
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [clearedNotifications, setClearedNotifications] = useState<Set<string>>(new Set())
+
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [inviteEmails, setInviteEmails] = useState('')
@@ -241,6 +245,7 @@ export default function Documents() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const gapsMenuRef = useRef<HTMLDivElement>(null)
+  const notifRef = useRef<HTMLDivElement>(null)
 
   // Track if we've loaded documents to prevent infinite loops
   const hasLoadedRef = useRef(false)
@@ -252,6 +257,44 @@ export default function Documents() {
       loadDocuments()
     }
   }, [token])
+
+  // Load cleared notifications from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('2b_cleared_notifs')
+      if (saved) setClearedNotifications(new Set(JSON.parse(saved)))
+    } catch {}
+  }, [])
+
+  // Compute notification items: all indexed docs not yet cleared
+  const notifications = useMemo(() => {
+    return documents
+      .filter(d => d.embedded_at && !clearedNotifications.has(d.id))
+      .sort((a, b) => {
+        // Most recently indexed first
+        const aDate = a.embedded_at ? new Date(a.embedded_at).getTime() : 0
+        const bDate = b.embedded_at ? new Date(b.embedded_at).getTime() : 0
+        return bDate - aDate
+      })
+  }, [documents, clearedNotifications])
+
+  const clearNotification = useCallback((docId: string) => {
+    setClearedNotifications(prev => {
+      const next = new Set(prev)
+      next.add(docId)
+      localStorage.setItem('2b_cleared_notifs', JSON.stringify([...next]))
+      return next
+    })
+  }, [])
+
+  const clearAllNotifications = useCallback(() => {
+    const allIds = documents.filter(d => d.embedded_at).map(d => d.id)
+    setClearedNotifications(prev => {
+      const next = new Set([...prev, ...allIds])
+      localStorage.setItem('2b_cleared_notifs', JSON.stringify([...next]))
+      return next
+    })
+  }, [documents])
 
   // Derive unique source types from loaded documents for the filter dropdown
   const availableSources = useMemo(() => {
@@ -307,6 +350,9 @@ export default function Documents() {
       }
       if (gapsMenuRef.current && !gapsMenuRef.current.contains(event.target as Node)) {
         setShowGapsMenu(false)
+      }
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setShowNotifications(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -1088,7 +1134,213 @@ export default function Documents() {
           }}>
             Documents
           </h1>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {/* Notifications Bell */}
+            <div ref={notifRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '40px',
+                  height: '40px',
+                  backgroundColor: showNotifications ? colors.primaryLight : 'transparent',
+                  border: `1px solid ${showNotifications ? colors.primary : colors.border}`,
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  if (!showNotifications) {
+                    e.currentTarget.style.backgroundColor = colors.primaryLight
+                    e.currentTarget.style.borderColor = '#D4C4BE'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!showNotifications) {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                    e.currentTarget.style.borderColor = colors.border
+                  }
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                {notifications.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    minWidth: '18px',
+                    height: '18px',
+                    backgroundColor: colors.primary,
+                    borderRadius: '9px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0 4px',
+                  }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#fff', lineHeight: 1 }}>
+                      {notifications.length > 99 ? '99+' : notifications.length}
+                    </span>
+                  </div>
+                )}
+              </button>
+
+              {/* Notifications Dropdown */}
+              {showNotifications && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '8px',
+                  width: '360px',
+                  maxHeight: '420px',
+                  backgroundColor: colors.cardBg,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '12px',
+                  boxShadow: shadows.lg,
+                  zIndex: Z_INDEX.dropdown,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                }}>
+                  {/* Header */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '14px 16px',
+                    borderBottom: `1px solid ${colors.border}`,
+                  }}>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary }}>
+                      Indexed Documents
+                    </span>
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={clearAllNotifications}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          color: colors.primary,
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          transition: 'background-color 0.15s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.primaryLight}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                  {/* List */}
+                  <div style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: notifications.length === 0 ? '0' : '4px 0',
+                  }}>
+                    {notifications.length === 0 ? (
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '32px 16px',
+                        gap: '8px',
+                      }}>
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="1.5" style={{ opacity: 0.5 }}>
+                          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        <span style={{ fontSize: '13px', color: colors.textMuted }}>No new notifications</span>
+                      </div>
+                    ) : (
+                      notifications.map((doc) => (
+                        <div
+                          key={doc.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '10px 16px',
+                            transition: 'background-color 0.15s',
+                            cursor: 'pointer',
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.borderLight}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          onClick={() => {
+                            if (doc.url) {
+                              window.open(doc.url, '_blank', 'noopener,noreferrer')
+                            } else {
+                              viewDocument(doc.id)
+                            }
+                          }}
+                        >
+                          {/* Green dot */}
+                          <div style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: colors.searchableActiveDot,
+                            flexShrink: 0,
+                          }} />
+                          {/* Content */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: '13px',
+                              fontWeight: 500,
+                              color: colors.textPrimary,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {doc.name}
+                            </div>
+                            <div style={{ fontSize: '11px', color: colors.textMuted, marginTop: '2px' }}>
+                              Indexed {doc.embedded_at ? new Date(doc.embedded_at).toLocaleDateString() : ''} &middot; {doc.type}
+                            </div>
+                          </div>
+                          {/* Clear button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              clearNotification(doc.id)
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '24px',
+                              height: '24px',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                              transition: 'background-color 0.15s',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.border}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="2" strokeLinecap="round">
+                              <line x1="18" y1="6" x2="6" y2="18"/>
+                              <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
@@ -1606,7 +1858,7 @@ export default function Documents() {
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 120px 48px',
+                gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 48px',
                 gap: '16px',
                 padding: '12px 20px',
                 backgroundColor: colors.border,
@@ -1646,7 +1898,6 @@ export default function Documents() {
                   { label: 'Type', field: 'type' },
                   { label: 'Source', field: 'source_type' },
                   { label: 'Date', field: 'created' },
-                  { label: 'Searchable', field: 'embedded_at' },
                 ].map((col) => (
                   <button
                     key={col.field}
@@ -1681,7 +1932,7 @@ export default function Documents() {
                       key={doc.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 120px 48px',
+                        gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 48px',
                         gap: '16px',
                         padding: '16px 20px',
                         alignItems: 'center',
@@ -1780,30 +2031,6 @@ export default function Documents() {
                       <span style={{ fontSize: '13px', color: colors.textSecondary }}>
                         {doc.created}
                       </span>
-
-                      {/* Searchable - In Chatbot */}
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '4px 10px',
-                        borderRadius: '12px',
-                        backgroundColor: doc.embedded_at ? colors.searchableActiveBg : colors.searchableInactiveBg,
-                      }}>
-                        <div style={{
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '50%',
-                          backgroundColor: doc.embedded_at ? colors.searchableActiveDot : colors.searchableInactiveDot,
-                        }} />
-                        <span style={{
-                          fontSize: '12px',
-                          fontWeight: 500,
-                          color: doc.embedded_at ? colors.searchableActiveText : colors.searchableInactiveText,
-                        }}>
-                          {doc.embedded_at ? 'In Chatbot' : 'Not Indexed'}
-                        </span>
-                      </div>
 
                       {/* Actions */}
                       <div onClick={(e) => e.stopPropagation()}>
