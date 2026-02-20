@@ -42,8 +42,16 @@ def get_db():
 ZIP_SUPPORTED_EXTENSIONS = {
     '.pdf', '.doc', '.docx', '.txt', '.csv', '.tsv',
     '.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt',
-    '.rtf', '.ods', '.numbers', '.json', '.xml', '.html', '.htm', '.md'
+    '.rtf', '.ods', '.numbers', '.json', '.xml', '.html', '.htm', '.md',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff',
+    '.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm'
 }
+
+# Image extensions for OCR via Azure Document Intelligence
+IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif')
+
+# Audio/Video extensions for Whisper transcription
+MEDIA_EXTENSIONS = ('.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm')
 
 
 # ============================================================================
@@ -566,6 +574,23 @@ def upload_documents():
                         elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.ods', '.numbers', '.rtf')):
                             print(f"[Upload] Parsing binary document: {filename}")
                             text = parser.parse_file_bytes(file_content, filename)
+                        elif lower_name.endswith(IMAGE_EXTENSIONS):
+                            print(f"[Upload] Parsing image (OCR): {filename}")
+                            try:
+                                text = parser.parse_file_bytes(file_content, filename)
+                            except Exception as img_err:
+                                print(f"[Upload] Image OCR failed: {img_err}")
+                                text = ""
+                        elif lower_name.endswith(MEDIA_EXTENSIONS):
+                            print(f"[Upload] Transcribing audio/video: {filename}")
+                            try:
+                                from services.knowledge_service import KnowledgeService
+                                ks = KnowledgeService(db)
+                                result = ks.transcribe_audio(file_content, filename)
+                                text = result.text if result else ""
+                            except Exception as media_err:
+                                print(f"[Upload] Transcription failed: {media_err}")
+                                text = ""
                         else:
                             # Try to decode as text
                             try:
@@ -580,10 +605,18 @@ def upload_documents():
                         print(f"[Upload] Extracted text length: {len(text) if text else 0}")
 
                         if not text or len(text.strip()) == 0:
-                            error_msg = f"Could not extract text from: {filename}"
-                            print(f"[Upload] {error_msg}")
-                            parsing_errors.append(error_msg)
-                            continue
+                            # For images/media, save with placeholder so S3 original is still viewable
+                            if lower_name.endswith(IMAGE_EXTENSIONS):
+                                text = f"[Image file: {filename}]"
+                                print(f"[Upload] No OCR text extracted, saving image with placeholder")
+                            elif lower_name.endswith(MEDIA_EXTENSIONS):
+                                text = f"[Media file: {filename}]"
+                                print(f"[Upload] No transcription text, saving media with placeholder")
+                            else:
+                                error_msg = f"Could not extract text from: {filename}"
+                                print(f"[Upload] {error_msg}")
+                                parsing_errors.append(error_msg)
+                                continue
 
                         # Upload original file to S3 if available
                         s3_file_key = None

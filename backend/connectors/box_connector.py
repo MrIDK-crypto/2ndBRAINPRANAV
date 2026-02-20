@@ -77,7 +77,9 @@ class BoxConnector(BaseConnector):
     EXTRACTABLE_TYPES = {
         ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm",
         ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-        ".rtf", ".odt", ".ods", ".odp"
+        ".rtf", ".odt", ".ods", ".odp",
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff",
+        ".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm"
     }
 
     # OAuth configuration
@@ -707,7 +709,28 @@ class BoxConnector(BaseConnector):
                     log_error("BoxConnector", "S3 upload error", error=s3_err, file_name=file_name)
 
             # Extract content using Azure Mistral Document AI (with local fallback)
-            if file_ext.lower() in self.EXTRACTABLE_TYPES and file_bytes:
+            MEDIA_EXTS = {'.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm'}
+            if file_ext.lower() in MEDIA_EXTS and file_bytes:
+                # Video/Audio: Use Whisper transcription
+                log_info("BoxConnector", "Transcribing media with Whisper", file_name=file_name, type=file_ext)
+                try:
+                    from services.knowledge_service import KnowledgeService
+                    from database.models import SessionLocal as KSSessionLocal
+                    ks_db = KSSessionLocal()
+                    try:
+                        ks = KnowledgeService(ks_db)
+                        result = ks.transcribe_audio(file_bytes, file_name)
+                        if result and result.text:
+                            content = result.text
+                            log_info("BoxConnector", "Transcription complete", file_name=file_name, chars=len(content))
+                        else:
+                            log_warning("BoxConnector", "No transcription text", file_name=file_name)
+                    finally:
+                        ks_db.close()
+                except Exception as media_err:
+                    log_error("BoxConnector", "Transcription failed", error=media_err, file_name=file_name)
+                    content = ""
+            elif file_ext.lower() in self.EXTRACTABLE_TYPES and file_bytes:
                 log_info("BoxConnector", "Parsing file with Mistral Document AI", file_name=file_name, type=file_ext)
                 try:
                     from parsers.document_parser import DocumentParser

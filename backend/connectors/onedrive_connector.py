@@ -37,7 +37,7 @@ class OneDriveConnector(BaseConnector):
     REQUIRED_CREDENTIALS = ["access_token", "refresh_token"]
     OPTIONAL_SETTINGS = {
         "folder_ids": [],  # Specific folders to sync (empty = root)
-        "file_types": [".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf"],
+        "file_types": [".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf", ".png", ".jpg", ".jpeg", ".mp4"],
         "max_file_size_mb": 50,
         "include_shared": True
     }
@@ -376,6 +376,14 @@ class OneDriveConnector(BaseConnector):
             elif lower_name.endswith(".pdf"):
                 return self._parse_pdf(content)
 
+            # Images (OCR via Azure Document Intelligence)
+            elif lower_name.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff")):
+                return self._parse_image(content, filename)
+
+            # Video/Audio (Whisper transcription)
+            elif lower_name.endswith((".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm")):
+                return self._parse_video(content, filename)
+
             return None
 
         except Exception as e:
@@ -460,6 +468,38 @@ class OneDriveConnector(BaseConnector):
             print(f"[OneDrive] PDF parse error: {e}")
             return None
 
+    def _parse_image(self, content: bytes, filename: str) -> Optional[str]:
+        """Parse image file via OCR (Azure Document Intelligence)"""
+        try:
+            from parsers.document_parser import DocumentParser
+            parser = DocumentParser()
+            text = parser.parse_file_bytes(content, filename)
+            if text:
+                print(f"[OneDrive] Image OCR extracted {len(text)} chars from {filename}")
+            return text
+        except Exception as e:
+            print(f"[OneDrive] Image OCR error for {filename}: {e}")
+            return None
+
+    def _parse_video(self, content: bytes, filename: str) -> Optional[str]:
+        """Transcribe video/audio file via Azure Whisper"""
+        try:
+            from services.knowledge_service import KnowledgeService
+            from database.models import SessionLocal
+            db = SessionLocal()
+            try:
+                ks = KnowledgeService(db)
+                result = ks.transcribe_audio(content, filename)
+                if result and result.text:
+                    print(f"[OneDrive] Transcribed {len(result.text)} chars from {filename}")
+                    return result.text
+            finally:
+                db.close()
+            return None
+        except Exception as e:
+            print(f"[OneDrive] Transcription error for {filename}: {e}")
+            return None
+
     def _get_doc_type(self, filename: str) -> str:
         """Get document type based on filename"""
         lower_name = filename.lower()
@@ -472,6 +512,10 @@ class OneDriveConnector(BaseConnector):
             return "document"
         elif lower_name.endswith(".pdf"):
             return "pdf"
+        elif lower_name.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff")):
+            return "image"
+        elif lower_name.endswith((".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm")):
+            return "video"
 
         return "file"
 

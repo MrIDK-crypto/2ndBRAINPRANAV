@@ -453,7 +453,8 @@ Time: {timestamp.isoformat() if timestamp else 'Unknown'}
         ext = os.path.splitext(filename)[1].lower()
         parseable = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
                      ".txt", ".csv", ".md", ".json", ".xml", ".html", ".htm",
-                     ".rtf", ".odt", ".ods", ".odp", ".png", ".jpg", ".jpeg"}
+                     ".rtf", ".odt", ".ods", ".odp", ".png", ".jpg", ".jpeg",
+                     ".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm"}
         if ext not in parseable:
             return None
 
@@ -468,6 +469,25 @@ Time: {timestamp.isoformat() if timestamp else 'Unknown'}
             resp.raise_for_status()
             file_bytes = resp.content
             print(f"[Slack] Downloaded file {filename}: {len(file_bytes)} bytes")
+
+            # Video/Audio: Use Whisper transcription
+            media_exts = {'.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm'}
+            if ext in media_exts:
+                try:
+                    from services.knowledge_service import KnowledgeService
+                    from database.models import SessionLocal
+                    db = SessionLocal()
+                    try:
+                        ks = KnowledgeService(db)
+                        result = ks.transcribe_audio(file_bytes, filename)
+                        if result and result.text:
+                            print(f"[Slack] Transcribed {filename}: {len(result.text)} chars")
+                            return result.text
+                    finally:
+                        db.close()
+                except Exception as te:
+                    print(f"[Slack] Transcription failed for {filename}: {te}")
+                return None
 
             # Parse with Mistral Document AI (with local fallback)
             from parsers.document_parser import DocumentParser

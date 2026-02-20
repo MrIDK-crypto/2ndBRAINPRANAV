@@ -43,6 +43,9 @@ EXTRACTABLE_TYPES = {
     'application/json': None,
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': None,
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': None,
+    'image/png': None,
+    'image/jpeg': None,
+    'video/mp4': None,
 }
 
 
@@ -365,6 +368,37 @@ class GDriveConnector(BaseConnector):
                         return df.to_string()
                     except Exception:
                         pass
+                return None
+
+            elif mime_type and mime_type.startswith('image/'):
+                # OCR via Azure Document Intelligence
+                try:
+                    from parsers.document_parser import DocumentParser
+                    parser = DocumentParser()
+                    parsed = parser.parse_file_bytes(file_content, filename)
+                    if parsed:
+                        print(f"[GDrive] Image OCR extracted {len(parsed)} chars from {filename}")
+                        return parsed
+                except Exception as e:
+                    print(f"[GDrive] Image OCR failed for {filename}: {e}")
+                return None
+
+            elif mime_type and mime_type.startswith('video/'):
+                # Whisper transcription
+                try:
+                    from services.knowledge_service import KnowledgeService
+                    from database.models import SessionLocal
+                    db = SessionLocal()
+                    try:
+                        ks = KnowledgeService(db)
+                        result = ks.transcribe_audio(file_content, filename)
+                        if result and result.text:
+                            print(f"[GDrive] Transcribed {len(result.text)} chars from {filename}")
+                            return result.text
+                    finally:
+                        db.close()
+                except Exception as e:
+                    print(f"[GDrive] Transcription failed for {filename}: {e}")
                 return None
 
             return None
