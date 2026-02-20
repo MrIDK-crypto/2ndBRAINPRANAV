@@ -82,12 +82,16 @@ class ExtractionService:
     we use these pre-extracted summaries.
     """
 
+    # Use gpt-4.1-mini for extraction (faster + cheaper than full gpt-4.1)
+    EXTRACTION_MODEL = os.getenv('AZURE_EXTRACTION_DEPLOYMENT', 'gpt-4.1-mini')
+
     def __init__(self, client=None):
         """Initialize extraction service."""
         if client:
             self.client = client
         else:
             self.client = get_openai_client()
+        print(f"[ExtractionService] Using model: {self.EXTRACTION_MODEL}", flush=True)
 
     def extract_from_content(
         self,
@@ -130,6 +134,7 @@ class ExtractionService:
                         )
                     }
                 ],
+                model=self.EXTRACTION_MODEL,
                 temperature=0.1,  # Low temperature for consistent extraction
                 max_tokens=2000,
                 response_format={"type": "json_object"}
