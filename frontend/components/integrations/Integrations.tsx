@@ -1749,11 +1749,6 @@ const WebScraperConfigModal = ({
   existingUrl?: string
 }) => {
   const [startUrl, setStartUrl] = useState(existingUrl || '')
-  const [maxPages, setMaxPages] = useState(100)
-  const [maxDepth, setMaxDepth] = useState(10)
-  const [includeSubdomains, setIncludeSubdomains] = useState(false)
-  const [includePatterns, setIncludePatterns] = useState('')
-  const [excludePatterns, setExcludePatterns] = useState('')
   const [urlError, setUrlError] = useState<string | null>(null)
 
   React.useEffect(() => {
@@ -1789,20 +1784,15 @@ const WebScraperConfigModal = ({
     if (!validateUrl(startUrl)) return
     onSubmit({
       startUrl: startUrl.trim(),
-      maxPages: Math.min(Math.max(maxPages, 1), 500),
-      maxDepth: Math.min(Math.max(maxDepth, 1), 20),
-      includeSubdomains,
-      includePatterns: includePatterns.split(',').map(p => p.trim()).filter(p => p.length > 0),
-      excludePatterns: excludePatterns.split(',').map(p => p.trim()).filter(p => p.length > 0),
+      maxPages: 100,
+      maxDepth: 10,
+      includeSubdomains: false,
+      includePatterns: [],
+      excludePatterns: [],
     })
   }
 
   if (!isOpen) return null
-
-  const featureBadges = ['PDF Extraction', 'JavaScript Rendering', 'Sitemap Discovery', 'Recursive Crawling']
-  const labelStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, display: 'block', marginBottom: '6px', color: '#1A1A1A' }
-  const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #D4D4D8', fontSize: '14px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }
-  const hintStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#C9A598', marginTop: '4px' }
 
   return (
     <div
@@ -1810,107 +1800,30 @@ const WebScraperConfigModal = ({
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '32px', maxWidth: '620px', width: '90%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
+        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '32px', maxWidth: '480px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
         onClick={e => e.stopPropagation()}
       >
         <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '22px', fontWeight: 600, marginBottom: '8px', color: '#1A1A1A' }}>
-          Configure Website Crawler
+          Crawl a Website
         </h2>
-        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#7A7A7A', marginBottom: '16px', lineHeight: '1.5' }}>
-          Full website crawler with PDF extraction, JavaScript rendering, and automatic sitemap discovery. Powered by Firecrawl for comprehensive content extraction.
+        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#7A7A7A', marginBottom: '24px', lineHeight: '1.5' }}>
+          Enter a website URL and we'll automatically crawl and index all its pages into your knowledge base.
         </p>
 
-        {/* Feature Badges */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
-          {featureBadges.map(badge => (
-            <span key={badge} style={{ padding: '6px 14px', backgroundColor: '#FDF8F6', color: '#C9A598', borderRadius: '20px', fontSize: '13px', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
-              {badge}
-            </span>
-          ))}
-        </div>
-
         {/* Website URL */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={labelStyle}>Website URL *</label>
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, display: 'block', marginBottom: '6px', color: '#1A1A1A' }}>Website URL</label>
           <input
             type="text"
             value={startUrl}
             onChange={e => { setStartUrl(e.target.value); if (urlError) setUrlError(null) }}
             onBlur={() => startUrl && validateUrl(startUrl)}
-            placeholder="https://example.com or example.com"
-            style={{ ...inputStyle, border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}` }}
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            placeholder="https://example.com"
+            autoFocus
+            style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}`, fontSize: '15px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }}
           />
-          {urlError && <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>{urlError}</p>}
-        </div>
-
-        {/* Max Pages & Max Depth - side by side */}
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Max Pages</label>
-            <input
-              type="number"
-              value={maxPages}
-              onChange={e => setMaxPages(parseInt(e.target.value) || 100)}
-              min={1}
-              max={500}
-              style={inputStyle}
-            />
-            <p style={hintStyle}>1-500 pages</p>
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Max Depth</label>
-            <input
-              type="number"
-              value={maxDepth}
-              onChange={e => setMaxDepth(parseInt(e.target.value) || 10)}
-              min={1}
-              max={20}
-              style={inputStyle}
-            />
-            <p style={hintStyle}>Link depth (1-20)</p>
-          </div>
-        </div>
-
-        {/* Include Subdomains */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={includeSubdomains}
-              onChange={e => setIncludeSubdomains(e.target.checked)}
-              style={{ width: '18px', height: '18px', accentColor: '#C9A598', cursor: 'pointer' }}
-            />
-            <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#1A1A1A' }}>Include Subdomains</span>
-          </label>
-          <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#7A7A7A', marginTop: '4px', marginLeft: '28px' }}>
-            Also crawl subdomains (e.g., blog.example.com, docs.example.com)
-          </p>
-        </div>
-
-        {/* Include Patterns */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={labelStyle}>Include Patterns (optional)</label>
-          <input
-            type="text"
-            value={includePatterns}
-            onChange={e => setIncludePatterns(e.target.value)}
-            placeholder="/docs/, /resources/, /protocols/"
-            style={inputStyle}
-          />
-          <p style={hintStyle}>Only crawl URLs matching these patterns (comma-separated)</p>
-        </div>
-
-        {/* Exclude Patterns */}
-        <div style={{ marginBottom: '24px' }}>
-          <label style={labelStyle}>Exclude Patterns (optional)</label>
-          <input
-            type="text"
-            value={excludePatterns}
-            onChange={e => setExcludePatterns(e.target.value)}
-            placeholder="/login, /admin/, /cart"
-            style={inputStyle}
-          />
-          <p style={hintStyle}>Skip URLs matching these patterns (comma-separated)</p>
+          {urlError && <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#EF4444', marginTop: '6px' }}>{urlError}</p>}
         </div>
 
         {/* Buttons */}
@@ -1926,7 +1839,7 @@ const WebScraperConfigModal = ({
             disabled={!startUrl.trim() || isLoading || !!urlError}
             style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '14px', fontWeight: 500, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
           >
-            {isLoading ? 'Configuring...' : 'Start Crawling'}
+            {isLoading ? 'Crawling...' : 'Start Crawling'}
           </button>
         </div>
       </div>
