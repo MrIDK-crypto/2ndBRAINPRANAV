@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '../shared/Sidebar'
 import Image from 'next/image'
 import axios from 'axios'
-import SyncProgressModal from './SyncProgressModal'
+// SyncProgressModal removed - using GlobalSyncIndicator only
 import EmailForwardingCard from './EmailForwardingCard'
 import { useAuth } from '@/contexts/AuthContext'
 import WebsiteBuilderModal from './WebsiteBuilderModal'
 import { useSyncProgress } from '@/contexts/SyncProgressContext'
-import { FileText, Clock, FolderGit2, Mail, CheckCircle2 } from 'lucide-react'
+import { Mail, CheckCircle2 } from 'lucide-react'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
@@ -4694,64 +4694,6 @@ export default function Integrations() {
               )}
             </div>
 
-            {/* Scan Results / Estimated Time */}
-            {totalEstimate && (
-              <div style={{
-                padding: '14px 24px', borderTop: '1px solid #ECEAE8',
-                background: '#FAFBFC',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 28
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{
-                    width: 24, height: 24, borderRadius: 6,
-                    background: '#C9A598',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    <FileText size={12} color="white" strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 18, fontWeight: 600, color: '#000' }}>{totalEstimate.files.toLocaleString()}</div>
-                    <div style={{ fontSize: 10, color: '#7A7A7A', fontWeight: 500 }}>documents to create</div>
-                  </div>
-                </div>
-                <div style={{ width: 1, height: 28, background: '#ECEAE8' }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{
-                    width: 24, height: 24, borderRadius: 6,
-                    background: '#1E293B',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    <Clock size={12} color="white" strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 18, fontWeight: 600, color: '#000' }}>{totalEstimate.time}</div>
-                    <div style={{ fontSize: 10, color: '#7A7A7A', fontWeight: 500 }}>estimated time</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Per-repo scan results */}
-            {prescanResults && Object.keys(prescanResults).length > 0 && (
-              <div style={{ padding: '12px 24px', borderTop: '1px solid #ECEAE8', background: '#FAFAFA' }}>
-                <div style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-                  Per Repository
-                </div>
-                {Object.entries(prescanResults).map(([repo, data]) => (
-                  <div key={repo} style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    fontSize: 13, padding: '8px 12px', marginBottom: 4,
-                    background: '#fff', borderRadius: 6, border: '1px solid #ECEAE8'
-                  }}>
-                    <span style={{ color: '#374151', fontWeight: 500 }}>{repo.split('/')[1]}</span>
-                    <span style={{ color: '#7A7A7A', fontSize: 12 }}>
-                      {data.expected_documents} documents • {data.estimated_time}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {/* Footer */}
             <div style={{
               padding: '16px 24px', borderTop: '1px solid #ECEAE8',
@@ -4776,36 +4718,14 @@ export default function Integrations() {
                   Cancel
                 </button>
                 <button
-                  onClick={isDemoMode ? demoScan : prescanSelectedRepos}
-                  disabled={selectedRepos.length === 0 || isScanning}
-                  style={{
-                    padding: '10px 20px', borderRadius: 8,
-                    border: '1px solid #ECEAE8',
-                    background: selectedRepos.length === 0 || isScanning ? '#F5F3F1' : '#fff',
-                    color: selectedRepos.length === 0 || isScanning ? '#9CA3AF' : '#374151',
-                    cursor: selectedRepos.length === 0 || isScanning ? 'not-allowed' : 'pointer',
-                    fontSize: 14, fontWeight: 500,
-                    display: 'flex', alignItems: 'center', gap: 8
-                  }}
-                >
-                  {isScanning && (
-                    <div style={{
-                      width: 14, height: 14, borderRadius: '50%',
-                      border: '2px solid #ECEAE8', borderTopColor: '#C9A598',
-                      animation: 'spin 1s linear infinite'
-                    }} />
-                  )}
-                  {isScanning ? 'Estimating...' : 'Estimate Time'}
-                </button>
-                <button
                   onClick={startGitHubSync}
-                  disabled={selectedRepos.length === 0 || !totalEstimate}
+                  disabled={selectedRepos.length === 0}
                   style={{
                     padding: '10px 20px', borderRadius: 8,
                     border: 'none',
-                    background: selectedRepos.length === 0 || !totalEstimate ? '#9CA3AF' : '#C9A598',
+                    background: selectedRepos.length === 0 ? '#9CA3AF' : '#C9A598',
                     color: '#fff',
-                    cursor: selectedRepos.length === 0 || !totalEstimate ? 'not-allowed' : 'pointer',
+                    cursor: selectedRepos.length === 0 ? 'not-allowed' : 'pointer',
                     fontSize: 14, fontWeight: 600
                   }}
                 >
@@ -4826,16 +4746,6 @@ export default function Integrations() {
         onDisconnect={disconnectIntegration}
         onSync={syncIntegration}
       />
-
-      {/* Sync Progress Modal */}
-      {syncId && syncingConnector && (
-        <SyncProgressModal
-          syncId={syncId}
-          connectorType={syncingConnector}
-          initialEstimatedSeconds={syncEstimatedSeconds || undefined}
-          onClose={closeSyncModal}
-        />
-      )}
 
       {/* Disconnect Confirmation Modal */}
       {showDisconnectConfirm && disconnectTarget && (
