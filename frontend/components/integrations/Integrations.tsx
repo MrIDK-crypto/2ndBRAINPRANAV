@@ -4441,7 +4441,7 @@ export default function Integrations() {
                 onViewDetails={openDetailsModal}
                 onSync={syncIntegration}
                 isSyncing={isConnectorSyncing(integration.id)}
-                syncingIntegration={syncingConnector || (isConnectorSyncing(integration.id) ? integration.id : undefined)}
+                syncingIntegration={isConnectorSyncing(integration.id) ? integration.id : undefined}
               />
             ))}
           </div>
