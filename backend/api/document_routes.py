@@ -307,6 +307,18 @@ def view_document(document_id: str):
                 from flask import redirect
                 return redirect(document.source_url)
 
+            # If document has an S3 original file, redirect to presigned URL
+            s3_key = (document.doc_metadata or {}).get('s3_key') if isinstance(document.doc_metadata, dict) else None
+            if s3_key and S3_AVAILABLE:
+                try:
+                    s3_service = get_s3_service()
+                    presigned_url = s3_service.get_presigned_url(s3_key, expiration=3600)
+                    if presigned_url:
+                        from flask import redirect
+                        return redirect(presigned_url)
+                except Exception as e:
+                    print(f"[VIEW] Error generating presigned URL for {document_id}: {e}")
+
             # Otherwise, render an HTML view
             title = document.title or document_id
             content = document.content or "No content available"
