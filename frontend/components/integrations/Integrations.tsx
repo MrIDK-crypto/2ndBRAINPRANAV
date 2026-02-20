@@ -2776,6 +2776,11 @@ const IntegrationCard = ({
 }) => {
   const isThisSyncing = syncingIntegration === integration.id;
 
+  // Debug logging for sync state
+  if (integration.id === 'firecrawl' || integration.id === 'github' || integration.id === 'onedrive') {
+    console.log(`[IntegrationCard ${integration.id}] isSyncing=${isSyncing}, syncingIntegration=${syncingIntegration}, isThisSyncing=${isThisSyncing}, connected=${integration.connected}`)
+  }
+
   return (
     <div
       className="flex flex-col items-start gap-2"
@@ -3093,11 +3098,15 @@ export default function Integrations() {
 
   // Helper: check if a connector is currently syncing (via context)
   const isConnectorSyncing = (connectorType: string): boolean => {
-    for (const sync of Array.from(activeSyncs.values())) {
+    const allSyncs = Array.from(activeSyncs.values())
+    console.log(`[isConnectorSyncing] Checking ${connectorType}, activeSyncs:`, allSyncs.map(s => `${s.connectorType}:${s.status}`))
+    for (const sync of allSyncs) {
       if (sync.connectorType === connectorType && sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
+        console.log(`[isConnectorSyncing] ${connectorType} IS syncing (status: ${sync.status})`)
         return true
       }
     }
+    console.log(`[isConnectorSyncing] ${connectorType} NOT syncing`)
     return false
   }
 

@@ -124,10 +124,12 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
             // Auto-remove after delay
             setTimeout(() => {
+              console.log(`[GlobalSync] Auto-removing completed sync ${syncId}`)
               cleanupSync(syncId)
               setActiveSyncs(prev => {
                 const next = new Map(prev)
                 next.delete(syncId)
+                console.log(`[GlobalSync] Removed sync ${syncId}. Remaining:`, Array.from(next.keys()))
                 return next
               })
             }, 5000)
@@ -177,6 +179,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
         emailWhenDone,
         startedAt: Date.now()
       })
+      console.log(`[GlobalSync] Added sync ${syncId} (${connectorType}). Total active:`, Array.from(next.keys()))
       return next
     })
 
@@ -251,10 +254,12 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
       // Auto-remove after delay
       setTimeout(() => {
+        console.log(`[GlobalSync] SSE complete - removing sync ${syncId}`)
         cleanupSync(syncId)
         setActiveSyncs(prev => {
           const next = new Map(prev)
           next.delete(syncId)
+          console.log(`[GlobalSync] Removed sync ${syncId} after SSE complete. Remaining:`, Array.from(next.keys()))
           return next
         })
       }, 5000)
@@ -291,10 +296,12 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
   // Remove sync
   const removeSync = useCallback((syncId: string) => {
+    console.log(`[GlobalSync] removeSync called for ${syncId}`)
     cleanupSync(syncId)
     setActiveSyncs(prev => {
       const next = new Map(prev)
       next.delete(syncId)
+      console.log(`[GlobalSync] removeSync - Remaining syncs:`, Array.from(next.keys()))
       return next
     })
   }, [cleanupSync])
