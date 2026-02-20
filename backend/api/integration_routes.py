@@ -4075,7 +4075,7 @@ def _run_connector_sync(
                     # Database Document expects: external_id, source_type, content, title, metadata, source_created_at, etc.
 
                     # Auto-classify research sources as WORK (they're academic papers, not personal)
-                    research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv'}
+                    research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv', 'firecrawl'}
                     is_research = (
                         doc.source.lower() in research_sources or
                         getattr(doc, 'doc_type', None) == 'research_paper'
@@ -4153,6 +4153,23 @@ def _run_connector_sync(
                     _persist_progress_to_db(db, connector, 'extracting', 'Extracting document summaries...', total_items=total_committed, processed_items=total_committed, overall_percent=33.0, force=True)
 
                 try:
+                    # Fix-up: promote any PENDING firecrawl documents to CONFIRMED/WORK
+                    # (firecrawl was previously missing from research_sources, leaving docs as PENDING)
+                    if connector.connector_type == 'firecrawl':
+                        pending_firecrawl = db.query(Document).filter(
+                            Document.tenant_id == tenant_id,
+                            Document.connector_id == connector.id,
+                            Document.status == DocumentStatus.PENDING
+                        ).all()
+                        if pending_firecrawl:
+                            for pf_doc in pending_firecrawl:
+                                pf_doc.status = DocumentStatus.CONFIRMED
+                                pf_doc.classification = DocumentClassification.WORK
+                                pf_doc.classification_confidence = 1.0
+                                pf_doc.classification_reason = "Auto-classified as WORK: firecrawl research content"
+                            db.commit()
+                            print(f"[Sync] Fixed {len(pending_firecrawl)} previously PENDING firecrawl documents → CONFIRMED", flush=True)
+
                     # Query un-embedded documents for this connector (including from previous failed syncs)
                     # IMPORTANT: Skip PENDING/UNKNOWN docs (Gmail/Slack) — they need user review before embedding
                     un_embedded_docs = db.query(Document).filter(
