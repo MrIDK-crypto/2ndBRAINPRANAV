@@ -556,8 +556,21 @@ export default function ChatInterface() {
         }
       )
 
+      // Handle bare [N] citations (e.g., [1], [4], [10]) — LLM sometimes uses footnote style
+      cleanedAnswer = cleanedAnswer.replace(/\[(\d+)\]/g, (match: string, num: string) => {
+        const source = sourceMapData[`Source ${num}`]
+        return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
+      })
+
       // Catch-all: remove any remaining raw [Source N] that weren't mapped
       cleanedAnswer = cleanedAnswer.replace(/\[Sources?\s*\d+(?:,\s*\d+)*\]/gi, '')
+
+      // Deduplicate adjacent source markers with the same display name
+      // (multiple chunks from same file produce identical-looking links)
+      cleanedAnswer = cleanedAnswer.replace(
+        /(\[\[SOURCE:([^:]+):[^\]]+\]\])(?:\s*,?\s*\[\[SOURCE:\2:[^\]]+\]\])+/g,
+        '$1'
+      )
 
       // Add commas between consecutive source markers (e.g. ]] [[SOURCE: → ]], [[SOURCE:)
       cleanedAnswer = cleanedAnswer.replace(/\]\]\s+\[\[SOURCE:/g, ']], [[SOURCE:')
@@ -676,9 +689,12 @@ export default function ChatInterface() {
 
   // Render markdown text with proper formatting
   const renderMarkdownMessage = (text: string) => {
+    // Pre-process: Unwrap markdown tables from code fences (LLM sometimes wraps them)
+    let preprocessed = text.replace(/```[^\n]*\n((?:\s*\|.*\|\s*\n)+)```/g, '\n$1\n')
+
     // Pre-process: Convert [[SOURCE:name:doc_id]] markers into markdown links
     const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-    const processedText = text.replace(
+    const processedText = preprocessed.replace(
       /\[\[SOURCE:([^:]+):([^:\]]+):?([^\]]*)\]\]/g,
       (match: string, name: string, docId: string, sourceUrl: string) => {
         // Use source_url directly if available (e.g., GitHub file links)
@@ -990,7 +1006,9 @@ export default function ChatInterface() {
 
                       {message.sources && message.sources.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {message.sources.slice(0, 5).map((source, idx) => {
+                          {message.sources
+                            .filter((source, idx, arr) => arr.findIndex(s => (s.subject || s.doc_id) === (source.subject || source.doc_id)) === idx)
+                            .slice(0, 5).map((source, idx) => {
                             const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
                             // Only create clickable link if doc_id exists and looks like a valid UUID
                             const hasValidDocId = source.doc_id && source.doc_id.length >= 32

@@ -479,8 +479,15 @@ export default function Documents() {
       }
     } catch (error: any) {
       console.error('Error uploading files:', error)
-      const errorMsg = error.response?.data?.error || error.message || 'Unknown error'
-      alert(`Upload failed: ${errorMsg}`)
+      // If upload progress reached 100% but we got a network error, the file likely
+      // processed successfully but the response was lost (ALB/proxy timeout).
+      if (uploadProgress >= 100 && (error.message === 'Network Error' || error.code === 'ECONNABORTED')) {
+        alert('Upload appears to have completed but the connection timed out during processing. Refreshing documents...')
+        loadDocuments()
+      } else {
+        const errorMsg = error.response?.data?.error || error.message || 'Unknown error'
+        alert(`Upload failed: ${errorMsg}`)
+      }
     } finally {
       setUploading(false)
       setUploadProgress(0)
