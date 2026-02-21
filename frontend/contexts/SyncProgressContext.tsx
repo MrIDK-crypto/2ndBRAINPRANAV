@@ -46,47 +46,12 @@ interface SyncResources {
   pollTimeout: NodeJS.Timeout | null
 }
 
-// Simple storage for sync IDs only (minimal data to avoid perf issues)
-const SYNC_STORAGE_KEY = 'pendingSyncs'
-
-interface StoredSync {
-  syncId: string
-  connectorType: string
-  startedAt: number
-}
-
 export function SyncProgressProvider({ children }: { children: React.ReactNode }) {
   const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(new Map())
-  const hasRestoredRef = useRef(false)
 
   // Use refs to track resources per sync_id
   const syncResourcesRef = useRef<Map<string, SyncResources>>(new Map())
   const emailSentRef = useRef<Set<string>>(new Set())
-
-  // Save minimal sync info to localStorage when syncs change
-  // BUT only after restore has run (to avoid clearing before restore)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    // Don't save until restore has completed
-    if (!hasRestoredRef.current) {
-      console.log('[GlobalSync] Skipping save - restore not done yet')
-      return
-    }
-    const syncsToStore: StoredSync[] = []
-    for (const [syncId, sync] of activeSyncs) {
-      // Only store active syncs (not completed/errored)
-      if (sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
-        syncsToStore.push({ syncId, connectorType: sync.connectorType, startedAt: sync.startedAt })
-      }
-    }
-    if (syncsToStore.length > 0) {
-      localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncsToStore))
-      console.log('[GlobalSync] Saved to localStorage:', syncsToStore)
-    } else {
-      localStorage.removeItem(SYNC_STORAGE_KEY)
-      console.log('[GlobalSync] Cleared localStorage (no active syncs)')
-    }
-  }, [activeSyncs])
 
   // Cleanup resources for a specific sync
   const cleanupSync = useCallback((syncId: string) => {
@@ -369,58 +334,6 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       syncResourcesRef.current.clear()
     }
   }, [])
-
-  // Restore syncs from localStorage on mount (runs once)
-  useEffect(() => {
-    console.log('[GlobalSync] Restore effect running, hasRestored:', hasRestoredRef.current)
-    if (hasRestoredRef.current || typeof window === 'undefined') return
-    hasRestoredRef.current = true
-
-    try {
-      const stored = localStorage.getItem(SYNC_STORAGE_KEY)
-      console.log('[GlobalSync] Found in localStorage:', stored)
-      if (!stored) return
-
-      const syncs: StoredSync[] = JSON.parse(stored)
-      const now = Date.now()
-
-      for (const { syncId, connectorType, startedAt } of syncs) {
-        // Skip stale syncs (older than 30 minutes)
-        if (now - startedAt > 30 * 60 * 1000) continue
-        // Skip if already tracking
-        if (syncResourcesRef.current.has(syncId)) continue
-
-        console.log(`[GlobalSync] Restoring sync: ${syncId} (${connectorType})`)
-
-        // Add to activeSyncs with minimal state
-        setActiveSyncs(prev => {
-          const next = new Map(prev)
-          next.set(syncId, {
-            syncId,
-            connectorType,
-            status: 'syncing',
-            stage: 'Restoring...',
-            totalItems: 0,
-            processedItems: 0,
-            failedItems: 0,
-            percentComplete: 0,
-            emailWhenDone: false,
-            startedAt
-          })
-          return next
-        })
-
-        // Start polling for this sync
-        const resources: SyncResources = { eventSource: null, pollInterval: null, pollTimeout: null }
-        syncResourcesRef.current.set(syncId, resources)
-        pollSyncStatus(syncId, connectorType)
-        resources.pollInterval = setInterval(() => pollSyncStatus(syncId, connectorType), 2000)
-      }
-    } catch (e) {
-      console.error('[GlobalSync] Error restoring syncs:', e)
-      localStorage.removeItem(SYNC_STORAGE_KEY)
-    }
-  }, [pollSyncStatus])
 
   return (
     <SyncProgressContext.Provider value={{ activeSyncs, startSync, updateSync, removeSync, setEmailWhenDone }}>
