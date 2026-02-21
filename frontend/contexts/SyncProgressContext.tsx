@@ -49,13 +49,6 @@ interface SyncResources {
 export function SyncProgressProvider({ children }: { children: React.ReactNode }) {
   const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(new Map())
 
-  // DEBUG: Log whenever activeSyncs changes
-  useEffect(() => {
-    const syncs = Array.from(activeSyncs.entries()).map(([id, s]) => `${s.connectorType}(${s.status})`)
-    console.log('[GlobalSync] ====== activeSyncs CHANGED ======')
-    console.log('[GlobalSync] Current syncs:', syncs.join(', ') || '(empty)')
-  }, [activeSyncs])
-
   // Use refs to track resources per sync_id
   const syncResourcesRef = useRef<Map<string, SyncResources>>(new Map())
   const emailSentRef = useRef<Set<string>>(new Set())

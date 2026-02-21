@@ -1810,50 +1810,36 @@ const WebScraperConfigModal = ({
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '32px', maxWidth: '480px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
+        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '28px', maxWidth: '420px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '22px', fontWeight: 600, marginBottom: '8px', color: '#1A1A1A' }}>
-          {alreadyConnected ? 'Crawl Another Website' : 'Crawl a Website'}
+        <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '20px', fontWeight: 600, marginBottom: '20px', color: '#1A1A1A' }}>
+          Crawl Website
         </h2>
-        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#7A7A7A', marginBottom: '24px', lineHeight: '1.5' }}>
-          {alreadyConnected
-            ? 'You have previously crawled websites. Enter another URL to crawl and add to your knowledge base.'
-            : 'Enter a website URL and we\'ll automatically crawl and index all its pages into your knowledge base.'}
-        </p>
 
-        {/* Website URL */}
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, display: 'block', marginBottom: '6px', color: '#1A1A1A' }}>Website URL</label>
+        {/* Website URL Input */}
+        <div style={{ marginBottom: '20px' }}>
           <input
             type="text"
             value={startUrl}
             onChange={e => { setStartUrl(e.target.value); if (urlError) setUrlError(null) }}
             onBlur={() => startUrl && validateUrl(startUrl)}
             onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            placeholder="https://example.com"
+            placeholder="Enter website URL (e.g., example.com)"
             autoFocus
-            style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}`, fontSize: '15px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }}
+            style={{ width: '100%', padding: '14px 16px', borderRadius: '10px', border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}`, fontSize: '15px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }}
           />
           {urlError && <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#EF4444', marginTop: '6px' }}>{urlError}</p>}
         </div>
 
-        {/* Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-          <button
-            onClick={onClose}
-            style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #D4D4D8', backgroundColor: '#fff', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!startUrl.trim() || isLoading || !!urlError}
-            style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '14px', fontWeight: 500, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
-          >
-            {isLoading ? 'Crawling...' : 'Start Crawling'}
-          </button>
-        </div>
+        {/* Sync Button */}
+        <button
+          onClick={handleSubmit}
+          disabled={!startUrl.trim() || isLoading || !!urlError}
+          style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
+        >
+          {isLoading ? 'Syncing...' : 'Sync'}
+        </button>
       </div>
     </div>
   )
@@ -2776,11 +2762,6 @@ const IntegrationCard = ({
 }) => {
   const isThisSyncing = syncingIntegration === integration.id;
 
-  // Debug logging for sync state
-  if (integration.id === 'firecrawl' || integration.id === 'github' || integration.id === 'onedrive') {
-    console.log(`[IntegrationCard ${integration.id}] isSyncing=${isSyncing}, syncingIntegration=${syncingIntegration}, isThisSyncing=${isThisSyncing}, connected=${integration.connected}`)
-  }
-
   return (
     <div
       className="flex flex-col items-start gap-2"
@@ -3098,24 +3079,16 @@ export default function Integrations() {
 
   // Helper: check if a connector is currently syncing (via context)
   const isConnectorSyncing = (connectorType: string): boolean => {
-    const allSyncs = Array.from(activeSyncs.values())
-    console.log(`[isConnectorSyncing] Checking ${connectorType}, activeSyncs:`, allSyncs.map(s => `${s.connectorType}:${s.status}`))
-    for (const sync of allSyncs) {
+    for (const sync of Array.from(activeSyncs.values())) {
       if (sync.connectorType === connectorType && sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
-        console.log(`[isConnectorSyncing] ${connectorType} IS syncing (status: ${sync.status})`)
         return true
       }
     }
-    console.log(`[isConnectorSyncing] ${connectorType} NOT syncing`)
     return false
   }
 
   // Check integration statuses on mount
   useEffect(() => {
-    // DEBUG: Log activeSyncs on mount
-    const syncs = Array.from(activeSyncs.entries()).map(([id, s]) => `${s.connectorType}(${s.status})`)
-    console.log('[Integrations] Component MOUNTED. activeSyncs:', syncs.join(', ') || '(empty)')
-
     checkIntegrationStatuses()
 
     // Check URL params for OAuth callback results
