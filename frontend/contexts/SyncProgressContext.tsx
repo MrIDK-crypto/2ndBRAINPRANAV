@@ -46,59 +46,8 @@ interface SyncResources {
   pollTimeout: NodeJS.Timeout | null
 }
 
-const STORAGE_KEY = 'activeSyncs'
-
-// Helper to serialize Map to JSON
-const serializeSyncs = (syncs: Map<string, SyncProgress>): string => {
-  return JSON.stringify(Array.from(syncs.entries()))
-}
-
-// Helper to deserialize JSON to Map
-const deserializeSyncs = (json: string): Map<string, SyncProgress> => {
-  try {
-    const entries = JSON.parse(json)
-    return new Map(entries)
-  } catch {
-    return new Map()
-  }
-}
-
 export function SyncProgressProvider({ children }: { children: React.ReactNode }) {
-  // Initialize from localStorage to persist across page refreshes
-  const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(() => {
-    if (typeof window === 'undefined') return new Map()
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      const restored = deserializeSyncs(stored)
-      // Filter out stale syncs (older than 30 minutes or completed)
-      const now = Date.now()
-      const filtered = new Map<string, SyncProgress>()
-      for (const [id, sync] of restored) {
-        const age = now - sync.startedAt
-        const isStale = age > 30 * 60 * 1000 // 30 minutes
-        const isComplete = sync.status === 'complete' || sync.status === 'completed' || sync.status === 'error'
-        if (!isStale && !isComplete) {
-          filtered.set(id, sync)
-        }
-      }
-      return filtered
-    }
-    return new Map()
-  })
-
-  // Persist to localStorage whenever activeSyncs changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (activeSyncs.size > 0) {
-        localStorage.setItem(STORAGE_KEY, serializeSyncs(activeSyncs))
-      } else {
-        localStorage.removeItem(STORAGE_KEY)
-      }
-    }
-  }, [activeSyncs])
-
-  // Track if we've already reconnected to avoid duplicate polling
-  const hasReconnectedRef = useRef(false)
+  const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(new Map())
 
   // Use refs to track resources per sync_id
   const syncResourcesRef = useRef<Map<string, SyncResources>>(new Map())
@@ -385,31 +334,6 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       syncResourcesRef.current.clear()
     }
   }, [])
-
-  // Reconnect polling for syncs restored from localStorage
-  useEffect(() => {
-    if (hasReconnectedRef.current) return
-    hasReconnectedRef.current = true
-
-    // For each restored sync, start polling if not already tracking
-    for (const [syncId, sync] of activeSyncs) {
-      if (!syncResourcesRef.current.has(syncId)) {
-        console.log(`[GlobalSync] Reconnecting to restored sync: ${syncId} (${sync.connectorType})`)
-
-        // Initialize resources
-        const resources: SyncResources = {
-          eventSource: null,
-          pollInterval: null,
-          pollTimeout: null
-        }
-        syncResourcesRef.current.set(syncId, resources)
-
-        // Start polling immediately
-        pollSyncStatus(syncId, sync.connectorType)
-        resources.pollInterval = setInterval(() => pollSyncStatus(syncId, sync.connectorType), 2000)
-      }
-    }
-  }, [activeSyncs, pollSyncStatus])
 
   return (
     <SyncProgressContext.Provider value={{ activeSyncs, startSync, updateSync, removeSync, setEmailWhenDone }}>
