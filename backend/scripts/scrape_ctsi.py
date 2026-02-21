@@ -11,8 +11,9 @@ Usage:
   python -m scripts.scrape_ctsi scrape
   python -m scripts.scrape_ctsi scrape --skip-firecrawl
   python -m scripts.scrape_ctsi scrape --max-firecrawl-pages 20
+  python -m scripts.scrape_ctsi ingest
   python -m scripts.scrape_ctsi ingest --tenant-id <id> --user-id <id>
-  python -m scripts.scrape_ctsi scrape+ingest --tenant-id <id> --user-id <id>
+  python -m scripts.scrape_ctsi scrape+ingest
 """
 
 import argparse
@@ -678,16 +679,332 @@ def run_scrape(
     print(f"  Total external pages: {combined['scrape_metadata']['total_external_pages']}")
 
 
-def run_ingest(tenant_id: str, user_id: str) -> None:
+def run_ingest(tenant_id: Optional[str] = None, user_id: Optional[str] = None) -> None:
     """
     Ingest scraped CTSI data into the 2nd Brain knowledge base.
 
-    Placeholder -- will be implemented in Task 5.
+    Loads the combined JSON from _all_facilities.json and external crawl
+    files, creates Document rows in the database, then runs extraction
+    (structured summaries) and embedding on new documents.
+
+    Args:
+        tenant_id: Tenant ID to ingest under. If None, auto-detects first tenant.
+        user_id: User ID for audit trail. If None, auto-detects first user.
     """
-    print("Not implemented yet")
-    print(f"  tenant_id: {tenant_id}")
-    print(f"  user_id: {user_id}")
-    print(f"  Combined data file: {COMBINED_FILE}")
+    # ---- Setup: Add backend to path and import DB dependencies ----
+    sys.path.insert(0, BACKEND_DIR)
+
+    from database.models import (
+        Document as DBDocument,
+        DocumentStatus,
+        DocumentClassification,
+        Tenant,
+        User,
+        SessionLocal,
+    )
+    from services.extraction_service import get_extraction_service
+    from services.embedding_service import get_embedding_service
+
+    BATCH_SIZE = 50
+
+    # ---- Open DB session ----
+    db = SessionLocal()
+
+    try:
+        # ---- Resolve tenant_id and user_id ----
+        if not tenant_id:
+            first_tenant = db.query(Tenant).filter(Tenant.is_active == True).first()
+            if not first_tenant:
+                print("[Ingest] ERROR: No active tenants found in the database.")
+                print("         Create a tenant first (sign up via the UI) or pass --tenant-id.")
+                return
+            tenant_id = first_tenant.id
+            print(f"[Ingest] Auto-detected tenant: {first_tenant.name} ({tenant_id})")
+
+        if not user_id:
+            first_user = db.query(User).filter(
+                User.tenant_id == tenant_id,
+                User.is_active == True,
+            ).first()
+            if not first_user:
+                print(f"[Ingest] ERROR: No active users found for tenant {tenant_id}.")
+                print("         Create a user first or pass --user-id.")
+                return
+            user_id = first_user.id
+            print(f"[Ingest] Auto-detected user: {first_user.email} ({user_id})")
+
+        # ---- Verify tenant and user exist ----
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            print(f"[Ingest] ERROR: Tenant {tenant_id} not found in database.")
+            return
+
+        user = db.query(User).filter(User.id == user_id, User.tenant_id == tenant_id).first()
+        if not user:
+            print(f"[Ingest] ERROR: User {user_id} not found in tenant {tenant_id}.")
+            return
+
+        print(f"\n{'=' * 60}")
+        print(f"CTSI INGEST")
+        print(f"  Tenant: {tenant.name} ({tenant_id})")
+        print(f"  User:   {user.email} ({user_id})")
+        print(f"{'=' * 60}\n")
+
+        # ---- Load combined scrape data ----
+        if not os.path.exists(COMBINED_FILE):
+            print(f"[Ingest] ERROR: Combined data file not found: {COMBINED_FILE}")
+            print("         Run 'scrape' command first to generate scraped data.")
+            return
+
+        with open(COMBINED_FILE, "r") as f:
+            combined = json.load(f)
+
+        facilities = combined.get("facilities", [])
+        if not facilities:
+            print("[Ingest] ERROR: No facilities found in combined data file.")
+            return
+
+        print(f"[Ingest] Loaded {len(facilities)} facilities from {COMBINED_FILE}")
+
+        # ---- Collect all existing external_ids for this tenant + source_type ----
+        existing_ids_rows = db.query(DBDocument.external_id).filter(
+            DBDocument.tenant_id == tenant_id,
+            DBDocument.source_type == "ctsi_scraper",
+        ).all()
+        existing_external_ids = {row[0] for row in existing_ids_rows}
+        print(f"[Ingest] Found {len(existing_external_ids)} existing CTSI documents in DB")
+
+        # ---- Phase 1: Create Document rows ----
+        new_docs: list = []  # Will hold DBDocument instances after commit
+        docs_skipped = 0
+        docs_created = 0
+        docs_in_batch = 0
+
+        # --- 1a: CTSI facility pages (Level 2 data) ---
+        print(f"\n[Ingest] Processing {len(facilities)} CTSI facility pages...")
+        for facility in facilities:
+            ctsi_url = facility.get("ctsi_url", "")
+            full_text = facility.get("full_text", "")
+
+            if not ctsi_url or not full_text:
+                continue
+
+            # Generate deterministic external_id
+            ext_id = f"ctsi_{hashlib.md5(ctsi_url.encode()).hexdigest()}"
+
+            if ext_id in existing_external_ids:
+                docs_skipped += 1
+                continue
+
+            # Build content: combine description + full text
+            name = facility.get("name", "Unknown Facility")
+            description = facility.get("description", "")
+            services_list = facility.get("services", [])
+
+            # Build rich content
+            content_parts = [f"# {name}\n"]
+            if description:
+                content_parts.append(f"{description}\n")
+            if services_list:
+                content_parts.append("\n## Services\n")
+                for svc in services_list:
+                    content_parts.append(f"- {svc}")
+            content_parts.append(f"\n## Full Page Content\n{full_text}")
+            content = "\n".join(content_parts)
+
+            doc = DBDocument(
+                tenant_id=tenant_id,
+                external_id=ext_id,
+                source_type="ctsi_scraper",
+                title=f"CTSI: {name}",
+                content=content,
+                source_url=ctsi_url,
+                doc_metadata={
+                    "facility_name": name,
+                    "slug": facility.get("slug", ""),
+                    "primary_external_url": facility.get("primary_external_url"),
+                    "services_count": len(services_list),
+                    "scraped_at": facility.get("scraped_at"),
+                    "source": "ctsi_level2",
+                },
+                status=DocumentStatus.CONFIRMED,
+                classification=DocumentClassification.WORK,
+                classification_confidence=1.0,
+                classification_reason="Auto-classified: CTSI research core facility page",
+            )
+            db.add(doc)
+            new_docs.append(doc)
+            existing_external_ids.add(ext_id)
+            docs_created += 1
+            docs_in_batch += 1
+
+            if docs_in_batch >= BATCH_SIZE:
+                db.commit()
+                print(f"[Ingest] Committed batch of {docs_in_batch} facility docs ({docs_created} total)")
+                docs_in_batch = 0
+
+        # Commit remaining facility docs
+        if docs_in_batch > 0:
+            db.commit()
+            print(f"[Ingest] Committed final facility batch ({docs_created} total)")
+            docs_in_batch = 0
+
+        print(f"[Ingest] Facility pages: {docs_created} created, {docs_skipped} skipped (already exist)")
+
+        # --- 1b: External crawl pages (Level 3 data) ---
+        external_dir = os.path.join(OUTPUT_DIR, "external")
+        ext_docs_created = 0
+        ext_docs_skipped = 0
+
+        if os.path.isdir(external_dir):
+            crawl_files = [f for f in os.listdir(external_dir) if f.endswith("_crawl.json")]
+            print(f"\n[Ingest] Processing {len(crawl_files)} external crawl files from {external_dir}...")
+
+            for crawl_filename in crawl_files:
+                crawl_filepath = os.path.join(external_dir, crawl_filename)
+                try:
+                    with open(crawl_filepath, "r") as f:
+                        crawl_data = json.load(f)
+                except (json.JSONDecodeError, IOError) as e:
+                    print(f"[Ingest] WARNING: Could not read {crawl_filepath}: {e}")
+                    continue
+
+                facility_name = crawl_data.get("facility_name", "Unknown")
+                source_url = crawl_data.get("source_url", "")
+                pages = crawl_data.get("pages", [])
+
+                for page in pages:
+                    page_url = page.get("url", "")
+                    page_content = page.get("content", "")
+                    page_title = page.get("title", "")
+
+                    if not page_url or not page_content:
+                        continue
+
+                    ext_id = f"ctsi_ext_{hashlib.md5(page_url.encode()).hexdigest()}"
+
+                    if ext_id in existing_external_ids:
+                        ext_docs_skipped += 1
+                        continue
+
+                    doc = DBDocument(
+                        tenant_id=tenant_id,
+                        external_id=ext_id,
+                        source_type="ctsi_scraper",
+                        title=page_title or f"External: {facility_name}",
+                        content=page_content,
+                        source_url=page_url,
+                        doc_metadata={
+                            "facility_name": facility_name,
+                            "facility_slug": crawl_data.get("facility_slug", ""),
+                            "crawl_source_url": source_url,
+                            "scraped_at": crawl_data.get("crawled_at"),
+                            "source": "ctsi_level3_external",
+                        },
+                        status=DocumentStatus.CONFIRMED,
+                        classification=DocumentClassification.WORK,
+                        classification_confidence=1.0,
+                        classification_reason="Auto-classified: CTSI research core external site",
+                    )
+                    db.add(doc)
+                    new_docs.append(doc)
+                    existing_external_ids.add(ext_id)
+                    ext_docs_created += 1
+                    docs_in_batch += 1
+
+                    if docs_in_batch >= BATCH_SIZE:
+                        db.commit()
+                        print(f"[Ingest] Committed batch of {docs_in_batch} external docs ({ext_docs_created} ext total)")
+                        docs_in_batch = 0
+
+            # Commit remaining external docs
+            if docs_in_batch > 0:
+                db.commit()
+                print(f"[Ingest] Committed final external batch ({ext_docs_created} ext total)")
+                docs_in_batch = 0
+
+            print(f"[Ingest] External pages: {ext_docs_created} created, {ext_docs_skipped} skipped (already exist)")
+        else:
+            print(f"[Ingest] No external crawl directory found at {external_dir}, skipping Level 3 data.")
+
+        total_created = docs_created + ext_docs_created
+        total_skipped = docs_skipped + ext_docs_skipped
+
+        print(f"\n[Ingest] Phase 1 complete: {total_created} new documents, {total_skipped} skipped")
+
+        if total_created == 0:
+            print("[Ingest] No new documents to process. Done!")
+            return
+
+        # ---- Phase 2: Extraction (structured summaries) ----
+        print(f"\n{'=' * 60}")
+        print(f"Phase 2: Extracting structured summaries for {total_created} documents")
+        print(f"{'=' * 60}")
+
+        try:
+            extraction_service = get_extraction_service()
+
+            def extraction_progress(cur, total, msg):
+                if cur % 10 == 0 or cur == total:
+                    print(f"[Ingest] Extraction progress: {cur}/{total} - {msg}")
+
+            extract_result = extraction_service.extract_documents(
+                documents=new_docs,
+                db=db,
+                force=False,
+                progress_callback=extraction_progress,
+            )
+            print(f"[Ingest] Extraction complete: {extract_result.get('extracted', 0)} extracted, "
+                  f"{extract_result.get('skipped', 0)} skipped, "
+                  f"{extract_result.get('errors', 0)} errors")
+        except Exception as e:
+            print(f"[Ingest] EXTRACTION ERROR: {type(e).__name__}: {e}")
+            traceback.print_exc()
+            print("[Ingest] Continuing to embedding phase despite extraction error...")
+
+        # ---- Phase 3: Embedding ----
+        print(f"\n{'=' * 60}")
+        print(f"Phase 3: Embedding {total_created} documents")
+        print(f"{'=' * 60}")
+
+        try:
+            embedding_service = get_embedding_service()
+
+            def embedding_progress(cur, total, msg):
+                if cur % 10 == 0 or cur == total:
+                    print(f"[Ingest] Embedding progress: {cur}/{total} - {msg}")
+
+            embed_result = embedding_service.embed_documents(
+                documents=new_docs,
+                tenant_id=tenant_id,
+                db=db,
+                force_reembed=False,
+                progress_callback=embedding_progress,
+            )
+            print(f"[Ingest] Embedding complete: {embed_result.get('embedded', 0)} embedded, "
+                  f"{embed_result.get('chunks', 0)} chunks, "
+                  f"{embed_result.get('skipped', 0)} skipped")
+            if embed_result.get('errors'):
+                print(f"[Ingest] Embedding errors: {embed_result['errors']}")
+        except Exception as e:
+            print(f"[Ingest] EMBEDDING ERROR: {type(e).__name__}: {e}")
+            traceback.print_exc()
+
+        # ---- Summary ----
+        print(f"\n{'=' * 60}")
+        print(f"INGEST COMPLETE")
+        print(f"  Facility pages created:  {docs_created}")
+        print(f"  External pages created:  {ext_docs_created}")
+        print(f"  Total new documents:     {total_created}")
+        print(f"  Skipped (already exist): {total_skipped}")
+        print(f"{'=' * 60}")
+
+    except Exception as e:
+        print(f"[Ingest] FATAL ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        db.rollback()
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -704,8 +1021,9 @@ Examples:
   python -m scripts.scrape_ctsi scrape
   python -m scripts.scrape_ctsi scrape --skip-firecrawl
   python -m scripts.scrape_ctsi scrape --max-firecrawl-pages 20
+  python -m scripts.scrape_ctsi ingest
   python -m scripts.scrape_ctsi ingest --tenant-id abc123 --user-id user456
-  python -m scripts.scrape_ctsi scrape+ingest --tenant-id abc123 --user-id user456
+  python -m scripts.scrape_ctsi scrape+ingest
         """,
     )
 
@@ -729,21 +1047,20 @@ Examples:
         "--tenant-id",
         type=str,
         default=None,
-        help="Tenant ID for ingestion (required for ingest command)",
+        help="Tenant ID for ingestion (optional; auto-detects first tenant if omitted)",
     )
     parser.add_argument(
         "--user-id",
         type=str,
         default=None,
-        help="User ID for ingestion (required for ingest command)",
+        help="User ID for ingestion (optional; auto-detects first user if omitted)",
     )
 
     args = parser.parse_args()
 
-    # Validate ingest args
-    if args.command in ("ingest", "scrape+ingest"):
-        if not args.tenant_id or not args.user_id:
-            parser.error("--tenant-id and --user-id are required for ingest commands")
+    # Note: --tenant-id and --user-id are optional for ingest commands.
+    # If not provided, run_ingest() will auto-detect from the first
+    # tenant/user in the database.
 
     # Run commands
     if args.command == "scrape":
