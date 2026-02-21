@@ -1275,7 +1275,11 @@ export default function Documents() {
                           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.borderLight}
                           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                           onClick={() => {
-                            if (doc.url) {
+                            // For emails, always show in modal viewer
+                            const isEmail = doc.source_type === 'email' || doc.source_type === 'email_attachment'
+                            if (isEmail) {
+                              viewDocument(doc.id)
+                            } else if (doc.url) {
                               window.open(doc.url, '_blank', 'noopener,noreferrer')
                             } else {
                               viewDocument(doc.id)
@@ -1946,11 +1950,13 @@ export default function Documents() {
                         if (!isSelected) e.currentTarget.style.backgroundColor = ''
                       }}
                       onClick={() => {
-                        // Open directly in source app if source_url is available
-                        if (doc.url) {
+                        // For emails, always show in modal viewer
+                        const isEmail = doc.source_type === 'email' || doc.source_type === 'email_attachment'
+                        if (isEmail) {
+                          viewDocument(doc.id)
+                        } else if (doc.url) {
                           window.open(doc.url, '_blank', 'noopener,noreferrer')
                         } else {
-                          // Fall back to modal if no source URL
                           viewDocument(doc.id)
                         }
                       }}

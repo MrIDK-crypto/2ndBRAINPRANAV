@@ -110,8 +110,19 @@ class EmailForwardingService:
             mail = self.connect_imap()
             mail.select("INBOX")
 
-            # Search for unread emails
-            status, messages = mail.search(None, "UNSEEN")
+            # Get tenant-specific email address for filtering
+            tenant_email = self.get_tenant_email(self.email_address, tenant_id)
+
+            # Search for unread emails sent TO this tenant's specific address
+            # This provides tenant isolation - each tenant only sees their emails
+            if tenant_id and tenant_id != "local-tenant":
+                # Use IMAP search to filter by To: header containing tenant address
+                search_criteria = f'(UNSEEN TO "{tenant_email}")'
+                status, messages = mail.search(None, search_criteria)
+                print(f"[EmailForwarding] Searching for emails to: {tenant_email}")
+            else:
+                # For local-tenant (testing), fetch all unread emails
+                status, messages = mail.search(None, "UNSEEN")
 
             if status != "OK":
                 return {"success": False, "error": "Failed to search emails"}
@@ -145,6 +156,19 @@ class EmailForwardingService:
                     # Parse email
                     email_body = msg_data[0][1]
                     email_message = email.message_from_bytes(email_body)
+
+                    # Secondary tenant isolation check - verify To: header
+                    # This catches any emails that slipped through IMAP search
+                    if tenant_id and tenant_id != "local-tenant":
+                        to_header = self._decode_header(email_message.get("To", ""))
+                        cc_header = self._decode_header(email_message.get("Cc", ""))
+                        all_recipients = f"{to_header} {cc_header}".lower()
+
+                        if tenant_email.lower() not in all_recipients:
+                            # This email is not for this tenant - skip it
+                            # Don't mark as read so other tenant can fetch it
+                            print(f"  → Skipping email not addressed to {tenant_email}")
+                            continue
 
                     # Extract metadata and attachments
                     doc_data, attachments = self._extract_email_data(email_message)

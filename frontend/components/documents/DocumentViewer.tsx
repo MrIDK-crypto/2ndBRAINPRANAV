@@ -196,6 +196,10 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
   // Check if this is a code/GitHub document
   const isCodeDocument = document.source_type?.toLowerCase() === 'github'
 
+  // Check if this is an email document
+  const isEmailDocument = document.source_type?.toLowerCase() === 'email' ||
+                          document.source_type?.toLowerCase() === 'email_attachment'
+
   // Get source URL from document or metadata
   const getSourceUrl = () => {
     return document.source_url || document.metadata?.url || document.metadata?.source_url || null
@@ -239,9 +243,8 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
 
   const sourceUrl = getSourceUrl()
 
-  // For GitHub/code documents, show content viewer
-  // For other documents without URL, also show content viewer
-  const showContentViewer = isCodeDocument || (!sourceUrl && document.content)
+  // For GitHub/code documents, email documents, or documents without URL - show content viewer
+  const showContentViewer = isCodeDocument || isEmailDocument || (!sourceUrl && document.content)
 
   return (
     <div
@@ -395,6 +398,40 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
         >
           {showContentViewer ? (
             <div style={{ padding: '24px' }}>
+              {/* Email metadata header */}
+              {isEmailDocument && activeTab === 'content' && (
+                <div style={{
+                  backgroundColor: colors.cardBg,
+                  borderRadius: '12px',
+                  padding: '16px 20px',
+                  marginBottom: '20px',
+                  border: `1px solid ${colors.border}`
+                }}>
+                  {document.sender_email && (
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: 600, color: colors.textSecondary, minWidth: '60px' }}>From:</span>
+                      <span style={{ color: colors.textPrimary }}>
+                        {document.sender || document.sender_email}
+                        {document.sender && document.sender_email && document.sender !== document.sender_email && (
+                          <span style={{ color: colors.textMuted }}> &lt;{document.sender_email}&gt;</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {document.recipients && document.recipients.length > 0 && (
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: 600, color: colors.textSecondary, minWidth: '60px' }}>To:</span>
+                      <span style={{ color: colors.textPrimary }}>{document.recipients.join(', ')}</span>
+                    </div>
+                  )}
+                  {document.source_created_at && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <span style={{ fontWeight: 600, color: colors.textSecondary, minWidth: '60px' }}>Date:</span>
+                      <span style={{ color: colors.textMuted }}>{formatDate(document.source_created_at)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               {activeTab === 'content' ? (
                 <div style={{ maxWidth: '100%' }}>
                   {renderMarkdownContent(document.content)}
