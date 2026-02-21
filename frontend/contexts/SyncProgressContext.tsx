@@ -49,6 +49,13 @@ interface SyncResources {
 export function SyncProgressProvider({ children }: { children: React.ReactNode }) {
   const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(new Map())
 
+  // DEBUG: Log whenever activeSyncs changes
+  useEffect(() => {
+    const syncs = Array.from(activeSyncs.entries()).map(([id, s]) => `${s.connectorType}(${s.status})`)
+    console.log('[GlobalSync] ====== activeSyncs CHANGED ======')
+    console.log('[GlobalSync] Current syncs:', syncs.join(', ') || '(empty)')
+  }, [activeSyncs])
+
   // Use refs to track resources per sync_id
   const syncResourcesRef = useRef<Map<string, SyncResources>>(new Map())
   const emailSentRef = useRef<Set<string>>(new Set())
@@ -88,6 +95,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       )
       if (response.ok) {
         const data = await response.json()
+        console.log(`[GlobalSync] Poll response for ${syncId}:`, { status: data.status, success: data.success, stage: data.stage })
         if (data.success) {
           setActiveSyncs(prev => {
             const next = new Map(prev)
@@ -228,6 +236,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
     es.addEventListener('started', handleEvent)
     es.addEventListener('progress', handleEvent)
     es.addEventListener('complete', (e: MessageEvent) => {
+      console.log(`[GlobalSync] !!!!! SSE 'complete' event received for ${syncId} !!!!!`)
       handleEvent(e)
 
       // Clear polling resources using the ref
@@ -264,7 +273,10 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
         })
       }, 5000)
     })
-    es.addEventListener('error', handleEvent)
+    es.addEventListener('error', (e: MessageEvent) => {
+      console.log(`[GlobalSync] !!!!! SSE 'error' event received for ${syncId} !!!!!`)
+      handleEvent(e)
+    })
 
     // Handle SSE connection errors - start polling fallback IMMEDIATELY
     es.onerror = () => {

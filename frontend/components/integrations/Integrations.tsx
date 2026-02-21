@@ -3112,6 +3112,10 @@ export default function Integrations() {
 
   // Check integration statuses on mount
   useEffect(() => {
+    // DEBUG: Log activeSyncs on mount
+    const syncs = Array.from(activeSyncs.entries()).map(([id, s]) => `${s.connectorType}(${s.status})`)
+    console.log('[Integrations] Component MOUNTED. activeSyncs:', syncs.join(', ') || '(empty)')
+
     checkIntegrationStatuses()
 
     // Check URL params for OAuth callback results
@@ -3290,24 +3294,27 @@ export default function Integrations() {
 
         // Auto-detect stuck syncing connectors:
         // If backend says "syncing" but frontend has no active sync for it, auto-cancel
-        for (const apiInt of apiIntegrations) {
-          if (apiInt.status === 'syncing') {
-            const hasActiveFrontendSync = syncingConnector === apiInt.type || isConnectorSyncing(apiInt.type)
-            if (!hasActiveFrontendSync) {
-              console.log(`[Sync] Detected stuck SYNCING connector: ${apiInt.type} — auto-resetting`)
-              try {
-                await axios.post(
-                  `${API_BASE}/integrations/${apiInt.type}/sync/cancel`,
-                  {},
-                  { headers: { Authorization: `Bearer ${token}` } }
-                )
-                console.log(`[Sync] Auto-reset stuck connector: ${apiInt.type}`)
-              } catch (resetErr) {
-                console.error(`[Sync] Failed to auto-reset ${apiInt.type}:`, resetErr)
-              }
-            }
-          }
-        }
+        // DISABLED: This was causing issues when navigating away and back - the sync would be cancelled
+        // because syncingConnector resets to null on component remount, even though the sync is still running.
+        // The global activeSyncs context should be the source of truth.
+        // for (const apiInt of apiIntegrations) {
+        //   if (apiInt.status === 'syncing') {
+        //     const hasActiveFrontendSync = syncingConnector === apiInt.type || isConnectorSyncing(apiInt.type)
+        //     if (!hasActiveFrontendSync) {
+        //       console.log(`[Sync] Detected stuck SYNCING connector: ${apiInt.type} — auto-resetting`)
+        //       try {
+        //         await axios.post(
+        //           `${API_BASE}/integrations/${apiInt.type}/sync/cancel`,
+        //           {},
+        //           { headers: { Authorization: `Bearer ${token}` } }
+        //         )
+        //         console.log(`[Sync] Auto-reset stuck connector: ${apiInt.type}`)
+        //       } catch (resetErr) {
+        //         console.error(`[Sync] Failed to auto-reset ${apiInt.type}:`, resetErr)
+        //       }
+        //     }
+        //   }
+        // }
 
         // Store firecrawl/webscraper settings if configured
         const firecrawlInt = apiIntegrations.find((a: any) => a.type === 'firecrawl')
@@ -3698,6 +3705,7 @@ export default function Integrations() {
   const startSyncWithProgress = async (integrationId: string, repository?: string, repositories?: string[]) => {
     console.log(`[Sync] ========================================`)
     console.log(`[Sync] Starting sync for: ${integrationId}${repository ? ` (repo: ${repository})` : ''}${repositories ? ` (${repositories.length} repos)` : ''}`)
+    console.log(`[Sync] Current activeSyncs:`, Array.from(activeSyncs.entries()).map(([id, s]) => `${id}:${s.connectorType}(${s.status})`))
     console.log(`[Sync] API_BASE: ${API_BASE}`)
 
     // Check if this connector already has an active sync in context
@@ -3745,6 +3753,7 @@ export default function Integrations() {
 
           // Register with global sync context for persistent progress across navigation
           globalStartSync(response.data.sync_id, integrationId)
+          console.log(`[Sync] Called globalStartSync for ${integrationId} with sync_id: ${response.data.sync_id}`)
 
           // Parse estimated time from prescan results if available (for GitHub)
           // Parse strings like "~45 seconds", "~2 minutes", "~1m 30s"
