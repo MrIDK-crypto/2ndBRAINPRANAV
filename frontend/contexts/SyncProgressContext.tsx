@@ -347,11 +347,11 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!hasRestoredRef.current) return
     const syncs: Array<{syncId: string, connectorType: string, startedAt: number}> = []
-    for (const [syncId, sync] of activeSyncs) {
+    Array.from(activeSyncs.entries()).forEach(([syncId, sync]) => {
       if (sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
         syncs.push({ syncId, connectorType: sync.connectorType, startedAt: sync.startedAt })
       }
-    }
+    })
     if (syncs.length > 0) {
       localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs))
     } else {
