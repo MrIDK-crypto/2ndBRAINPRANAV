@@ -24,7 +24,7 @@ import re
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -91,15 +91,15 @@ def load_progress() -> Dict[str, Any]:
         "facilities": [],
         "facilities_scraped": [],
         "external_sites_crawled": [],
-        "started_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def save_progress(progress: Dict[str, Any]) -> None:
     """Save scraping progress to JSON file."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    progress["updated_at"] = datetime.utcnow().isoformat()
+    progress["updated_at"] = datetime.now(timezone.utc).isoformat()
     with open(PROGRESS_FILE, "w") as f:
         json.dump(progress, f, indent=2)
 
@@ -122,7 +122,7 @@ def scrape_listing_pages(session: requests.Session) -> List[Dict[str, str]]:
         print(f"[Level 1] Fetching listing page {page_num + 1}/{MAX_LISTING_PAGES}: {page_url}")
 
         try:
-            resp = session.get(page_url, timeout=30)
+            resp = session.get(page_url, timeout=60)
             resp.raise_for_status()
         except requests.RequestException as e:
             print(f"[Level 1] ERROR fetching page {page_num}: {e}")
@@ -303,12 +303,12 @@ def scrape_facility_page(session: requests.Session, facility: Dict[str, str]) ->
         "external_urls": [],
         "primary_external_url": None,
         "full_text": "",
-        "scraped_at": datetime.utcnow().isoformat(),
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
         "error": None,
     }
 
     try:
-        resp = session.get(url, timeout=30)
+        resp = session.get(url, timeout=60)
         resp.raise_for_status()
     except requests.RequestException as e:
         result["error"] = str(e)
@@ -563,7 +563,7 @@ def crawl_all_external_sites(
                 "facility_name": ext["facility_name"],
                 "facility_slug": slug,
                 "pages_crawled": len(pages),
-                "crawled_at": datetime.utcnow().isoformat(),
+                "crawled_at": datetime.now(timezone.utc).isoformat(),
                 "pages": pages,
             }, f, indent=2)
 
@@ -663,7 +663,7 @@ def run_scrape(
             ),
             "external_sites_crawled": len(external_data),
             "total_external_pages": sum(len(v) for v in external_data.values()),
-            "scraped_at": datetime.utcnow().isoformat(),
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
             "firecrawl_skipped": skip_firecrawl,
         },
         "facilities": facility_data,
