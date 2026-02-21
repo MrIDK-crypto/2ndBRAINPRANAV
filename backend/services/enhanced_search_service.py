@@ -1153,23 +1153,19 @@ class EnhancedSearchService:
                 'hallucination_check': None
             }
 
-        # Build context - balance quality vs speed
+        # Build context with FULL content (not just 500 chars)
         context_parts = []
         total_chars = 0
         max_chars = max_context_tokens * 4  # ~4 chars per token
 
-        # SPEED OPTIMIZATION: Use fewer sources with less content each
-        max_sources = 8 if max_context_tokens <= 6000 else 15
-        max_content_per_source = 1500 if max_context_tokens <= 6000 else 3000
-
-        for i, result in enumerate(results[:max_sources], 1):
+        for i, result in enumerate(results[:15], 1):  # Use up to 15 sources
             content = result.get('content', '') or result.get('content_preview', '')
             title = result.get('title', 'Untitled')
             score = result.get('rerank_score', result.get('score', 0))
 
-            # Truncate content based on mode
-            if len(content) > max_content_per_source:
-                content = content[:max_content_per_source] + "..."
+            # Don't truncate aggressively - use more content
+            if len(content) > 3000:
+                content = content[:3000] + "..."
 
             if total_chars + len(content) > max_chars:
                 remaining = max_chars - total_chars
@@ -1256,11 +1252,10 @@ End with "Sources Used: [list numbers]"."""
             # Add current query with sources
             messages.append({"role": "user", "content": user_prompt})
 
-            # SPEED: Lower max_tokens for faster response (1000 is enough for most answers)
             response = self.client.chat_completion(
                 messages=messages,
                 temperature=0.1,  # Low for factual consistency
-                max_tokens=1000  # Reduced from 2000 for speed
+                max_tokens=2000
             )
 
             answer = response.choices[0].message.content.strip()
@@ -1306,10 +1301,9 @@ End with "Sources Used: [list numbers]"."""
         tenant_id: str,
         vector_store,
         top_k: int = 10,
-        validate: bool = False,  # DISABLED by default for speed
+        validate: bool = True,
         conversation_history: list = None,
-        boost_doc_ids: list = None,
-        fast_mode: bool = True  # NEW: Fast mode for low latency
+        boost_doc_ids: list = None
     ) -> Dict:
         """
         Complete enhanced RAG pipeline with conversation history support.
@@ -1365,18 +1359,12 @@ End with "Sources Used: [list numbers]"."""
                     })
             conversation_history = bounded_history
 
-        # FAST MODE: Disable expensive features for low latency
-        use_reranking = not fast_mode  # Skip cross-encoder in fast mode
-        use_top_k = 5 if fast_mode else top_k  # Fewer sources in fast mode
-        max_context = 6000 if fast_mode else 12000  # Less context in fast mode
-
         # Search
         search_results = self.enhanced_search(
             query=query,
             tenant_id=tenant_id,
             vector_store=vector_store,
-            top_k=use_top_k,
-            use_reranking=use_reranking,  # Skip reranking in fast mode
+            top_k=top_k,
             boost_doc_ids=boost_doc_ids
         )
 
@@ -1384,8 +1372,7 @@ End with "Sources Used: [list numbers]"."""
         answer_result = self.generate_answer(
             query=query,
             search_results=search_results,
-            validate=validate,  # Already False by default
-            max_context_tokens=max_context,
+            validate=validate,
             conversation_history=conversation_history or []
         )
 
