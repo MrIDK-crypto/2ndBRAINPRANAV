@@ -46,8 +46,12 @@ interface SyncResources {
   pollTimeout: NodeJS.Timeout | null
 }
 
+// Storage key for persisting sync IDs
+const SYNC_STORAGE_KEY = 'pendingSyncs'
+
 export function SyncProgressProvider({ children }: { children: React.ReactNode }) {
   const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(new Map())
+  const hasRestoredRef = useRef(false)
 
   // Use refs to track resources per sync_id
   const syncResourcesRef = useRef<Map<string, SyncResources>>(new Map())
@@ -332,6 +336,64 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
         if (resources.pollTimeout) clearTimeout(resources.pollTimeout)
       })
       syncResourcesRef.current.clear()
+    }
+  }, [])
+
+  // Store pollSyncStatus in ref so restore effect can use it without dependency
+  const pollSyncStatusRef = useRef(pollSyncStatus)
+  pollSyncStatusRef.current = pollSyncStatus
+
+  // Save active syncs to localStorage (only after restore is done)
+  useEffect(() => {
+    if (!hasRestoredRef.current) return
+    const syncs: Array<{syncId: string, connectorType: string, startedAt: number}> = []
+    for (const [syncId, sync] of activeSyncs) {
+      if (sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
+        syncs.push({ syncId, connectorType: sync.connectorType, startedAt: sync.startedAt })
+      }
+    }
+    if (syncs.length > 0) {
+      localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs))
+    } else {
+      localStorage.removeItem(SYNC_STORAGE_KEY)
+    }
+  }, [activeSyncs])
+
+  // Restore syncs from localStorage on mount (runs once)
+  useEffect(() => {
+    if (hasRestoredRef.current) return
+    hasRestoredRef.current = true
+
+    const stored = localStorage.getItem(SYNC_STORAGE_KEY)
+    if (!stored) return
+
+    try {
+      const syncs = JSON.parse(stored) as Array<{syncId: string, connectorType: string, startedAt: number}>
+      const now = Date.now()
+
+      for (const { syncId, connectorType, startedAt } of syncs) {
+        if (now - startedAt > 30 * 60 * 1000) continue // Skip stale (>30 min)
+        if (syncResourcesRef.current.has(syncId)) continue
+
+        // Add to state
+        setActiveSyncs(prev => {
+          const next = new Map(prev)
+          next.set(syncId, {
+            syncId, connectorType, status: 'syncing', stage: 'Reconnecting...',
+            totalItems: 0, processedItems: 0, failedItems: 0,
+            percentComplete: 0, emailWhenDone: false, startedAt
+          })
+          return next
+        })
+
+        // Start polling
+        const resources: SyncResources = { eventSource: null, pollInterval: null, pollTimeout: null }
+        syncResourcesRef.current.set(syncId, resources)
+        pollSyncStatusRef.current(syncId, connectorType)
+        resources.pollInterval = setInterval(() => pollSyncStatusRef.current(syncId, connectorType), 2000)
+      }
+    } catch (e) {
+      localStorage.removeItem(SYNC_STORAGE_KEY)
     }
   }, [])
 
