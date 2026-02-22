@@ -1059,19 +1059,31 @@ export default function ChatInterface() {
                               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                             }}
                           >
-                            {message.text}
-                            <span
-                              className="streaming-cursor"
-                              style={{
-                                display: 'inline-block',
-                                width: '2px',
-                                height: '1.1em',
-                                backgroundColor: warmTheme.primary,
-                                marginLeft: '2px',
-                                verticalAlign: 'text-bottom',
-                                animation: 'blink 1s step-end infinite',
-                              }}
-                            />
+                            {message.text || (
+                              /* Show "Thinking" with animated dots when no content yet */
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ display: 'flex', gap: '3px' }}>
+                                  <span style={{ width: '6px', height: '6px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite' }}></span>
+                                  <span style={{ width: '6px', height: '6px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.2s', opacity: 0.7 }}></span>
+                                  <span style={{ width: '6px', height: '6px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.4s', opacity: 0.5 }}></span>
+                                </span>
+                                <span style={{ color: warmTheme.textSecondary, fontSize: '14px' }}>Thinking</span>
+                              </span>
+                            )}
+                            {message.text && (
+                              <span
+                                className="streaming-cursor"
+                                style={{
+                                  display: 'inline-block',
+                                  width: '2px',
+                                  height: '1.1em',
+                                  backgroundColor: warmTheme.primary,
+                                  marginLeft: '2px',
+                                  verticalAlign: 'text-bottom',
+                                  animation: 'blink 1s step-end infinite',
+                                }}
+                              />
+                            )}
                           </span>
                         ) : renderMarkdownMessage(message.text))}
                       </div>
@@ -1286,26 +1298,7 @@ export default function ChatInterface() {
                   </div>
                 ))}
 
-                {isLoading && (
-                  <div className="flex justify-start">
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px 20px',
-                      background: warmTheme.primaryLight,
-                      borderRadius: '16px',
-                      border: `1px solid ${warmTheme.border}`
-                    }}>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite' }}></div>
-                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.2s', opacity: 0.7 }}></div>
-                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.4s', opacity: 0.5 }}></div>
-                      </div>
-                      <span style={{ color: warmTheme.primary, fontSize: '14px', fontWeight: 500 }}>Thinking</span>
-                    </div>
-                  </div>
-                )}
+                {/* Thinking indicator removed - now integrated into streaming message bubble */}
                 
                 <div ref={messagesEndRef} />
               </div>
