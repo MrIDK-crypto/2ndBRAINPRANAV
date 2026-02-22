@@ -55,6 +55,20 @@ class OpenAIClientWrapper:
 
         return self.client.chat.completions.create(**params)
 
+    def chat_completion_stream(self, messages, temperature=0.7, max_tokens=None, **kwargs):
+        """Create a streaming chat completion - yields chunks as they arrive"""
+        params = {
+            "model": self.chat_model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True
+        }
+        if max_tokens:
+            params["max_tokens"] = max_tokens
+        params.update(kwargs)
+
+        return self.client.chat.completions.create(**params)
+
     def create_embedding(self, text, dimensions=1536):
         """Create embeddings"""
         params = {
