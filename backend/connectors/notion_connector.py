@@ -523,10 +523,12 @@ class NotionConnector(BaseConnector):
         if doc_url and block_id:
             anchor = block_id.replace("-", "")
             doc_url = f"{doc_url}#{anchor}"
+        # Prepend filename so the embedding is searchable by file name
+        labeled_content = f"File: {filename}\n\n{content}"
         doc = Document(
             doc_id=f"notion_file_{self._current_page_id}_{file_hash}",
             source="notion",
-            content=content,
+            content=labeled_content,
             title=filename,
             metadata={
                 "parent_page_id": self._current_page_id,
