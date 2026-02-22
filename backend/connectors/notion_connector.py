@@ -514,10 +514,15 @@ class NotionConnector(BaseConnector):
             return "audio"
         return "document"
 
-    def _create_child_document(self, filename: str, content: str, source_url: str = "") -> None:
+    def _create_child_document(self, filename: str, content: str, source_url: str = "", block_id: str = "") -> None:
         """Create a child Document for an embedded file and add it to _child_documents"""
         import hashlib
         file_hash = hashlib.md5(f"{self._current_page_id}_{filename}_{source_url}".encode()).hexdigest()[:12]
+        # Build URL: parent page URL with block anchor so Notion scrolls to the file
+        doc_url = self._current_page_url
+        if doc_url and block_id:
+            anchor = block_id.replace("-", "")
+            doc_url = f"{doc_url}#{anchor}"
         doc = Document(
             doc_id=f"notion_file_{self._current_page_id}_{file_hash}",
             source="notion",
@@ -527,11 +532,12 @@ class NotionConnector(BaseConnector):
                 "parent_page_id": self._current_page_id,
                 "parent_page_url": self._current_page_url,
                 "file_url": source_url,
+                "block_id": block_id,
                 "embedded_in_notion": True
             },
             timestamp=self._current_page_timestamp,
             author=self.workspace_name,
-            url=None,
+            url=doc_url,
             doc_type=self._get_file_doc_type(filename)
         )
         self._child_documents.append(doc)
@@ -757,7 +763,7 @@ class NotionConnector(BaseConnector):
             try:
                 parsed = self._download_and_parse_file(url, img_name) if url else None
                 if parsed:
-                    self._create_child_document(img_name, parsed, url)
+                    self._create_child_document(img_name, parsed, url, block_id=block.get("id", ""))
                     header = f"[Image: {caption}]" if caption else "[Image]"
                     return f"{header}\n{parsed}"
             except Exception as e:
@@ -771,7 +777,7 @@ class NotionConnector(BaseConnector):
             try:
                 parsed = self._download_and_transcribe_media(url, vid_name) if url else None
                 if parsed:
-                    self._create_child_document(vid_name, parsed, url)
+                    self._create_child_document(vid_name, parsed, url, block_id=block.get("id", ""))
                     header = f"[Video: {caption}]" if caption else "[Video]"
                     return f"{header}\n--- Video Transcript ---\n{parsed}\n--- End Transcript ---"
             except Exception as e:
@@ -785,7 +791,7 @@ class NotionConnector(BaseConnector):
             try:
                 parsed = self._download_and_transcribe_media(url, aud_name) if url else None
                 if parsed:
-                    self._create_child_document(aud_name, parsed, url)
+                    self._create_child_document(aud_name, parsed, url, block_id=block.get("id", ""))
                     header = f"[Audio: {caption}]" if caption else "[Audio]"
                     return f"{header}\n--- Audio Transcript ---\n{parsed}\n--- End Transcript ---"
             except Exception as e:
@@ -804,7 +810,7 @@ class NotionConnector(BaseConnector):
                 else:
                     parsed = self._download_and_parse_file(url, name) if url else None
                 if parsed:
-                    self._create_child_document(name, parsed, url)
+                    self._create_child_document(name, parsed, url, block_id=block.get("id", ""))
                     return f"--- Attached File: {name} ---\n{parsed}\n--- End of {name} ---"
             except Exception as e:
                 print(f"[Notion] File parse failed for {name}: {e}")
@@ -824,7 +830,7 @@ class NotionConnector(BaseConnector):
                     pdf_name = "document.pdf"
             parsed = self._download_and_parse_file(url, pdf_name) if url else None
             if parsed:
-                self._create_child_document(pdf_name, parsed, url)
+                self._create_child_document(pdf_name, parsed, url, block_id=block.get("id", ""))
                 return f"--- Attached PDF: {pdf_name} ---\n{parsed}\n--- End of {pdf_name} ---"
             return f"[PDF: {caption or url}]" if (caption or url) else "[PDF]"
 
