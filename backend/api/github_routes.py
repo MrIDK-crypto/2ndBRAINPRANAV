@@ -584,7 +584,8 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
         progress_service.update_progress(
             sync_id,
             status='connecting',
-            stage='Connecting to GitHub...'
+            stage='Connecting to GitHub...',
+            overall_percent=0.0
         )
 
         # Get connector from DB
@@ -621,7 +622,8 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
         progress_service.update_progress(
             sync_id,
             status='syncing',
-            stage='Fetching repository list...'
+            stage='Fetching repository list...',
+            overall_percent=0.0
         )
 
         # Get repository to sync
@@ -655,7 +657,8 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
             sync_id,
             status='syncing',
             stage=f'Scanning {repository}...',
-            current_item=repository
+            current_item=repository,
+            overall_percent=0.0
         )
 
         # Quick scan to get file count
@@ -788,7 +791,8 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
             stage='Creating documents from analysis...',
             total_items=expected_documents,
             processed_items=0,
-            current_item='AI analysis complete'
+            current_item='AI analysis complete',
+            overall_percent=10.0
         )
         update_db_progress('parsing', 'Creating documents from analysis...', total=expected_documents, processed=0, current='AI analysis complete')
 
@@ -931,14 +935,15 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
         db.commit()
         print(f"[GitHub Sync] Created {len(documents_created)} documents")
 
-        # Update progress - extracting summaries
+        # Update progress - extracting summaries (33-66% range)
         progress_service.update_progress(
             sync_id,
-            status='parsing',
+            status='extracting',
             stage=f'Extracting summaries from {len(documents_created)} documents...',
             total_items=len(documents_created),
             processed_items=0,
-            current_item=f'Created {len(documents_created)} documents'
+            current_item=f'Created {len(documents_created)} documents',
+            overall_percent=33.0
         )
         update_db_progress('parsing', f'Extracting summaries...', total=len(documents_created), processed=0, current=f'Created {len(documents_created)} docs')
 
@@ -951,21 +956,25 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
             except Exception as e:
                 print(f"[GitHub Sync] Extraction failed for {doc.title}: {e}")
 
+            # Calculate percent in extraction range (33-66%)
+            extract_pct = 33.0 + ((i + 1) / len(documents_created)) * 33.0
             progress_service.update_progress(
                 sync_id,
                 total_items=len(documents_created),
                 processed_items=i + 1,
-                current_item=doc.title[:50]
+                current_item=doc.title[:50],
+                overall_percent=extract_pct
             )
 
-        # Update progress - embedding
+        # Update progress - embedding (66-99% range)
         progress_service.update_progress(
             sync_id,
             status='embedding',
             stage=f'Creating embeddings for {len(documents_created)} documents...',
             total_items=len(documents_created),
             processed_items=0,
-            current_item='Starting embeddings...'
+            current_item='Starting embeddings...',
+            overall_percent=66.0
         )
         update_db_progress('embedding', 'Creating embeddings...', total=len(documents_created), processed=0, current='Embedding documents')
 
@@ -979,11 +988,14 @@ def _run_github_sync(tenant_id: str, connector_id: str, sync_id: str, repository
             except Exception as e:
                 print(f"[GitHub Sync] Embedding failed for doc {doc.id}: {e}")
 
+            # Calculate percent in embedding range (66-99%)
+            embed_pct = 66.0 + ((i + 1) / len(documents_created)) * 33.0
             progress_service.update_progress(
                 sync_id,
                 total_items=len(documents_created),
                 processed_items=i + 1,
-                current_item=f'Embedding {i + 1}/{len(documents_created)}'
+                current_item=f'Embedding {i + 1}/{len(documents_created)}',
+                overall_percent=embed_pct
             )
 
         print(f"[GitHub Sync] Embedded {len(documents_created)} documents successfully")
