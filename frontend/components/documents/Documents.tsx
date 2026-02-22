@@ -23,24 +23,26 @@ interface ConnectedIntegration {
   id: string
   name: string
   logo: string
-  sourceType: string  // Matches document source_type
+  sourceTypes: string[]  // Matches document source_type values
   connected: boolean
 }
 
 // All available integrations with their source_type mappings
-const INTEGRATION_CONFIG: { id: string; name: string; logo: string; sourceType: string }[] = [
-  { id: 'gmail', name: 'Gmail', logo: '/gmail.png', sourceType: 'gmail' },
-  { id: 'slack', name: 'Slack', logo: '/slack.png', sourceType: 'slack' },
-  { id: 'box', name: 'Box', logo: '/box.png', sourceType: 'box' },
-  { id: 'github', name: 'GitHub', logo: '/github.png', sourceType: 'github' },
-  { id: 'gdrive', name: 'Google Drive', logo: '/gdrive.png', sourceType: 'gdrive' },
-  { id: 'onedrive', name: 'OneDrive', logo: '/outlook.png', sourceType: 'onedrive' },
-  { id: 'notion', name: 'Notion', logo: '/notion.png', sourceType: 'notion' },
-  { id: 'zotero', name: 'Zotero', logo: '/zotero.png', sourceType: 'zotero' },
-  { id: 'outlook', name: 'Outlook', logo: '/outlook.png', sourceType: 'outlook' },
-  { id: 'webscraper', name: 'Web Scraper', logo: '/docs.png', sourceType: 'webscraper' },
-  { id: 'email-forwarding', name: 'Email Forwarding', logo: '/email-forward.png', sourceType: 'email_forwarding' },
-  { id: 'pubmed', name: 'PubMed', logo: '/pubmed.png', sourceType: 'pubmed' },
+// Integration config with sourceTypes that match document source_type values
+const INTEGRATION_CONFIG: { id: string; name: string; logo: string; sourceTypes: string[] }[] = [
+  { id: 'gmail', name: 'Gmail', logo: '/gmail.png', sourceTypes: ['gmail', 'email'] },
+  { id: 'slack', name: 'Slack', logo: '/slack.png', sourceTypes: ['slack'] },
+  { id: 'box', name: 'Box', logo: '/box.png', sourceTypes: ['box'] },
+  { id: 'github', name: 'GitHub', logo: '/github.png', sourceTypes: ['github'] },
+  { id: 'gdrive', name: 'Google Drive', logo: '/gdrive.png', sourceTypes: ['gdrive', 'google_drive'] },
+  { id: 'onedrive', name: 'OneDrive', logo: '/outlook.png', sourceTypes: ['onedrive', 'microsoft'] },
+  { id: 'notion', name: 'Notion', logo: '/notion.png', sourceTypes: ['notion'] },
+  { id: 'zotero', name: 'Zotero', logo: '/zotero.png', sourceTypes: ['zotero'] },
+  { id: 'outlook', name: 'Outlook', logo: '/outlook.png', sourceTypes: ['outlook'] },
+  { id: 'webscraper', name: 'Web Scraper', logo: '/docs.png', sourceTypes: ['webscraper', 'firecrawl', 'web', 'scraper'] },
+  { id: 'email-forwarding', name: 'Email Forwarding', logo: '/email-forward.png', sourceTypes: ['email_forwarding', 'forwarded'] },
+  { id: 'pubmed', name: 'PubMed', logo: '/pubmed.png', sourceTypes: ['pubmed'] },
+  { id: 'upload', name: 'Uploads', logo: '/docs.png', sourceTypes: ['upload', 'file', 'manual'] },
 ]
 
 interface Document {
@@ -300,7 +302,7 @@ export default function Documents() {
         const connected: ConnectedIntegration[] = INTEGRATION_CONFIG
           .filter(config => {
             const apiInt = apiIntegrations.find((i: any) =>
-              i.type === config.id || i.type === config.sourceType
+              i.type === config.id || config.sourceTypes.includes(i.type)
             )
             return apiInt && apiInt.status === 'connected'
           })
@@ -373,7 +375,9 @@ export default function Documents() {
       const integrationConfig = INTEGRATION_CONFIG.find(i => i.id === activeIntegration)
       if (integrationConfig) {
         filtered = filtered.filter(d =>
-          d.source_type?.toLowerCase() === integrationConfig.sourceType.toLowerCase()
+          integrationConfig.sourceTypes.some(st =>
+            d.source_type?.toLowerCase() === st.toLowerCase()
+          )
         )
       }
     } else if (activeCategory !== 'All Items') {
@@ -406,15 +410,26 @@ export default function Documents() {
     return filtered
   }, [documents, activeCategory, activeIntegration, sourceFilter, searchQuery, sortField, sortDirection])
 
-  // Calculate document counts per integration
-  const integrationCounts = useMemo(() => {
+  // Calculate document counts per integration AND get integrations that have documents
+  const { integrationCounts, integrationsWithDocs } = useMemo(() => {
     const counts: Record<string, number> = {}
+    const withDocs: ConnectedIntegration[] = []
+
     INTEGRATION_CONFIG.forEach(config => {
-      counts[config.id] = documents.filter(d =>
-        d.source_type?.toLowerCase() === config.sourceType.toLowerCase()
+      // Count documents that match ANY of the sourceTypes for this integration
+      const count = documents.filter(d =>
+        config.sourceTypes.some(st =>
+          d.source_type?.toLowerCase() === st.toLowerCase()
+        )
       ).length
+      counts[config.id] = count
+
+      // Add to list if this integration has documents
+      if (count > 0) {
+        withDocs.push({ ...config, connected: true })
+      }
     })
-    return counts
+    return { integrationCounts: counts, integrationsWithDocs: withDocs }
   }, [documents])
 
   // Close menus when clicking outside
@@ -1675,163 +1690,7 @@ export default function Documents() {
           </div>
         </div>
 
-        {/* Integrations Section - Only shows connected integrations */}
-        {connectedIntegrations.length > 0 && (
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '12px',
-            }}>
-              <h2 style={{
-                fontSize: '16px',
-                fontWeight: 600,
-                color: colors.textPrimary,
-                margin: 0,
-              }}>
-                Connected Sources
-              </h2>
-              {connectedIntegrations.length > 4 && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => handleSliderScroll('left')}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: colors.cardBg,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F0EEEC'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.cardBg}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth="2">
-                      <path d="M15 18l-6-6 6-6"/>
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleSliderScroll('right')}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: colors.cardBg,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F0EEEC'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.cardBg}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth="2">
-                      <path d="M9 18l6-6-6-6"/>
-                    </svg>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Sliding Scale Container */}
-            <div
-              ref={integrationSliderRef}
-              onScroll={(e) => setIntegrationSliderPosition(e.currentTarget.scrollLeft)}
-              style={{
-                display: 'flex',
-                gap: '12px',
-                overflowX: 'auto',
-                paddingBottom: '8px',
-                scrollBehavior: 'smooth',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-              }}
-            >
-              <style jsx>{`
-                div::-webkit-scrollbar {
-                  display: none;
-                }
-              `}</style>
-              {/* Show All button */}
-              <button
-                onClick={() => {
-                  setActiveIntegration(null)
-                  setActiveCategory('All Items')
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '16px 20px',
-                  backgroundColor: !activeIntegration && activeCategory === 'All Items' ? colors.primaryLight : '#F7F5F3',
-                  border: `2px solid ${!activeIntegration && activeCategory === 'All Items' ? colors.primary : colors.border}`,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                  minWidth: '140px',
-                  flexShrink: 0,
-                  boxShadow: !activeIntegration && activeCategory === 'All Items' ? `0 4px 12px rgba(37, 99, 235, 0.2)` : shadows.sm,
-                }}
-                onMouseEnter={(e) => {
-                  if (activeIntegration || activeCategory !== 'All Items') {
-                    e.currentTarget.style.borderColor = colors.primary
-                    e.currentTarget.style.backgroundColor = colors.primaryLight
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeIntegration || activeCategory !== 'All Items') {
-                    e.currentTarget.style.borderColor = colors.border
-                    e.currentTarget.style.backgroundColor = '#F7F5F3'
-                  }
-                }}
-              >
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  backgroundColor: '#F0EEEC',
-                  borderRadius: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7A7A7A" strokeWidth="1.5">
-                    <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-                    <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-                    <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-                    <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-                  </svg>
-                </div>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary }}>All</div>
-                  <div style={{ fontSize: '12px', color: colors.textMuted }}>{totalCount} files</div>
-                </div>
-              </button>
-
-              {/* Connected Integration Folders */}
-              {connectedIntegrations.map((integration) => (
-                <IntegrationFolderCard
-                  key={integration.id}
-                  integration={integration}
-                  count={integrationCounts[integration.id] || 0}
-                  active={activeIntegration === integration.id}
-                  onClick={() => {
-                    setActiveIntegration(integration.id)
-                    setActiveCategory('') // Clear category filter when filtering by integration
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Folders Section */}
+        {/* Integration Folders Section - Shows All + Integration-based folders */}
         <div style={{ marginBottom: '32px' }}>
           <div style={{
             display: 'flex',
@@ -1839,64 +1698,257 @@ export default function Documents() {
             justifyContent: 'space-between',
             marginBottom: '16px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <h2 style={{
-                fontSize: '16px',
-                fontWeight: 600,
-                color: colors.textPrimary,
-                margin: 0,
-              }}>
-                Categories
-              </h2>
-            </div>
+            <h2 style={{
+              fontSize: '16px',
+              fontWeight: 600,
+              color: colors.textPrimary,
+              margin: 0,
+            }}>
+              Sources
+            </h2>
+            {integrationsWithDocs.length > 5 && (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => handleSliderScroll('left')}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth="2">
+                    <path d="M15 18l-6-6 6-6"/>
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handleSliderScroll('right')}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth="2">
+                    <path d="M9 18l6-6-6-6"/>
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
 
-          <div style={{
-            display: 'flex',
-            gap: '16px',
-            overflowX: 'auto',
-            paddingBottom: '8px',
-          }}>
-            <FolderCard
-              title="All Documents"
-              count={totalCount}
-              size={formatFileSize(sizes.all)}
-              active={activeCategory === 'All Items' && !activeIntegration}
-              onClick={() => { setActiveCategory('All Items'); setActiveIntegration(null) }}
-              iconType="all"
-            />
-            <FolderCard
-              title="Work Documents"
-              count={counts.documents}
-              size={formatFileSize(sizes.documents)}
-              active={activeCategory === 'Documents' && !activeIntegration}
-              onClick={() => { setActiveCategory('Documents'); setActiveIntegration(null) }}
-              iconType="work"
-            />
-            <FolderCard
-              title="Code Files"
-              count={counts.code}
-              size={formatFileSize(sizes.code)}
-              active={activeCategory === 'Code' && !activeIntegration}
-              onClick={() => { setActiveCategory('Code'); setActiveIntegration(null) }}
-              iconType="code"
-            />
-            <FolderCard
-              title="Web Scraper"
-              count={totalCount > counts.all ? counts.webscraper + (totalCount - counts.all) : counts.webscraper}
-              size={formatFileSize(sizes.webscraper)}
-              active={activeCategory === 'Web Scraper' && !activeIntegration}
-              onClick={() => { setActiveCategory('Web Scraper'); setActiveIntegration(null) }}
-              iconType="web"
-            />
-            <FolderCard
-              title="Personal & Other"
-              count={counts.personal + counts.other}
-              size={formatFileSize(sizes.personal + sizes.other)}
-              active={(activeCategory === 'Personal Items' || activeCategory === 'Other Items') && !activeIntegration}
-              onClick={() => { setActiveCategory('Personal Items'); setActiveIntegration(null) }}
-              iconType="personal"
-            />
+          <div
+            ref={integrationSliderRef}
+            onScroll={(e) => setIntegrationSliderPosition(e.currentTarget.scrollLeft)}
+            style={{
+              display: 'flex',
+              gap: '16px',
+              overflowX: 'auto',
+              paddingBottom: '8px',
+              scrollBehavior: 'smooth',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+            }}
+          >
+            {/* All Documents Card */}
+            <button
+              onClick={() => { setActiveIntegration(null); setActiveCategory('All Items') }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                padding: '20px 28px',
+                backgroundColor: !activeIntegration ? colors.primaryLight : '#F7F5F3',
+                border: `2px solid ${!activeIntegration ? colors.primary : colors.border}`,
+                borderRadius: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                minWidth: '240px',
+                flexShrink: 0,
+                boxShadow: !activeIntegration ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+              }}
+            >
+              <div style={{
+                width: '44px',
+                height: '44px',
+                backgroundColor: !activeIntegration ? colors.primaryLight : '#F0EEEC',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={!activeIntegration ? colors.primary : '#7A7A7A'} strokeWidth="1.5">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+                  <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                </svg>
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: colors.textPrimary, marginBottom: '4px' }}>
+                  All Documents
+                </div>
+                <div style={{ fontSize: '13px', color: colors.textMuted }}>
+                  {totalCount} files | {formatFileSize(sizes.all)}
+                </div>
+              </div>
+            </button>
+
+            {/* Integration-based Folder Cards - consistent style */}
+            {integrationsWithDocs.map((integration) => {
+              const isActive = activeIntegration === integration.id
+              const iconColor = isActive ? colors.primary : '#7A7A7A'
+
+              // Clean, modern icons for each integration type
+              const getIcon = () => {
+                switch (integration.id) {
+                  case 'gmail':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                      </svg>
+                    )
+                  case 'outlook':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.5L18.5 7 12 9.5 5.5 7 12 4.5zM4 8.5l7 3.5v7l-7-3.5v-7zm9 10.5v-7l7-3.5v7l-7 3.5z"/>
+                      </svg>
+                    )
+                  case 'email-forwarding':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2">
+                        <path d="M22 12h-6m6 0l-3-3m3 3l-3 3"/>
+                        <rect x="2" y="5" width="14" height="14" rx="2"/>
+                        <path d="M2 7l7 5 7-5"/>
+                      </svg>
+                    )
+                  case 'slack':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.124 2.521a2.528 2.528 0 0 1 2.52-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.52V8.834zm-1.271 0a2.528 2.528 0 0 1-2.521 2.521 2.528 2.528 0 0 1-2.521-2.521V2.522A2.528 2.528 0 0 1 15.166 0a2.528 2.528 0 0 1 2.521 2.522v6.312zm-2.521 10.124a2.528 2.528 0 0 1 2.521 2.52A2.528 2.528 0 0 1 15.166 24a2.528 2.528 0 0 1-2.521-2.522v-2.52h2.521zm0-1.271a2.528 2.528 0 0 1-2.521-2.521 2.528 2.528 0 0 1 2.521-2.521h6.312A2.528 2.528 0 0 1 24 15.166a2.528 2.528 0 0 1-2.522 2.521h-6.312z"/>
+                      </svg>
+                    )
+                  case 'github':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                      </svg>
+                    )
+                  case 'webscraper':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M2 12h20"/>
+                        <path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/>
+                      </svg>
+                    )
+                  case 'gdrive':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M8.267 14.68l-1.6 2.76H1.6l1.6-2.76h5.067zm7.466-9.36L19.2 12H8.267l3.467-6.68h4zm-1.6 2.76L10.8 14.68H2.667L6 8.08h8.133zM22.4 12l-3.467 6H9.867l3.466-6H22.4z"/>
+                      </svg>
+                    )
+                  case 'onedrive':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+                      </svg>
+                    )
+                  case 'box':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M21 4H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-9 14l-7-7 1.41-1.41L12 15.17l7.59-7.59L21 9l-9 9z"/>
+                      </svg>
+                    )
+                  case 'notion':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2h11A2.5 2.5 0 0 1 20 4.5v15a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 19.5v-15zM7 7v2h10V7H7zm0 4v2h10v-2H7zm0 4v2h6v-2H7z"/>
+                      </svg>
+                    )
+                  case 'zotero':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm2 4v2h6l-6 6v2h10v-2h-6l6-6V7H7z"/>
+                      </svg>
+                    )
+                  case 'pubmed':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2">
+                        <path d="M12 6.5a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0z"/>
+                        <path d="M7 11v6h1v4h4v-4h1v-6"/>
+                        <path d="M15 8h6M15 12h6M15 16h4"/>
+                      </svg>
+                    )
+                  case 'upload':
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                    )
+                  default:
+                    return (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill={iconColor}>
+                        <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
+                      </svg>
+                    )
+                }
+              }
+
+              return (
+                <button
+                  key={integration.id}
+                  onClick={() => { setActiveIntegration(integration.id); setActiveCategory('') }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    padding: '20px 28px',
+                    backgroundColor: isActive ? colors.primaryLight : '#F7F5F3',
+                    border: `2px solid ${isActive ? colors.primary : colors.border}`,
+                    borderRadius: '16px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    minWidth: '240px',
+                    flexShrink: 0,
+                    boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                  }}
+                >
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    backgroundColor: isActive ? colors.primaryLight : '#F0EEEC',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    {getIcon()}
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: colors.textPrimary, marginBottom: '4px' }}>
+                      {integration.name}
+                    </div>
+                    <div style={{ fontSize: '13px', color: colors.textMuted }}>
+                      {integrationCounts[integration.id]} files
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
 
