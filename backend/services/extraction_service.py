@@ -15,8 +15,10 @@ Created: 2025-12-09
 
 import os
 import json
+import time
 from datetime import datetime, timezone
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 
 from services.openai_client import get_openai_client
@@ -80,12 +82,16 @@ class ExtractionService:
     we use these pre-extracted summaries.
     """
 
+    # Use extraction-specific model (falls back to main chat model if not set)
+    EXTRACTION_MODEL = os.getenv('AZURE_EXTRACTION_DEPLOYMENT', os.getenv('AZURE_CHAT_DEPLOYMENT', 'gpt-4.1'))
+
     def __init__(self, client=None):
         """Initialize extraction service."""
         if client:
             self.client = client
         else:
             self.client = get_openai_client()
+        print(f"[ExtractionService] Using model: {self.EXTRACTION_MODEL}", flush=True)
 
     def extract_from_content(
         self,
@@ -128,6 +134,7 @@ class ExtractionService:
                         )
                     }
                 ],
+                model=self.EXTRACTION_MODEL,
                 temperature=0.1,  # Low temperature for consistent extraction
                 max_tokens=2000,
                 response_format={"type": "json_object"}
@@ -193,21 +200,38 @@ class ExtractionService:
 
         return False
 
+    def _extract_single(self, doc_id: str, content: str, title: str, doc_type: str) -> Tuple[str, Optional[Dict]]:
+        """
+        Extract structured summary for a single document (thread-safe, no DB access).
+        Returns (doc_id, result_dict or None).
+        """
+        try:
+            result = self.extract_from_content(content=content, title=title, doc_type=doc_type)
+            return (doc_id, result)
+        except Exception as e:
+            print(f"[ExtractionService] Error extracting {doc_id}: {e}")
+            return (doc_id, None)
+
     def extract_documents(
         self,
         documents: List[Document],
         db: Session,
         force: bool = False,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        max_workers: int = 50
     ) -> Dict[str, Any]:
         """
-        Extract structured summaries for multiple documents.
+        Extract structured summaries for multiple documents in parallel.
+
+        Uses ThreadPoolExecutor to run up to max_workers GPT calls concurrently.
+        DB writes happen in the main thread after each batch completes.
 
         Args:
             documents: List of Document model instances
             db: Database session
             force: If True, re-extract even if already extracted
             progress_callback: Optional callback(current, total, status)
+            max_workers: Max concurrent GPT calls (default 50)
 
         Returns:
             Dict with extraction stats
@@ -217,29 +241,77 @@ class ExtractionService:
         skipped = 0
         errors = 0
 
-        for i, doc in enumerate(documents):
-            if progress_callback:
-                progress_callback(i + 1, total, f"Extracting: {doc.title or 'Untitled'}")
-
-            # Skip if already has extraction and not forcing
+        # Filter to docs that actually need extraction
+        docs_to_extract = []
+        doc_map = {}  # doc_id -> Document object for DB updates
+        for doc in documents:
             if not force and doc.structured_summary:
                 skipped += 1
                 continue
-
-            # Skip if no content
             if not doc.content:
                 skipped += 1
                 continue
+            docs_to_extract.append(doc)
+            doc_map[str(doc.id)] = doc
 
+        if not docs_to_extract:
+            return {"total": total, "extracted": 0, "skipped": skipped, "errors": 0}
+
+        print(f"[ExtractionService] Extracting {len(docs_to_extract)} documents in parallel (max_workers={max_workers})", flush=True)
+        start_time = time.time()
+        completed = 0
+
+        # Process in batches to commit periodically and report progress
+        BATCH_SIZE = max_workers
+        for batch_start in range(0, len(docs_to_extract), BATCH_SIZE):
+            batch = docs_to_extract[batch_start:batch_start + BATCH_SIZE]
+            batch_num = (batch_start // BATCH_SIZE) + 1
+            total_batches = (len(docs_to_extract) + BATCH_SIZE - 1) // BATCH_SIZE
+            print(f"[ExtractionService] Batch {batch_num}/{total_batches}: processing {len(batch)} documents...", flush=True)
+
+            futures = {}
+            with ThreadPoolExecutor(max_workers=min(max_workers, len(batch))) as executor:
+                for doc in batch:
+                    future = executor.submit(
+                        self._extract_single,
+                        str(doc.id),
+                        doc.content,
+                        doc.title or "Untitled",
+                        doc.source_type or "document"
+                    )
+                    futures[future] = doc
+
+                for future in as_completed(futures):
+                    doc_id, result = future.result()
+                    completed += 1
+
+                    if result:
+                        # Update document in main thread (DB not thread-safe)
+                        doc_obj = doc_map.get(doc_id)
+                        if doc_obj:
+                            doc_obj.structured_summary = result
+                            doc_obj.structured_summary_at = utc_now()
+                            extracted += 1
+                            topics = len(result.get('key_topics', []))
+                            decisions = len(result.get('decisions', []))
+                            print(f"[ExtractionService] Extracted {topics} topics, {decisions} decisions", flush=True)
+                    else:
+                        errors += 1
+
+                    if progress_callback:
+                        progress_callback(skipped + completed, total, f"Extracting documents ({completed}/{len(docs_to_extract)})")
+
+            # Commit after each batch
             try:
-                success = self.extract_document(doc, db, force=force)
-                if success:
-                    extracted += 1
-                else:
-                    errors += 1
+                db.commit()
+                print(f"[ExtractionService] Batch {batch_num} committed ({extracted} extracted so far)", flush=True)
             except Exception as e:
-                print(f"[ExtractionService] Error extracting {doc.id}: {e}")
-                errors += 1
+                print(f"[ExtractionService] Batch commit error: {e}", flush=True)
+                db.rollback()
+
+        elapsed = time.time() - start_time
+        rate = extracted / elapsed if elapsed > 0 else 0
+        print(f"[ExtractionService] Done: {extracted} extracted, {errors} errors, {skipped} skipped in {elapsed:.1f}s ({rate:.1f} docs/sec)", flush=True)
 
         return {
             "total": total,

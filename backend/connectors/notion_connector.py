@@ -44,6 +44,11 @@ class NotionConnector(BaseConnector):
         self.client: Optional[Client] = None
         self.workspace_name: str = ""
         self.workspace_id: str = ""
+        # Accumulates separate Document objects for files embedded in pages
+        self._child_documents: List[Document] = []
+        self._current_page_id: str = ""
+        self._current_page_url: str = ""
+        self._current_page_timestamp: Optional[datetime] = None
 
     def connect(self) -> bool:
         """Establish connection to Notion API"""
@@ -127,17 +132,6 @@ class NotionConnector(BaseConnector):
                 print(f"[Notion] Found {len(pages)} pages in batch")
 
                 for page in pages:
-                    # Filter by modified time if incremental
-                    if since:
-                        last_edited = page.get("last_edited_time", "")
-                        if last_edited:
-                            try:
-                                edited_dt = datetime.fromisoformat(last_edited.replace("Z", "+00:00"))
-                                if edited_dt < since:
-                                    continue
-                            except:
-                                pass
-
                     # Skip archived unless configured
                     if page.get("archived") and not self.config.settings.get("include_archived"):
                         continue
@@ -145,6 +139,10 @@ class NotionConnector(BaseConnector):
                     doc = self._page_to_document(page)
                     if doc:
                         documents.append(doc)
+                        # Add any files embedded in this page as separate documents
+                        if self._child_documents:
+                            documents.extend(self._child_documents)
+                            print(f"[Notion]   + {len(self._child_documents)} embedded files as separate documents")
                         page_count += 1
                         print(f"[Notion] Processed page {page_count}: {doc.title[:50] if doc.title else 'Untitled'}")
 
@@ -184,6 +182,21 @@ class NotionConnector(BaseConnector):
             page_id = page["id"]
             properties = page.get("properties", {})
 
+            # Parse timestamp early (needed for child documents created during content fetch)
+            created_time = page.get("created_time", "")
+            timestamp = None
+            if created_time:
+                try:
+                    timestamp = datetime.fromisoformat(created_time.replace("Z", "+00:00"))
+                except:
+                    pass
+
+            # Reset child document accumulator for this page
+            self._child_documents = []
+            self._current_page_id = page_id
+            self._current_page_url = page.get("url", "")
+            self._current_page_timestamp = timestamp
+
             title = self._extract_title(properties)
             properties_text = self._extract_properties(properties)
             body_content = self._get_page_content(page_id)
@@ -206,15 +219,6 @@ class NotionConnector(BaseConnector):
                 "archived": page.get("archived", False),
                 "workspace": self.workspace_name
             }
-
-            # Parse timestamp
-            created_time = page.get("created_time", "")
-            timestamp = None
-            if created_time:
-                try:
-                    timestamp = datetime.fromisoformat(created_time.replace("Z", "+00:00"))
-                except:
-                    pass
 
             return Document(
                 doc_id=f"notion_{page_id}",
@@ -310,10 +314,35 @@ class NotionConnector(BaseConnector):
             r_type = data.get("type", "")
             return str(data.get(r_type, ""))
         elif prop_type == "files":
-            names = []
+            parts = []
             for f in (data or []):
-                names.append(f.get("name", f.get("url", "")))
-            return ", ".join(names)
+                name = f.get("name", "")
+                f_type = f.get("type", "")
+                url = ""
+                if f_type == "file":
+                    url = f.get("file", {}).get("url", "")
+                elif f_type == "external":
+                    url = f.get("external", {}).get("url", "")
+                if url and name:
+                    try:
+                        ext = os.path.splitext(name)[1].lower()
+                        if ext in ('.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm'):
+                            parsed = self._download_and_transcribe_media(url, name)
+                        else:
+                            parsed = self._download_and_parse_file(url, name)
+                        if parsed:
+                            self._create_child_document(name, parsed, url)
+                            parts.append(f"--- {name} ---\n{parsed}\n--- End of {name} ---")
+                        else:
+                            parts.append(name)
+                    except Exception as e:
+                        print(f"[Notion] Error parsing property file {name}: {e}")
+                        parts.append(name)
+                elif name:
+                    parts.append(name)
+                elif url:
+                    parts.append(url)
+            return "\n\n".join(parts) if parts else ""
         elif prop_type in ("created_time", "last_edited_time"):
             return data if data else ""
         elif prop_type == "created_by":
@@ -370,6 +399,19 @@ class NotionConnector(BaseConnector):
                         child_content = self._get_page_content(block["id"], depth + 1)
                         if child_content:
                             content_parts.append(child_content)
+
+                    # Handle link_to_page — fetch the linked page's content
+                    if block_type == "link_to_page" and depth < max_depth:
+                        link_data = block.get("link_to_page", {})
+                        target_type = link_data.get("type", "")
+                        target_id = link_data.get(target_type, "")
+                        if target_id:
+                            try:
+                                linked_content = self._get_page_content(target_id, depth + 1)
+                                if linked_content:
+                                    content_parts.append(linked_content)
+                            except Exception as e:
+                                print(f"[Notion] Error fetching linked page {target_id}: {e}")
 
                 has_more = response.get("has_more", False)
                 start_cursor = response.get("next_cursor")
@@ -436,6 +478,101 @@ class NotionConnector(BaseConnector):
         elif media_type == "file":
             return block_data.get("file", {}).get("url", "")
         return ""
+
+    def _filename_from_url(self, url: str, fallback: str = "file") -> str:
+        """Extract filename from URL path, with fallback"""
+        if not url:
+            return fallback
+        try:
+            from urllib.parse import urlparse, unquote
+            path = urlparse(url).path
+            if path:
+                name = unquote(path.split("/")[-1])
+                # Only use if it looks like a filename with extension
+                if name and "." in name:
+                    return name
+        except Exception:
+            pass
+        return fallback
+
+    def _get_file_doc_type(self, filename: str) -> str:
+        """Return doc_type string based on file extension"""
+        ext = os.path.splitext(filename)[1].lower() if filename else ""
+        if ext == ".pdf":
+            return "pdf"
+        elif ext in (".doc", ".docx"):
+            return "document"
+        elif ext in (".xls", ".xlsx"):
+            return "spreadsheet"
+        elif ext in (".ppt", ".pptx"):
+            return "presentation"
+        elif ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff"):
+            return "image"
+        elif ext in (".mp4", ".mov", ".webm"):
+            return "video"
+        elif ext in (".mp3", ".wav", ".m4a"):
+            return "audio"
+        return "document"
+
+    def _create_child_document(self, filename: str, content: str, source_url: str = "", block_id: str = "") -> None:
+        """Create a child Document for an embedded file and add it to _child_documents"""
+        import hashlib
+        file_hash = hashlib.md5(f"{self._current_page_id}_{filename}_{source_url}".encode()).hexdigest()[:12]
+        # Build URL: parent page URL with block anchor so Notion scrolls to the file
+        doc_url = self._current_page_url
+        if doc_url and block_id:
+            anchor = block_id.replace("-", "")
+            doc_url = f"{doc_url}#{anchor}"
+        # Prepend filename so the embedding is searchable by file name
+        labeled_content = f"File: {filename}\n\n{content}"
+        doc = Document(
+            doc_id=f"notion_file_{self._current_page_id}_{file_hash}",
+            source="notion",
+            content=labeled_content,
+            title=filename,
+            metadata={
+                "parent_page_id": self._current_page_id,
+                "parent_page_url": self._current_page_url,
+                "file_url": source_url,
+                "block_id": block_id,
+                "embedded_in_notion": True
+            },
+            timestamp=self._current_page_timestamp,
+            author=self.workspace_name,
+            url=doc_url,
+            doc_type=self._get_file_doc_type(filename)
+        )
+        self._child_documents.append(doc)
+        print(f"[Notion] Created child document: {filename} (type={doc.doc_type})")
+
+    def _download_and_transcribe_media(self, url: str, filename: str) -> Optional[str]:
+        """Download video/audio from Notion and transcribe with Azure Whisper"""
+        if not url:
+            return None
+        try:
+            print(f"[Notion] Downloading media for transcription: {filename}")
+            resp = requests.get(url, timeout=120)
+            resp.raise_for_status()
+            media_bytes = resp.content
+            print(f"[Notion] Downloaded {len(media_bytes)} bytes for {filename}")
+
+            from services.knowledge_service import KnowledgeService
+            from database.models import SessionLocal
+            db = SessionLocal()
+            try:
+                ks = KnowledgeService(db)
+                result = ks.transcribe_audio(media_bytes, filename)
+                if result and result.text:
+                    print(f"[Notion] Transcribed {len(result.text)} chars from {filename}")
+                    return result.text
+            finally:
+                db.close()
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"[Notion] Failed to download media {filename}: {e}")
+        except Exception as e:
+            print(f"[Notion] Error transcribing {filename}: {e}")
+        return None
 
     def _download_and_parse_file(self, url: str, filename: str) -> Optional[str]:
         """Download a file from Notion's S3 URL and parse its content
@@ -618,22 +755,67 @@ class NotionConnector(BaseConnector):
         elif block_type == "table_row":
             return self._extract_table_row(block_data)
 
-        # --- Media blocks ---
+        # --- Media blocks (download + parse/transcribe) ---
         elif block_type == "image":
-            info = self._get_media_info(block_data)
-            return f"[Image: {info}]" if info else "[Image]"
+            url = self._get_file_url(block_data)
+            caption = "".join([t.get("plain_text", "") for t in block_data.get("caption", [])])
+            img_name = self._filename_from_url(url, "image.png")
+            if not img_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')):
+                img_name = img_name + ".png"
+            try:
+                parsed = self._download_and_parse_file(url, img_name) if url else None
+                if parsed:
+                    self._create_child_document(img_name, parsed, url, block_id=block.get("id", ""))
+                    header = f"[Image: {caption}]" if caption else "[Image]"
+                    return f"{header}\n{parsed}"
+            except Exception as e:
+                print(f"[Notion] Image OCR failed: {e}")
+            return f"[Image: {caption or url}]" if (caption or url) else "[Image]"
+
         elif block_type == "video":
-            info = self._get_media_info(block_data)
-            return f"[Video: {info}]" if info else "[Video]"
+            url = self._get_file_url(block_data)
+            caption = "".join([t.get("plain_text", "") for t in block_data.get("caption", [])])
+            vid_name = self._filename_from_url(url, "video.mp4")
+            try:
+                parsed = self._download_and_transcribe_media(url, vid_name) if url else None
+                if parsed:
+                    self._create_child_document(vid_name, parsed, url, block_id=block.get("id", ""))
+                    header = f"[Video: {caption}]" if caption else "[Video]"
+                    return f"{header}\n--- Video Transcript ---\n{parsed}\n--- End Transcript ---"
+            except Exception as e:
+                print(f"[Notion] Video transcription failed: {e}")
+            return f"[Video: {caption or url}]" if (caption or url) else "[Video]"
+
         elif block_type == "audio":
-            info = self._get_media_info(block_data)
-            return f"[Audio: {info}]" if info else "[Audio]"
+            url = self._get_file_url(block_data)
+            caption = "".join([t.get("plain_text", "") for t in block_data.get("caption", [])])
+            aud_name = self._filename_from_url(url, "audio.mp3")
+            try:
+                parsed = self._download_and_transcribe_media(url, aud_name) if url else None
+                if parsed:
+                    self._create_child_document(aud_name, parsed, url, block_id=block.get("id", ""))
+                    header = f"[Audio: {caption}]" if caption else "[Audio]"
+                    return f"{header}\n--- Audio Transcript ---\n{parsed}\n--- End Transcript ---"
+            except Exception as e:
+                print(f"[Notion] Audio transcription failed: {e}")
+            return f"[Audio: {caption or url}]" if (caption or url) else "[Audio]"
+
         elif block_type == "file":
             url = self._get_file_url(block_data)
             name = block_data.get("name", "")
-            parsed = self._download_and_parse_file(url, name) if url and name else None
-            if parsed:
-                return f"--- Attached File: {name} ---\n{parsed}\n--- End of {name} ---"
+            if not name and url:
+                name = self._filename_from_url(url, "file")
+            ext = os.path.splitext(name)[1].lower() if name else ""
+            try:
+                if ext in ('.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm'):
+                    parsed = self._download_and_transcribe_media(url, name) if url else None
+                else:
+                    parsed = self._download_and_parse_file(url, name) if url else None
+                if parsed:
+                    self._create_child_document(name, parsed, url, block_id=block.get("id", ""))
+                    return f"--- Attached File: {name} ---\n{parsed}\n--- End of {name} ---"
+            except Exception as e:
+                print(f"[Notion] File parse failed for {name}: {e}")
             return f"[File: {name or url}]" if (name or url) else "[File]"
         elif block_type == "pdf":
             url = self._get_file_url(block_data)
@@ -650,6 +832,7 @@ class NotionConnector(BaseConnector):
                     pdf_name = "document.pdf"
             parsed = self._download_and_parse_file(url, pdf_name) if url else None
             if parsed:
+                self._create_child_document(pdf_name, parsed, url, block_id=block.get("id", ""))
                 return f"--- Attached PDF: {pdf_name} ---\n{parsed}\n--- End of {pdf_name} ---"
             return f"[PDF: {caption or url}]" if (caption or url) else "[PDF]"
 
@@ -672,10 +855,10 @@ class NotionConnector(BaseConnector):
         elif block_type == "link_to_page":
             page_type = block_data.get("type", "")
             target_id = block_data.get(page_type, "")
-            return f"[Link to page: {target_id}]"
+            return f"\n## Linked Page\n"
         elif block_type == "child_page":
             child_title = block_data.get("title", "")
-            return f"[Child page: {child_title}]"
+            return f"\n## Child Page: {child_title}\n"
         elif block_type == "child_database":
             db_title = block_data.get("title", "")
             return f"[Database: {db_title}]"

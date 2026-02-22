@@ -1733,7 +1733,8 @@ const WebScraperConfigModal = ({
   onClose,
   onSubmit,
   isLoading,
-  existingUrl
+  existingUrl,
+  alreadyConnected
 }: {
   isOpen: boolean
   onClose: () => void
@@ -1747,13 +1748,9 @@ const WebScraperConfigModal = ({
   }) => void
   isLoading: boolean
   existingUrl?: string
+  alreadyConnected?: boolean
 }) => {
   const [startUrl, setStartUrl] = useState(existingUrl || '')
-  const [maxPages, setMaxPages] = useState(100)
-  const [maxDepth, setMaxDepth] = useState(10)
-  const [includeSubdomains, setIncludeSubdomains] = useState(false)
-  const [includePatterns, setIncludePatterns] = useState('')
-  const [excludePatterns, setExcludePatterns] = useState('')
   const [urlError, setUrlError] = useState<string | null>(null)
 
   React.useEffect(() => {
@@ -1761,6 +1758,14 @@ const WebScraperConfigModal = ({
       setStartUrl(existingUrl)
     }
   }, [existingUrl])
+
+  // Clear URL field when opening for a new crawl
+  React.useEffect(() => {
+    if (isOpen && alreadyConnected) {
+      setStartUrl('')
+      setUrlError(null)
+    }
+  }, [isOpen, alreadyConnected])
 
   const validateUrl = (url: string): boolean => {
     if (!url.trim()) {
@@ -1789,20 +1794,15 @@ const WebScraperConfigModal = ({
     if (!validateUrl(startUrl)) return
     onSubmit({
       startUrl: startUrl.trim(),
-      maxPages: Math.min(Math.max(maxPages, 1), 500),
-      maxDepth: Math.min(Math.max(maxDepth, 1), 20),
-      includeSubdomains,
-      includePatterns: includePatterns.split(',').map(p => p.trim()).filter(p => p.length > 0),
-      excludePatterns: excludePatterns.split(',').map(p => p.trim()).filter(p => p.length > 0),
+      maxPages: 100,
+      maxDepth: 10,
+      includeSubdomains: false,
+      includePatterns: [],
+      excludePatterns: [],
     })
   }
 
   if (!isOpen) return null
-
-  const featureBadges = ['PDF Extraction', 'JavaScript Rendering', 'Sitemap Discovery', 'Recursive Crawling']
-  const labelStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, display: 'block', marginBottom: '6px', color: '#1A1A1A' }
-  const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #D4D4D8', fontSize: '14px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }
-  const hintStyle: React.CSSProperties = { fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#C9A598', marginTop: '4px' }
 
   return (
     <div
@@ -1810,125 +1810,36 @@ const WebScraperConfigModal = ({
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '32px', maxWidth: '620px', width: '90%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
+        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '28px', maxWidth: '420px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '22px', fontWeight: 600, marginBottom: '8px', color: '#1A1A1A' }}>
-          Configure Website Crawler
+        <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '20px', fontWeight: 600, marginBottom: '20px', color: '#1A1A1A' }}>
+          Crawl Website
         </h2>
-        <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', color: '#7A7A7A', marginBottom: '16px', lineHeight: '1.5' }}>
-          Full website crawler with PDF extraction, JavaScript rendering, and automatic sitemap discovery. Powered by Firecrawl for comprehensive content extraction.
-        </p>
 
-        {/* Feature Badges */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
-          {featureBadges.map(badge => (
-            <span key={badge} style={{ padding: '6px 14px', backgroundColor: '#FDF8F6', color: '#C9A598', borderRadius: '20px', fontSize: '13px', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
-              {badge}
-            </span>
-          ))}
-        </div>
-
-        {/* Website URL */}
+        {/* Website URL Input */}
         <div style={{ marginBottom: '20px' }}>
-          <label style={labelStyle}>Website URL *</label>
           <input
             type="text"
             value={startUrl}
             onChange={e => { setStartUrl(e.target.value); if (urlError) setUrlError(null) }}
             onBlur={() => startUrl && validateUrl(startUrl)}
-            placeholder="https://example.com or example.com"
-            style={{ ...inputStyle, border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}` }}
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            placeholder="Enter website URL (e.g., example.com)"
+            autoFocus
+            style={{ width: '100%', padding: '14px 16px', borderRadius: '10px', border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}`, fontSize: '15px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }}
           />
-          {urlError && <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#EF4444', marginTop: '4px' }}>{urlError}</p>}
+          {urlError && <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#EF4444', marginTop: '6px' }}>{urlError}</p>}
         </div>
 
-        {/* Max Pages & Max Depth - side by side */}
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Max Pages</label>
-            <input
-              type="number"
-              value={maxPages}
-              onChange={e => setMaxPages(parseInt(e.target.value) || 100)}
-              min={1}
-              max={500}
-              style={inputStyle}
-            />
-            <p style={hintStyle}>1-500 pages</p>
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Max Depth</label>
-            <input
-              type="number"
-              value={maxDepth}
-              onChange={e => setMaxDepth(parseInt(e.target.value) || 10)}
-              min={1}
-              max={20}
-              style={inputStyle}
-            />
-            <p style={hintStyle}>Link depth (1-20)</p>
-          </div>
-        </div>
-
-        {/* Include Subdomains */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={includeSubdomains}
-              onChange={e => setIncludeSubdomains(e.target.checked)}
-              style={{ width: '18px', height: '18px', accentColor: '#C9A598', cursor: 'pointer' }}
-            />
-            <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '14px', fontWeight: 500, color: '#1A1A1A' }}>Include Subdomains</span>
-          </label>
-          <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#7A7A7A', marginTop: '4px', marginLeft: '28px' }}>
-            Also crawl subdomains (e.g., blog.example.com, docs.example.com)
-          </p>
-        </div>
-
-        {/* Include Patterns */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={labelStyle}>Include Patterns (optional)</label>
-          <input
-            type="text"
-            value={includePatterns}
-            onChange={e => setIncludePatterns(e.target.value)}
-            placeholder="/docs/, /resources/, /protocols/"
-            style={inputStyle}
-          />
-          <p style={hintStyle}>Only crawl URLs matching these patterns (comma-separated)</p>
-        </div>
-
-        {/* Exclude Patterns */}
-        <div style={{ marginBottom: '24px' }}>
-          <label style={labelStyle}>Exclude Patterns (optional)</label>
-          <input
-            type="text"
-            value={excludePatterns}
-            onChange={e => setExcludePatterns(e.target.value)}
-            placeholder="/login, /admin/, /cart"
-            style={inputStyle}
-          />
-          <p style={hintStyle}>Skip URLs matching these patterns (comma-separated)</p>
-        </div>
-
-        {/* Buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-          <button
-            onClick={onClose}
-            style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #D4D4D8', backgroundColor: '#fff', fontSize: '14px', fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!startUrl.trim() || isLoading || !!urlError}
-            style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '14px', fontWeight: 500, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
-          >
-            {isLoading ? 'Configuring...' : 'Start Crawling'}
-          </button>
-        </div>
+        {/* Sync Button */}
+        <button
+          onClick={handleSubmit}
+          disabled={!startUrl.trim() || isLoading || !!urlError}
+          style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
+        >
+          {isLoading ? 'Syncing...' : 'Sync'}
+        </button>
       </div>
     </div>
   )
@@ -3356,24 +3267,27 @@ export default function Integrations() {
 
         // Auto-detect stuck syncing connectors:
         // If backend says "syncing" but frontend has no active sync for it, auto-cancel
-        for (const apiInt of apiIntegrations) {
-          if (apiInt.status === 'syncing') {
-            const hasActiveFrontendSync = syncingConnector === apiInt.type || isConnectorSyncing(apiInt.type)
-            if (!hasActiveFrontendSync) {
-              console.log(`[Sync] Detected stuck SYNCING connector: ${apiInt.type} — auto-resetting`)
-              try {
-                await axios.post(
-                  `${API_BASE}/integrations/${apiInt.type}/sync/cancel`,
-                  {},
-                  { headers: { Authorization: `Bearer ${token}` } }
-                )
-                console.log(`[Sync] Auto-reset stuck connector: ${apiInt.type}`)
-              } catch (resetErr) {
-                console.error(`[Sync] Failed to auto-reset ${apiInt.type}:`, resetErr)
-              }
-            }
-          }
-        }
+        // DISABLED: This was causing issues when navigating away and back - the sync would be cancelled
+        // because syncingConnector resets to null on component remount, even though the sync is still running.
+        // The global activeSyncs context should be the source of truth.
+        // for (const apiInt of apiIntegrations) {
+        //   if (apiInt.status === 'syncing') {
+        //     const hasActiveFrontendSync = syncingConnector === apiInt.type || isConnectorSyncing(apiInt.type)
+        //     if (!hasActiveFrontendSync) {
+        //       console.log(`[Sync] Detected stuck SYNCING connector: ${apiInt.type} — auto-resetting`)
+        //       try {
+        //         await axios.post(
+        //           `${API_BASE}/integrations/${apiInt.type}/sync/cancel`,
+        //           {},
+        //           { headers: { Authorization: `Bearer ${token}` } }
+        //         )
+        //         console.log(`[Sync] Auto-reset stuck connector: ${apiInt.type}`)
+        //       } catch (resetErr) {
+        //         console.error(`[Sync] Failed to auto-reset ${apiInt.type}:`, resetErr)
+        //       }
+        //     }
+        //   }
+        // }
 
         // Store firecrawl/webscraper settings if configured
         const firecrawlInt = apiIntegrations.find((a: any) => a.type === 'firecrawl')
@@ -3427,7 +3341,7 @@ export default function Integrations() {
     }
   }
 
-  // Generic disconnect function - now with confirmation
+  // Generic disconnect function - with confirmation
   const disconnectIntegration = async (integrationId: string, forceConfirm: boolean = false) => {
     const token = getAuthToken()
     if (!token) return
@@ -3764,6 +3678,7 @@ export default function Integrations() {
   const startSyncWithProgress = async (integrationId: string, repository?: string, repositories?: string[]) => {
     console.log(`[Sync] ========================================`)
     console.log(`[Sync] Starting sync for: ${integrationId}${repository ? ` (repo: ${repository})` : ''}${repositories ? ` (${repositories.length} repos)` : ''}`)
+    console.log(`[Sync] Current activeSyncs:`, Array.from(activeSyncs.entries()).map(([id, s]) => `${id}:${s.connectorType}(${s.status})`))
     console.log(`[Sync] API_BASE: ${API_BASE}`)
 
     // Check if this connector already has an active sync in context
@@ -3811,6 +3726,7 @@ export default function Integrations() {
 
           // Register with global sync context for persistent progress across navigation
           globalStartSync(response.data.sync_id, integrationId)
+          console.log(`[Sync] Called globalStartSync for ${integrationId} with sync_id: ${response.data.sync_id}`)
 
           // Parse estimated time from prescan results if available (for GitHub)
           // Parse strings like "~45 seconds", "~2 minutes", "~1m 30s"
@@ -4169,13 +4085,9 @@ export default function Integrations() {
       return
     }
 
-    // Handle WebScraper configuration
+    // Handle WebScraper configuration - always show URL input (even when connected)
     if (id === 'firecrawl') {
-      if (integration?.connected) {
-        await disconnectIntegration(id)
-      } else {
-        setShowWebScraperModal(true)
-      }
+      setShowWebScraperModal(true)
       return
     }
 
@@ -4497,6 +4409,7 @@ export default function Integrations() {
         onSubmit={submitWebScraperConfig}
         isLoading={isConfiguringWebscraper}
         existingUrl={webscraperUrl}
+        alreadyConnected={integrationsState.find(i => i.id === 'firecrawl')?.connected || false}
       />
 
       {/* Website Builder Modal */}

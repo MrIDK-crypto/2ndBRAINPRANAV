@@ -307,6 +307,18 @@ def view_document(document_id: str):
                 from flask import redirect
                 return redirect(document.source_url)
 
+            # If document has an S3 original file, redirect to presigned URL
+            s3_key = (document.doc_metadata or {}).get('s3_key') if isinstance(document.doc_metadata, dict) else None
+            if s3_key and S3_AVAILABLE:
+                try:
+                    s3_service = get_s3_service()
+                    presigned_url = s3_service.get_presigned_url(s3_key, expiration=3600)
+                    if presigned_url:
+                        from flask import redirect
+                        return redirect(presigned_url)
+                except Exception as e:
+                    print(f"[VIEW] Error generating presigned URL for {document_id}: {e}")
+
             # Otherwise, render an HTML view
             title = document.title or document_id
             content = document.content or "No content available"
@@ -746,35 +758,63 @@ def upload_documents():
 
             db.commit()
 
-            # Trigger embedding in background for all created documents
-            try:
-                embedding_service = get_embedding_service()
-                docs_to_embed = []
-                for doc_info in documents_created:
-                    doc = db.query(Document).filter(Document.id == doc_info['id']).first()
-                    if doc:
-                        docs_to_embed.append(doc)
-
-                if docs_to_embed:
-                    tenant_id = getattr(g, 'tenant_id', 'local-tenant')
-                    result = embedding_service.embed_documents(
-                        documents=docs_to_embed,
-                        tenant_id=tenant_id,
-                        db=db,
-                        force_reembed=False
-                    )
-                    print(f"[Upload] Embedding result: {result}")
-            except Exception as e:
-                print(f"[Upload] Embedding error: {e}")
-                import traceback
-                traceback.print_exc()
-                # Don't fail the upload if embedding fails
-
-            return jsonify({
+            # Return response immediately so UI updates instantly
+            response_data = {
                 "success": True,
                 "documents": documents_created,
                 "count": len(documents_created)
-            })
+            }
+
+            # Embed documents AFTER sending response using threading
+            # This prevents ALB/proxy timeouts and lets the doc show up immediately
+            import threading
+
+            doc_ids = [d['id'] for d in documents_created]
+            tenant_id = getattr(g, 'tenant_id', 'local-tenant')
+
+            def _embed_in_background(doc_ids, tenant_id):
+                """Run extraction + embedding in a background thread after response is sent."""
+                try:
+                    bg_db = SessionLocal()
+                    docs = bg_db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    if not docs:
+                        return
+
+                    # Step 1: Extract structured summaries
+                    try:
+                        from services.extraction_service import get_extraction_service
+                        extraction_service = get_extraction_service()
+                        ext_result = extraction_service.extract_documents(docs, bg_db, force=False)
+                        print(f"[Upload] Background extraction result: {ext_result}", flush=True)
+                    except Exception as e:
+                        print(f"[Upload] Background extraction error: {e}", flush=True)
+
+                    # Step 2: Embed to Pinecone
+                    try:
+                        embedding_service = get_embedding_service()
+                        emb_result = embedding_service.embed_documents(
+                            documents=docs,
+                            tenant_id=tenant_id,
+                            db=bg_db,
+                            force_reembed=False
+                        )
+                        print(f"[Upload] Background embedding result: {emb_result}", flush=True)
+                    except Exception as e:
+                        print(f"[Upload] Background embedding error: {e}", flush=True)
+                except Exception as e:
+                    print(f"[Upload] Background processing error: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    try:
+                        bg_db.close()
+                    except:
+                        pass
+
+            thread = threading.Thread(target=_embed_in_background, args=(doc_ids, tenant_id), daemon=True)
+            thread.start()
+
+            return jsonify(response_data)
 
         finally:
             db.close()

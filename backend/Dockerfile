@@ -48,4 +48,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Run the application with gunicorn for production
 # Using gevent for async non-blocking I/O - best for API/database operations
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 4 --worker-class gevent --timeout 300 --graceful-timeout 30 app_v2:app
+# --worker-connections for concurrent connections, --keep-alive for SSE
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 4 --worker-class gevent --worker-connections 1000 --timeout 300 --graceful-timeout 30 --keep-alive 65 app_v2:app

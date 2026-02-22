@@ -46,8 +46,12 @@ interface SyncResources {
   pollTimeout: NodeJS.Timeout | null
 }
 
+// Storage key for persisting sync IDs
+const SYNC_STORAGE_KEY = 'pendingSyncs'
+
 export function SyncProgressProvider({ children }: { children: React.ReactNode }) {
   const [activeSyncs, setActiveSyncs] = useState<Map<string, SyncProgress>>(new Map())
+  const hasRestoredRef = useRef(false)
 
   // Use refs to track resources per sync_id
   const syncResourcesRef = useRef<Map<string, SyncResources>>(new Map())
@@ -88,6 +92,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       )
       if (response.ok) {
         const data = await response.json()
+        console.log(`[GlobalSync] Poll response for ${syncId}:`, { status: data.status, success: data.success, stage: data.stage })
         if (data.success) {
           setActiveSyncs(prev => {
             const next = new Map(prev)
@@ -124,10 +129,12 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
             // Auto-remove after delay
             setTimeout(() => {
+              console.log(`[GlobalSync] Auto-removing completed sync ${syncId}`)
               cleanupSync(syncId)
               setActiveSyncs(prev => {
                 const next = new Map(prev)
                 next.delete(syncId)
+                console.log(`[GlobalSync] Removed sync ${syncId}. Remaining:`, Array.from(next.keys()))
                 return next
               })
             }, 5000)
@@ -177,6 +184,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
         emailWhenDone,
         startedAt: Date.now()
       })
+      console.log(`[GlobalSync] Added sync ${syncId} (${connectorType}). Total active:`, Array.from(next.keys()))
       return next
     })
 
@@ -225,6 +233,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
     es.addEventListener('started', handleEvent)
     es.addEventListener('progress', handleEvent)
     es.addEventListener('complete', (e: MessageEvent) => {
+      console.log(`[GlobalSync] !!!!! SSE 'complete' event received for ${syncId} !!!!!`)
       handleEvent(e)
 
       // Clear polling resources using the ref
@@ -251,15 +260,20 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
       // Auto-remove after delay
       setTimeout(() => {
+        console.log(`[GlobalSync] SSE complete - removing sync ${syncId}`)
         cleanupSync(syncId)
         setActiveSyncs(prev => {
           const next = new Map(prev)
           next.delete(syncId)
+          console.log(`[GlobalSync] Removed sync ${syncId} after SSE complete. Remaining:`, Array.from(next.keys()))
           return next
         })
       }, 5000)
     })
-    es.addEventListener('error', handleEvent)
+    es.addEventListener('error', (e: MessageEvent) => {
+      console.log(`[GlobalSync] !!!!! SSE 'error' event received for ${syncId} !!!!!`)
+      handleEvent(e)
+    })
 
     // Handle SSE connection errors - start polling fallback IMMEDIATELY
     es.onerror = () => {
@@ -291,10 +305,12 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
   // Remove sync
   const removeSync = useCallback((syncId: string) => {
+    console.log(`[GlobalSync] removeSync called for ${syncId}`)
     cleanupSync(syncId)
     setActiveSyncs(prev => {
       const next = new Map(prev)
       next.delete(syncId)
+      console.log(`[GlobalSync] removeSync - Remaining syncs:`, Array.from(next.keys()))
       return next
     })
   }, [cleanupSync])
@@ -320,6 +336,64 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
         if (resources.pollTimeout) clearTimeout(resources.pollTimeout)
       })
       syncResourcesRef.current.clear()
+    }
+  }, [])
+
+  // Store pollSyncStatus in ref so restore effect can use it without dependency
+  const pollSyncStatusRef = useRef(pollSyncStatus)
+  pollSyncStatusRef.current = pollSyncStatus
+
+  // Save active syncs to localStorage (only after restore is done)
+  useEffect(() => {
+    if (!hasRestoredRef.current) return
+    const syncs: Array<{syncId: string, connectorType: string, startedAt: number}> = []
+    Array.from(activeSyncs.entries()).forEach(([syncId, sync]) => {
+      if (sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
+        syncs.push({ syncId, connectorType: sync.connectorType, startedAt: sync.startedAt })
+      }
+    })
+    if (syncs.length > 0) {
+      localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(syncs))
+    } else {
+      localStorage.removeItem(SYNC_STORAGE_KEY)
+    }
+  }, [activeSyncs])
+
+  // Restore syncs from localStorage on mount (runs once)
+  useEffect(() => {
+    if (hasRestoredRef.current) return
+    hasRestoredRef.current = true
+
+    const stored = localStorage.getItem(SYNC_STORAGE_KEY)
+    if (!stored) return
+
+    try {
+      const syncs = JSON.parse(stored) as Array<{syncId: string, connectorType: string, startedAt: number}>
+      const now = Date.now()
+
+      for (const { syncId, connectorType, startedAt } of syncs) {
+        if (now - startedAt > 30 * 60 * 1000) continue // Skip stale (>30 min)
+        if (syncResourcesRef.current.has(syncId)) continue
+
+        // Add to state
+        setActiveSyncs(prev => {
+          const next = new Map(prev)
+          next.set(syncId, {
+            syncId, connectorType, status: 'syncing', stage: 'Reconnecting...',
+            totalItems: 0, processedItems: 0, failedItems: 0,
+            percentComplete: 0, emailWhenDone: false, startedAt
+          })
+          return next
+        })
+
+        // Start polling
+        const resources: SyncResources = { eventSource: null, pollInterval: null, pollTimeout: null }
+        syncResourcesRef.current.set(syncId, resources)
+        pollSyncStatusRef.current(syncId, connectorType)
+        resources.pollInterval = setInterval(() => pollSyncStatusRef.current(syncId, connectorType), 2000)
+      }
+    } catch (e) {
+      localStorage.removeItem(SYNC_STORAGE_KEY)
     }
   }, [])
 

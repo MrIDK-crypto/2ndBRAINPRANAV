@@ -203,7 +203,7 @@ class QueryExpander:
         'OKR': 'Objectives and Key Results',
         'SWOT': 'Strengths Weaknesses Opportunities Threats',
 
-        # Tech
+        # Tech - General
         'API': 'Application Programming Interface',
         'SDK': 'Software Development Kit',
         'CI/CD': 'Continuous Integration Continuous Deployment',
@@ -214,10 +214,63 @@ class QueryExpander:
         'NLP': 'Natural Language Processing',
         'RAG': 'Retrieval Augmented Generation',
         'LLM': 'Large Language Model',
+
+        # Tech - Web/Backend
+        'REST': 'Representational State Transfer',
+        'HTTP': 'Hypertext Transfer Protocol',
+        'HTTPS': 'Hypertext Transfer Protocol Secure',
+        'JSON': 'JavaScript Object Notation',
+        'XML': 'Extensible Markup Language',
+        'HTML': 'Hypertext Markup Language',
+        'CSS': 'Cascading Style Sheets',
+        'SQL': 'Structured Query Language',
+        'NoSQL': 'Non-relational Database',
+        'ORM': 'Object Relational Mapping',
+        'MVC': 'Model View Controller',
+        'CRUD': 'Create Read Update Delete',
+        'JWT': 'JSON Web Token',
+        'OAuth': 'Open Authorization',
+        'SSO': 'Single Sign On',
+        'CORS': 'Cross Origin Resource Sharing',
+        'CDN': 'Content Delivery Network',
+        'DNS': 'Domain Name System',
+        'SSL': 'Secure Sockets Layer',
+        'TLS': 'Transport Layer Security',
+
+        # Tech - DevOps
+        'K8S': 'Kubernetes',
+        'K8s': 'Kubernetes',
+        'VM': 'Virtual Machine',
+        'CLI': 'Command Line Interface',
+        'GUI': 'Graphical User Interface',
+        'IDE': 'Integrated Development Environment',
+        'PR': 'Pull Request',
+        'MR': 'Merge Request',
+        'QA': 'Quality Assurance',
+        'UAT': 'User Acceptance Testing',
+        'SaaS': 'Software as a Service',
+        'PaaS': 'Platform as a Service',
+        'IaaS': 'Infrastructure as a Service',
+
+        # Tech - Data
+        'ETL': 'Extract Transform Load',
+        'DB': 'Database',
+        'DBMS': 'Database Management System',
+        'RDBMS': 'Relational Database Management System',
+
+        # Tech - Frontend
+        'DOM': 'Document Object Model',
+        'SPA': 'Single Page Application',
+        'SSR': 'Server Side Rendering',
+        'CSR': 'Client Side Rendering',
+        'PWA': 'Progressive Web App',
+        'UI': 'User Interface',
+        'UX': 'User Experience',
     }
 
-    # Synonym mappings
+    # Synonym mappings - comprehensive for all domains
     SYNONYMS = {
+        # Business/Finance
         'revenue': ['income', 'earnings', 'sales', 'receipts'],
         'cost': ['expense', 'expenditure', 'investment', 'spending'],
         'profit': ['earnings', 'income', 'margin', 'returns'],
@@ -225,6 +278,104 @@ class QueryExpander:
         'decline': ['decrease', 'drop', 'reduction', 'fall'],
         'patients': ['cases', 'admissions', 'individuals'],
         'employees': ['staff', 'workers', 'team members', 'personnel'],
+
+        # CODE/SOFTWARE - Critical for code understanding
+        'architecture': ['structure', 'design', 'layout', 'organization', 'system design', 'code structure', 'codebase', 'framework', 'components', 'modules', 'patterns'],
+        'structure': ['architecture', 'organization', 'layout', 'hierarchy', 'design', 'arrangement'],
+        'function': ['method', 'procedure', 'routine', 'subroutine', 'def', 'func', 'handler'],
+        'class': ['object', 'type', 'model', 'entity', 'struct', 'interface'],
+        'variable': ['var', 'parameter', 'argument', 'field', 'property', 'attribute', 'constant'],
+        'module': ['file', 'package', 'library', 'component', 'unit', 'service'],
+        'import': ['require', 'include', 'dependency', 'from', 'using'],
+        'error': ['exception', 'bug', 'issue', 'problem', 'failure', 'crash', 'fault'],
+        'database': ['db', 'storage', 'data store', 'repository', 'table', 'collection', 'schema'],
+        'endpoint': ['route', 'api', 'url', 'path', 'handler', 'controller'],
+        'request': ['call', 'query', 'fetch', 'invoke', 'http'],
+        'response': ['return', 'result', 'output', 'reply', 'data'],
+        'authentication': ['auth', 'login', 'signin', 'credentials', 'token', 'jwt', 'session'],
+        'authorization': ['permission', 'access', 'role', 'privilege', 'acl'],
+        'component': ['element', 'widget', 'part', 'piece', 'block', 'section'],
+        'render': ['display', 'show', 'draw', 'paint', 'output', 'view'],
+        'state': ['data', 'store', 'context', 'props', 'variables'],
+        'hook': ['lifecycle', 'callback', 'event', 'listener', 'effect'],
+        'test': ['spec', 'unit test', 'integration test', 'assertion', 'expect', 'mock'],
+        'deploy': ['release', 'publish', 'ship', 'launch', 'rollout'],
+        'config': ['configuration', 'settings', 'options', 'parameters', 'env', 'environment'],
+        'server': ['backend', 'service', 'api server', 'host', 'node'],
+        'client': ['frontend', 'browser', 'ui', 'interface', 'app'],
+        'flow': ['process', 'workflow', 'pipeline', 'sequence', 'steps'],
+        'logic': ['algorithm', 'code', 'implementation', 'business logic', 'processing'],
+        'data': ['information', 'payload', 'content', 'records', 'entries'],
+        'schema': ['model', 'structure', 'definition', 'type', 'interface'],
+        'query': ['search', 'find', 'lookup', 'filter', 'select', 'retrieve'],
+        'update': ['modify', 'change', 'edit', 'patch', 'mutate', 'set'],
+        'delete': ['remove', 'destroy', 'drop', 'clear', 'erase'],
+        'create': ['add', 'insert', 'new', 'make', 'generate', 'build'],
+        'list': ['array', 'collection', 'items', 'records', 'entries', 'all'],
+        'how': ['way', 'method', 'approach', 'process', 'steps', 'implementation'],
+        'what': ['which', 'describe', 'explain', 'definition'],
+        'where': ['location', 'file', 'path', 'place', 'directory'],
+        'why': ['reason', 'purpose', 'rationale', 'explanation'],
+    }
+
+    # Integration/Source-specific synonyms
+    SOURCE_SYNONYMS = {
+        # Email sources
+        'email': ['mail', 'message', 'correspondence', 'inbox', 'sent', 'gmail', 'outlook'],
+        'gmail': ['email', 'google mail', 'inbox', 'message'],
+        'outlook': ['email', 'microsoft mail', 'office mail', 'exchange'],
+
+        # Chat/Messaging
+        'slack': ['message', 'channel', 'thread', 'chat', 'dm', 'direct message', 'conversation'],
+        'message': ['chat', 'slack', 'conversation', 'thread', 'communication'],
+        'channel': ['slack channel', 'room', 'group', 'chat room'],
+
+        # Documents/Files
+        'document': ['file', 'doc', 'paper', 'report', 'attachment'],
+        'file': ['document', 'attachment', 'upload', 'pdf', 'doc'],
+        'pdf': ['document', 'file', 'paper', 'report'],
+        'spreadsheet': ['excel', 'sheet', 'csv', 'table', 'data', 'numbers'],
+        'excel': ['spreadsheet', 'xlsx', 'xls', 'sheet', 'workbook'],
+        'presentation': ['powerpoint', 'slides', 'pptx', 'deck', 'ppt'],
+        'powerpoint': ['presentation', 'slides', 'deck', 'pptx'],
+
+        # Cloud Storage
+        'drive': ['google drive', 'gdrive', 'cloud storage', 'files', 'folders'],
+        'gdrive': ['google drive', 'drive', 'docs', 'sheets', 'slides'],
+        'onedrive': ['microsoft drive', 'sharepoint', 'cloud storage', 'office files'],
+        'box': ['box.com', 'cloud storage', 'files', 'folders'],
+
+        # Code/Development
+        'github': ['repository', 'repo', 'code', 'commits', 'pull request', 'pr', 'issues', 'git'],
+        'repository': ['repo', 'codebase', 'project', 'git', 'github'],
+        'commit': ['change', 'update', 'revision', 'git commit', 'push'],
+        'pull request': ['pr', 'merge request', 'code review', 'changes'],
+        'issue': ['bug', 'ticket', 'task', 'problem', 'feature request'],
+
+        # Notes/Wiki
+        'notion': ['notes', 'wiki', 'documentation', 'pages', 'database'],
+        'notes': ['notion', 'memo', 'jot', 'documentation', 'record'],
+
+        # Research
+        'zotero': ['reference', 'citation', 'paper', 'research', 'bibliography'],
+        'paper': ['article', 'publication', 'research', 'journal', 'study'],
+        'research': ['study', 'paper', 'publication', 'analysis', 'findings'],
+
+        # Web
+        'webpage': ['website', 'page', 'url', 'link', 'site', 'web'],
+        'website': ['webpage', 'site', 'web', 'url', 'link'],
+    }
+
+    # Context-aware expansions based on document content type
+    CONTEXT_EXPANSIONS = {
+        # If query seems code-related, add these terms
+        'code_context': ['code', 'implementation', 'function', 'class', 'module', 'file', 'source'],
+        # If query seems about structure, add these
+        'structure_context': ['architecture', 'design', 'organization', 'layout', 'hierarchy', 'components'],
+        # If query seems about communication
+        'communication_context': ['email', 'message', 'slack', 'conversation', 'thread'],
+        # If query seems about documents
+        'document_context': ['file', 'document', 'report', 'pdf', 'attachment'],
     }
 
     @classmethod
@@ -242,25 +393,82 @@ class QueryExpander:
 
     @classmethod
     def get_synonyms(cls, query: str) -> List[str]:
-        """Get synonyms for key terms"""
+        """Get synonyms for key terms from all synonym dictionaries"""
         query_lower = query.lower()
         additional = []
+
+        # Check general synonyms
         for term, syns in cls.SYNONYMS.items():
             if term in query_lower:
                 additional.extend(syns)
+
+        # Check source/integration synonyms
+        for term, syns in cls.SOURCE_SYNONYMS.items():
+            if term in query_lower:
+                additional.extend(syns)
+
         return list(set(additional))
 
     @classmethod
+    def detect_context(cls, query: str) -> str:
+        """Detect if query is about code, structure, etc."""
+        query_lower = query.lower()
+
+        # Code-related indicators
+        code_indicators = ['code', 'function', 'class', 'module', 'import', 'api', 'endpoint',
+                          'database', 'server', 'client', 'component', 'file', 'folder',
+                          'directory', 'package', 'library', 'framework', 'backend', 'frontend',
+                          'react', 'python', 'javascript', 'typescript', 'node', 'flask', 'django',
+                          'parsed', 'codebase', 'repository', 'repo', 'git', 'source']
+
+        # Structure-related indicators
+        structure_indicators = ['architecture', 'structure', 'design', 'layout', 'organization',
+                               'hierarchy', 'overview', 'diagram', 'flow', 'how does', 'how is',
+                               'explain', 'describe', 'what is the']
+
+        has_code = any(ind in query_lower for ind in code_indicators)
+        has_structure = any(ind in query_lower for ind in structure_indicators)
+
+        if has_code and has_structure:
+            return 'code_structure'
+        elif has_structure:
+            return 'structure'  # Might be asking about code structure
+        elif has_code:
+            return 'code'
+        return 'general'
+
+    @classmethod
     def expand(cls, query: str) -> Dict:
-        """Full query expansion"""
+        """Full query expansion with context awareness"""
         expanded = cls.expand_acronyms(query)
         synonyms = cls.get_synonyms(query)
+        context = cls.detect_context(query)
+
+        # Build enhanced search query
+        search_parts = [expanded]
+
+        # Add top synonyms to search query (limit to avoid noise)
+        if synonyms:
+            top_synonyms = synonyms[:3]  # Limit to top 3 to reduce irrelevant matches
+            search_parts.extend(top_synonyms)
+
+        # Context-aware expansion: if asking about "architecture" alone,
+        # automatically add code context since they parsed code
+        if context == 'structure':
+            # User might be asking about code structure - add code context
+            search_parts.extend(['code', 'structure', 'design', 'components', 'modules'])
+        elif context == 'code_structure':
+            search_parts.extend(['architecture', 'design', 'organization', 'layout'])
+
+        # Create the final search query
+        search_query = ' '.join(search_parts)
 
         return {
             'original': query,
             'expanded': expanded,
             'synonyms': synonyms,
-            'search_query': expanded  # Use expanded for search
+            'context': context,
+            'search_query': search_query
         }
 
 
@@ -288,101 +496,49 @@ class CrossEncoderReranker:
             self.model = None
 
     def rerank(self, query: str, results: List[Dict], top_k: int = 10) -> List[Dict]:
-        """Rerank results using cross-encoder"""
+        """Rerank results using cross-encoder with batched predictions for speed"""
         if not self.model or not results:
             return results[:top_k]
 
-        # Score each result
-        scored_results = []
-        for result in results:
+        # OPTIMIZATION: Batch all predictions at once instead of one-by-one
+        # This is MUCH faster as model inference is batched
+        pairs = []
+        result_indices = []
+
+        for i, result in enumerate(results):
             content = result.get('content', '') or result.get('content_preview', '')
             if not content:
-                scored_results.append((result, 0.0))
                 continue
+            # Only use first 512 chars for speed (covers most relevant info)
+            pairs.append((query, content[:512]))
+            result_indices.append(i)
 
-            # Score multiple segments for long content
-            segments = [
-                content[:512],
-                content[len(content)//2-256:len(content)//2+256] if len(content) > 512 else '',
-                content[-512:] if len(content) > 512 else ''
-            ]
+        if not pairs:
+            return results[:top_k]
 
-            segment_scores = []
-            for seg in segments:
-                if seg.strip():
-                    try:
-                        score = self.model.predict([(query, seg)])[0]
-                        segment_scores.append(float(score))
-                    except:
-                        pass
+        # Single batched prediction - MUCH faster than individual calls
+        try:
+            scores = self.model.predict(pairs)
+        except Exception as e:
+            print(f"[EnhancedSearch] Reranking failed: {e}")
+            return results[:top_k]
 
-            max_score = max(segment_scores) if segment_scores else 0.0
-            result['rerank_score'] = max_score
-            scored_results.append((result, max_score))
+        # Assign scores back to results
+        scored_results = []
+        score_idx = 0
+        for i, result in enumerate(results):
+            if i in result_indices:
+                score = float(scores[score_idx])
+                score_idx += 1
+            else:
+                score = 0.0
+            result['rerank_score'] = score
+            scored_results.append((result, score))
 
         # Sort by rerank score
         scored_results.sort(key=lambda x: x[1], reverse=True)
 
         return [r for r, _ in scored_results[:top_k]]
-
-
-# =============================================================================
-# LLM-BASED RERANKING
-# =============================================================================
-
-class LLMReranker:
-    """LLM-based reranker using Azure OpenAI for high-accuracy relevance scoring"""
-
-    def __init__(self, client):
-        self.client = client
-
-    def rerank(self, query: str, results: List[Dict], top_k: int = 10) -> List[Dict]:
-        if not results:
-            return []
-
-        # Build passage list for scoring (first 300 chars each, max 30 passages)
-        passages = []
-        for i, r in enumerate(results[:30]):
-            content = (r.get('content', '') or r.get('content_preview', ''))[:300]
-            title = r.get('title', '')[:100]
-            passages.append(f"{i+1}. [{title}] {content}")
-
-        passages_text = "\n".join(passages)
-
-        prompt = f"""Score each passage's relevance to the query on a scale of 0-10.
-0 = completely irrelevant, 10 = directly answers the query.
-
-Query: {query}
-
-Passages:
-{passages_text}
-
-Return ONLY a JSON array of scores in order, e.g. [8, 3, 9, ...]. No other text."""
-
-        try:
-            response = self.client.chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
-                max_tokens=200
-            )
-            scores_text = response.choices[0].message.content.strip()
-            import json as _json
-            scores = _json.loads(scores_text)
-
-            # Apply scores
-            for i, r in enumerate(results[:30]):
-                if i < len(scores):
-                    r['rerank_score'] = float(scores[i])
-                else:
-                    r['rerank_score'] = 0.0
-
-            # Sort by score descending
-            scored = sorted(results[:30], key=lambda x: x.get('rerank_score', 0), reverse=True)
-            return scored[:top_k]
-
-        except Exception as e:
-            print(f"[LLMReranker] Failed, falling back to original order: {e}")
-            return results[:top_k]
 
 
 # =============================================================================
@@ -736,7 +892,6 @@ class EnhancedSearchService:
 
         # Initialize components
         self.reranker = CrossEncoderReranker()
-        self.llm_reranker = LLMReranker(self.client)
         self.hallucination_detector = HallucinationDetector(self.client)
 
         # Cache for embeddings
@@ -744,7 +899,6 @@ class EnhancedSearchService:
 
         print("[EnhancedSearch] Service initialized")
         print(f"[EnhancedSearch] Cross-encoder available: {self.reranker.model is not None}")
-        print(f"[EnhancedSearch] LLM reranker: enabled")
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding with caching"""
@@ -767,28 +921,62 @@ class EnhancedSearchService:
 
         return embedding
 
-    def _get_feedback_scores(self, doc_ids: list) -> dict:
-        """Batch lookup feedback_score for documents."""
-        if not doc_ids:
-            return {}
-        # Filter out empty strings
-        doc_ids = [d for d in doc_ids if d]
-        if not doc_ids:
-            return {}
-        try:
-            from database.models import SessionLocal, Document
-            db = SessionLocal()
-            try:
-                docs = db.query(Document.id, Document.feedback_score).filter(
-                    Document.id.in_(doc_ids),
-                    Document.feedback_score != 0.0
-                ).all()
-                return {str(d.id): d.feedback_score or 0.0 for d in docs}
-            finally:
-                db.close()
-        except Exception as e:
-            print(f"[EnhancedSearch] Feedback score lookup error (non-fatal): {e}", flush=True)
-            return {}
+    def _fast_diversity_select(self, results: List[Dict], k: int) -> List[Dict]:
+        """
+        Fast diversity selection without embedding API calls.
+
+        Uses source-based diversity to ensure results from different documents/sources.
+        This is O(n) and requires NO external API calls vs MMR which needs O(n) embedding calls.
+
+        Strategy:
+        1. Group results by source document
+        2. Round-robin select from different sources
+        3. Fall back to score-based selection for remaining slots
+        """
+        if len(results) <= k:
+            return results
+
+        # Group by source document
+        source_groups = {}
+        for result in results:
+            source = result.get('doc_id') or result.get('metadata', {}).get('document_id', 'unknown')
+            if source not in source_groups:
+                source_groups[source] = []
+            source_groups[source].append(result)
+
+        # Sort each group by score
+        for source in source_groups:
+            source_groups[source].sort(key=lambda x: x.get('rerank_score', x.get('score', 0)), reverse=True)
+
+        # Round-robin selection for diversity
+        selected = []
+        sources = list(source_groups.keys())
+        source_idx = 0
+
+        while len(selected) < k and any(source_groups.values()):
+            # Get next source (round-robin)
+            attempts = 0
+            while attempts < len(sources):
+                source = sources[source_idx % len(sources)]
+                source_idx += 1
+                attempts += 1
+
+                if source_groups.get(source):
+                    selected.append(source_groups[source].pop(0))
+                    break
+            else:
+                # All sources exhausted
+                break
+
+        # If we still need more, take highest scoring remaining
+        if len(selected) < k:
+            remaining = []
+            for group in source_groups.values():
+                remaining.extend(group)
+            remaining.sort(key=lambda x: x.get('rerank_score', x.get('score', 0)), reverse=True)
+            selected.extend(remaining[:k - len(selected)])
+
+        return selected[:k]
 
     def enhanced_search(
         self,
@@ -823,13 +1011,16 @@ class EnhancedSearchService:
         """
         start_time = time.time()
 
-        # Step 1: Query expansion
+        # Step 1: Query expansion with context awareness
         if use_expansion:
             expansion = QueryExpander.expand(query)
-            search_query = expansion['expanded']
-            print(f"[EnhancedSearch] Expanded: {query} -> {search_query[:100]}...")
+            # Use full search_query which includes synonyms and context expansions
+            search_query = expansion['search_query']
+            context = expansion.get('context', 'general')
+            print(f"[EnhancedSearch] Context: {context}")
+            print(f"[EnhancedSearch] Expanded: {query} -> {search_query[:150]}...")
         else:
-            expansion = {'original': query, 'expanded': query, 'synonyms': []}
+            expansion = {'original': query, 'expanded': query, 'synonyms': [], 'context': 'general'}
             search_query = query
 
         # Step 2: Initial retrieval from Pinecone (get more for reranking)
@@ -850,6 +1041,17 @@ class EnhancedSearchService:
             )
 
         print(f"[EnhancedSearch] Initial retrieval: {len(initial_results)} results")
+
+        # Filter out very low cosine similarity results (clearly irrelevant)
+        MIN_COSINE_SCORE = 0.20
+        before_filter = len(initial_results)
+        filtered = [r for r in initial_results if r.get('score', 0) >= MIN_COSINE_SCORE]
+        if not filtered and initial_results:
+            # Keep at least the single best result
+            filtered = sorted(initial_results, key=lambda x: x.get('score', 0), reverse=True)[:1]
+        initial_results = filtered
+        if before_filter != len(initial_results):
+            print(f"[EnhancedSearch] Filtered {before_filter - len(initial_results)} low-score results (< {MIN_COSINE_SCORE})")
 
         if not initial_results:
             return {
@@ -876,22 +1078,6 @@ class EnhancedSearchService:
                 result['freshness_boost'] = boost
                 result['score'] = result.get('score', 0) * boost
 
-        # Step 3.6: Feedback-based scoring (reinforcement learning)
-        # Documents that received positive feedback get boosted,
-        # documents with negative feedback get penalized
-        feedback_scores = self._get_feedback_scores(
-            [r.get('doc_id', '') for r in initial_results]
-        )
-        for result in initial_results:
-            doc_id = result.get('doc_id', '')
-            fb_score = feedback_scores.get(doc_id, 0.0)
-            if fb_score != 0:
-                # Convert feedback_score (-5 to +5) to a multiplier (0.75 to 1.25)
-                # This gives a max +/-25% boost/penalty
-                multiplier = 1.0 + (fb_score / 20.0)
-                result['score'] = result.get('score', 0) * multiplier
-                result['feedback_boost'] = multiplier
-
         # Step 3.5: Boost specific documents (e.g., newly uploaded chat attachments)
         if boost_doc_ids:
             boost_doc_ids_set = set(boost_doc_ids)
@@ -906,40 +1092,37 @@ class EnhancedSearchService:
             if boosted_count > 0:
                 print(f"[EnhancedSearch] Boosted {boosted_count} newly uploaded documents")
 
-        # Step 4: LLM-based reranking (upgraded from cross-encoder)
+        # Step 4: Cross-encoder reranking
         reranked = False
-        if use_reranking:
-            initial_results = self.llm_reranker.rerank(search_query, initial_results, top_k=top_k * 2)
+        if use_reranking and self.reranker.model:
+            initial_results = self.reranker.rerank(query, initial_results, top_k=top_k * 2)
             reranked = True
-            print(f"[EnhancedSearch] LLM-reranked to {len(initial_results)} results")
+            print(f"[EnhancedSearch] Reranked to {len(initial_results)} results")
 
-        # Step 5: MMR diversity selection
+            # Filter out clearly irrelevant results after reranking
+            # ms-marco cross-encoder: scores > 0 = relevant, < -3 = irrelevant
+            MIN_RERANK_SCORE = -2.0
+            before_rerank_filter = len(initial_results)
+            filtered = [r for r in initial_results if r.get('rerank_score', 0) >= MIN_RERANK_SCORE]
+            if not filtered and initial_results:
+                # Keep at least the top 2 results
+                filtered = initial_results[:2]
+            initial_results = filtered
+            if before_rerank_filter != len(initial_results):
+                print(f"[EnhancedSearch] Dropped {before_rerank_filter - len(initial_results)} irrelevant results (rerank < {MIN_RERANK_SCORE})")
+
+        # Step 5: Diversity selection (OPTIMIZED - no API calls needed)
+        # Instead of expensive MMR with embeddings, use simple source-based diversity
         mmr_applied = False
         if use_mmr and len(initial_results) > top_k:
             try:
-                # Get embeddings for MMR
-                query_embedding = self._get_embedding(search_query)
-                doc_embeddings = []
-                for result in initial_results:
-                    content = result.get('content', '') or result.get('content_preview', '')
-                    if content:
-                        emb = self._get_embedding(content[:1000])
-                        doc_embeddings.append(emb)
-                    else:
-                        doc_embeddings.append(np.zeros(1536))
-
-                doc_embeddings = np.array(doc_embeddings)
-                initial_results = MMRSelector.select(
-                    initial_results,
-                    query_embedding,
-                    doc_embeddings,
-                    k=top_k,
-                    lambda_param=mmr_lambda
-                )
+                # FAST diversity: Ensure variety across different sources/documents
+                # This avoids 20-30 OpenAI embedding API calls per search!
+                initial_results = self._fast_diversity_select(initial_results, top_k)
                 mmr_applied = True
-                print(f"[EnhancedSearch] MMR selected {len(initial_results)} diverse results")
+                print(f"[EnhancedSearch] Fast diversity selected {len(initial_results)} results")
             except Exception as e:
-                print(f"[EnhancedSearch] MMR failed: {e}")
+                print(f"[EnhancedSearch] Diversity selection failed: {e}")
                 initial_results = initial_results[:top_k]
         else:
             initial_results = initial_results[:top_k]
@@ -961,31 +1144,12 @@ class EnhancedSearchService:
             }
         }
 
-    def _classify_query_complexity(self, query: str) -> str:
-        """Classify query as simple/medium/complex for adaptive context sizing"""
-        q = query.lower().strip()
-        word_count = len(q.split())
-
-        complex_signals = [
-            'compare', 'contrast', 'analyze', 'analysis', 'comprehensive',
-            'explain in detail', 'pros and cons', 'advantages and disadvantages',
-            'step by step', 'how does', 'walk me through', 'deep dive',
-            'what are all', 'list all', 'everything about', 'full overview'
-        ]
-        if any(s in q for s in complex_signals) or word_count > 25 or q.count('?') > 1:
-            return 'complex'
-
-        if word_count <= 8:
-            return 'simple'
-
-        return 'medium'
-
     def generate_answer(
         self,
         query: str,
         search_results: Dict,
         validate: bool = True,
-        max_context_tokens: int = None,
+        max_context_tokens: int = 12000,
         conversation_history: list = None
     ) -> Dict:
         """
@@ -995,7 +1159,7 @@ class EnhancedSearchService:
             query: User query
             search_results: Results from enhanced_search
             validate: Run hallucination detection
-            max_context_tokens: Max tokens for context (auto-detected if None)
+            max_context_tokens: Max tokens for context
             conversation_history: Previous messages for multi-turn conversations
 
         Returns:
@@ -1012,37 +1176,26 @@ class EnhancedSearchService:
                 'hallucination_check': None
             }
 
-        # Adaptive context based on query complexity
-        complexity = self._classify_query_complexity(query)
-        CONTEXT_SETTINGS = {
-            'simple':  {'tokens': 16000, 'max_sources': 8,  'chars_per_source': 4000, 'response_tokens': 2000},
-            'medium':  {'tokens': 32000, 'max_sources': 12, 'chars_per_source': 5000, 'response_tokens': 3000},
-            'complex': {'tokens': 64000, 'max_sources': 20, 'chars_per_source': 6000, 'response_tokens': 4000},
-        }
-        settings = CONTEXT_SETTINGS[complexity]
-
-        # Override with explicit parameter if provided
-        if max_context_tokens:
-            settings['tokens'] = max_context_tokens
-
-        max_sources = settings['max_sources']
-        chars_per_source = settings['chars_per_source']
-        response_tokens = settings['response_tokens']
-
-        print(f"[EnhancedSearch] Query complexity: {complexity}, context: {settings['tokens']}t, sources: {max_sources}, response: {response_tokens}t")
-
-        # Build context with adaptive sizing
+        # Build context with FULL content (not just 500 chars)
+        # Only include sources with meaningful relevance scores
         context_parts = []
+        sources_used = []  # Track which sources made it into context
         total_chars = 0
-        max_chars = settings['tokens'] * 4  # ~4 chars per token
+        max_chars = max_context_tokens * 4  # ~4 chars per token
 
-        for i, result in enumerate(results[:max_sources], 1):
+        for i, result in enumerate(results[:15], 1):  # Use up to 15 sources
             content = result.get('content', '') or result.get('content_preview', '')
             title = result.get('title', 'Untitled')
             score = result.get('rerank_score', result.get('score', 0))
 
-            if len(content) > chars_per_source:
-                content = content[:chars_per_source] + "..."
+            # Skip low-relevance sources (but always include at least 1)
+            if i > 1 and score < 0.15:
+                print(f"[EnhancedSearch] Skipping source {i} '{title[:40]}' - low relevance ({score:.3f})")
+                continue
+
+            # Don't truncate aggressively - use more content
+            if len(content) > 3000:
+                content = content[:3000] + "..."
 
             if total_chars + len(content) > max_chars:
                 remaining = max_chars - total_chars
@@ -1051,11 +1204,13 @@ class EnhancedSearchService:
                 else:
                     break
 
+            source_idx = len(context_parts) + 1
             context_parts.append(
-                f"[Source {i}] (Relevance: {score:.2%})\n"
+                f"[Source {source_idx}] (Relevance: {score:.2%})\n"
                 f"Title: {title}\n"
                 f"Content: {content}\n"
             )
+            sources_used.append(result)
             total_chars += len(content)
 
         context = "\n---\n".join(context_parts)
@@ -1072,16 +1227,20 @@ CRITICAL ACCURACY RULES (NEVER VIOLATE):
 
 RESPONSE FORMAT:
 - Use **headers** (## Section) for organization
-- Use **code blocks** (```language) for any code - with the actual code from sources
+- Use **code blocks** (```language) ONLY for actual source code - NEVER for tabular data
 - Use **numbered lists** for steps/processes
 - Use **bullet points** for features/items
 - Keep paragraphs focused and clear
+- For ANY tabular data, ALWAYS use proper markdown table syntax with | pipes and separator rows:
+  | Column 1 | Column 2 |
+  |----------|----------|
+  | Data 1   | Data 2   |
+  NEVER put tables inside code blocks (``` ```) — always use the pipe syntax above
 
 CITATION FORMAT:
-- Cite every factual claim with separate brackets: [Source 1] [Source 2]
-- For multiple sources on one claim: [Source 1] [Source 2] [Source 3]
-- ALWAYS use the format [Source N] with exactly one number per bracket
-- Never combine numbers like [Source 1, 2] or [Sources 1, 2]
+- Cite every factual claim: [Source 1], [Source 2]
+- For code snippets, cite the source file: [Source 3: filename.py]
+- If combining info from multiple sources, cite all: [Source 1, 2]
 
 HONESTY REQUIREMENTS:
 - If asked about something not in sources: "I don't have that information in my knowledge base."
@@ -1133,7 +1292,7 @@ End with "Sources Used: [list numbers]"."""
             response = self.client.chat_completion(
                 messages=messages,
                 temperature=0.1,  # Low for factual consistency
-                max_tokens=response_tokens
+                max_tokens=2000
             )
 
             answer = response.choices[0].message.content.strip()
@@ -1145,11 +1304,12 @@ End with "Sources Used: [list numbers]"."""
             if validate:
                 claims = self.hallucination_detector.extract_claims(answer)
                 if claims:
-                    hallucination_check = self.hallucination_detector.verify_claims(claims, results)
+                    hallucination_check = self.hallucination_detector.verify_claims(claims, sources_used)
                 citation_check = self.hallucination_detector.check_citation_coverage(answer)
 
             # Calculate confidence
-            base_confidence = results[0].get('rerank_score', results[0].get('score', 0.5))
+            top_result = sources_used[0] if sources_used else results[0]
+            base_confidence = top_result.get('rerank_score', top_result.get('score', 0.5))
             if hallucination_check:
                 base_confidence = min(base_confidence, hallucination_check['confidence'])
             if citation_check:
@@ -1158,20 +1318,18 @@ End with "Sources Used: [list numbers]"."""
             return {
                 'answer': answer,
                 'confidence': base_confidence,
-                'sources': results[:max_sources],
+                'sources': sources_used[:10],
                 'hallucination_check': hallucination_check,
                 'citation_check': citation_check,
                 'context_chars': total_chars,
-                'sources_used': len(context_parts),
-                'query_complexity': complexity,
-                'response_tokens': response_tokens
+                'sources_used': len(context_parts)
             }
 
         except Exception as e:
             return {
                 'answer': f"Error generating answer: {str(e)}",
                 'confidence': 0.0,
-                'sources': results[:max_sources],
+                'sources': sources_used[:10] if sources_used else results[:3],
                 'error': str(e)
             }
 
@@ -1219,9 +1377,8 @@ End with "Sources Used: [list numbers]"."""
         query = sanitized_query
 
         # MEMORY SAFETY: Bound conversation history to prevent memory leaks
-        # Frontend sends up to 500 messages from cloud; we use the most recent 50 for LLM context
-        MAX_HISTORY_MESSAGES = 50  # Last 50 messages for LLM context window
-        MAX_MESSAGE_LENGTH = 2000  # Max chars per message
+        MAX_HISTORY_MESSAGES = 20  # Reasonable max for context
+        MAX_MESSAGE_LENGTH = 1000  # Max chars per message
 
         if conversation_history:
             # Truncate to last N messages
@@ -1270,6 +1427,227 @@ End with "Sources Used: [list numbers]"."""
             'citation_check': answer_result.get('citation_check'),
             'context_chars': answer_result.get('context_chars', 0)
         }
+
+    def generate_answer_stream(
+        self,
+        query: str,
+        search_results: Dict,
+        max_context_tokens: int = 12000,
+        conversation_history: list = None
+    ):
+        """
+        Generate answer with STREAMING - yields chunks as they arrive.
+
+        Yields:
+            dict with 'type' ('chunk' or 'done') and content
+        """
+        conversation_history = conversation_history or []
+        results = search_results.get('results', [])
+
+        if not results:
+            yield {'type': 'chunk', 'content': "I couldn't find any relevant information to answer your question."}
+            yield {'type': 'done', 'confidence': 0.0, 'sources': []}
+            return
+
+        # Build context (same as non-streaming)
+        context_parts = []
+        total_chars = 0
+        max_chars = max_context_tokens * 4
+
+        for i, result in enumerate(results[:15], 1):
+            content = result.get('content', '') or result.get('content_preview', '')
+            title = result.get('title', 'Untitled')
+            score = result.get('rerank_score', result.get('score', 0))
+
+            if len(content) > 3000:
+                content = content[:3000] + "..."
+
+            if total_chars + len(content) > max_chars:
+                remaining = max_chars - total_chars
+                if remaining > 500:
+                    content = content[:remaining]
+                else:
+                    break
+
+            context_parts.append(
+                f"[Source {i}] (Relevance: {score:.2%})\n"
+                f"Title: {title}\n"
+                f"Content: {content}\n"
+            )
+            total_chars += len(content)
+
+        context = "\n---\n".join(context_parts)
+
+        # Same prompt as non-streaming
+        system_prompt = """You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
+
+CRITICAL ACCURACY RULES (NEVER VIOLATE):
+1. **ONLY use information explicitly stated in the sources** - Never infer, assume, or add information not in the sources
+2. **If sources don't contain the answer, say so clearly** - "Based on the provided documents, I don't have information about [topic]."
+3. **Quote directly when possible** - Use exact text from sources for key claims
+4. **Distinguish facts from interpretation** - If you're explaining something, make clear what's from sources vs your explanation
+5. **Never hallucinate code, numbers, dates, or names** - Only include these if they appear in sources
+
+RESPONSE FORMAT:
+- Use **headers** (## Section) for organization
+- Use **code blocks** (```language) for any code - with the actual code from sources
+- Use **numbered lists** for steps/processes
+- Use **bullet points** for features/items
+- Keep paragraphs focused and clear
+
+CITATION FORMAT:
+- Cite every factual claim: [Source 1], [Source 2]
+- For code snippets, cite the source file: [Source 3: filename.py]
+- If combining info from multiple sources, cite all: [Source 1, 2]
+
+HONESTY REQUIREMENTS:
+- If asked about something not in sources: "I don't have that information in my knowledge base."
+- If sources are unclear or contradictory: Acknowledge the uncertainty
+- If you can only partially answer: State what you know and what's missing
+- Never make up examples, URLs, or specific details
+
+Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
+
+        conversation_context = ""
+        if conversation_history and len(conversation_history) > 0:
+            conversation_context = "CONVERSATION HISTORY (for context):\n"
+            for i, msg in enumerate(conversation_history[-6:], 1):
+                role = "User" if msg.get('role') == 'user' else "Assistant"
+                content = msg.get('content', '')[:200]
+                conversation_context += f"{role}: {content}\n"
+            conversation_context += "\n"
+
+        user_prompt = f"""{conversation_context}SOURCE DOCUMENTS:
+{context}
+
+CURRENT QUESTION: {query}
+
+Provide a DETAILED, well-formatted answer:
+- Use numbered steps for processes/procedures
+- Include code blocks for any code content
+- Be thorough - explain concepts fully with examples
+- Use conversation history for context (e.g., understand pronouns like "it", "that", "them")
+- Cite key facts with [Source X]
+
+End with "Sources Used: [list numbers]"."""
+
+        try:
+            messages = [{"role": "system", "content": system_prompt}]
+
+            if conversation_history and len(conversation_history) > 0:
+                for msg in conversation_history[-4:]:
+                    messages.append({
+                        "role": msg.get('role', 'user'),
+                        "content": msg.get('content', '')[:500]
+                    })
+
+            messages.append({"role": "user", "content": user_prompt})
+
+            # STREAM the response
+            full_answer = ""
+            stream = self.client.chat_completion_stream(
+                messages=messages,
+                temperature=0.1,
+                max_tokens=2000
+            )
+
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_answer += content
+                    yield {'type': 'chunk', 'content': content}
+
+            # After streaming, run validation
+            hallucination_check = None
+            base_confidence = results[0].get('rerank_score', results[0].get('score', 0.5))
+
+            try:
+                claims = self.hallucination_detector.extract_claims(full_answer)
+                if claims:
+                    hallucination_check = self.hallucination_detector.verify_claims(claims, results)
+                    if hallucination_check:
+                        base_confidence = min(base_confidence, hallucination_check.get('confidence', 1.0))
+            except Exception as e:
+                print(f"[Stream] Hallucination check error: {e}", flush=True)
+
+            yield {
+                'type': 'done',
+                'confidence': base_confidence,
+                'sources': results[:10],
+                'hallucination_check': hallucination_check
+            }
+
+        except Exception as e:
+            yield {'type': 'chunk', 'content': f"Error generating answer: {str(e)}"}
+            yield {'type': 'done', 'confidence': 0.0, 'sources': [], 'error': str(e)}
+
+    def search_and_answer_stream(
+        self,
+        query: str,
+        tenant_id: str,
+        vector_store,
+        top_k: int = 10,
+        conversation_history: list = None,
+        boost_doc_ids: list = None
+    ):
+        """
+        Complete RAG pipeline with STREAMING response.
+
+        Yields:
+            dict events: 'search_complete', 'chunk', 'done'
+        """
+        # Sanitize query
+        sanitized_query, warnings = sanitize_query(query)
+        if not sanitized_query:
+            yield {'type': 'chunk', 'content': "Please provide a valid search query."}
+            yield {'type': 'done', 'confidence': 0.0, 'sources': []}
+            return
+
+        query = sanitized_query
+
+        # Bound conversation history
+        MAX_HISTORY_MESSAGES = 20
+        MAX_MESSAGE_LENGTH = 1000
+
+        if conversation_history:
+            if len(conversation_history) > MAX_HISTORY_MESSAGES:
+                conversation_history = conversation_history[-MAX_HISTORY_MESSAGES:]
+
+            bounded_history = []
+            for msg in conversation_history:
+                if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                    content = str(msg.get('content', ''))[:MAX_MESSAGE_LENGTH]
+                    bounded_history.append({
+                        'role': msg.get('role', 'user'),
+                        'content': content
+                    })
+            conversation_history = bounded_history
+
+        # Search (non-streaming - this is fast)
+        search_results = self.enhanced_search(
+            query=query,
+            tenant_id=tenant_id,
+            vector_store=vector_store,
+            top_k=top_k,
+            boost_doc_ids=boost_doc_ids
+        )
+
+        # Send search complete event with sources
+        yield {
+            'type': 'search_complete',
+            'expanded_query': search_results.get('expanded_query', query),
+            'num_sources': len(search_results.get('results', [])),
+            'sources': search_results.get('results', [])[:10],
+            'features_used': search_results.get('features_used', {})
+        }
+
+        # Stream the answer
+        for event in self.generate_answer_stream(
+            query=query,
+            search_results=search_results,
+            conversation_history=conversation_history or []
+        ):
+            yield event
 
 
 # Singleton instance
