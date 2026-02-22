@@ -20,7 +20,6 @@ interface Message {
   sources?: any[]
   sourceMap?: { [key: string]: { name: string; doc_id: string } }
   attachments?: { name: string; type: string }[]
-  isStreaming?: boolean  // True while streaming - shows plain text for performance
 }
 
 interface Conversation {
@@ -384,6 +383,9 @@ export default function ChatInterface() {
     setMessages(prev => [...prev, userMessage])
     const queryText = inputValue
     setInputValue('')
+    // Reset textarea height
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement
+    if (textarea) textarea.style.height = '24px'
     setIsLoading(true)
 
     // Track analytics
@@ -464,106 +466,36 @@ export default function ChatInterface() {
       // Append the current user message that was just sent (not yet saved to cloud)
       conversationHistory.push({ role: 'user', content: queryText })
 
-      // Use STREAMING search - words appear in real-time like GPT/Claude!
+      // Use regular search endpoint (not streaming)
       const aiMessageId = (Date.now() + 1).toString()
-      let streamedAnswer = ''
-      let sourcesData: any[] = []
       let sourceMapData: { [key: string]: { name: string; doc_id: string; source_url: string } } = {}
 
-      // Add placeholder AI message with typing indicator
-      setMessages(prev => [...prev, {
-        id: aiMessageId,
-        text: '', // Empty - cursor is CSS animated
-        isUser: false,
-        sources: [],
-        sourceMap: {},
-        isStreaming: true,  // Mark as streaming for plain text rendering
-      }])
-
-      // Update DOM directly for instant streaming (bypass React for performance)
-      const updateStreamingText = (text: string) => {
-        const el = document.getElementById(`streaming-${aiMessageId}`)
-        if (el) {
-          // Update only the text node, keep the cursor element
-          const textNode = el.firstChild
-          if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-            textNode.textContent = text
-          } else {
-            el.insertBefore(document.createTextNode(text), el.firstChild)
-          }
-        }
-      }
-
-      // Use fetch for SSE streaming
-      const streamResponse = await fetch(`${API_BASE}/search/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-        body: JSON.stringify({
-          query: queryText,
-          conversation_history: conversationHistory,
-          top_k: 15,
-          boost_doc_ids: uploadedDocIds
-        })
+      // Make API call to search endpoint
+      const response = await axios.post(`${API_BASE}/search`, {
+        query: queryText,
+        conversation_history: conversationHistory,
+        top_k: 15,
+        boost_doc_ids: uploadedDocIds
+      }, {
+        headers: getAuthHeaders()
       })
 
-      if (!streamResponse.ok) {
-        throw new Error(`Stream request failed: ${streamResponse.status}`)
-      }
+      const data = response.data
+      const rawAnswer = data.answer || ''
+      const sourcesData = data.sources || []
 
-      const reader = streamResponse.body?.getReader()
-      const decoder = new TextDecoder()
+      // Build source mapping
+      sourcesData.forEach((s: any, idx: number) => {
+        const sourceName = s.title || `Source ${idx + 1}`
+        const doc_id = s.doc_id || ''
+        const source_url = s.source_url || ''
+        const cleanName = (sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName).replace(/:/g, ' -')
+        sourceMapData[`Source ${idx + 1}`] = { name: cleanName, doc_id, source_url }
+        sourceMapData[cleanName] = { name: cleanName, doc_id, source_url }
+      })
 
-      if (!reader) {
-        throw new Error('No reader available')
-      }
-
-      // Process SSE stream
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-
-              if (data.content !== undefined) {
-                // Chunk - append text and update DOM directly (instant!)
-                streamedAnswer += data.content
-                updateStreamingText(streamedAnswer)
-              } else if (data.sources !== undefined) {
-                // Done event - got final sources
-                sourcesData = data.sources || []
-
-                // Build source mapping
-                sourcesData.forEach((s: any, idx: number) => {
-                  const sourceName = s.title || `Source ${idx + 1}`
-                  const doc_id = s.doc_id || ''
-                  const source_url = s.source_url || ''
-                  const cleanName = (sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName).replace(/:/g, ' -')
-                  sourceMapData[`Source ${idx + 1}`] = { name: cleanName, doc_id, source_url }
-                  sourceMapData[cleanName] = { name: cleanName, doc_id, source_url }
-                })
-              } else if (data.error) {
-                throw new Error(data.error)
-              }
-            } catch (e) {
-              // Ignore parse errors for partial data
-            }
-          }
-        }
-      }
-
-      // Clean up the streamed answer (same cleanup as before)
-      let cleanedAnswer = streamedAnswer
+      // Clean up the answer
+      let cleanedAnswer = rawAnswer
       cleanedAnswer = cleanedAnswer.replace(/Sources Used:.*$/gm, '')
       cleanedAnswer = cleanedAnswer.replace(/.*Citation Coverage:.*$/gm, '')
       cleanedAnswer = cleanedAnswer.replace(/^.*📊.*$/gm, '')
@@ -621,10 +553,14 @@ export default function ChatInterface() {
         source_url: s.source_url || ''
       }))
 
-      // Final update with cleaned answer and sources - disable streaming mode for markdown rendering
-      setMessages(prev => prev.map(m =>
-        m.id === aiMessageId ? { ...m, text: cleanedAnswer, sources: aiSources, sourceMap: sourceMapData, isStreaming: false } : m
-      ))
+      // Add AI response message
+      setMessages(prev => [...prev, {
+        id: aiMessageId,
+        text: cleanedAnswer,
+        isUser: false,
+        sources: aiSources,
+        sourceMap: sourceMapData
+      }])
 
       // Save to conversation
       if (convId) {
@@ -1051,33 +987,7 @@ export default function ChatInterface() {
                         lineHeight: '1.6',
                         color: warmTheme.textPrimary
                       }}>
-                        {message.isUser ? message.text : (message.isStreaming ? (
-                          <span
-                            id={`streaming-${message.id}`}
-                            style={{
-                              whiteSpace: 'pre-wrap',
-                              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                            }}
-                          >
-                            {message.text || (
-                              <span style={{ color: warmTheme.textSecondary, fontSize: '15px' }}>Thinking</span>
-                            )}
-                            {message.text && (
-                              <span
-                                className="streaming-cursor"
-                                style={{
-                                  display: 'inline-block',
-                                  width: '2px',
-                                  height: '1.1em',
-                                  backgroundColor: warmTheme.primary,
-                                  marginLeft: '2px',
-                                  verticalAlign: 'text-bottom',
-                                  animation: 'blink 1s step-end infinite',
-                                }}
-                              />
-                            )}
-                          </span>
-                        ) : renderMarkdownMessage(message.text))}
+                        {message.isUser ? message.text : renderMarkdownMessage(message.text)}
                       </div>
 
                       {/* Display attachments for user messages */}
@@ -1290,7 +1200,27 @@ export default function ChatInterface() {
                   </div>
                 ))}
 
-                {/* Thinking indicator removed - now integrated into streaming message bubble */}
+                {/* Thinking indicator with dots */}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px 20px',
+                      background: warmTheme.primaryLight,
+                      borderRadius: '16px',
+                      border: `1px solid ${warmTheme.border}`
+                    }}>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite' }}></div>
+                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.2s', opacity: 0.7 }}></div>
+                        <div style={{ width: '8px', height: '8px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.4s', opacity: 0.5 }}></div>
+                      </div>
+                      <span style={{ color: warmTheme.primary, fontSize: '14px', fontWeight: 500 }}>Thinking</span>
+                    </div>
+                  </div>
+                )}
                 
                 <div ref={messagesEndRef} />
               </div>
@@ -1404,13 +1334,23 @@ export default function ChatInterface() {
                 </svg>
               </button>
 
-              <input
-                type="text"
+              <textarea
                 placeholder={isTranscribing ? "Transcribing..." : attachedFiles.length > 0 ? "Ask about your documents..." : "Ask anything..."}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement
+                  target.style.height = 'auto'
+                  target.style.height = Math.min(target.scrollHeight, 150) + 'px'
+                }}
                 disabled={isTranscribing}
+                rows={1}
                 style={{
                   flex: 1,
                   border: 'none',
@@ -1418,7 +1358,12 @@ export default function ChatInterface() {
                   fontSize: '15px',
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                   color: warmTheme.textPrimary,
-                  backgroundColor: 'transparent'
+                  backgroundColor: 'transparent',
+                  resize: 'none',
+                  height: '24px',
+                  maxHeight: '150px',
+                  overflowY: 'auto',
+                  lineHeight: '1.5'
                 }}
               />
 
