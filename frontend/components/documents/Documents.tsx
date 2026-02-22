@@ -257,6 +257,18 @@ export default function Documents() {
   const [connectedIntegrations, setConnectedIntegrations] = useState<ConnectedIntegration[]>([])
   const [integrationSliderPosition, setIntegrationSliderPosition] = useState(0)
 
+  // Custom folders state
+  const [customFolders, setCustomFolders] = useState<{id: string, name: string, color: string, documentIds: string[]}[]>([])
+  const [activeCustomFolder, setActiveCustomFolder] = useState<string | null>(null)
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderColor, setNewFolderColor] = useState('#B8A394')
+
+  // Upload modal state
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
+  const [selectedUploadFolder, setSelectedUploadFolder] = useState<string>('')
+
   // Notification state
   const [showNotifications, setShowNotifications] = useState(false)
   const [clearedNotifications, setClearedNotifications] = useState<Set<string>>(new Set())
@@ -287,8 +299,78 @@ export default function Documents() {
       hasLoadedRef.current = true
       loadDocuments()
       loadIntegrations()
+      loadCustomFolders()
     }
   }, [token])
+
+  // Load custom folders from localStorage
+  const loadCustomFolders = () => {
+    try {
+      const saved = localStorage.getItem('customFolders')
+      if (saved) {
+        setCustomFolders(JSON.parse(saved))
+      }
+    } catch (e) {
+      console.error('Error loading custom folders:', e)
+    }
+  }
+
+  // Save custom folders to localStorage
+  const saveCustomFolders = (folders: typeof customFolders) => {
+    try {
+      localStorage.setItem('customFolders', JSON.stringify(folders))
+      setCustomFolders(folders)
+    } catch (e) {
+      console.error('Error saving custom folders:', e)
+    }
+  }
+
+  // Create a new custom folder
+  const createCustomFolder = () => {
+    if (!newFolderName.trim()) return
+    const newFolder = {
+      id: `folder_${Date.now()}`,
+      name: newFolderName.trim(),
+      color: newFolderColor,
+      documentIds: []
+    }
+    saveCustomFolders([...customFolders, newFolder])
+    setNewFolderName('')
+    setNewFolderColor('#B8A394')
+    setShowNewFolderModal(false)
+  }
+
+  // Delete a custom folder
+  const deleteCustomFolder = (folderId: string) => {
+    saveCustomFolders(customFolders.filter(f => f.id !== folderId))
+    if (activeCustomFolder === folderId) {
+      setActiveCustomFolder(null)
+    }
+  }
+
+  // Add documents to a folder
+  const addDocumentsToFolder = (folderId: string, docIds: string[]) => {
+    const updated = customFolders.map(f => {
+      if (f.id === folderId) {
+        const newIds = [...new Set([...f.documentIds, ...docIds])]
+        return { ...f, documentIds: newIds }
+      }
+      return f
+    })
+    saveCustomFolders(updated)
+  }
+
+  // Remove document from folder
+  const removeDocumentFromFolder = (folderId: string, docId: string) => {
+    const updated = customFolders.map(f => {
+      if (f.id === folderId) {
+        return { ...f, documentIds: f.documentIds.filter(id => id !== docId) }
+      }
+      return f
+    })
+    saveCustomFolders(updated)
+  }
+
 
   // Load integration statuses
   const loadIntegrations = async () => {
@@ -370,8 +452,15 @@ export default function Documents() {
   const filteredDocuments = useMemo(() => {
     let filtered = [...documents]
 
+    // Filter by custom folder if selected
+    if (activeCustomFolder) {
+      const folder = customFolders.find(f => f.id === activeCustomFolder)
+      if (folder) {
+        filtered = filtered.filter(d => folder.documentIds.includes(d.id))
+      }
+    }
     // Filter by integration source if selected
-    if (activeIntegration) {
+    else if (activeIntegration) {
       const integrationConfig = INTEGRATION_CONFIG.find(i => i.id === activeIntegration)
       if (integrationConfig) {
         filtered = filtered.filter(d =>
@@ -408,7 +497,7 @@ export default function Documents() {
     })
 
     return filtered
-  }, [documents, activeCategory, activeIntegration, sourceFilter, searchQuery, sortField, sortDirection])
+  }, [documents, activeCategory, activeIntegration, activeCustomFolder, customFolders, sourceFilter, searchQuery, sortField, sortDirection])
 
   // Calculate document counts per integration AND get integrations that have documents
   const { integrationCounts, integrationsWithDocs } = useMemo(() => {
@@ -577,8 +666,23 @@ export default function Documents() {
     }
   }
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle file selection - just store files when modal is open
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
+    if (!files || files.length === 0) return
+
+    if (showUploadModal) {
+      // Modal is open - just store files for later upload
+      setUploadFiles(Array.from(files))
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } else {
+      // Direct upload (no modal) - upload immediately
+      uploadFiles_internal(Array.from(files))
+    }
+  }
+
+  // Internal upload function
+  const uploadFiles_internal = async (files: File[]) => {
     if (!files || files.length === 0) return
 
     // Check for authentication
@@ -608,7 +712,15 @@ export default function Documents() {
         }
       })
       if (response.data.success) {
+        // Add uploaded documents to selected folder if any
+        const docIds = response.data.document_ids || response.data.documents?.map((d: any) => d.id) || []
+        if (selectedUploadFolder && docIds.length > 0) {
+          addDocumentsToFolder(selectedUploadFolder, docIds)
+        }
         loadDocuments()
+        setShowUploadModal(false)
+        setUploadFiles([])
+        setSelectedUploadFolder('')
       } else {
         console.error('Upload failed:', response.data.error)
         alert(`Upload failed: ${response.data.error || 'Unknown error'}`)
@@ -629,6 +741,13 @@ export default function Documents() {
       setUploadProgress(0)
       setUploadFileCount(0)
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  // Upload the files that were selected in the modal
+  const handleUploadFromModal = () => {
+    if (uploadFiles.length > 0) {
+      uploadFiles_internal(uploadFiles)
     }
   }
 
@@ -1528,7 +1647,7 @@ export default function Documents() {
               )}
             </div>
             <button
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => setShowUploadModal(true)}
               disabled={uploading}
               style={{
                 display: 'flex',
@@ -1698,15 +1817,39 @@ export default function Documents() {
             justifyContent: 'space-between',
             marginBottom: '16px',
           }}>
-            <h2 style={{
-              fontSize: '16px',
-              fontWeight: 600,
-              color: colors.textPrimary,
-              margin: 0,
-            }}>
-              Sources
-            </h2>
-            {integrationsWithDocs.length > 5 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <h2 style={{
+                fontSize: '16px',
+                fontWeight: 600,
+                color: colors.textPrimary,
+                margin: 0,
+              }}>
+                Sources
+              </h2>
+              <button
+                onClick={() => setShowNewFolderModal(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  color: colors.textSecondary,
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                New Folder
+              </button>
+            </div>
+            {(integrationsWithDocs.length + customFolders.length) > 4 && (
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   onClick={() => handleSliderScroll('left')}
@@ -1763,13 +1906,13 @@ export default function Documents() {
           >
             {/* All Documents Card */}
             <button
-              onClick={() => { setActiveIntegration(null); setActiveCategory('All Items') }}
+              onClick={() => { setActiveIntegration(null); setActiveCategory('All Items'); setActiveCustomFolder(null) }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '16px',
                 padding: '20px 28px',
-                backgroundColor: !activeIntegration ? colors.primaryLight : '#F7F5F3',
+                backgroundColor: (!activeIntegration && !activeCustomFolder) ? colors.primaryLight : '#F7F5F3',
                 border: `2px solid ${!activeIntegration ? colors.primary : colors.border}`,
                 borderRadius: '16px',
                 cursor: 'pointer',
@@ -1805,7 +1948,91 @@ export default function Documents() {
               </div>
             </button>
 
-            {/* Integration-based Folder Cards - consistent style */}
+            {/* Custom Folder Cards - shown first */}
+            {customFolders.map((folder) => {
+              const isActive = activeCustomFolder === folder.id
+              return (
+                <button
+                  key={folder.id}
+                  onClick={() => { setActiveCustomFolder(folder.id); setActiveIntegration(null); setActiveCategory('') }}
+                  onMouseEnter={(e) => {
+                    const deleteBtn = e.currentTarget.querySelector('[data-delete-btn]') as HTMLElement
+                    if (deleteBtn) deleteBtn.style.opacity = '1'
+                  }}
+                  onMouseLeave={(e) => {
+                    const deleteBtn = e.currentTarget.querySelector('[data-delete-btn]') as HTMLElement
+                    if (deleteBtn) deleteBtn.style.opacity = '0'
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    padding: '20px 28px',
+                    backgroundColor: isActive ? colors.primaryLight : '#F7F5F3',
+                    border: `2px solid ${isActive ? colors.primary : colors.border}`,
+                    borderRadius: '16px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    minWidth: '240px',
+                    flexShrink: 0,
+                    boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                    position: 'relative',
+                  }}
+                >
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    backgroundColor: folder.color + '20',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill={folder.color}>
+                      <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                    </svg>
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: colors.textPrimary, marginBottom: '4px' }}>
+                      {folder.name}
+                    </div>
+                    <div style={{ fontSize: '13px', color: colors.textMuted }}>
+                      {folder.documentIds.length} files
+                    </div>
+                  </div>
+                  {/* Delete button - only visible on hover */}
+                  <button
+                    data-delete-btn
+                    onClick={(e) => { e.stopPropagation(); if(confirm(`Delete folder "${folder.name}"?`)) deleteCustomFolder(folder.id) }}
+                    title="Delete folder"
+                    style={{
+                      position: 'absolute',
+                      top: '10px',
+                      right: '10px',
+                      width: '28px',
+                      height: '28px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#E8E0DB',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      opacity: 0,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#D4C4BE' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#E8E0DB' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2.5">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
+                    </svg>
+                  </button>
+                </button>
+              )
+            })}
+
+            {/* Integration-based Folder Cards */}
             {integrationsWithDocs.map((integration) => {
               const isActive = activeIntegration === integration.id
               const iconColor = isActive ? colors.primary : '#7A7A7A'
@@ -1908,10 +2135,37 @@ export default function Documents() {
                 }
               }
 
+              // Get document IDs for this integration
+              const integrationConfig = INTEGRATION_CONFIG.find(c => c.id === integration.id)
+              const integrationDocIds = integrationConfig
+                ? documents.filter(d => integrationConfig.sourceTypes.some(st => d.source_type?.toLowerCase() === st.toLowerCase())).map(d => d.id)
+                : []
+
+              const handleDeleteIntegrationDocs = async () => {
+                if (!confirm(`Delete all ${integrationCounts[integration.id]} documents from ${integration.name}?`)) return
+                for (const docId of integrationDocIds) {
+                  try {
+                    await axios.delete(`${API_BASE}/documents/${docId}`, { headers: authHeaders })
+                  } catch (err) {
+                    console.error('Error deleting doc:', err)
+                  }
+                }
+                loadDocuments()
+                if (activeIntegration === integration.id) setActiveIntegration(null)
+              }
+
               return (
                 <button
                   key={integration.id}
                   onClick={() => { setActiveIntegration(integration.id); setActiveCategory('') }}
+                  onMouseEnter={(e) => {
+                    const deleteBtn = e.currentTarget.querySelector('[data-delete-btn]') as HTMLElement
+                    if (deleteBtn) deleteBtn.style.opacity = '1'
+                  }}
+                  onMouseLeave={(e) => {
+                    const deleteBtn = e.currentTarget.querySelector('[data-delete-btn]') as HTMLElement
+                    if (deleteBtn) deleteBtn.style.opacity = '0'
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1925,6 +2179,7 @@ export default function Documents() {
                     minWidth: '240px',
                     flexShrink: 0,
                     boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                    position: 'relative',
                   }}
                 >
                   <div style={{
@@ -1946,9 +2201,38 @@ export default function Documents() {
                       {integrationCounts[integration.id]} files
                     </div>
                   </div>
+                  {/* Delete button - only visible on hover */}
+                  <button
+                    data-delete-btn
+                    onClick={(e) => { e.stopPropagation(); handleDeleteIntegrationDocs() }}
+                    title={`Delete all ${integration.name} documents`}
+                    style={{
+                      position: 'absolute',
+                      top: '10px',
+                      right: '10px',
+                      width: '28px',
+                      height: '28px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#E8E0DB',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      opacity: 0,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#D4C4BE' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#E8E0DB' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2.5">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
+                    </svg>
+                  </button>
                 </button>
               )
             })}
+
           </div>
         </div>
 
@@ -2496,7 +2780,7 @@ export default function Documents() {
         type="file"
         multiple
         accept={ACCEPTED_FILE_TYPES}
-        onChange={handleFileUpload}
+        onChange={handleFileSelect}
         style={{ display: 'none' }}
       />
 
@@ -2706,6 +2990,252 @@ export default function Documents() {
                 }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Folder Modal */}
+      {showNewFolderModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowNewFolderModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: colors.cardBg,
+              borderRadius: '16px',
+              padding: '24px',
+              width: '400px',
+              maxWidth: '90%',
+              boxShadow: shadows.lg,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: '18px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px 0' }}>
+              Create New Folder
+            </h3>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
+                Folder Name
+              </label>
+              <input
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="e.g., Research Papers"
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  fontSize: '14px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                autoFocus
+              />
+            </div>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
+                Color
+              </label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {['#B8A394', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#14B8A6'].map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => setNewFolderColor(color)}
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      backgroundColor: color,
+                      border: newFolderColor === color ? '3px solid #000' : '2px solid transparent',
+                      cursor: 'pointer',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowNewFolderModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  color: colors.textPrimary,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createCustomFolder}
+                disabled={!newFolderName.trim()}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  backgroundColor: !newFolderName.trim() ? colors.textMuted : colors.primary,
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  cursor: !newFolderName.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Create Folder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Modal with Folder Selection */}
+      {showUploadModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => { setShowUploadModal(false); setUploadFiles([]); setSelectedUploadFolder('') }}
+        >
+          <div
+            style={{
+              backgroundColor: colors.cardBg,
+              borderRadius: '16px',
+              padding: '24px',
+              width: '500px',
+              maxWidth: '90%',
+              boxShadow: shadows.lg,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: '18px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px 0' }}>
+              Add Documents
+            </h3>
+
+            {/* File Selection */}
+            <div
+              style={{
+                border: `2px dashed ${colors.border}`,
+                borderRadius: '12px',
+                padding: '32px',
+                textAlign: 'center',
+                marginBottom: '20px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={colors.textMuted} strokeWidth="1.5" style={{ margin: '0 auto 12px' }}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              {uploadFiles.length > 0 ? (
+                <div style={{ fontSize: '14px', color: colors.textPrimary }}>
+                  {uploadFiles.length} file{uploadFiles.length > 1 ? 's' : ''} selected
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: '14px', color: colors.textPrimary, marginBottom: '4px' }}>
+                    Click to select files
+                  </div>
+                  <div style={{ fontSize: '12px', color: colors.textMuted }}>
+                    PDF, DOC, TXT, CSV, Excel
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Folder Selection */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
+                Add to Folder (optional)
+              </label>
+              <select
+                value={selectedUploadFolder}
+                onChange={(e) => setSelectedUploadFolder(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  fontSize: '14px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  outline: 'none',
+                  backgroundColor: colors.cardBg,
+                  color: colors.textPrimary,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">No folder (All Documents)</option>
+                {customFolders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>{folder.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setShowUploadModal(false); setUploadFiles([]); setSelectedUploadFolder('') }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  backgroundColor: 'transparent',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '8px',
+                  color: colors.textPrimary,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (uploadFiles.length > 0) {
+                    handleUploadFromModal()
+                  } else {
+                    fileInputRef.current?.click()
+                  }
+                }}
+                disabled={uploading}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  backgroundColor: uploading ? colors.textMuted : colors.primary,
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  cursor: uploading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {uploading ? 'Uploading...' : uploadFiles.length > 0 ? 'Upload' : 'Select Files'}
               </button>
             </div>
           </div>
