@@ -1060,15 +1060,7 @@ export default function ChatInterface() {
                             }}
                           >
                             {message.text || (
-                              /* Show "Thinking" with animated dots when no content yet */
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ display: 'flex', gap: '3px' }}>
-                                  <span style={{ width: '6px', height: '6px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite' }}></span>
-                                  <span style={{ width: '6px', height: '6px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.2s', opacity: 0.7 }}></span>
-                                  <span style={{ width: '6px', height: '6px', backgroundColor: warmTheme.primary, borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite', animationDelay: '0.4s', opacity: 0.5 }}></span>
-                                </span>
-                                <span style={{ color: warmTheme.textSecondary, fontSize: '14px' }}>Thinking</span>
-                              </span>
+                              <span style={{ color: warmTheme.textSecondary, fontSize: '15px' }}>Thinking</span>
                             )}
                             {message.text && (
                               <span
