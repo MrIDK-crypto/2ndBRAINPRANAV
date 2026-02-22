@@ -531,7 +531,7 @@ class NotionConnector(BaseConnector):
             },
             timestamp=self._current_page_timestamp,
             author=self.workspace_name,
-            url=self._current_page_url,
+            url=None,
             doc_type=self._get_file_doc_type(filename)
         )
         self._child_documents.append(doc)
