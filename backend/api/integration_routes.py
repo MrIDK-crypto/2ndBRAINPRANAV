@@ -3528,7 +3528,7 @@ def _run_connector_sync(
 
     # Update new progress service
     if sync_id:
-        progress_service.update_progress(sync_id, status='connecting', stage='Connecting to service...', overall_percent=0.0)
+        progress_service.update_progress(sync_id, status='connecting', stage='Connecting to service...')
 
     # DB persistence helper for multi-worker polling support
     _last_db_persist_time = [0]
@@ -3687,7 +3687,7 @@ def _run_connector_sync(
             sync_progress[progress_key]["progress"] = 10
             sync_progress[progress_key]["current_file"] = "Connecting to service..."
             if sync_id:
-                progress_service.update_progress(sync_id, status='connecting', stage=f'Connecting to {connector_type.title()}...', overall_percent=0.0)
+                progress_service.update_progress(sync_id, status='connecting', stage=f'Connecting to {connector_type.title()}...')
 
             # Run sync
             # Note: Only async connectors (gmail, box, github, onedrive) need an event loop
@@ -3766,20 +3766,20 @@ def _run_connector_sync(
                     # Slack uses synchronous WebClient - call directly without event loop
                     # This avoids "Cannot run the event loop while another loop is running" error with gevent
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Slack messages...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Slack messages...')
                     print(f"[Sync] Calling slack sync directly (synchronous)")
                     documents = instance._sync_sync(since)
                 elif connector_type == 'notion':
                     # Notion uses synchronous notion-client SDK
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Notion pages...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Notion pages...')
                     print(f"[Sync] Calling notion sync with heartbeat (synchronous)")
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] Notion sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gdrive':
                     # GDrive uses synchronous Google API
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Drive files...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Drive files...')
                     print(f"[Sync] Calling gdrive sync with heartbeat (synchronous)")
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GDrive sync returned {len(documents) if documents else 0} documents")
@@ -3791,52 +3791,51 @@ def _run_connector_sync(
                             sync_id,
                             status='syncing',
                             stage='Crawling website with Firecrawl...',
-                            total_items=max_pages,
-                            overall_percent=0.0
+                            total_items=max_pages
                         )
                     print(f"[Sync] Calling firecrawl sync directly (synchronous)", flush=True)
                     documents = instance.sync(since)
                     print(f"[Sync] Firecrawl sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'gdocs':
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Docs...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Docs...')
                     print(f"[Sync] Calling gdocs sync with heartbeat (synchronous)")
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GDocs sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gsheets':
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Sheets...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Sheets...')
                     print(f"[Sync] Calling gsheets sync with heartbeat (synchronous)")
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GSheets sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gslides':
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Slides...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Slides...')
                     print(f"[Sync] Calling gslides sync with heartbeat (synchronous)")
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GSlides sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'gcalendar':
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Calendar events...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Google Calendar events...')
                     print(f"[Sync] Calling gcalendar sync with heartbeat (synchronous)")
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GCalendar sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'onedrive':
                     # OneDrive uses synchronous requests library
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching OneDrive files...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching OneDrive files...')
                     print(f"[Sync] Calling onedrive sync with heartbeat (synchronous)", flush=True)
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=True)
                     print(f"[Sync] OneDrive sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'github':
                     # GitHub sync does LLM analysis which takes time - update progress at each stage
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Connecting to GitHub...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Connecting to GitHub...')
                     print(f"[Sync] Starting GitHub sync with LLM analysis...")
 
                     # Run sync (which includes fetching code and LLM analysis)
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching repository code...', total_items=1, overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching repository code...', total_items=1)
                     documents = loop.run_until_complete(instance.sync(since))
 
                     if sync_id:
@@ -3845,14 +3844,13 @@ def _run_connector_sync(
                             status='parsing',
                             stage='Code analysis complete, processing documents...',
                             processed_items=len(documents) if documents else 0,
-                            total_items=len(documents) if documents else 1,
-                            overall_percent=5.0
+                            total_items=len(documents) if documents else 1
                         )
                     print(f"[Sync] GitHub sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'zotero':
                     # Zotero uses async methods - needs event loop with heartbeat
                     if sync_id:
-                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Zotero library...', overall_percent=0.0)
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Zotero library...')
                     print(f"[Sync] Starting Zotero sync with heartbeat...")
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=True)
                     if sync_id and documents:
@@ -3861,12 +3859,11 @@ def _run_connector_sync(
                             status='parsing',
                             stage=f'Processing {len(documents)} research papers...',
                             processed_items=0,
-                            total_items=len(documents),
-                            overall_percent=5.0
+                            total_items=len(documents)
                         )
                     print(f"[Sync] Zotero sync returned {len(documents) if documents else 0} documents")
                 elif sync_id:
-                    progress_service.update_progress(sync_id, status='syncing', stage='Fetching documents...', overall_percent=0.0)
+                    progress_service.update_progress(sync_id, status='syncing', stage='Fetching documents...')
                     documents = loop.run_until_complete(instance.sync(since))
                 else:
                     documents = loop.run_until_complete(instance.sync(since))
@@ -3985,8 +3982,7 @@ def _run_connector_sync(
                             status='complete',
                             stage=f'All {original_count} documents already synced. No new content to process.',
                             total_items=original_count,
-                            processed_items=original_count,
-                            overall_percent=100.0
+                            processed_items=original_count
                         )
                         progress_service.complete_sync(sync_id)
 
@@ -5537,7 +5533,7 @@ def zotero_sync():
                 # Update progress - connecting
                 sync_progress[progress_key]["progress"] = 10
                 sync_progress[progress_key]["current_file"] = "Connecting to Zotero..."
-                progress_service.update_progress(sync_id, status='connecting', stage='Connecting to Zotero...', overall_percent=0.0)
+                progress_service.update_progress(sync_id, status='connecting', stage='Connecting to Zotero...')
 
                 # Create connector config
                 config = ConnectorConfig(
@@ -5558,7 +5554,7 @@ def zotero_sync():
                 sync_progress[progress_key]["progress"] = 20
                 sync_progress[progress_key]["current_file"] = "Fetching Zotero library..."
                 sync_progress[progress_key]["status"] = "syncing"
-                progress_service.update_progress(sync_id, status='syncing', stage='Fetching Zotero library items...', overall_percent=0.0)
+                progress_service.update_progress(sync_id, status='syncing', stage='Fetching Zotero library items...')
 
                 import asyncio
                 loop = asyncio.new_event_loop()
@@ -5570,16 +5566,15 @@ def zotero_sync():
 
                 print(f"[Zotero Sync BG] Got {len(documents)} documents", flush=True)
 
-                # Update progress - documents found (saving phase 0-33%)
+                # Update progress - documents found
                 sync_progress[progress_key]["documents_found"] = len(documents)
                 sync_progress[progress_key]["progress"] = 40
                 sync_progress[progress_key]["status"] = "parsing"
                 progress_service.update_progress(
                     sync_id,
-                    status='saving',
+                    status='parsing',
                     stage=f'Processing {len(documents)} Zotero items...',
-                    total_items=len(documents),
-                    overall_percent=10.0
+                    total_items=len(documents)
                 )
 
                 # Update connector in DB for cross-worker progress visibility
@@ -5630,13 +5625,13 @@ def zotero_sync():
 
                     total_docs = len(documents)
                     for i, doc in enumerate(documents):
-                        # Update progress - saving phase (10-33%)
-                        save_pct = 10.0 + ((i + 1) / total_docs) * 23.0
-                        sync_progress[progress_key]["progress"] = int(save_pct)
+                        # Update progress
+                        parse_progress = 40 + int((i / total_docs) * 30)
+                        sync_progress[progress_key]["progress"] = parse_progress
                         sync_progress[progress_key]["documents_parsed"] = i + 1
                         current_doc_name = doc.title[:50] if doc.title else f"Document {i+1}"
                         sync_progress[progress_key]["current_file"] = current_doc_name
-                        progress_service.increment_processed(sync_id, current_item=current_doc_name, overall_percent=save_pct)
+                        progress_service.increment_processed(sync_id, current_item=current_doc_name)
 
                         # Look for existing document (only non-deleted ones)
                         existing = db.query(Document).filter(
@@ -5686,11 +5681,11 @@ def zotero_sync():
                     db.commit()
                     print(f"[Zotero Sync BG] All documents saved: {docs_created} created, {docs_updated} updated", flush=True)
 
-                    # Update progress - embedding phase (66-99%)
+                    # Update progress - embedding phase
                     sync_progress[progress_key]["status"] = "embedding"
                     sync_progress[progress_key]["progress"] = 75
                     sync_progress[progress_key]["current_file"] = "Creating embeddings..."
-                    progress_service.update_progress(sync_id, status='embedding', stage='Creating embeddings for Zotero documents...', overall_percent=66.0)
+                    progress_service.update_progress(sync_id, status='embedding', stage='Creating embeddings for Zotero documents...')
 
                     # Embed documents to Pinecone
                     try:
