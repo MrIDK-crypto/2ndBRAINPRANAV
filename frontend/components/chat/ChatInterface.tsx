@@ -1404,13 +1404,18 @@ export default function ChatInterface() {
                 </svg>
               </button>
 
-              <input
-                type="text"
+              <textarea
                 placeholder={isTranscribing ? "Transcribing..." : attachedFiles.length > 0 ? "Ask about your documents..." : "Ask anything..."}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
                 disabled={isTranscribing}
+                rows={1}
                 style={{
                   flex: 1,
                   border: 'none',
@@ -1418,7 +1423,11 @@ export default function ChatInterface() {
                   fontSize: '15px',
                   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                   color: warmTheme.textPrimary,
-                  backgroundColor: 'transparent'
+                  backgroundColor: 'transparent',
+                  resize: 'none',
+                  minHeight: '24px',
+                  maxHeight: '150px',
+                  overflowY: 'auto'
                 }}
               />
 
