@@ -257,12 +257,18 @@ export default function Documents() {
   const [connectedIntegrations, setConnectedIntegrations] = useState<ConnectedIntegration[]>([])
   const [integrationSliderPosition, setIntegrationSliderPosition] = useState(0)
 
-  // Custom folders state
-  const [customFolders, setCustomFolders] = useState<{id: string, name: string, color: string, documentIds: string[]}[]>([])
+  // Smart folders state (backend-persisted)
+  const [smartFolders, setSmartFolders] = useState<{id: string, name: string, description?: string, color: string, document_ids: string[], document_count: number}[]>([])
   const [activeCustomFolder, setActiveCustomFolder] = useState<string | null>(null)
   const [showNewFolderModal, setShowNewFolderModal] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderDescription, setNewFolderDescription] = useState('')
   const [newFolderColor, setNewFolderColor] = useState('#B8A394')
+  // Smart folder creation flow
+  const [folderCreationStep, setFolderCreationStep] = useState<'create' | 'preview'>('create')
+  const [folderCandidates, setFolderCandidates] = useState<{id: string, name: string, source_type?: string, score: number, selected: boolean}[]>([])
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null)
 
   // Upload modal state
   const [showUploadModal, setShowUploadModal] = useState(false)
@@ -299,76 +305,107 @@ export default function Documents() {
       hasLoadedRef.current = true
       loadDocuments()
       loadIntegrations()
-      loadCustomFolders()
+      loadSmartFolders()
     }
   }, [token])
 
-  // Load custom folders from localStorage
-  const loadCustomFolders = () => {
+  // Load smart folders from backend
+  const loadSmartFolders = async () => {
     try {
-      const saved = localStorage.getItem('customFolders')
-      if (saved) {
-        setCustomFolders(JSON.parse(saved))
+      const response = await axios.get(`${API_BASE}/projects`, { headers: authHeaders })
+      if (response.data.success) {
+        setSmartFolders(response.data.projects || [])
       }
     } catch (e) {
-      console.error('Error loading custom folders:', e)
+      console.error('Error loading smart folders:', e)
     }
   }
 
-  // Save custom folders to localStorage
-  const saveCustomFolders = (folders: typeof customFolders) => {
-    try {
-      localStorage.setItem('customFolders', JSON.stringify(folders))
-      setCustomFolders(folders)
-    } catch (e) {
-      console.error('Error saving custom folders:', e)
-    }
-  }
-
-  // Create a new custom folder
-  const createCustomFolder = () => {
+  // Step 1: Submit folder name + description to get candidates
+  const createSmartFolder = async () => {
     if (!newFolderName.trim()) return
-    const newFolder = {
-      id: `folder_${Date.now()}`,
-      name: newFolderName.trim(),
-      color: newFolderColor,
-      documentIds: []
+    setCreatingFolder(true)
+    try {
+      const response = await axios.post(`${API_BASE}/projects/smart-create`, {
+        name: newFolderName.trim(),
+        description: newFolderDescription.trim(),
+        color: newFolderColor,
+      }, { headers: authHeaders })
+
+      if (response.data.success) {
+        setPendingProjectId(response.data.project.id)
+        const candidates = (response.data.candidates || []).map((c: any) => ({
+          ...c,
+          selected: true, // All selected by default
+        }))
+        setFolderCandidates(candidates)
+        setFolderCreationStep('preview')
+      }
+    } catch (e: any) {
+      console.error('Error creating smart folder:', e)
+      alert(e.response?.data?.error || 'Failed to create folder')
+    } finally {
+      setCreatingFolder(false)
     }
-    saveCustomFolders([...customFolders, newFolder])
-    setNewFolderName('')
-    setNewFolderColor('#B8A394')
+  }
+
+  // Step 2: Confirm selected documents
+  const confirmSmartFolder = async () => {
+    if (!pendingProjectId) return
+    const selectedIds = folderCandidates.filter(c => c.selected).map(c => c.id)
+
+    setCreatingFolder(true)
+    try {
+      const response = await axios.post(
+        `${API_BASE}/projects/${pendingProjectId}/confirm`,
+        { document_ids: selectedIds },
+        { headers: authHeaders }
+      )
+
+      if (response.data.success) {
+        // Reload folders and close modal
+        await loadSmartFolders()
+        resetFolderModal()
+      }
+    } catch (e: any) {
+      console.error('Error confirming folder:', e)
+      alert(e.response?.data?.error || 'Failed to confirm folder')
+    } finally {
+      setCreatingFolder(false)
+    }
+  }
+
+  // Delete a smart folder
+  const deleteSmartFolder = async (folderId: string) => {
+    try {
+      await axios.delete(`${API_BASE}/projects/${folderId}`, { headers: authHeaders })
+      setSmartFolders(smartFolders.filter(f => f.id !== folderId))
+      if (activeCustomFolder === folderId) {
+        setActiveCustomFolder(null)
+      }
+    } catch (e) {
+      console.error('Error deleting folder:', e)
+    }
+  }
+
+  // Reset folder creation modal (and clean up abandoned project if needed)
+  const resetFolderModal = async () => {
+    // If user cancels during preview step, delete the empty project
+    if (pendingProjectId && folderCreationStep === 'preview') {
+      try {
+        await axios.delete(`${API_BASE}/projects/${pendingProjectId}`, { headers: authHeaders })
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
     setShowNewFolderModal(false)
-  }
-
-  // Delete a custom folder
-  const deleteCustomFolder = (folderId: string) => {
-    saveCustomFolders(customFolders.filter(f => f.id !== folderId))
-    if (activeCustomFolder === folderId) {
-      setActiveCustomFolder(null)
-    }
-  }
-
-  // Add documents to a folder
-  const addDocumentsToFolder = (folderId: string, docIds: string[]) => {
-    const updated = customFolders.map(f => {
-      if (f.id === folderId) {
-        const newIds = [...new Set([...f.documentIds, ...docIds])]
-        return { ...f, documentIds: newIds }
-      }
-      return f
-    })
-    saveCustomFolders(updated)
-  }
-
-  // Remove document from folder
-  const removeDocumentFromFolder = (folderId: string, docId: string) => {
-    const updated = customFolders.map(f => {
-      if (f.id === folderId) {
-        return { ...f, documentIds: f.documentIds.filter(id => id !== docId) }
-      }
-      return f
-    })
-    saveCustomFolders(updated)
+    setFolderCreationStep('create')
+    setNewFolderName('')
+    setNewFolderDescription('')
+    setNewFolderColor('#B8A394')
+    setFolderCandidates([])
+    setPendingProjectId(null)
+    setCreatingFolder(false)
   }
 
 
@@ -452,11 +489,11 @@ export default function Documents() {
   const filteredDocuments = useMemo(() => {
     let filtered = [...documents]
 
-    // Filter by custom folder if selected
+    // Filter by smart folder if selected
     if (activeCustomFolder) {
-      const folder = customFolders.find(f => f.id === activeCustomFolder)
+      const folder = smartFolders.find(f => f.id === activeCustomFolder)
       if (folder) {
-        filtered = filtered.filter(d => folder.documentIds.includes(d.id))
+        filtered = filtered.filter(d => folder.document_ids.includes(d.id))
       }
     }
     // Filter by integration source if selected
@@ -497,7 +534,7 @@ export default function Documents() {
     })
 
     return filtered
-  }, [documents, activeCategory, activeIntegration, activeCustomFolder, customFolders, sourceFilter, searchQuery, sortField, sortDirection])
+  }, [documents, activeCategory, activeIntegration, activeCustomFolder, smartFolders, sourceFilter, searchQuery, sortField, sortDirection])
 
   // Calculate document counts per integration AND get integrations that have documents
   const { integrationCounts, integrationsWithDocs } = useMemo(() => {
@@ -712,10 +749,15 @@ export default function Documents() {
         }
       })
       if (response.data.success) {
-        // Add uploaded documents to selected folder if any
+        // Add uploaded documents to selected smart folder if any
         const docIds = response.data.document_ids || response.data.documents?.map((d: any) => d.id) || []
         if (selectedUploadFolder && docIds.length > 0) {
-          addDocumentsToFolder(selectedUploadFolder, docIds)
+          try {
+            await axios.post(`${API_BASE}/projects/${selectedUploadFolder}/confirm`, { document_ids: docIds }, { headers: authHeaders })
+            await loadSmartFolders()
+          } catch (e) {
+            console.error('Error adding uploaded docs to folder:', e)
+          }
         }
         loadDocuments()
         setShowUploadModal(false)
@@ -1849,7 +1891,7 @@ export default function Documents() {
                 New Folder
               </button>
             </div>
-            {(integrationsWithDocs.length + customFolders.length) > 4 && (
+            {(integrationsWithDocs.length + smartFolders.length) > 4 && (
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   onClick={() => handleSliderScroll('left')}
@@ -1948,8 +1990,8 @@ export default function Documents() {
               </div>
             </button>
 
-            {/* Custom Folder Cards - shown first */}
-            {customFolders.map((folder) => {
+            {/* Smart Folder Cards - shown first */}
+            {smartFolders.map((folder) => {
               const isActive = activeCustomFolder === folder.id
               return (
                 <button
@@ -1982,13 +2024,13 @@ export default function Documents() {
                   <div style={{
                     width: '44px',
                     height: '44px',
-                    backgroundColor: folder.color + '20',
+                    backgroundColor: (folder.color || '#B8A394') + '20',
                     borderRadius: '10px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill={folder.color}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill={folder.color || '#B8A394'}>
                       <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
                     </svg>
                   </div>
@@ -1997,13 +2039,13 @@ export default function Documents() {
                       {folder.name}
                     </div>
                     <div style={{ fontSize: '13px', color: colors.textMuted }}>
-                      {folder.documentIds.length} files
+                      {folder.document_count} files
                     </div>
                   </div>
                   {/* Delete button - only visible on hover */}
                   <button
                     data-delete-btn
-                    onClick={(e) => { e.stopPropagation(); if(confirm(`Delete folder "${folder.name}"?`)) deleteCustomFolder(folder.id) }}
+                    onClick={(e) => { e.stopPropagation(); if(confirm(`Delete folder "${folder.name}"?`)) deleteSmartFolder(folder.id) }}
                     title="Delete folder"
                     style={{
                       position: 'absolute',
@@ -2996,7 +3038,7 @@ export default function Documents() {
         </div>
       )}
 
-      {/* New Folder Modal */}
+      {/* Smart Folder Modal */}
       {showNewFolderModal && (
         <div
           style={{
@@ -3011,97 +3053,284 @@ export default function Documents() {
             justifyContent: 'center',
             zIndex: 1000,
           }}
-          onClick={() => setShowNewFolderModal(false)}
+          onClick={() => resetFolderModal()}
         >
           <div
             style={{
               backgroundColor: colors.cardBg,
               borderRadius: '16px',
               padding: '24px',
-              width: '400px',
+              width: folderCreationStep === 'preview' ? '600px' : '440px',
               maxWidth: '90%',
+              maxHeight: '80vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
               boxShadow: shadows.lg,
+              transition: 'width 0.2s ease',
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{ fontSize: '18px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px 0' }}>
-              Create New Folder
-            </h3>
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
-                Folder Name
-              </label>
-              <input
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="e.g., Research Papers"
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  fontSize: '14px',
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: '8px',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-                autoFocus
-              />
-            </div>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
-                Color
-              </label>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {['#B8A394', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#14B8A6'].map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setNewFolderColor(color)}
+            {folderCreationStep === 'create' ? (
+              <>
+                <h3 style={{ fontSize: '18px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 6px 0' }}>
+                  Create Smart Folder
+                </h3>
+                <p style={{ fontSize: '13px', color: colors.textMuted, margin: '0 0 20px 0' }}>
+                  We'll find matching documents based on your folder name and description.
+                </p>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
+                    Folder Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="e.g., Marketing Campaigns"
                     style={{
-                      width: '32px',
-                      height: '32px',
+                      width: '100%',
+                      padding: '12px 16px',
+                      fontSize: '14px',
+                      border: `1px solid ${colors.border}`,
                       borderRadius: '8px',
-                      backgroundColor: color,
-                      border: newFolderColor === color ? '3px solid #000' : '2px solid transparent',
-                      cursor: 'pointer',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                    autoFocus
+                  />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
+                    Description
+                  </label>
+                  <textarea
+                    value={newFolderDescription}
+                    onChange={(e) => setNewFolderDescription(e.target.value)}
+                    placeholder="Briefly describe what documents belong here..."
+                    rows={3}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      fontSize: '14px',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      resize: 'vertical',
+                      fontFamily: 'inherit',
                     }}
                   />
-                ))}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowNewFolderModal(false)}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  backgroundColor: 'transparent',
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: '8px',
-                  color: colors.textPrimary,
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createCustomFolder}
-                disabled={!newFolderName.trim()}
-                style={{
-                  padding: '10px 20px',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  backgroundColor: !newFolderName.trim() ? colors.textMuted : colors.primary,
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  cursor: !newFolderName.trim() ? 'not-allowed' : 'pointer',
-                }}
-              >
-                Create Folder
-              </button>
-            </div>
+                </div>
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: colors.textSecondary, marginBottom: '8px' }}>
+                    Color
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {['#B8A394', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#14B8A6'].map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setNewFolderColor(color)}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          backgroundColor: color,
+                          border: newFolderColor === color ? '3px solid #000' : '2px solid transparent',
+                          cursor: 'pointer',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => resetFolderModal()}
+                    style={{
+                      padding: '10px 20px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      color: colors.textPrimary,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={createSmartFolder}
+                    disabled={!newFolderName.trim() || creatingFolder}
+                    style={{
+                      padding: '10px 20px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      backgroundColor: (!newFolderName.trim() || creatingFolder) ? colors.textMuted : colors.primary,
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      cursor: (!newFolderName.trim() || creatingFolder) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    {creatingFolder && (
+                      <div style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                    )}
+                    {creatingFolder ? 'Finding documents...' : 'Find Documents'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: 600, color: colors.textPrimary, margin: 0 }}>
+                    Review Matches
+                  </h3>
+                  <span style={{ fontSize: '13px', color: colors.textMuted }}>
+                    {folderCandidates.filter(c => c.selected).length} of {folderCandidates.length} selected
+                  </span>
+                </div>
+                <p style={{ fontSize: '13px', color: colors.textMuted, margin: '0 0 16px 0' }}>
+                  These documents match <strong style={{ color: colors.textPrimary }}>"{newFolderName}"</strong>. Uncheck any you don't want.
+                </p>
+
+                {/* Select/Deselect all */}
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+                  <button
+                    onClick={() => setFolderCandidates(folderCandidates.map(c => ({ ...c, selected: true })))}
+                    style={{ fontSize: '12px', color: colors.primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={() => setFolderCandidates(folderCandidates.map(c => ({ ...c, selected: false })))}
+                    style={{ fontSize: '12px', color: colors.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Deselect All
+                  </button>
+                </div>
+
+                {/* Candidates list */}
+                <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px', maxHeight: '400px' }}>
+                  {folderCandidates.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 20px', color: colors.textMuted }}>
+                      <p style={{ fontSize: '14px', margin: 0 }}>No matching documents found.</p>
+                      <p style={{ fontSize: '13px', margin: '8px 0 0 0' }}>Try a different name or description.</p>
+                    </div>
+                  ) : (
+                    folderCandidates.map((candidate) => (
+                      <label
+                        key={candidate.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          backgroundColor: candidate.selected ? colors.primaryLight : 'transparent',
+                          transition: 'background-color 0.15s ease',
+                          marginBottom: '2px',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={candidate.selected}
+                          onChange={() => {
+                            setFolderCandidates(folderCandidates.map(c =>
+                              c.id === candidate.id ? { ...c, selected: !c.selected } : c
+                            ))
+                          }}
+                          style={{ width: '16px', height: '16px', accentColor: colors.primary, flexShrink: 0 }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '14px', fontWeight: 500, color: colors.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {candidate.name}
+                          </div>
+                          {candidate.source_type && (
+                            <div style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>
+                              {candidate.source_type}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: candidate.score > 0.5 ? '#10B981' : candidate.score > 0.3 ? '#F59E0B' : colors.textMuted,
+                          backgroundColor: candidate.score > 0.5 ? '#10B98115' : candidate.score > 0.3 ? '#F59E0B15' : colors.border,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          flexShrink: 0,
+                        }}>
+                          {Math.round(candidate.score * 100)}%
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between' }}>
+                  <button
+                    onClick={() => setFolderCreationStep('create')}
+                    style={{
+                      padding: '10px 20px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: '8px',
+                      color: colors.textPrimary,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Back
+                  </button>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      onClick={() => resetFolderModal()}
+                      style={{
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        backgroundColor: 'transparent',
+                        border: `1px solid ${colors.border}`,
+                        borderRadius: '8px',
+                        color: colors.textPrimary,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={confirmSmartFolder}
+                      disabled={creatingFolder || folderCandidates.filter(c => c.selected).length === 0}
+                      style={{
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        backgroundColor: (creatingFolder || folderCandidates.filter(c => c.selected).length === 0) ? colors.textMuted : colors.primary,
+                        border: 'none',
+                        borderRadius: '8px',
+                        color: '#fff',
+                        cursor: (creatingFolder || folderCandidates.filter(c => c.selected).length === 0) ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      {creatingFolder && (
+                        <div style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                      )}
+                      {creatingFolder ? 'Creating...' : `Create Folder (${folderCandidates.filter(c => c.selected).length})`}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -3193,7 +3422,7 @@ export default function Documents() {
                 }}
               >
                 <option value="">No folder (All Documents)</option>
-                {customFolders.map((folder) => (
+                {smartFolders.map((folder) => (
                   <option key={folder.id} value={folder.id}>{folder.name}</option>
                 ))}
               </select>

@@ -161,6 +161,7 @@ def ensure_missing_columns():
     """Add columns that were added after initial schema creation."""
     migrations = [
         ("documents", "feedback_score", "ALTER TABLE documents ADD COLUMN feedback_score FLOAT DEFAULT 0.0"),
+        ("projects", "color", "ALTER TABLE projects ADD COLUMN color VARCHAR(7)"),
     ]
     try:
         with engine.connect() as conn:
@@ -200,6 +201,7 @@ from api.syncs_routes import syncs_bp
 from api.email_forwarding_routes import email_forwarding_bp
 from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
+from api.project_routes import project_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -219,6 +221,7 @@ app.register_blueprint(syncs_bp)
 app.register_blueprint(email_forwarding_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
+app.register_blueprint(project_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")

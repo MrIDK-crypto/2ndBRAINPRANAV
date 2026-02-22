@@ -920,6 +920,7 @@ class Project(Base):
     # Project info
     name = Column(String(255), nullable=False)
     description = Column(Text)
+    color = Column(String(7))  # Hex color for folder display, e.g. '#B8A394'
 
     # Clustering metadata (if auto-generated)
     topic_id = Column(Integer)  # BERTopic ID
@@ -949,6 +950,7 @@ class Project(Base):
             "tenant_id": self.tenant_id,
             "name": self.name,
             "description": self.description,
+            "color": self.color,
             "topic_words": self.topic_words,
             "is_auto_generated": self.is_auto_generated,
             "document_count": self.document_count,
