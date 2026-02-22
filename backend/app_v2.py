@@ -1495,12 +1495,16 @@ def search_stream():
         finally:
             db.close()
 
-    # Wrap generator to yield bytes for streaming
+    # Wrap generator to yield bytes for streaming with immediate flush
     def byte_generator():
+        # Send initial padding to force buffer flush (AWS ALB workaround)
+        yield b": padding to force flush\n\n"
         for chunk in generate():
             yield chunk.encode('utf-8')
+            # Yield empty bytes after each chunk to trigger flush
+            yield b""
 
-    return Response(
+    response = Response(
         stream_with_context(byte_generator()),
         mimetype='text/event-stream',
         direct_passthrough=True,
@@ -1510,9 +1514,13 @@ def search_stream():
             'Expires': '0',
             'Connection': 'keep-alive',
             'X-Accel-Buffering': 'no',
-            'Content-Type': 'text/event-stream; charset=utf-8'
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Transfer-Encoding': 'chunked'
         }
     )
+    # Disable response buffering
+    response.implicit_sequence_conversion = False
+    return response
 
 
 # ============================================================================
