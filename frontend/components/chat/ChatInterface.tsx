@@ -689,8 +689,55 @@ export default function ChatInterface() {
 
   // Render markdown text with proper formatting
   const renderMarkdownMessage = (text: string) => {
-    // Pre-process: Unwrap markdown tables from code fences (LLM sometimes wraps them)
+    // Pre-process: Fix tables that LLM generates incorrectly
+
+    // Step 1: Unwrap pipe-delimited tables from code fences
     let preprocessed = text.replace(/```[^\n]*\n((?:\s*\|.*\|\s*\n)+)```/g, '\n$1\n')
+
+    // Step 2: Convert tabular data inside code blocks to proper markdown tables
+    // (LLM sometimes puts space/tab-separated data in code blocks instead of using | pipes)
+    preprocessed = preprocessed.replace(/```[^\n]*\n([\s\S]*?)```/g, (match: string, inner: string) => {
+      const lines = inner.trim().split('\n').filter((l: string) => l.trim())
+      if (lines.length < 2) return match
+
+      // Skip if it contains obvious code syntax
+      if (lines.some((l: string) => /[{}();=<>\\]|\/\/|def |class |import |function |const |let |var |return |=>/.test(l))) {
+        return match
+      }
+
+      // Try splitting by tabs or 2+ spaces
+      const splitLine = (line: string) => line.trim().split(/\t+|\s{2,}/).filter((c: string) => c.trim())
+      const rows = lines.map(splitLine)
+
+      // Check all rows have >= 2 columns (otherwise it's not tabular data)
+      if (!rows.every((r: string[]) => r.length >= 2)) return match
+
+      // Build proper markdown table
+      const header = rows[0]
+      const separator = header.map(() => '---')
+      let table = '| ' + header.join(' | ') + ' |\n'
+      table += '| ' + separator.join(' | ') + ' |\n'
+      for (const row of rows.slice(1)) {
+        while (row.length < header.length) row.push('')
+        table += '| ' + row.slice(0, header.length).join(' | ') + ' |\n'
+      }
+
+      return '\n' + table + '\n'
+    })
+
+    // Step 3: Add missing separator row to pipe tables
+    // (e.g., |Header1|Header2| followed by |Data1|Data2| without |---|---| between)
+    preprocessed = preprocessed.replace(
+      /(\|[^|\n]+(?:\|[^|\n]+)+\|)[ \t]*\n(?!\s*\|[\s\-:]+[\s\-:|]*\n)/g,
+      (match: string, headerRow: string) => {
+        // Only fix if the NEXT line also looks like a table row (has pipes)
+        const nextLineMatch = preprocessed.slice(preprocessed.indexOf(match) + headerRow.length).match(/^\s*\n(\|[^|\n]+\|)/)
+        if (!nextLineMatch) return match
+        const cols = headerRow.split('|').filter((c: string) => c.trim() !== '')
+        const separator = '| ' + cols.map(() => '---').join(' | ') + ' |'
+        return headerRow + '\n' + separator + '\n'
+      }
+    )
 
     // Pre-process: Convert [[SOURCE:name:doc_id]] markers into markdown links
     const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null

@@ -449,7 +449,7 @@ class QueryExpander:
 
         # Add top synonyms to search query (limit to avoid noise)
         if synonyms:
-            top_synonyms = synonyms[:5]  # Limit to top 5
+            top_synonyms = synonyms[:3]  # Limit to top 3 to reduce irrelevant matches
             search_parts.extend(top_synonyms)
 
         # Context-aware expansion: if asking about "architecture" alone,
@@ -1042,6 +1042,17 @@ class EnhancedSearchService:
 
         print(f"[EnhancedSearch] Initial retrieval: {len(initial_results)} results")
 
+        # Filter out very low cosine similarity results (clearly irrelevant)
+        MIN_COSINE_SCORE = 0.20
+        before_filter = len(initial_results)
+        filtered = [r for r in initial_results if r.get('score', 0) >= MIN_COSINE_SCORE]
+        if not filtered and initial_results:
+            # Keep at least the single best result
+            filtered = sorted(initial_results, key=lambda x: x.get('score', 0), reverse=True)[:1]
+        initial_results = filtered
+        if before_filter != len(initial_results):
+            print(f"[EnhancedSearch] Filtered {before_filter - len(initial_results)} low-score results (< {MIN_COSINE_SCORE})")
+
         if not initial_results:
             return {
                 'query': query,
@@ -1087,6 +1098,18 @@ class EnhancedSearchService:
             initial_results = self.reranker.rerank(query, initial_results, top_k=top_k * 2)
             reranked = True
             print(f"[EnhancedSearch] Reranked to {len(initial_results)} results")
+
+            # Filter out clearly irrelevant results after reranking
+            # ms-marco cross-encoder: scores > 0 = relevant, < -3 = irrelevant
+            MIN_RERANK_SCORE = -2.0
+            before_rerank_filter = len(initial_results)
+            filtered = [r for r in initial_results if r.get('rerank_score', 0) >= MIN_RERANK_SCORE]
+            if not filtered and initial_results:
+                # Keep at least the top 2 results
+                filtered = initial_results[:2]
+            initial_results = filtered
+            if before_rerank_filter != len(initial_results):
+                print(f"[EnhancedSearch] Dropped {before_rerank_filter - len(initial_results)} irrelevant results (rerank < {MIN_RERANK_SCORE})")
 
         # Step 5: Diversity selection (OPTIMIZED - no API calls needed)
         # Instead of expensive MMR with embeddings, use simple source-based diversity
@@ -1154,7 +1177,9 @@ class EnhancedSearchService:
             }
 
         # Build context with FULL content (not just 500 chars)
+        # Only include sources with meaningful relevance scores
         context_parts = []
+        sources_used = []  # Track which sources made it into context
         total_chars = 0
         max_chars = max_context_tokens * 4  # ~4 chars per token
 
@@ -1162,6 +1187,11 @@ class EnhancedSearchService:
             content = result.get('content', '') or result.get('content_preview', '')
             title = result.get('title', 'Untitled')
             score = result.get('rerank_score', result.get('score', 0))
+
+            # Skip low-relevance sources (but always include at least 1)
+            if i > 1 and score < 0.15:
+                print(f"[EnhancedSearch] Skipping source {i} '{title[:40]}' - low relevance ({score:.3f})")
+                continue
 
             # Don't truncate aggressively - use more content
             if len(content) > 3000:
@@ -1174,11 +1204,13 @@ class EnhancedSearchService:
                 else:
                     break
 
+            source_idx = len(context_parts) + 1
             context_parts.append(
-                f"[Source {i}] (Relevance: {score:.2%})\n"
+                f"[Source {source_idx}] (Relevance: {score:.2%})\n"
                 f"Title: {title}\n"
                 f"Content: {content}\n"
             )
+            sources_used.append(result)
             total_chars += len(content)
 
         context = "\n---\n".join(context_parts)
@@ -1195,10 +1227,15 @@ CRITICAL ACCURACY RULES (NEVER VIOLATE):
 
 RESPONSE FORMAT:
 - Use **headers** (## Section) for organization
-- Use **code blocks** (```language) for any code - with the actual code from sources
+- Use **code blocks** (```language) ONLY for actual source code - NEVER for tabular data
 - Use **numbered lists** for steps/processes
 - Use **bullet points** for features/items
 - Keep paragraphs focused and clear
+- For ANY tabular data, ALWAYS use proper markdown table syntax with | pipes and separator rows:
+  | Column 1 | Column 2 |
+  |----------|----------|
+  | Data 1   | Data 2   |
+  NEVER put tables inside code blocks (``` ```) — always use the pipe syntax above
 
 CITATION FORMAT:
 - Cite every factual claim: [Source 1], [Source 2]
@@ -1267,11 +1304,12 @@ End with "Sources Used: [list numbers]"."""
             if validate:
                 claims = self.hallucination_detector.extract_claims(answer)
                 if claims:
-                    hallucination_check = self.hallucination_detector.verify_claims(claims, results)
+                    hallucination_check = self.hallucination_detector.verify_claims(claims, sources_used)
                 citation_check = self.hallucination_detector.check_citation_coverage(answer)
 
             # Calculate confidence
-            base_confidence = results[0].get('rerank_score', results[0].get('score', 0.5))
+            top_result = sources_used[0] if sources_used else results[0]
+            base_confidence = top_result.get('rerank_score', top_result.get('score', 0.5))
             if hallucination_check:
                 base_confidence = min(base_confidence, hallucination_check['confidence'])
             if citation_check:
@@ -1280,7 +1318,7 @@ End with "Sources Used: [list numbers]"."""
             return {
                 'answer': answer,
                 'confidence': base_confidence,
-                'sources': results[:10],
+                'sources': sources_used[:10],
                 'hallucination_check': hallucination_check,
                 'citation_check': citation_check,
                 'context_chars': total_chars,
@@ -1291,7 +1329,7 @@ End with "Sources Used: [list numbers]"."""
             return {
                 'answer': f"Error generating answer: {str(e)}",
                 'confidence': 0.0,
-                'sources': results[:10],
+                'sources': sources_used[:10] if sources_used else results[:3],
                 'error': str(e)
             }
 
