@@ -18,31 +18,6 @@ import {
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
-// Integration type definition
-interface ConnectedIntegration {
-  id: string
-  name: string
-  logo: string
-  sourceType: string  // Matches document source_type
-  connected: boolean
-}
-
-// All available integrations with their source_type mappings
-const INTEGRATION_CONFIG: { id: string; name: string; logo: string; sourceType: string }[] = [
-  { id: 'gmail', name: 'Gmail', logo: '/gmail.png', sourceType: 'gmail' },
-  { id: 'slack', name: 'Slack', logo: '/slack.png', sourceType: 'slack' },
-  { id: 'box', name: 'Box', logo: '/box.png', sourceType: 'box' },
-  { id: 'github', name: 'GitHub', logo: '/github.png', sourceType: 'github' },
-  { id: 'gdrive', name: 'Google Drive', logo: '/gdrive.png', sourceType: 'gdrive' },
-  { id: 'onedrive', name: 'OneDrive', logo: '/outlook.png', sourceType: 'onedrive' },
-  { id: 'notion', name: 'Notion', logo: '/notion.png', sourceType: 'notion' },
-  { id: 'zotero', name: 'Zotero', logo: '/zotero.png', sourceType: 'zotero' },
-  { id: 'outlook', name: 'Outlook', logo: '/outlook.png', sourceType: 'outlook' },
-  { id: 'webscraper', name: 'Web Scraper', logo: '/docs.png', sourceType: 'webscraper' },
-  { id: 'email-forwarding', name: 'Email Forwarding', logo: '/email-forward.png', sourceType: 'email_forwarding' },
-  { id: 'pubmed', name: 'PubMed', logo: '/pubmed.png', sourceType: 'pubmed' },
-]
-
 interface Document {
   id: string
   name: string
@@ -251,9 +226,6 @@ export default function Documents() {
   const [analyzingGaps, setAnalyzingGaps] = useState(false)
   const [showGapsMenu, setShowGapsMenu] = useState(false)
   const [sourceFilter, setSourceFilter] = useState<string>('all')
-  const [activeIntegration, setActiveIntegration] = useState<string | null>(null)
-  const [connectedIntegrations, setConnectedIntegrations] = useState<ConnectedIntegration[]>([])
-  const [integrationSliderPosition, setIntegrationSliderPosition] = useState(0)
 
   // Notification state
   const [showNotifications, setShowNotifications] = useState(false)
@@ -274,7 +246,6 @@ export default function Documents() {
   const menuRef = useRef<HTMLDivElement>(null)
   const gapsMenuRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
-  const integrationSliderRef = useRef<HTMLDivElement>(null)
 
   // Track if we've loaded documents to prevent infinite loops
   const hasLoadedRef = useRef(false)
@@ -284,36 +255,8 @@ export default function Documents() {
     if (token && !hasLoadedRef.current) {
       hasLoadedRef.current = true
       loadDocuments()
-      loadIntegrations()
     }
   }, [token])
-
-  // Load integration statuses
-  const loadIntegrations = async () => {
-    try {
-      const response = await axios.get(`${API_BASE}/integrations`, {
-        headers: authHeaders
-      })
-      if (response.data.success) {
-        const apiIntegrations = response.data.integrations || []
-        // Map API integrations to our connected integrations list
-        const connected: ConnectedIntegration[] = INTEGRATION_CONFIG
-          .filter(config => {
-            const apiInt = apiIntegrations.find((i: any) =>
-              i.type === config.id || i.type === config.sourceType
-            )
-            return apiInt && apiInt.status === 'connected'
-          })
-          .map(config => ({
-            ...config,
-            connected: true
-          }))
-        setConnectedIntegrations(connected)
-      }
-    } catch (error) {
-      console.error('Error loading integrations:', error)
-    }
-  }
 
   // Load cleared notifications from localStorage
   useEffect(() => {
@@ -368,15 +311,7 @@ export default function Documents() {
   const filteredDocuments = useMemo(() => {
     let filtered = [...documents]
 
-    // Filter by integration source if selected
-    if (activeIntegration) {
-      const integrationConfig = INTEGRATION_CONFIG.find(i => i.id === activeIntegration)
-      if (integrationConfig) {
-        filtered = filtered.filter(d =>
-          d.source_type?.toLowerCase() === integrationConfig.sourceType.toLowerCase()
-        )
-      }
-    } else if (activeCategory !== 'All Items') {
+    if (activeCategory !== 'All Items') {
       filtered = filtered.filter(d => d.category === activeCategory)
     }
 
@@ -404,18 +339,7 @@ export default function Documents() {
     })
 
     return filtered
-  }, [documents, activeCategory, activeIntegration, sourceFilter, searchQuery, sortField, sortDirection])
-
-  // Calculate document counts per integration
-  const integrationCounts = useMemo(() => {
-    const counts: Record<string, number> = {}
-    INTEGRATION_CONFIG.forEach(config => {
-      counts[config.id] = documents.filter(d =>
-        d.source_type?.toLowerCase() === config.sourceType.toLowerCase()
-      ).length
-    })
-    return counts
-  }, [documents])
+  }, [documents, activeCategory, sourceFilter, searchQuery, sortField, sortDirection])
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -963,98 +887,6 @@ export default function Documents() {
         </div>
       </button>
     )
-  }
-
-  // Integration Folder Card Component - shows integration logo and only appears when connected
-  const IntegrationFolderCard = ({ integration, count, active, onClick }: {
-    integration: ConnectedIntegration
-    count: number
-    active: boolean
-    onClick: () => void
-  }) => (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '14px',
-        padding: '16px 20px',
-        backgroundColor: active ? colors.primaryLight : '#F7F5F3',
-        border: `2px solid ${active ? colors.primary : colors.border}`,
-        borderRadius: '12px',
-        cursor: 'pointer',
-        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-        minWidth: '180px',
-        flexShrink: 0,
-        boxShadow: active ? `0 4px 12px rgba(37, 99, 235, 0.2)` : shadows.sm,
-        transform: active ? 'scale(1.02)' : 'scale(1)',
-      }}
-      onMouseEnter={(e) => {
-        if (!active) {
-          e.currentTarget.style.borderColor = colors.primary
-          e.currentTarget.style.backgroundColor = colors.primaryLight
-          e.currentTarget.style.transform = 'scale(1.02)'
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!active) {
-          e.currentTarget.style.borderColor = colors.border
-          e.currentTarget.style.backgroundColor = '#F7F5F3'
-          e.currentTarget.style.transform = 'scale(1)'
-        }
-      }}
-    >
-      <div style={{
-        width: '40px',
-        height: '40px',
-        backgroundColor: '#fff',
-        borderRadius: '10px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        overflow: 'hidden',
-      }}>
-        <Image
-          src={integration.logo}
-          alt={integration.name}
-          width={28}
-          height={28}
-          style={{ objectFit: 'contain' }}
-        />
-      </div>
-      <div style={{ textAlign: 'left' }}>
-        <div style={{
-          fontSize: '14px',
-          fontWeight: 600,
-          color: colors.textPrimary,
-          marginBottom: '2px',
-        }}>
-          {integration.name}
-        </div>
-        <div style={{
-          fontSize: '12px',
-          color: colors.textMuted,
-        }}>
-          {count} {count === 1 ? 'file' : 'files'}
-        </div>
-      </div>
-    </button>
-  )
-
-  // Slider scroll handler
-  const handleSliderScroll = (direction: 'left' | 'right') => {
-    if (integrationSliderRef.current) {
-      const scrollAmount = 200
-      const newPosition = direction === 'left'
-        ? Math.max(0, integrationSliderPosition - scrollAmount)
-        : integrationSliderPosition + scrollAmount
-      integrationSliderRef.current.scrollTo({
-        left: newPosition,
-        behavior: 'smooth'
-      })
-      setIntegrationSliderPosition(newPosition)
-    }
   }
 
   // Filter Pill Component
@@ -1675,162 +1507,6 @@ export default function Documents() {
           </div>
         </div>
 
-        {/* Integrations Section - Only shows connected integrations */}
-        {connectedIntegrations.length > 0 && (
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '12px',
-            }}>
-              <h2 style={{
-                fontSize: '16px',
-                fontWeight: 600,
-                color: colors.textPrimary,
-                margin: 0,
-              }}>
-                Connected Sources
-              </h2>
-              {connectedIntegrations.length > 4 && (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => handleSliderScroll('left')}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: colors.cardBg,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F0EEEC'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.cardBg}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth="2">
-                      <path d="M15 18l-6-6 6-6"/>
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleSliderScroll('right')}
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: colors.cardBg,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F0EEEC'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.cardBg}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth="2">
-                      <path d="M9 18l6-6-6-6"/>
-                    </svg>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Sliding Scale Container */}
-            <div
-              ref={integrationSliderRef}
-              onScroll={(e) => setIntegrationSliderPosition(e.currentTarget.scrollLeft)}
-              style={{
-                display: 'flex',
-                gap: '12px',
-                overflowX: 'auto',
-                paddingBottom: '8px',
-                scrollBehavior: 'smooth',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-              }}
-            >
-              <style jsx>{`
-                div::-webkit-scrollbar {
-                  display: none;
-                }
-              `}</style>
-              {/* Show All button */}
-              <button
-                onClick={() => {
-                  setActiveIntegration(null)
-                  setActiveCategory('All Items')
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '16px 20px',
-                  backgroundColor: !activeIntegration && activeCategory === 'All Items' ? colors.primaryLight : '#F7F5F3',
-                  border: `2px solid ${!activeIntegration && activeCategory === 'All Items' ? colors.primary : colors.border}`,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                  minWidth: '140px',
-                  flexShrink: 0,
-                  boxShadow: !activeIntegration && activeCategory === 'All Items' ? `0 4px 12px rgba(37, 99, 235, 0.2)` : shadows.sm,
-                }}
-                onMouseEnter={(e) => {
-                  if (activeIntegration || activeCategory !== 'All Items') {
-                    e.currentTarget.style.borderColor = colors.primary
-                    e.currentTarget.style.backgroundColor = colors.primaryLight
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (activeIntegration || activeCategory !== 'All Items') {
-                    e.currentTarget.style.borderColor = colors.border
-                    e.currentTarget.style.backgroundColor = '#F7F5F3'
-                  }
-                }}
-              >
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  backgroundColor: '#F0EEEC',
-                  borderRadius: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7A7A7A" strokeWidth="1.5">
-                    <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-                    <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-                    <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-                    <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-                  </svg>
-                </div>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary }}>All</div>
-                  <div style={{ fontSize: '12px', color: colors.textMuted }}>{totalCount} files</div>
-                </div>
-              </button>
-
-              {/* Connected Integration Folders */}
-              {connectedIntegrations.map((integration) => (
-                <IntegrationFolderCard
-                  key={integration.id}
-                  integration={integration}
-                  count={integrationCounts[integration.id] || 0}
-                  active={activeIntegration === integration.id}
-                  onClick={() => {
-                    setActiveIntegration(integration.id)
-                    setActiveCategory('') // Clear category filter when filtering by integration
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Folders Section */}
         <div style={{ marginBottom: '32px' }}>
           <div style={{
@@ -1846,7 +1522,7 @@ export default function Documents() {
                 color: colors.textPrimary,
                 margin: 0,
               }}>
-                Categories
+                Folders
               </h2>
             </div>
           </div>
@@ -1861,40 +1537,40 @@ export default function Documents() {
               title="All Documents"
               count={totalCount}
               size={formatFileSize(sizes.all)}
-              active={activeCategory === 'All Items' && !activeIntegration}
-              onClick={() => { setActiveCategory('All Items'); setActiveIntegration(null) }}
+              active={activeCategory === 'All Items'}
+              onClick={() => setActiveCategory('All Items')}
               iconType="all"
             />
             <FolderCard
               title="Work Documents"
               count={counts.documents}
               size={formatFileSize(sizes.documents)}
-              active={activeCategory === 'Documents' && !activeIntegration}
-              onClick={() => { setActiveCategory('Documents'); setActiveIntegration(null) }}
+              active={activeCategory === 'Documents'}
+              onClick={() => setActiveCategory('Documents')}
               iconType="work"
             />
             <FolderCard
               title="Code Files"
               count={counts.code}
               size={formatFileSize(sizes.code)}
-              active={activeCategory === 'Code' && !activeIntegration}
-              onClick={() => { setActiveCategory('Code'); setActiveIntegration(null) }}
+              active={activeCategory === 'Code'}
+              onClick={() => setActiveCategory('Code')}
               iconType="code"
             />
             <FolderCard
               title="Web Scraper"
               count={totalCount > counts.all ? counts.webscraper + (totalCount - counts.all) : counts.webscraper}
               size={formatFileSize(sizes.webscraper)}
-              active={activeCategory === 'Web Scraper' && !activeIntegration}
-              onClick={() => { setActiveCategory('Web Scraper'); setActiveIntegration(null) }}
+              active={activeCategory === 'Web Scraper'}
+              onClick={() => setActiveCategory('Web Scraper')}
               iconType="web"
             />
             <FolderCard
               title="Personal & Other"
               count={counts.personal + counts.other}
               size={formatFileSize(sizes.personal + sizes.other)}
-              active={(activeCategory === 'Personal Items' || activeCategory === 'Other Items') && !activeIntegration}
-              onClick={() => { setActiveCategory('Personal Items'); setActiveIntegration(null) }}
+              active={activeCategory === 'Personal Items' || activeCategory === 'Other Items'}
+              onClick={() => setActiveCategory('Personal Items')}
               iconType="personal"
             />
           </div>

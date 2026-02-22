@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { flushSync } from 'react-dom'
 import Sidebar from '../shared/Sidebar'
 import Image from 'next/image'
 import axios from 'axios'
@@ -20,7 +19,6 @@ interface Message {
   sources?: any[]
   sourceMap?: { [key: string]: { name: string; doc_id: string } }
   attachments?: { name: string; type: string }[]
-  isStreaming?: boolean  // True while streaming - shows plain text for performance
 }
 
 interface Conversation {
@@ -464,171 +462,147 @@ export default function ChatInterface() {
       // Append the current user message that was just sent (not yet saved to cloud)
       conversationHistory.push({ role: 'user', content: queryText })
 
-      // Use STREAMING search - words appear in real-time like GPT/Claude!
-      const aiMessageId = (Date.now() + 1).toString()
-      let streamedAnswer = ''
-      let sourcesData: any[] = []
-      let sourceMapData: { [key: string]: { name: string; doc_id: string; source_url: string } } = {}
-
-      // Add placeholder AI message with typing indicator
-      setMessages(prev => [...prev, {
-        id: aiMessageId,
-        text: '', // Empty - cursor is CSS animated
-        isUser: false,
-        sources: [],
-        sourceMap: {},
-        isStreaming: true,  // Mark as streaming for plain text rendering
-      }])
-
-      // Update DOM directly for instant streaming (bypass React for performance)
-      const updateStreamingText = (text: string) => {
-        const el = document.getElementById(`streaming-${aiMessageId}`)
-        if (el) {
-          // Update only the text node, keep the cursor element
-          const textNode = el.firstChild
-          if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-            textNode.textContent = text
-          } else {
-            el.insertBefore(document.createTextNode(text), el.firstChild)
-          }
-        }
-      }
-
-      // Use fetch for SSE streaming
-      const streamResponse = await fetch(`${API_BASE}/search/stream`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-        body: JSON.stringify({
-          query: queryText,
-          conversation_history: conversationHistory,
-          top_k: 15,
-          boost_doc_ids: uploadedDocIds
-        })
+      // Use Enhanced RAG v2.1 endpoint with auth headers and conversation history
+      const response = await axios.post(`${API_BASE}/search`, {
+        query: queryText,
+        conversation_history: conversationHistory,
+        top_k: 15,  // Get more results for better context
+        boost_doc_ids: uploadedDocIds  // Boost newly uploaded documents
+      }, {
+        headers: getAuthHeaders()
       })
 
-      if (!streamResponse.ok) {
-        throw new Error(`Stream request failed: ${streamResponse.status}`)
-      }
+      // RAG response includes answer, sources, confidence, etc.
+      // Clean up the answer text - remove citation coverage and sources used lines
+      let cleanedAnswer = response.data.answer || ''
 
-      const reader = streamResponse.body?.getReader()
-      const decoder = new TextDecoder()
-
-      if (!reader) {
-        throw new Error('No reader available')
-      }
-
-      // Process SSE stream
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-
-              if (data.content !== undefined) {
-                // Chunk - append text and update DOM directly (instant!)
-                streamedAnswer += data.content
-                updateStreamingText(streamedAnswer)
-              } else if (data.sources !== undefined) {
-                // Done event - got final sources
-                sourcesData = data.sources || []
-
-                // Build source mapping
-                sourcesData.forEach((s: any, idx: number) => {
-                  const sourceName = s.title || `Source ${idx + 1}`
-                  const doc_id = s.doc_id || ''
-                  const source_url = s.source_url || ''
-                  const cleanName = (sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName).replace(/:/g, ' -')
-                  sourceMapData[`Source ${idx + 1}`] = { name: cleanName, doc_id, source_url }
-                  sourceMapData[cleanName] = { name: cleanName, doc_id, source_url }
-                })
-              } else if (data.error) {
-                throw new Error(data.error)
-              }
-            } catch (e) {
-              // Ignore parse errors for partial data
-            }
-          }
-        }
-      }
-
-      // Clean up the streamed answer (same cleanup as before)
-      let cleanedAnswer = streamedAnswer
+      // Remove "Sources Used: [Source X, Source Y]" line
       cleanedAnswer = cleanedAnswer.replace(/Sources Used:.*$/gm, '')
+      // Remove "Citation Coverage: X% of statements are cited." line
       cleanedAnswer = cleanedAnswer.replace(/.*Citation Coverage:.*$/gm, '')
+      // Remove emoji lines like "📊 Citation Coverage..."
       cleanedAnswer = cleanedAnswer.replace(/^.*📊.*$/gm, '')
       cleanedAnswer = cleanedAnswer.replace(/^.*📄 Sources:.*$/gm, '')
+      // Clean up extra newlines
       cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n').trim()
 
-      // Replace [Source X] with markers
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+)\]/g, (match: string, num: string) => {
-        const source = sourceMapData[`Source ${num}`]
-        return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
+      // Build source name mapping for inline citations
+      const sourceMapData: { [key: string]: { name: string; doc_id: string; source_url: string } } = {}
+      response.data.sources?.forEach((s: any, idx: number) => {
+        // Never use raw doc_id/chunk_id as display name — use title or generic label
+        const sourceName = s.metadata?.file_name || s.title || s.metadata?.title || s.metadata?.subject || `Source ${idx + 1}`
+        const doc_id = s.doc_id || s.chunk_id || ''
+        const source_url = s.source_url || ''
+        // Clean up source name - get just the filename, strip colons (used as marker delimiters)
+        const cleanName = (sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName).replace(/:/g, ' -')
+        sourceMapData[`Source ${idx + 1}`] = { name: cleanName, doc_id, source_url }
+        sourceMapData[cleanName] = { name: cleanName, doc_id, source_url }
       })
+
+      // Replace [Source X] with placeholder markers that we'll render as links
+      // Use a special marker format: [[SOURCE:name:doc_id:source_url]]
+      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+)\]/g, (match: string, num: string) => {
+        const key = `Source ${num}`
+        const source = sourceMapData[key]
+        if (source) {
+          return `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]`
+        }
+        // No mapping — remove the raw [Source N] text entirely so it doesn't clutter the answer
+        return ''
+      })
+      // Also handle [Source X, Source Y] format (full prefix)
       cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+), Source (\d+)\]/g, (match: string, num1: string, num2: string) => {
         const source1 = sourceMapData[`Source ${num1}`]
         const source2 = sourceMapData[`Source ${num2}`]
         const parts = []
         if (source1) parts.push(`[[SOURCE:${source1.name}:${source1.doc_id}:${source1.source_url || ''}]]`)
         if (source2) parts.push(`[[SOURCE:${source2.name}:${source2.doc_id}:${source2.source_url || ''}]]`)
-        return parts.join(', ')
+        return parts.length > 0 ? parts.join(', ') : ''
       })
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+(?:,\s*\d+)+)\]/g, (match: string, nums: string) => {
-        const numbers = nums.split(/,\s*/)
-        return numbers.map((n: string) => {
-          const source = sourceMapData[`Source ${n.trim()}`]
-          return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
-        }).filter(Boolean).join(', ')
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[Sources (\d+(?:,\s*\d+)+)\]/gi, (match: string, nums: string) => {
-        const numbers = nums.split(/,\s*/)
-        return numbers.map((n: string) => {
-          const source = sourceMapData[`Source ${n.trim()}`]
-          return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
-        }).filter(Boolean).join(', ')
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+):\s*[^\]]+\]/g, (match: string, num: string) => {
-        const source = sourceMapData[`Source ${num}`]
-        return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
-      })
+      // Handle [Source 1, 2] or [Source 1, 2, 3] shorthand format
+      cleanedAnswer = cleanedAnswer.replace(
+        /\[Source (\d+(?:,\s*\d+)+)\]/g,
+        (match: string, nums: string) => {
+          const numbers = nums.split(/,\s*/)
+          const markers = numbers
+            .map((n: string) => {
+              const source = sourceMapData[`Source ${n.trim()}`]
+              return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
+            })
+            .filter(Boolean)
+          return markers.join(', ')
+        }
+      )
+      // Handle [Sources 1, 2, 3] plural format
+      cleanedAnswer = cleanedAnswer.replace(
+        /\[Sources (\d+(?:,\s*\d+)+)\]/gi,
+        (match: string, nums: string) => {
+          const numbers = nums.split(/,\s*/)
+          const markers = numbers
+            .map((n: string) => {
+              const source = sourceMapData[`Source ${n.trim()}`]
+              return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
+            })
+            .filter(Boolean)
+          return markers.join(', ')
+        }
+      )
+      // Handle [Source 3: filename.py] format (with filename after colon)
+      cleanedAnswer = cleanedAnswer.replace(
+        /\[Source (\d+):\s*[^\]]+\]/g,
+        (match: string, num: string) => {
+          const source = sourceMapData[`Source ${num}`]
+          return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
+        }
+      )
+
+      // Handle bare [N] citations (e.g., [1], [4], [10]) — LLM sometimes uses footnote style
       cleanedAnswer = cleanedAnswer.replace(/\[(\d+)\]/g, (match: string, num: string) => {
         const source = sourceMapData[`Source ${num}`]
         return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
       })
+
+      // Catch-all: remove any remaining raw [Source N] that weren't mapped
       cleanedAnswer = cleanedAnswer.replace(/\[Sources?\s*\d+(?:,\s*\d+)*\]/gi, '')
-      cleanedAnswer = cleanedAnswer.replace(/(\[\[SOURCE:([^:]+):[^\]]+\]\])(?:\s*,?\s*\[\[SOURCE:\2:[^\]]+\]\])+/g, '$1')
+
+      // Deduplicate adjacent source markers with the same display name
+      // (multiple chunks from same file produce identical-looking links)
+      cleanedAnswer = cleanedAnswer.replace(
+        /(\[\[SOURCE:([^:]+):[^\]]+\]\])(?:\s*,?\s*\[\[SOURCE:\2:[^\]]+\]\])+/g,
+        '$1'
+      )
+
+      // Add commas between consecutive source markers (e.g. ]] [[SOURCE: → ]], [[SOURCE:)
       cleanedAnswer = cleanedAnswer.replace(/\]\]\s+\[\[SOURCE:/g, ']], [[SOURCE:')
+
+      // Clean up orphaned commas and extra whitespace from removed sources
       cleanedAnswer = cleanedAnswer.replace(/,\s*,/g, ',')
+      // Only collapse multiple spaces/tabs — preserve newlines so tables and headings render
       cleanedAnswer = cleanedAnswer.replace(/[^\S\n]{2,}/g, ' ')
       cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n')
 
-      const aiSources = sourcesData.map((s: any, idx: number) => ({
-        doc_id: s.doc_id,
-        subject: s.title || `Source ${idx + 1}`,
-        project: 'Unknown',
-        score: s.score,
-        content: (s.content_preview || '').substring(0, 200) + '...',
+      const aiSources = response.data.sources?.map((s: any, idx: number) => ({
+        doc_id: s.doc_id || s.chunk_id,
+        subject: s.metadata?.file_name || s.title || s.metadata?.title || s.metadata?.subject || `Source ${idx + 1}`,
+        project: s.metadata?.project || 'Unknown',
+        score: s.rerank_score || s.score,
+        content: s.content?.substring(0, 200) + '...',
         source_url: s.source_url || ''
       }))
 
-      // Final update with cleaned answer and sources - disable streaming mode for markdown rendering
-      setMessages(prev => prev.map(m =>
-        m.id === aiMessageId ? { ...m, text: cleanedAnswer, sources: aiSources, sourceMap: sourceMapData, isStreaming: false } : m
-      ))
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: cleanedAnswer,
+        isUser: false,
+        sources: aiSources,
+        sourceMap: sourceMapData,
+      }
+      setMessages(prev => [...prev, aiMessage])
 
-      // Save to conversation
+      // Save AI response to conversation and refresh sidebar
       if (convId) {
         saveMessage('assistant', cleanedAnswer, aiSources, convId)
+        // Refresh conversation list so sidebar shows updated titles/timestamps
         fetchConversations()
       }
     } catch (error: any) {
@@ -1051,29 +1025,7 @@ export default function ChatInterface() {
                         lineHeight: '1.6',
                         color: warmTheme.textPrimary
                       }}>
-                        {message.isUser ? message.text : (message.isStreaming ? (
-                          <span
-                            id={`streaming-${message.id}`}
-                            style={{
-                              whiteSpace: 'pre-wrap',
-                              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                            }}
-                          >
-                            {message.text}
-                            <span
-                              className="streaming-cursor"
-                              style={{
-                                display: 'inline-block',
-                                width: '2px',
-                                height: '1.1em',
-                                backgroundColor: warmTheme.primary,
-                                marginLeft: '2px',
-                                verticalAlign: 'text-bottom',
-                                animation: 'blink 1s step-end infinite',
-                              }}
-                            />
-                          </span>
-                        ) : renderMarkdownMessage(message.text))}
+                        {message.isUser ? message.text : renderMarkdownMessage(message.text)}
                       </div>
 
                       {/* Display attachments for user messages */}

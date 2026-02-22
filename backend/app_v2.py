@@ -13,12 +13,11 @@ Complete Flask application with:
 
 import os
 import time
-import json
 import secrets
 from pathlib import Path
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify, request, g, Response, stream_with_context
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 from services.auth_service import require_auth
@@ -1378,143 +1377,6 @@ def search():
             "error": str(e)
         }), 500
 
-
-# ============================================================================
-# STREAMING SEARCH ENDPOINT (Server-Sent Events)
-# ============================================================================
-
-@app.route('/api/search/stream', methods=['POST'])
-@require_auth
-def search_stream():
-    """
-    Streaming RAG search endpoint using Server-Sent Events.
-    Words appear in real-time as they're generated.
-
-    Response streams as SSE events:
-    - event: search_complete - Search done, answer generation starting
-    - event: chunk - A piece of the answer text
-    - event: done - Streaming complete with final metadata
-    - event: error - Error occurred
-    """
-    from vector_stores.pinecone_store import get_hybrid_store
-    from database.models import SessionLocal, Document
-
-    tenant_id = g.tenant_id
-    print(f"[SEARCH-STREAM] Tenant: {tenant_id}", flush=True)
-
-    data = request.get_json() or {}
-    query = data.get('query', '')
-    conversation_history = data.get('conversation_history', [])
-    top_k = data.get('top_k', 10)
-    boost_doc_ids = data.get('boost_doc_ids', [])
-
-    if not query:
-        def error_gen():
-            yield f"event: error\ndata: {json.dumps({'error': 'Query required'})}\n\n"
-        return Response(error_gen(), mimetype='text/event-stream')
-
-    def generate():
-        db = SessionLocal()
-        try:
-            if not os.getenv("PINECONE_API_KEY"):
-                yield f"event: error\ndata: {json.dumps({'error': 'Pinecone not configured'})}\n\n"
-                return
-
-            vector_store = get_hybrid_store()
-
-            stats = vector_store.get_stats(tenant_id)
-            if stats.get('vector_count', 0) == 0:
-                yield f"event: chunk\ndata: {json.dumps({'content': 'Your knowledge base is empty. Please add some documents first.'})}\n\n"
-                yield f"event: done\ndata: {json.dumps({'confidence': 1.0, 'sources': []})}\n\n"
-                return
-
-            from services.enhanced_search_service import get_enhanced_search_service
-            enhanced_service = get_enhanced_search_service()
-
-            print(f"[SEARCH-STREAM] Starting: '{query}'", flush=True)
-
-            sources_for_response = []
-            for event in enhanced_service.search_and_answer_stream(
-                query=query,
-                tenant_id=tenant_id,
-                vector_store=vector_store,
-                top_k=top_k,
-                conversation_history=conversation_history,
-                boost_doc_ids=boost_doc_ids
-            ):
-                event_type = event.get('type')
-
-                if event_type == 'search_complete':
-                    raw_sources = event.get('sources', [])
-
-                    # Enrich with source_url from DB
-                    doc_ids = [s.get('doc_id', '') for s in raw_sources if s.get('doc_id')]
-                    source_url_map = {}
-                    if doc_ids:
-                        try:
-                            docs_with_urls = db.query(Document.id, Document.source_url).filter(
-                                Document.id.in_(doc_ids)
-                            ).all()
-                            source_url_map = {str(d.id): d.source_url for d in docs_with_urls if d.source_url}
-                        except Exception:
-                            pass
-
-                    for src in raw_sources:
-                        doc_id = src.get('doc_id', '')
-                        sources_for_response.append({
-                            "doc_id": doc_id,
-                            "title": src.get('title', 'Untitled'),
-                            "content_preview": (src.get('content', '') or '')[:300],
-                            "score": src.get('rerank_score', src.get('score', 0)),
-                            "source_url": source_url_map.get(doc_id, '')
-                        })
-
-                    yield f"event: search_complete\ndata: {json.dumps({'expanded_query': event.get('expanded_query', query), 'num_sources': event.get('num_sources', 0)})}\n\n"
-
-                elif event_type == 'chunk':
-                    content = event.get('content', '')
-                    print(f"[STREAM-CHUNK] Sending: {content[:20]}...", flush=True)
-                    yield f"event: chunk\ndata: {json.dumps({'content': content})}\n\n"
-
-                elif event_type == 'done':
-                    final_data = {
-                        'confidence': event.get('confidence', 0.8),
-                        'sources': sources_for_response,
-                        'hallucination_check': event.get('hallucination_check'),
-                        'features_used': event.get('features_used', {})
-                    }
-                    yield f"event: done\ndata: {json.dumps(final_data)}\n\n"
-
-            print(f"[SEARCH-STREAM] Complete: '{query}'", flush=True)
-
-        except Exception as e:
-            import traceback
-            print(f"[SEARCH-STREAM] Error: {e}", flush=True)
-            traceback.print_exc()
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-        finally:
-            db.close()
-
-    # Wrap generator to yield bytes for streaming
-    def byte_generator():
-        for chunk in generate():
-            yield chunk.encode('utf-8')
-
-    return Response(
-        stream_with_context(byte_generator()),
-        mimetype='text/event-stream',
-        direct_passthrough=True,
-        headers={
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-            'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no',
-            'Content-Type': 'text/event-stream; charset=utf-8'
-        }
-    )
-
-
 # ============================================================================
 # FEEDBACK ENDPOINT
 # ============================================================================
@@ -1651,4 +1513,4 @@ if __name__ == '__main__':
 ╚══════════════════════════════════════════════════════════════╝
 """)
 
-    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
+    app.run(host='0.0.0.0', port=port, debug=debug)
