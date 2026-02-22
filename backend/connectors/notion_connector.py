@@ -132,17 +132,6 @@ class NotionConnector(BaseConnector):
                 print(f"[Notion] Found {len(pages)} pages in batch")
 
                 for page in pages:
-                    # Filter by modified time if incremental
-                    if since:
-                        last_edited = page.get("last_edited_time", "")
-                        if last_edited:
-                            try:
-                                edited_dt = datetime.fromisoformat(last_edited.replace("Z", "+00:00"))
-                                if edited_dt < since:
-                                    continue
-                            except:
-                                pass
-
                     # Skip archived unless configured
                     if page.get("archived") and not self.config.settings.get("include_archived"):
                         continue
