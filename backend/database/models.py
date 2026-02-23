@@ -1604,7 +1604,7 @@ class InventoryItem(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     sku = Column(String(100))  # Stock Keeping Unit / Part Number
-    barcode = Column(String(100))
+    barcode = Column(String(100), index=True)  # For barcode scanning
 
     # Quantity tracking
     quantity = Column(Integer, default=0, nullable=False)
@@ -1636,8 +1636,36 @@ class InventoryItem(Base):
     notes = Column(Text)
     image_url = Column(String(500))
 
+    # === LAB-SPECIFIC FIELDS ===
+    # Chemical Safety
+    hazard_class = Column(String(100))  # GHS classification: Flammable, Corrosive, Toxic, etc.
+    sds_url = Column(String(500))  # Safety Data Sheet URL
+    storage_temp = Column(String(50))  # RT, 4C, -20C, -80C
+    storage_conditions = Column(Text)  # Special storage notes
+
+    # Calibration tracking (for equipment)
+    requires_calibration = Column(Boolean, default=False)
+    calibration_interval_days = Column(Integer)  # How often (e.g., 90 days)
+    last_calibration = Column(DateTime(timezone=True))
+    next_calibration = Column(DateTime(timezone=True))
+    calibration_notes = Column(Text)
+
+    # Maintenance tracking
+    requires_maintenance = Column(Boolean, default=False)
+    maintenance_interval_days = Column(Integer)
+    last_maintenance = Column(DateTime(timezone=True))
+    next_maintenance = Column(DateTime(timezone=True))
+    maintenance_notes = Column(Text)
+
+    # Usage tracking
+    last_used = Column(DateTime(timezone=True))
+    use_count = Column(Integer, default=0)  # How many times checked out/used
+
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
+    is_checked_out = Column(Boolean, default=False)  # Currently checked out?
+    checked_out_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    checked_out_at = Column(DateTime(timezone=True))
 
     # Audit
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -1648,6 +1676,9 @@ class InventoryItem(Base):
     category = relationship("InventoryCategory", back_populates="items")
     location = relationship("InventoryLocation", back_populates="items")
     vendor = relationship("InventoryVendor", back_populates="items")
+    transactions = relationship("InventoryTransaction", back_populates="item", lazy="dynamic")
+    batches = relationship("InventoryBatch", back_populates="item", lazy="dynamic")
+    checkouts = relationship("InventoryCheckout", back_populates="item", lazy="dynamic")
 
     __table_args__ = (
         Index('ix_inventory_item_tenant_category', 'tenant_id', 'category_id'),
@@ -1682,6 +1713,24 @@ class InventoryItem(Base):
             return self.quantity * self.unit_price
         return 0.0
 
+    @property
+    def is_calibration_due(self) -> bool:
+        """Check if calibration is due within 7 days"""
+        if not self.requires_calibration or not self.next_calibration:
+            return False
+        from datetime import timedelta
+        cal_aware = make_aware(self.next_calibration)
+        return cal_aware <= utc_now() + timedelta(days=7)
+
+    @property
+    def is_maintenance_due(self) -> bool:
+        """Check if maintenance is due within 7 days"""
+        if not self.requires_maintenance or not self.next_maintenance:
+            return False
+        from datetime import timedelta
+        maint_aware = make_aware(self.next_maintenance)
+        return maint_aware <= utc_now() + timedelta(days=7)
+
     def to_dict(self, include_relations: bool = True) -> Dict[str, Any]:
         data = {
             "id": self.id,
@@ -1708,12 +1757,38 @@ class InventoryItem(Base):
             "manufacturer": self.manufacturer,
             "notes": self.notes,
             "image_url": self.image_url,
+            # Lab-specific fields
+            "hazard_class": self.hazard_class,
+            "sds_url": self.sds_url,
+            "storage_temp": self.storage_temp,
+            "storage_conditions": self.storage_conditions,
+            # Calibration
+            "requires_calibration": self.requires_calibration,
+            "calibration_interval_days": self.calibration_interval_days,
+            "last_calibration": self.last_calibration.isoformat() if self.last_calibration else None,
+            "next_calibration": self.next_calibration.isoformat() if self.next_calibration else None,
+            "calibration_notes": self.calibration_notes,
+            # Maintenance
+            "requires_maintenance": self.requires_maintenance,
+            "maintenance_interval_days": self.maintenance_interval_days,
+            "last_maintenance": self.last_maintenance.isoformat() if self.last_maintenance else None,
+            "next_maintenance": self.next_maintenance.isoformat() if self.next_maintenance else None,
+            "maintenance_notes": self.maintenance_notes,
+            # Usage
+            "last_used": self.last_used.isoformat() if self.last_used else None,
+            "use_count": self.use_count,
+            # Status
             "is_active": self.is_active,
+            "is_checked_out": self.is_checked_out,
+            "checked_out_by": self.checked_out_by,
+            "checked_out_at": self.checked_out_at.isoformat() if self.checked_out_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             # Computed properties
             "is_low_stock": self.is_low_stock,
             "is_warranty_expiring_soon": self.is_warranty_expiring_soon,
+            "is_calibration_due": self.is_calibration_due,
+            "is_maintenance_due": self.is_maintenance_due,
             "total_value": self.total_value,
         }
         if include_relations:
@@ -1721,6 +1796,266 @@ class InventoryItem(Base):
             data["location"] = self.location.to_dict() if self.location else None
             data["vendor"] = self.vendor.to_dict() if self.vendor else None
         return data
+
+
+class InventoryTransaction(Base):
+    """
+    Audit trail for all inventory changes - who did what, when
+    """
+    __tablename__ = "inventory_transactions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    item_id = Column(String(36), ForeignKey("inventory_items.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+
+    # Transaction type: CREATED, UPDATED, QUANTITY_ADJUSTED, CHECKED_OUT, CHECKED_IN, DELETED, CALIBRATED, MAINTAINED
+    transaction_type = Column(String(50), nullable=False)
+
+    # What changed
+    field_changed = Column(String(100))  # e.g., "quantity", "location_id"
+    old_value = Column(Text)
+    new_value = Column(Text)
+
+    # Quantity changes (for easy analytics)
+    quantity_change = Column(Integer)  # +5, -3, etc.
+    quantity_before = Column(Integer)
+    quantity_after = Column(Integer)
+
+    # Context
+    notes = Column(Text)  # "Took 5 for experiment #123"
+    reference = Column(String(255))  # PO number, experiment ID, etc.
+
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    item = relationship("InventoryItem", back_populates="transactions")
+    user = relationship("User")
+
+    __table_args__ = (
+        Index('ix_inv_transaction_item_date', 'item_id', 'created_at'),
+        Index('ix_inv_transaction_tenant_date', 'tenant_id', 'created_at'),
+        Index('ix_inv_transaction_type', 'tenant_id', 'transaction_type'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "item_id": self.item_id,
+            "user_id": self.user_id,
+            "user_name": self.user.name if self.user else "System",
+            "transaction_type": self.transaction_type,
+            "field_changed": self.field_changed,
+            "old_value": self.old_value,
+            "new_value": self.new_value,
+            "quantity_change": self.quantity_change,
+            "quantity_before": self.quantity_before,
+            "quantity_after": self.quantity_after,
+            "notes": self.notes,
+            "reference": self.reference,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class InventoryBatch(Base):
+    """
+    Batch/Lot tracking for items - especially important for reagents
+    """
+    __tablename__ = "inventory_batches"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    item_id = Column(String(36), ForeignKey("inventory_items.id"), nullable=False, index=True)
+
+    # Batch identification
+    lot_number = Column(String(100), nullable=False)
+    batch_number = Column(String(100))
+
+    # Quantity in this batch
+    quantity = Column(Integer, default=0, nullable=False)
+    initial_quantity = Column(Integer)  # How much we received
+
+    # Dates
+    manufacture_date = Column(DateTime(timezone=True))
+    expiry_date = Column(DateTime(timezone=True))
+    received_date = Column(DateTime(timezone=True), default=utc_now)
+
+    # Certificate of Analysis
+    coa_url = Column(String(500))
+    coa_notes = Column(Text)
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    is_expired = Column(Boolean, default=False)
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    item = relationship("InventoryItem", back_populates="batches")
+
+    __table_args__ = (
+        Index('ix_inv_batch_item_lot', 'item_id', 'lot_number'),
+        Index('ix_inv_batch_expiry', 'tenant_id', 'expiry_date'),
+        UniqueConstraint('item_id', 'lot_number', name='uq_batch_item_lot'),
+    )
+
+    @property
+    def is_expiring_soon(self) -> bool:
+        """Check if batch expires within 30 days"""
+        if not self.expiry_date:
+            return False
+        from datetime import timedelta
+        exp_aware = make_aware(self.expiry_date)
+        return exp_aware <= utc_now() + timedelta(days=30)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "item_id": self.item_id,
+            "lot_number": self.lot_number,
+            "batch_number": self.batch_number,
+            "quantity": self.quantity,
+            "initial_quantity": self.initial_quantity,
+            "manufacture_date": self.manufacture_date.isoformat() if self.manufacture_date else None,
+            "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
+            "received_date": self.received_date.isoformat() if self.received_date else None,
+            "coa_url": self.coa_url,
+            "coa_notes": self.coa_notes,
+            "is_active": self.is_active,
+            "is_expired": self.is_expired,
+            "is_expiring_soon": self.is_expiring_soon,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class InventoryCheckout(Base):
+    """
+    Equipment checkout/reservation system
+    """
+    __tablename__ = "inventory_checkouts"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    item_id = Column(String(36), ForeignKey("inventory_items.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+
+    # Checkout details
+    quantity = Column(Integer, default=1)  # For consumables
+    purpose = Column(Text)  # "Experiment #123", "Training"
+    project_reference = Column(String(255))  # Grant number, project code
+
+    # Timing
+    checked_out_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expected_return = Column(DateTime(timezone=True))  # When they plan to return
+    checked_in_at = Column(DateTime(timezone=True))  # Actual return time
+
+    # Status: ACTIVE, RETURNED, OVERDUE, CONSUMED
+    status = Column(String(20), default="ACTIVE")
+
+    # Condition tracking
+    condition_out = Column(String(50))  # Good, Fair, Needs Service
+    condition_in = Column(String(50))
+    condition_notes = Column(Text)
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    item = relationship("InventoryItem", back_populates="checkouts")
+    user = relationship("User")
+
+    __table_args__ = (
+        Index('ix_inv_checkout_item_status', 'item_id', 'status'),
+        Index('ix_inv_checkout_user', 'user_id', 'status'),
+        Index('ix_inv_checkout_tenant_date', 'tenant_id', 'checked_out_at'),
+    )
+
+    @property
+    def is_overdue(self) -> bool:
+        """Check if checkout is overdue"""
+        if self.status != "ACTIVE" or not self.expected_return:
+            return False
+        exp_aware = make_aware(self.expected_return)
+        return exp_aware < utc_now()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "item_id": self.item_id,
+            "user_id": self.user_id,
+            "user_name": self.user.name if self.user else None,
+            "quantity": self.quantity,
+            "purpose": self.purpose,
+            "project_reference": self.project_reference,
+            "checked_out_at": self.checked_out_at.isoformat() if self.checked_out_at else None,
+            "expected_return": self.expected_return.isoformat() if self.expected_return else None,
+            "checked_in_at": self.checked_in_at.isoformat() if self.checked_in_at else None,
+            "status": self.status,
+            "condition_out": self.condition_out,
+            "condition_in": self.condition_in,
+            "condition_notes": self.condition_notes,
+            "is_overdue": self.is_overdue,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class InventoryAlert(Base):
+    """
+    Scheduled alerts for inventory (low stock, calibration due, etc.)
+    """
+    __tablename__ = "inventory_alerts"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    item_id = Column(String(36), ForeignKey("inventory_items.id"), nullable=True)
+
+    # Alert type: LOW_STOCK, CALIBRATION_DUE, MAINTENANCE_DUE, EXPIRING_BATCH, WARRANTY_EXPIRING, OVERDUE_CHECKOUT
+    alert_type = Column(String(50), nullable=False)
+    severity = Column(String(20), default="WARNING")  # INFO, WARNING, CRITICAL
+
+    # Alert details
+    message = Column(Text, nullable=False)
+    threshold_value = Column(String(100))  # "5 units", "7 days"
+    current_value = Column(String(100))  # "3 units", "3 days"
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    is_acknowledged = Column(Boolean, default=False)
+    acknowledged_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True))
+
+    # Email notification
+    email_sent = Column(Boolean, default=False)
+    email_sent_at = Column(DateTime(timezone=True))
+    email_recipients = Column(Text)  # Comma-separated emails
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        Index('ix_inv_alert_tenant_active', 'tenant_id', 'is_active'),
+        Index('ix_inv_alert_type', 'tenant_id', 'alert_type', 'is_active'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "item_id": self.item_id,
+            "alert_type": self.alert_type,
+            "severity": self.severity,
+            "message": self.message,
+            "threshold_value": self.threshold_value,
+            "current_value": self.current_value,
+            "is_active": self.is_active,
+            "is_acknowledged": self.is_acknowledged,
+            "acknowledged_by": self.acknowledged_by,
+            "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
+            "email_sent": self.email_sent,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 def _migrate_enum_values():

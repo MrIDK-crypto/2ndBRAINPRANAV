@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from database.models import Document, Tenant
+from database.models import Document, Tenant, InventoryItem
 from vector_stores.pinecone_store import get_vector_store, PineconeVectorStore
 
 # Chunking configuration - 2000 chars with 400 overlap for optimal RAG
@@ -387,6 +387,218 @@ class EmbeddingService:
             'pinecone_vectors': pinecone_stats.get('vector_count', 0),
             'namespace': tenant_id
         }
+
+    def _prepare_inventory_doc(self, item: 'InventoryItem') -> Dict:
+        """
+        Prepare an inventory item for Pinecone embedding.
+        Creates a rich text representation of the item for semantic search.
+        """
+        # Build comprehensive text content for the item
+        content_parts = [
+            f"Inventory Item: {item.name}",
+        ]
+
+        if item.description:
+            content_parts.append(f"Description: {item.description}")
+
+        if item.sku:
+            content_parts.append(f"SKU/Part Number: {item.sku}")
+
+        if item.manufacturer:
+            content_parts.append(f"Manufacturer: {item.manufacturer}")
+
+        if item.model_number:
+            content_parts.append(f"Model: {item.model_number}")
+
+        if item.serial_number:
+            content_parts.append(f"Serial Number: {item.serial_number}")
+
+        content_parts.append(f"Quantity: {item.quantity} {item.unit}")
+
+        if item.unit_price:
+            content_parts.append(f"Unit Price: ${item.unit_price:.2f} {item.currency}")
+            content_parts.append(f"Total Value: ${item.total_value:.2f}")
+
+        if item.category:
+            content_parts.append(f"Category: {item.category.name}")
+            if item.category.description:
+                content_parts.append(f"Category Description: {item.category.description}")
+
+        if item.location:
+            location_str = item.location.name
+            if item.location.building:
+                location_str += f" ({item.location.building}"
+                if item.location.room:
+                    location_str += f", Room {item.location.room}"
+                location_str += ")"
+            content_parts.append(f"Location: {location_str}")
+
+        if item.vendor:
+            vendor_str = item.vendor.name
+            if item.vendor.contact_email:
+                vendor_str += f" - {item.vendor.contact_email}"
+            content_parts.append(f"Vendor/Supplier: {vendor_str}")
+
+        if item.warranty_expiry:
+            content_parts.append(f"Warranty Expires: {item.warranty_expiry.strftime('%Y-%m-%d')}")
+            if item.is_warranty_expiring_soon:
+                content_parts.append("Status: WARRANTY EXPIRING SOON")
+
+        if item.is_low_stock:
+            content_parts.append(f"Status: LOW STOCK (min threshold: {item.min_quantity})")
+
+        if item.notes:
+            content_parts.append(f"Notes: {item.notes}")
+
+        content = "\n".join(content_parts)
+
+        return {
+            'id': f"inventory:{item.id}",  # Prefix to distinguish from documents
+            'content': content,
+            'title': f"Inventory: {item.name}",
+            'metadata': {
+                'source_type': 'inventory',
+                'item_id': str(item.id),
+                'item_name': item.name,
+                'sku': item.sku or '',
+                'category': item.category.name if item.category else '',
+                'location': item.location.name if item.location else '',
+                'quantity': item.quantity,
+                'is_low_stock': item.is_low_stock,
+                'created_at': item.created_at.isoformat() if item.created_at else ''
+            }
+        }
+
+    def embed_inventory_items(
+        self,
+        items: List['InventoryItem'],
+        tenant_id: str,
+        db: Session,
+        progress_callback: Optional[callable] = None
+    ) -> Dict:
+        """
+        Embed inventory items to Pinecone for RAG search.
+
+        Args:
+            items: List of InventoryItem model instances
+            tenant_id: Tenant ID for isolation
+            db: Database session
+            progress_callback: Optional callback for progress updates
+
+        Returns:
+            Dict with embedding stats
+        """
+        import time as _time
+        print(f"[EmbeddingService] Embedding {len(items)} inventory items for tenant {tenant_id}", flush=True)
+
+        if not items:
+            return {'success': True, 'total': 0, 'embedded': 0, 'errors': []}
+
+        start_time = _time.time()
+        errors = []
+        embedded_count = 0
+
+        # Prepare inventory docs
+        pinecone_docs = []
+        for item in items:
+            try:
+                doc = self._prepare_inventory_doc(item)
+                pinecone_docs.append(doc)
+            except Exception as e:
+                errors.append(f"Failed to prepare item {item.name}: {str(e)}")
+
+        if not pinecone_docs:
+            return {'success': False, 'total': len(items), 'embedded': 0, 'errors': errors}
+
+        # Embed in a single batch (inventory items are typically small)
+        try:
+            result = self.vector_store.embed_and_upsert_documents(
+                documents=pinecone_docs,
+                tenant_id=tenant_id,
+                chunk_size=CHUNK_SIZE,
+                chunk_overlap=CHUNK_OVERLAP,
+                show_progress=False
+            )
+
+            if result.get('success') or result.get('upserted', 0) > 0:
+                embedded_count = result.get('upserted', 0)
+                print(f"[EmbeddingService] Embedded {embedded_count} inventory chunks", flush=True)
+            else:
+                errors.extend(result.get('errors', []))
+
+        except Exception as e:
+            print(f"[EmbeddingService] Error embedding inventory: {e}", flush=True)
+            errors.append(str(e))
+
+        elapsed = _time.time() - start_time
+        print(f"[EmbeddingService] Inventory embedding done: {embedded_count} chunks, {elapsed:.1f}s", flush=True)
+
+        return {
+            'success': len(errors) == 0,
+            'total': len(items),
+            'embedded': embedded_count,
+            'errors': errors
+        }
+
+    def embed_tenant_inventory(self, tenant_id: str, db: Session) -> Dict:
+        """
+        Embed all inventory items for a tenant.
+
+        Args:
+            tenant_id: Tenant ID
+            db: Database session
+
+        Returns:
+            Dict with embedding stats
+        """
+        items = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == tenant_id,
+            InventoryItem.is_active == True
+        ).all()
+
+        print(f"[EmbeddingService] Found {len(items)} inventory items to embed for tenant {tenant_id}")
+
+        if not items:
+            return {'success': True, 'total': 0, 'embedded': 0, 'message': 'No inventory items to embed'}
+
+        return self.embed_inventory_items(items, tenant_id, db)
+
+    def embed_single_inventory_item(self, item: 'InventoryItem', tenant_id: str, db: Session) -> Dict:
+        """
+        Embed a single inventory item (for real-time updates).
+
+        Args:
+            item: InventoryItem model instance
+            tenant_id: Tenant ID
+            db: Database session
+
+        Returns:
+            Dict with embedding result
+        """
+        return self.embed_inventory_items([item], tenant_id, db)
+
+    def delete_inventory_embeddings(self, item_ids: List[str], tenant_id: str) -> Dict:
+        """
+        Delete embeddings for inventory items.
+
+        Args:
+            item_ids: List of inventory item IDs
+            tenant_id: Tenant ID
+
+        Returns:
+            Dict with deletion stats
+        """
+        try:
+            # Add inventory prefix to IDs
+            prefixed_ids = [f"inventory:{id}" for id in item_ids]
+            success = self.vector_store.delete_documents(
+                doc_ids=prefixed_ids,
+                tenant_id=tenant_id
+            )
+            return {'success': success, 'deleted': len(item_ids) if success else 0}
+        except Exception as e:
+            print(f"[EmbeddingService] Error deleting inventory embeddings: {e}")
+            return {'success': False, 'deleted': 0, 'error': str(e)}
 
 
 # Singleton instance

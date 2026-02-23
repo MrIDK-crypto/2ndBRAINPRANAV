@@ -838,24 +838,6 @@ export default function KnowledgeGaps() {
               </button>
             </div>
 
-            <button
-              onClick={generateQuestions}
-              disabled={generating}
-              style={{
-                padding: '10px 20px',
-                background: theme.accent,
-                border: 'none',
-                borderRadius: '8px',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: generating ? 'not-allowed' : 'pointer',
-                fontFamily: fonts.sans,
-                opacity: generating ? 0.7 : 1,
-              }}
-            >
-              {generating ? 'Analyzing...' : 'Find Gaps'}
-            </button>
           </div>
         </header>
 
@@ -873,23 +855,15 @@ export default function KnowledgeGaps() {
             </div>
           ) : gaps.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
-              <div style={{ width: '80px', height: '80px', borderRadius: '20px', backgroundColor: theme.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="1.5">
-                  <circle cx="12" cy="12" r="10"/>
-                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-                  <circle cx="12" cy="17" r="0.5" fill={theme.accent}/>
+              <div style={{ width: '80px', height: '80px', borderRadius: '20px', backgroundColor: theme.forestLight, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={theme.forest} strokeWidth="1.5">
+                  <path d="M20 6L9 17l-5-5"/>
                 </svg>
               </div>
-              <h2 style={{ fontFamily: fonts.serif, fontSize: '28px', color: theme.ink, margin: '0 0 12px' }}>No knowledge gaps yet</h2>
+              <h2 style={{ fontFamily: fonts.serif, fontSize: '28px', color: theme.ink, margin: '0 0 12px' }}>Documentation is complete</h2>
               <p style={{ fontFamily: fonts.sans, fontSize: '15px', color: theme.muted, maxWidth: '400px' }}>
-                Analyze your documents to identify knowledge gaps.
+                No documentation gaps have been identified. Your knowledge base is well-documented.
               </p>
-              <button onClick={generateQuestions} disabled={generating} style={{
-                marginTop: '32px', padding: '16px 32px', background: theme.accent, border: 'none',
-                borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.sans,
-              }}>
-                {generating ? 'Analyzing...' : 'Analyze Documents'}
-              </button>
             </div>
           ) : filteredGaps.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '80px', background: theme.accentLight, borderRadius: '20px', maxWidth: '600px', margin: '0 auto' }}>

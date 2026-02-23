@@ -7,15 +7,41 @@ from flask import Blueprint, request, jsonify, g
 from datetime import datetime, timedelta, timezone
 from database.models import (
     SessionLocal, InventoryItem, InventoryCategory,
-    InventoryLocation, InventoryVendor, utc_now
+    InventoryLocation, InventoryVendor, InventoryTransaction,
+    InventoryBatch, InventoryCheckout, InventoryAlert, User, utc_now
 )
 from services.auth_service import require_auth
+from services.embedding_service import get_embedding_service
+from services.email_notification_service import get_email_service
 
 inventory_bp = Blueprint('inventory', __name__, url_prefix='/api/inventory')
 
 
 def get_db():
     return SessionLocal()
+
+
+def log_transaction(db, tenant_id, item_id, user_id, transaction_type,
+                   field_changed=None, old_value=None, new_value=None,
+                   quantity_change=None, quantity_before=None, quantity_after=None,
+                   notes=None, reference=None):
+    """Helper to log inventory transactions for audit trail"""
+    transaction = InventoryTransaction(
+        tenant_id=tenant_id,
+        item_id=item_id,
+        user_id=user_id,
+        transaction_type=transaction_type,
+        field_changed=field_changed,
+        old_value=str(old_value) if old_value is not None else None,
+        new_value=str(new_value) if new_value is not None else None,
+        quantity_change=quantity_change,
+        quantity_before=quantity_before,
+        quantity_after=quantity_after,
+        notes=notes,
+        reference=reference
+    )
+    db.add(transaction)
+    return transaction
 
 
 # ============================================================================
@@ -118,6 +144,13 @@ def create_item():
         db.commit()
         db.refresh(item)
 
+        # Embed item to Pinecone for RAG search
+        try:
+            embedding_service = get_embedding_service()
+            embedding_service.embed_single_inventory_item(item, g.tenant_id, db)
+        except Exception as embed_err:
+            print(f"[Inventory] Warning: Failed to embed item: {embed_err}")
+
         return jsonify(item.to_dict()), 201
     except Exception as e:
         db.rollback()
@@ -186,6 +219,13 @@ def update_item(item_id):
         db.commit()
         db.refresh(item)
 
+        # Re-embed item to Pinecone (update)
+        try:
+            embedding_service = get_embedding_service()
+            embedding_service.embed_single_inventory_item(item, g.tenant_id, db)
+        except Exception as embed_err:
+            print(f"[Inventory] Warning: Failed to re-embed item: {embed_err}")
+
         return jsonify(item.to_dict())
     except Exception as e:
         db.rollback()
@@ -212,6 +252,13 @@ def delete_item(item_id):
         item.is_active = False
         item.updated_at = utc_now()
         db.commit()
+
+        # Remove from Pinecone
+        try:
+            embedding_service = get_embedding_service()
+            embedding_service.delete_inventory_embeddings([item_id], g.tenant_id)
+        except Exception as embed_err:
+            print(f"[Inventory] Warning: Failed to delete embedding: {embed_err}")
 
         return jsonify({"message": "Item deleted successfully"})
     except Exception as e:
@@ -1214,16 +1261,45 @@ def create_demo_data():
 
         db.commit()
 
+        # Refresh items to get IDs and relations
+        for item in items:
+            db.refresh(item)
+
+        # Embed all items to Pinecone for RAG search
+        embedded_count = 0
+        try:
+            embedding_service = get_embedding_service()
+            result = embedding_service.embed_inventory_items(items, g.tenant_id, db)
+            embedded_count = result.get('embedded', 0)
+        except Exception as embed_err:
+            print(f"[Inventory] Warning: Failed to embed demo items: {embed_err}")
+
         return jsonify({
             "message": "Demo data created successfully",
             "categories_created": len(categories),
             "locations_created": len(locations),
             "vendors_created": len(vendors),
-            "items_created": len(items)
+            "items_created": len(items),
+            "items_embedded": embedded_count
         })
 
     except Exception as e:
         db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/embed-all', methods=['POST'])
+@require_auth
+def embed_all_inventory():
+    """Embed all inventory items to Pinecone for RAG search"""
+    db = get_db()
+    try:
+        embedding_service = get_embedding_service()
+        result = embedding_service.embed_tenant_inventory(g.tenant_id, db)
+        return jsonify(result)
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
@@ -1235,6 +1311,17 @@ def clear_all_inventory():
     """Clear all inventory data (items, categories, locations, vendors) - USE WITH CAUTION"""
     db = get_db()
     try:
+        # Get all item IDs before deleting
+        item_ids = [str(item.id) for item in db.query(InventoryItem).filter(InventoryItem.tenant_id == g.tenant_id).all()]
+
+        # Delete from Pinecone first
+        if item_ids:
+            try:
+                embedding_service = get_embedding_service()
+                embedding_service.delete_inventory_embeddings(item_ids, g.tenant_id)
+            except Exception as embed_err:
+                print(f"[Inventory] Warning: Failed to delete embeddings: {embed_err}")
+
         # Delete in order to avoid FK constraints
         db.query(InventoryItem).filter(InventoryItem.tenant_id == g.tenant_id).delete()
         db.query(InventoryCategory).filter(InventoryCategory.tenant_id == g.tenant_id).delete()
@@ -1242,9 +1329,692 @@ def clear_all_inventory():
         db.query(InventoryVendor).filter(InventoryVendor.tenant_id == g.tenant_id).delete()
         db.commit()
 
-        return jsonify({"message": "All inventory data cleared"})
+        return jsonify({"message": "All inventory data cleared", "items_removed_from_search": len(item_ids)})
     except Exception as e:
         db.rollback()
         return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+# ============================================================================
+# BARCODE LOOKUP
+# ============================================================================
+
+@inventory_bp.route('/barcode/<barcode>', methods=['GET'])
+@require_auth
+def lookup_barcode(barcode):
+    """Look up item by barcode for scanner integration"""
+    db = get_db()
+    try:
+        item = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.barcode == barcode,
+            InventoryItem.is_active == True
+        ).first()
+
+        if not item:
+            # Also try SKU
+            item = db.query(InventoryItem).filter(
+                InventoryItem.tenant_id == g.tenant_id,
+                InventoryItem.sku == barcode,
+                InventoryItem.is_active == True
+            ).first()
+
+        if not item:
+            return jsonify({"error": "Item not found", "barcode": barcode}), 404
+
+        return jsonify(item.to_dict())
+    finally:
+        db.close()
+
+
+# ============================================================================
+# TRANSACTION HISTORY
+# ============================================================================
+
+@inventory_bp.route('/items/<item_id>/transactions', methods=['GET'])
+@require_auth
+def get_item_transactions(item_id):
+    """Get transaction history for an item"""
+    db = get_db()
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+
+        transactions = db.query(InventoryTransaction).filter(
+            InventoryTransaction.tenant_id == g.tenant_id,
+            InventoryTransaction.item_id == item_id
+        ).order_by(InventoryTransaction.created_at.desc()).offset(offset).limit(limit).all()
+
+        return jsonify([t.to_dict() for t in transactions])
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/transactions', methods=['GET'])
+@require_auth
+def list_all_transactions():
+    """List all transactions for the tenant with filters"""
+    db = get_db()
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        transaction_type = request.args.get('type')
+        item_id = request.args.get('item_id')
+        user_id = request.args.get('user_id')
+        days = request.args.get('days', type=int)
+
+        query = db.query(InventoryTransaction).filter(
+            InventoryTransaction.tenant_id == g.tenant_id
+        )
+
+        if transaction_type:
+            query = query.filter(InventoryTransaction.transaction_type == transaction_type)
+        if item_id:
+            query = query.filter(InventoryTransaction.item_id == item_id)
+        if user_id:
+            query = query.filter(InventoryTransaction.user_id == user_id)
+        if days:
+            since = utc_now() - timedelta(days=days)
+            query = query.filter(InventoryTransaction.created_at >= since)
+
+        total = query.count()
+        transactions = query.order_by(InventoryTransaction.created_at.desc()).offset(offset).limit(limit).all()
+
+        return jsonify({
+            "transactions": [t.to_dict() for t in transactions],
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        })
+    finally:
+        db.close()
+
+
+# ============================================================================
+# BATCH/LOT TRACKING
+# ============================================================================
+
+@inventory_bp.route('/items/<item_id>/batches', methods=['GET'])
+@require_auth
+def list_item_batches(item_id):
+    """List all batches/lots for an item"""
+    db = get_db()
+    try:
+        batches = db.query(InventoryBatch).filter(
+            InventoryBatch.tenant_id == g.tenant_id,
+            InventoryBatch.item_id == item_id,
+            InventoryBatch.is_active == True
+        ).order_by(InventoryBatch.expiry_date.asc()).all()
+
+        return jsonify([b.to_dict() for b in batches])
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/items/<item_id>/batches', methods=['POST'])
+@require_auth
+def create_batch(item_id):
+    """Create a new batch/lot for an item"""
+    db = get_db()
+    try:
+        # Verify item exists
+        item = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.id == item_id
+        ).first()
+        if not item:
+            return jsonify({"error": "Item not found"}), 404
+
+        data = request.get_json()
+        if not data.get('lot_number'):
+            return jsonify({"error": "Lot number is required"}), 400
+
+        batch = InventoryBatch(
+            tenant_id=g.tenant_id,
+            item_id=item_id,
+            lot_number=data['lot_number'],
+            batch_number=data.get('batch_number'),
+            quantity=data.get('quantity', 0),
+            initial_quantity=data.get('quantity', 0),
+            manufacture_date=datetime.fromisoformat(data['manufacture_date'].replace('Z', '+00:00')) if data.get('manufacture_date') else None,
+            expiry_date=datetime.fromisoformat(data['expiry_date'].replace('Z', '+00:00')) if data.get('expiry_date') else None,
+            coa_url=data.get('coa_url'),
+            coa_notes=data.get('coa_notes')
+        )
+
+        db.add(batch)
+
+        # Update item quantity
+        old_qty = item.quantity
+        item.quantity += batch.quantity
+        item.updated_at = utc_now()
+
+        # Log transaction
+        log_transaction(db, g.tenant_id, item_id, g.user.id if hasattr(g, 'user') else None,
+                       'BATCH_ADDED', quantity_change=batch.quantity,
+                       quantity_before=old_qty, quantity_after=item.quantity,
+                       notes=f"Added batch {batch.lot_number}")
+
+        db.commit()
+        db.refresh(batch)
+
+        return jsonify(batch.to_dict()), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/batches/<batch_id>', methods=['PUT'])
+@require_auth
+def update_batch(batch_id):
+    """Update a batch"""
+    db = get_db()
+    try:
+        batch = db.query(InventoryBatch).filter(
+            InventoryBatch.tenant_id == g.tenant_id,
+            InventoryBatch.id == batch_id
+        ).first()
+
+        if not batch:
+            return jsonify({"error": "Batch not found"}), 404
+
+        data = request.get_json()
+        if 'quantity' in data:
+            batch.quantity = data['quantity']
+        if 'expiry_date' in data:
+            batch.expiry_date = datetime.fromisoformat(data['expiry_date'].replace('Z', '+00:00')) if data['expiry_date'] else None
+        if 'coa_url' in data:
+            batch.coa_url = data['coa_url']
+        if 'coa_notes' in data:
+            batch.coa_notes = data['coa_notes']
+        if 'is_expired' in data:
+            batch.is_expired = data['is_expired']
+
+        batch.updated_at = utc_now()
+        db.commit()
+        db.refresh(batch)
+
+        return jsonify(batch.to_dict())
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+# ============================================================================
+# CHECKOUT SYSTEM
+# ============================================================================
+
+@inventory_bp.route('/items/<item_id>/checkout', methods=['POST'])
+@require_auth
+def checkout_item(item_id):
+    """Check out an item (equipment or consumable)"""
+    db = get_db()
+    try:
+        item = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.id == item_id,
+            InventoryItem.is_active == True
+        ).first()
+
+        if not item:
+            return jsonify({"error": "Item not found"}), 404
+
+        data = request.get_json() or {}
+        quantity = data.get('quantity', 1)
+        purpose = data.get('purpose')
+        expected_return = data.get('expected_return')
+        project_reference = data.get('project_reference')
+
+        # For equipment, check if already checked out
+        if item.is_checked_out and quantity == 1:
+            return jsonify({"error": "Item is already checked out"}), 400
+
+        # For consumables, check quantity
+        if item.quantity < quantity:
+            return jsonify({"error": f"Insufficient quantity. Available: {item.quantity}"}), 400
+
+        # Create checkout record
+        checkout = InventoryCheckout(
+            tenant_id=g.tenant_id,
+            item_id=item_id,
+            user_id=g.user.id if hasattr(g, 'user') else None,
+            quantity=quantity,
+            purpose=purpose,
+            project_reference=project_reference,
+            expected_return=datetime.fromisoformat(expected_return.replace('Z', '+00:00')) if expected_return else None,
+            condition_out=data.get('condition', 'Good'),
+            status='ACTIVE'
+        )
+        db.add(checkout)
+
+        # Update item
+        old_qty = item.quantity
+        item.quantity -= quantity
+        item.is_checked_out = True
+        item.checked_out_by = g.user.id if hasattr(g, 'user') else None
+        item.checked_out_at = utc_now()
+        item.last_used = utc_now()
+        item.use_count = (item.use_count or 0) + 1
+        item.updated_at = utc_now()
+
+        # Log transaction
+        log_transaction(db, g.tenant_id, item_id, g.user.id if hasattr(g, 'user') else None,
+                       'CHECKED_OUT', quantity_change=-quantity,
+                       quantity_before=old_qty, quantity_after=item.quantity,
+                       notes=purpose, reference=project_reference)
+
+        db.commit()
+        db.refresh(checkout)
+
+        return jsonify(checkout.to_dict()), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/checkouts/<checkout_id>/checkin', methods=['POST'])
+@require_auth
+def checkin_item(checkout_id):
+    """Check in a previously checked out item"""
+    db = get_db()
+    try:
+        checkout = db.query(InventoryCheckout).filter(
+            InventoryCheckout.tenant_id == g.tenant_id,
+            InventoryCheckout.id == checkout_id,
+            InventoryCheckout.status == 'ACTIVE'
+        ).first()
+
+        if not checkout:
+            return jsonify({"error": "Active checkout not found"}), 404
+
+        data = request.get_json() or {}
+
+        # Update checkout
+        checkout.checked_in_at = utc_now()
+        checkout.status = 'RETURNED'
+        checkout.condition_in = data.get('condition', 'Good')
+        checkout.condition_notes = data.get('notes')
+
+        # Update item
+        item = db.query(InventoryItem).filter(InventoryItem.id == checkout.item_id).first()
+        if item:
+            old_qty = item.quantity
+            item.quantity += checkout.quantity
+            item.is_checked_out = False
+            item.checked_out_by = None
+            item.checked_out_at = None
+            item.updated_at = utc_now()
+
+            # Log transaction
+            log_transaction(db, g.tenant_id, item.id, g.user.id if hasattr(g, 'user') else None,
+                           'CHECKED_IN', quantity_change=checkout.quantity,
+                           quantity_before=old_qty, quantity_after=item.quantity,
+                           notes=f"Condition: {checkout.condition_in}")
+
+        db.commit()
+        db.refresh(checkout)
+
+        return jsonify(checkout.to_dict())
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/checkouts', methods=['GET'])
+@require_auth
+def list_checkouts():
+    """List all checkouts with filters"""
+    db = get_db()
+    try:
+        status = request.args.get('status', 'ACTIVE')
+        user_id = request.args.get('user_id')
+        item_id = request.args.get('item_id')
+
+        query = db.query(InventoryCheckout).filter(
+            InventoryCheckout.tenant_id == g.tenant_id
+        )
+
+        if status != 'all':
+            query = query.filter(InventoryCheckout.status == status)
+        if user_id:
+            query = query.filter(InventoryCheckout.user_id == user_id)
+        if item_id:
+            query = query.filter(InventoryCheckout.item_id == item_id)
+
+        checkouts = query.order_by(InventoryCheckout.checked_out_at.desc()).all()
+
+        # Enrich with item names
+        result = []
+        for co in checkouts:
+            d = co.to_dict()
+            item = db.query(InventoryItem).filter(InventoryItem.id == co.item_id).first()
+            d['item_name'] = item.name if item else 'Unknown'
+            result.append(d)
+
+        return jsonify(result)
+    finally:
+        db.close()
+
+
+# ============================================================================
+# ANALYTICS
+# ============================================================================
+
+@inventory_bp.route('/analytics', methods=['GET'])
+@require_auth
+def get_analytics():
+    """Get inventory analytics and usage stats"""
+    db = get_db()
+    try:
+        days = request.args.get('days', 30, type=int)
+        since = utc_now() - timedelta(days=days)
+
+        # Basic counts
+        total_items = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.is_active == True
+        ).count()
+
+        total_value = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.is_active == True
+        ).with_entities(
+            db.query(InventoryItem).filter(
+                InventoryItem.tenant_id == g.tenant_id,
+                InventoryItem.is_active == True,
+                InventoryItem.unit_price != None
+            ).with_entities(
+                (InventoryItem.quantity * InventoryItem.unit_price)
+            ).scalar_subquery()
+        ).scalar() or 0
+
+        # Get all items for value calculation
+        items = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.is_active == True
+        ).all()
+        total_value = sum(item.total_value for item in items)
+
+        # Low stock items
+        low_stock_items = [i for i in items if i.is_low_stock]
+
+        # Transaction stats
+        transactions = db.query(InventoryTransaction).filter(
+            InventoryTransaction.tenant_id == g.tenant_id,
+            InventoryTransaction.created_at >= since
+        ).all()
+
+        # Usage by type
+        checkouts = [t for t in transactions if t.transaction_type == 'CHECKED_OUT']
+        adjustments = [t for t in transactions if t.transaction_type == 'QUANTITY_ADJUSTED']
+
+        # Calculate burn rate for top items
+        burn_rates = {}
+        for t in checkouts:
+            if t.item_id not in burn_rates:
+                burn_rates[t.item_id] = {'total': 0, 'item_name': None}
+            burn_rates[t.item_id]['total'] += abs(t.quantity_change or 0)
+
+        # Get item names for burn rates
+        for item_id in burn_rates:
+            item = db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
+            if item:
+                burn_rates[item_id]['item_name'] = item.name
+                burn_rates[item_id]['daily_rate'] = burn_rates[item_id]['total'] / days
+
+        # Top 5 by usage
+        top_usage = sorted(burn_rates.items(), key=lambda x: x[1]['total'], reverse=True)[:5]
+
+        # Calibration/Maintenance due
+        calibration_due = [i for i in items if i.is_calibration_due]
+        maintenance_due = [i for i in items if i.is_maintenance_due]
+
+        # Active checkouts
+        active_checkouts = db.query(InventoryCheckout).filter(
+            InventoryCheckout.tenant_id == g.tenant_id,
+            InventoryCheckout.status == 'ACTIVE'
+        ).count()
+
+        # Expiring batches
+        thirty_days = utc_now() + timedelta(days=30)
+        expiring_batches = db.query(InventoryBatch).filter(
+            InventoryBatch.tenant_id == g.tenant_id,
+            InventoryBatch.is_active == True,
+            InventoryBatch.expiry_date != None,
+            InventoryBatch.expiry_date <= thirty_days
+        ).count()
+
+        return jsonify({
+            "period_days": days,
+            "summary": {
+                "total_items": total_items,
+                "total_value": round(total_value, 2),
+                "low_stock_count": len(low_stock_items),
+                "active_checkouts": active_checkouts,
+                "calibration_due": len(calibration_due),
+                "maintenance_due": len(maintenance_due),
+                "expiring_batches": expiring_batches
+            },
+            "activity": {
+                "total_transactions": len(transactions),
+                "checkouts": len(checkouts),
+                "adjustments": len(adjustments)
+            },
+            "top_usage": [
+                {
+                    "item_id": item_id,
+                    "item_name": data['item_name'],
+                    "total_used": data['total'],
+                    "daily_rate": round(data.get('daily_rate', 0), 2)
+                }
+                for item_id, data in top_usage
+            ],
+            "alerts": {
+                "low_stock": [{"id": i.id, "name": i.name, "quantity": i.quantity, "min_quantity": i.min_quantity} for i in low_stock_items[:5]],
+                "calibration_due": [{"id": i.id, "name": i.name, "next_calibration": i.next_calibration.isoformat() if i.next_calibration else None} for i in calibration_due[:5]],
+                "maintenance_due": [{"id": i.id, "name": i.name, "next_maintenance": i.next_maintenance.isoformat() if i.next_maintenance else None} for i in maintenance_due[:5]]
+            }
+        })
+    finally:
+        db.close()
+
+
+# ============================================================================
+# EMAIL ALERTS
+# ============================================================================
+
+@inventory_bp.route('/alerts/send', methods=['POST'])
+@require_auth
+def send_inventory_alerts():
+    """Send email alerts for low stock, calibration due, etc."""
+    db = get_db()
+    try:
+        data = request.get_json() or {}
+        recipient_email = data.get('email')
+
+        # Get user email if not specified
+        if not recipient_email and hasattr(g, 'user') and g.user:
+            recipient_email = g.user.email
+
+        if not recipient_email:
+            return jsonify({"error": "No recipient email specified"}), 400
+
+        # Gather all alerts
+        alerts = []
+        items = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.is_active == True
+        ).all()
+
+        for item in items:
+            if item.is_low_stock:
+                alerts.append({
+                    'type': 'LOW_STOCK',
+                    'item_name': item.name,
+                    'message': f"Below minimum threshold ({item.min_quantity} {item.unit})",
+                    'current_value': f"{item.quantity} {item.unit}",
+                    'severity': 'CRITICAL' if item.quantity == 0 else 'WARNING'
+                })
+            if item.is_calibration_due:
+                alerts.append({
+                    'type': 'CALIBRATION_DUE',
+                    'item_name': item.name,
+                    'message': "Calibration due soon",
+                    'current_value': item.next_calibration.strftime('%Y-%m-%d') if item.next_calibration else 'Overdue',
+                    'severity': 'WARNING'
+                })
+            if item.is_maintenance_due:
+                alerts.append({
+                    'type': 'MAINTENANCE_DUE',
+                    'item_name': item.name,
+                    'message': "Maintenance due soon",
+                    'current_value': item.next_maintenance.strftime('%Y-%m-%d') if item.next_maintenance else 'Overdue',
+                    'severity': 'WARNING'
+                })
+
+        # Check expiring batches
+        thirty_days = utc_now() + timedelta(days=30)
+        batches = db.query(InventoryBatch).filter(
+            InventoryBatch.tenant_id == g.tenant_id,
+            InventoryBatch.is_active == True,
+            InventoryBatch.expiry_date != None,
+            InventoryBatch.expiry_date <= thirty_days
+        ).all()
+
+        for batch in batches:
+            item = db.query(InventoryItem).filter(InventoryItem.id == batch.item_id).first()
+            alerts.append({
+                'type': 'EXPIRING_BATCH',
+                'item_name': f"{item.name if item else 'Unknown'} (Lot: {batch.lot_number})",
+                'message': "Batch expiring soon",
+                'current_value': batch.expiry_date.strftime('%Y-%m-%d') if batch.expiry_date else 'Unknown',
+                'severity': 'CRITICAL' if batch.expiry_date and batch.expiry_date < utc_now() else 'WARNING'
+            })
+
+        if not alerts:
+            return jsonify({"message": "No alerts to send", "alert_count": 0})
+
+        # Send email
+        email_service = get_email_service()
+        success = email_service.send_inventory_alert(
+            user_email=recipient_email,
+            alerts=alerts,
+            tenant_name="Your Lab"
+        )
+
+        if success:
+            # Log alerts sent
+            for alert_data in alerts:
+                alert = InventoryAlert(
+                    tenant_id=g.tenant_id,
+                    alert_type=alert_data['type'],
+                    severity=alert_data['severity'],
+                    message=f"{alert_data['item_name']}: {alert_data['message']}",
+                    current_value=alert_data['current_value'],
+                    email_sent=True,
+                    email_sent_at=utc_now(),
+                    email_recipients=recipient_email
+                )
+                db.add(alert)
+            db.commit()
+
+            return jsonify({
+                "message": f"Sent {len(alerts)} alerts to {recipient_email}",
+                "alert_count": len(alerts),
+                "recipient": recipient_email
+            })
+        else:
+            return jsonify({"error": "Failed to send email", "alert_count": len(alerts)}), 500
+
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/alerts', methods=['GET'])
+@require_auth
+def list_alerts():
+    """List inventory alerts"""
+    db = get_db()
+    try:
+        is_active = request.args.get('active', 'true').lower() == 'true'
+        alert_type = request.args.get('type')
+        limit = request.args.get('limit', 50, type=int)
+
+        query = db.query(InventoryAlert).filter(
+            InventoryAlert.tenant_id == g.tenant_id
+        )
+
+        if is_active:
+            query = query.filter(InventoryAlert.is_active == True)
+        if alert_type:
+            query = query.filter(InventoryAlert.alert_type == alert_type)
+
+        alerts = query.order_by(InventoryAlert.created_at.desc()).limit(limit).all()
+
+        return jsonify([a.to_dict() for a in alerts])
+    finally:
+        db.close()
+
+
+@inventory_bp.route('/search', methods=['GET'])
+@require_auth
+def search_inventory():
+    """Advanced inventory search"""
+    db = get_db()
+    try:
+        q = request.args.get('q', '')
+        category_id = request.args.get('category_id')
+        location_id = request.args.get('location_id')
+        vendor_id = request.args.get('vendor_id')
+        low_stock = request.args.get('low_stock', 'false').lower() == 'true'
+        storage_temp = request.args.get('storage_temp')
+        hazard_class = request.args.get('hazard_class')
+
+        query = db.query(InventoryItem).filter(
+            InventoryItem.tenant_id == g.tenant_id,
+            InventoryItem.is_active == True
+        )
+
+        if q:
+            search_term = f"%{q}%"
+            query = query.filter(
+                (InventoryItem.name.ilike(search_term)) |
+                (InventoryItem.description.ilike(search_term)) |
+                (InventoryItem.sku.ilike(search_term)) |
+                (InventoryItem.barcode.ilike(search_term)) |
+                (InventoryItem.manufacturer.ilike(search_term)) |
+                (InventoryItem.notes.ilike(search_term))
+            )
+
+        if category_id:
+            query = query.filter(InventoryItem.category_id == category_id)
+        if location_id:
+            query = query.filter(InventoryItem.location_id == location_id)
+        if vendor_id:
+            query = query.filter(InventoryItem.vendor_id == vendor_id)
+        if storage_temp:
+            query = query.filter(InventoryItem.storage_temp == storage_temp)
+        if hazard_class:
+            query = query.filter(InventoryItem.hazard_class == hazard_class)
+
+        items = query.all()
+
+        if low_stock:
+            items = [i for i in items if i.is_low_stock]
+
+        return jsonify([item.to_dict() for item in items])
     finally:
         db.close()

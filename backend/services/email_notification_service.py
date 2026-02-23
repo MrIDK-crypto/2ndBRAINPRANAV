@@ -333,6 +333,151 @@ View your documents: {FRONTEND_URL}/documents
             return False
 
 
+    def send_inventory_alert(
+        self,
+        user_email: str,
+        alerts: List[Dict],
+        tenant_name: str = "Your Lab"
+    ) -> bool:
+        """
+        Send inventory alert notification (low stock, calibration due, etc.)
+
+        Args:
+            user_email: Email address of recipient
+            alerts: List of alert dictionaries with type, item_name, message, severity
+            tenant_name: Name of the organization/lab
+        """
+        if not self.enabled:
+            print("[EmailService] Email disabled, skipping inventory alert")
+            return False
+
+        if not alerts:
+            return False
+
+        # Group alerts by type
+        low_stock = [a for a in alerts if a.get('type') == 'LOW_STOCK']
+        calibration = [a for a in alerts if a.get('type') == 'CALIBRATION_DUE']
+        maintenance = [a for a in alerts if a.get('type') == 'MAINTENANCE_DUE']
+        expiring = [a for a in alerts if a.get('type') == 'EXPIRING_BATCH']
+        other = [a for a in alerts if a.get('type') not in ['LOW_STOCK', 'CALIBRATION_DUE', 'MAINTENANCE_DUE', 'EXPIRING_BATCH']]
+
+        subject = f"⚠️ Inventory Alert: {len(alerts)} item{'s' if len(alerts) > 1 else ''} need attention"
+
+        # Build alert sections
+        def build_alert_section(title: str, items: List[Dict], icon: str) -> str:
+            if not items:
+                return ""
+            rows = ""
+            for item in items:
+                severity_color = "#DC2626" if item.get('severity') == 'CRITICAL' else "#F59E0B"
+                rows += f"""
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #E5E7EB;">
+                        <span style="font-weight: 500; color: #111827;">{item.get('item_name', 'Unknown')}</span>
+                    </td>
+                    <td style="padding: 12px; border-bottom: 1px solid #E5E7EB; color: #6B7280;">
+                        {item.get('message', '')}
+                    </td>
+                    <td style="padding: 12px; border-bottom: 1px solid #E5E7EB; text-align: right;">
+                        <span style="color: {severity_color}; font-weight: 500;">{item.get('current_value', '')}</span>
+                    </td>
+                </tr>
+                """
+            return f"""
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 24px;">
+                <tr>
+                    <td style="padding-bottom: 8px;">
+                        <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: #374151;">{icon} {title}</h3>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #F9FAFB; border-radius: 8px; overflow: hidden;">
+                            {rows}
+                        </table>
+                    </td>
+                </tr>
+            </table>
+            """
+
+        low_stock_html = build_alert_section("Low Stock Items", low_stock, "📦")
+        calibration_html = build_alert_section("Calibration Due", calibration, "🔧")
+        maintenance_html = build_alert_section("Maintenance Due", maintenance, "🛠️")
+        expiring_html = build_alert_section("Expiring Batches", expiring, "⏰")
+        other_html = build_alert_section("Other Alerts", other, "⚠️")
+
+        html_body = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #F3F4F6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #F3F4F6;">
+        <tr>
+            <td style="padding: 48px 24px;">
+                <!-- Header -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <tr>
+                        <td style="padding: 32px;">
+                            <!-- Logo -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding-bottom: 24px;">
+                                        <span style="font-size: 24px; font-weight: 700; color: #C9A598;">🧠 2nd Brain</span>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <h1 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #111827;">
+                                Inventory Alert
+                            </h1>
+                            <p style="margin: 0 0 24px 0; font-size: 15px; color: #6B7280;">
+                                {len(alerts)} item{'s' if len(alerts) > 1 else ''} in {tenant_name} need{'s' if len(alerts) == 1 else ''} your attention.
+                            </p>
+
+                            {low_stock_html}
+                            {calibration_html}
+                            {maintenance_html}
+                            {expiring_html}
+                            {other_html}
+
+                            <!-- CTA -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="padding-top: 16px;">
+                                        <a href="{FRONTEND_URL}/inventory" style="display: inline-block; padding: 12px 24px; background-color: #C9A598; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 500; border-radius: 6px;">
+                                            View Inventory →
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+
+        # Plain text version
+        text_lines = [f"Inventory Alert - {tenant_name}", "", f"{len(alerts)} items need attention:", ""]
+        for alert in alerts:
+            text_lines.append(f"- {alert.get('item_name', 'Unknown')}: {alert.get('message', '')} ({alert.get('current_value', '')})")
+        text_lines.extend(["", f"View inventory: {FRONTEND_URL}/inventory"])
+        text_body = "\n".join(text_lines)
+
+        return self._send_email(
+            to_email=user_email,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body
+        )
+
+
 # Global instance
 _email_service = None
 

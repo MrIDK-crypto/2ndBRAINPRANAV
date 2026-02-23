@@ -32,6 +32,22 @@ interface InventoryVendor {
   item_count: number
 }
 
+interface InventoryTransaction {
+  id: string
+  item_id: string
+  user_name: string
+  transaction_type: string
+  field_changed?: string
+  old_value?: string
+  new_value?: string
+  quantity_change?: number
+  quantity_before?: number
+  quantity_after?: number
+  notes?: string
+  reference?: string
+  created_at: string
+}
+
 interface InventoryItem {
   id: string
   name: string
@@ -55,8 +71,28 @@ interface InventoryItem {
   model_number?: string
   serial_number?: string
   notes?: string
+  // Lab-specific fields
+  hazard_class?: string
+  sds_url?: string
+  storage_temp?: string
+  storage_conditions?: string
+  requires_calibration?: boolean
+  calibration_interval_days?: number
+  last_calibration?: string
+  next_calibration?: string
+  requires_maintenance?: boolean
+  maintenance_interval_days?: number
+  last_maintenance?: string
+  next_maintenance?: string
+  last_used?: string
+  use_count?: number
+  is_checked_out?: boolean
+  checked_out_by?: string
+  // Computed
   is_low_stock: boolean
   is_warranty_expiring_soon: boolean
+  is_calibration_due?: boolean
+  is_maintenance_due?: boolean
   total_value: number
   created_at: string
 }
@@ -85,7 +121,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
 
 export default function Inventory() {
   const { token } = useAuth()
-  const [activeTab, setActiveTab] = useState<'items' | 'categories' | 'locations' | 'vendors'>('items')
+  const [activeTab, setActiveTab] = useState<'items' | 'categories' | 'locations' | 'vendors' | 'history'>('items')
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table')
 
   // Data states
@@ -95,6 +131,7 @@ export default function Inventory() {
   const [vendors, setVendors] = useState<InventoryVendor[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [alerts, setAlerts] = useState<Alerts | null>(null)
+  const [transactions, setTransactions] = useState<InventoryTransaction[]>([])
 
   // UI states
   const [isLoading, setIsLoading] = useState(true)
@@ -104,6 +141,12 @@ export default function Inventory() {
   const [filterLocation, setFilterLocation] = useState<string>('')
   const [showLowStockOnly, setShowLowStockOnly] = useState(false)
 
+  // Barcode scanner state
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false)
+  const [barcodeInput, setBarcodeInput] = useState('')
+  const [scannedItem, setScannedItem] = useState<InventoryItem | null>(null)
+
+  
   // Modal states
   const [showAddItemModal, setShowAddItemModal] = useState(false)
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
@@ -171,6 +214,46 @@ export default function Inventory() {
       fetchData()
     }
   }, [token])
+
+  // Fetch additional data based on active tab
+  useEffect(() => {
+    if (!token) return
+    if (activeTab === 'history') {
+      fetchTransactions()
+    }
+  }, [activeTab, token])
+
+  const fetchTransactions = async () => {
+    try {
+      const res = await api.get('/inventory/transactions?limit=100')
+      setTransactions(res.data.transactions || [])
+    } catch (err) {
+      console.error('Failed to fetch transactions', err)
+    }
+  }
+
+  // Barcode lookup
+  const handleBarcodeLookup = async () => {
+    if (!barcodeInput.trim()) return
+    try {
+      const res = await api.get(`/inventory/barcode/${encodeURIComponent(barcodeInput.trim())}`)
+      setScannedItem(res.data)
+      setBarcodeInput('')
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Item not found')
+      setScannedItem(null)
+    }
+  }
+
+  // Send email alerts
+  const handleSendAlerts = async () => {
+    try {
+      const res = await api.post('/inventory/alerts/send')
+      alert(res.data.message)
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to send alerts')
+    }
+  }
 
   // Filter items
   const filteredItems = items.filter(item => {
@@ -325,20 +408,6 @@ export default function Inventory() {
       setIsLoading(false)
       // Reset file input
       event.target.value = ''
-    }
-  }
-
-  const handleLoadDemoData = async () => {
-    if (!confirm('This will add demo inventory data (lab equipment, consumables, reagents, etc.). Continue?')) return
-    try {
-      setIsLoading(true)
-      const response = await api.post('/inventory/demo-data')
-      alert(response.data.message)
-      fetchData()
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to load demo data')
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -549,6 +618,7 @@ export default function Inventory() {
         <button style={styles.tab(activeTab === 'categories')} onClick={() => setActiveTab('categories')}>Categories</button>
         <button style={styles.tab(activeTab === 'locations')} onClick={() => setActiveTab('locations')}>Locations</button>
         <button style={styles.tab(activeTab === 'vendors')} onClick={() => setActiveTab('vendors')}>Vendors</button>
+        <button style={styles.tab(activeTab === 'history')} onClick={() => setActiveTab('history')}>History</button>
       </div>
 
       {/* Items Tab */}
@@ -613,16 +683,14 @@ export default function Inventory() {
                 </svg>
                 Export
               </button>
-              {/* Demo Data Button - show if no items OR error loading */}
-              {(items.length === 0 || error) && (
-                <button style={{ ...styles.button(false), backgroundColor: '#F5EBE6', color: '#8B6F5C' }} onClick={handleLoadDemoData}>
+              {/* Clear All Button */}
+              {items.length > 0 && (
+                <button style={{ ...styles.button(false), color: '#9B4F3A' }} onClick={handleClearAll}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                    <polyline points="14,2 14,8 20,8" />
-                    <line x1="12" y1="18" x2="12" y2="12" />
-                    <line x1="9" y1="15" x2="15" y2="15" />
+                    <polyline points="3,6 5,6 21,6" />
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
                   </svg>
-                  Load Demo Data
+                  Clear All
                 </button>
               )}
               {/* Add Item Button */}
@@ -656,9 +724,8 @@ export default function Inventory() {
                     <td colSpan={7} style={{ ...styles.td, textAlign: 'center', color: '#A89B91', padding: '40px' }}>
                       <div style={{ marginBottom: '12px' }}>No items found.</div>
                       <div style={{ fontSize: '13px' }}>
-                        Click <strong>"Add Item"</strong> to create one manually,{' '}
-                        <strong>"Import"</strong> to upload a CSV/Excel file, or{' '}
-                        <strong>"Load Demo Data"</strong> to see example inventory.
+                        Click <strong>"Add Item"</strong> to create one manually or{' '}
+                        <strong>"Import"</strong> to upload a CSV/Excel file.
                       </div>
                     </td>
                   </tr>
@@ -745,12 +812,16 @@ export default function Inventory() {
             </button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-            {categories.map(cat => (
+            {categories.map((cat, index) => {
+              // Taupe color variations for categories
+              const taupeColors = ['#C9A598', '#B8968A', '#A8877C', '#D4B5A9', '#C4A295'];
+              const dotColor = taupeColors[index % taupeColors.length];
+              return (
               <div key={cat.id} style={styles.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: cat.color }} />
+                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: dotColor }} />
                       <span style={{ fontWeight: 600, fontSize: '16px', color: '#2D2D2D' }}>{cat.name}</span>
                     </div>
                     <p style={{ fontSize: '13px', color: '#6B6B6B', margin: '0 0 8px 0' }}>{cat.description || 'No description'}</p>
@@ -767,7 +838,7 @@ export default function Inventory() {
                   </button>
                 </div>
               </div>
-            ))}
+            );})}
             {categories.length === 0 && (
               <p style={{ color: '#A89B91', gridColumn: '1 / -1', textAlign: 'center', padding: '40px' }}>
                 No categories yet. Create one to organize your inventory.
@@ -867,6 +938,134 @@ export default function Inventory() {
             )}
           </div>
         </>
+      )}
+
+      {/* History Tab */}
+      {activeTab === 'history' && (
+        <>
+          <div style={{ ...styles.toolbar, marginBottom: '20px' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <button style={{ ...styles.button(false), backgroundColor: '#F5EBE6', color: '#8B6F5C' }} onClick={() => setShowBarcodeScanner(true)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 5h2v14H3V5zm4 0h1v14H7V5zm3 0h2v14h-2V5zm4 0h3v14h-3V5zm5 0h2v14h-2V5z" />
+                </svg>
+                Barcode Lookup
+              </button>
+            </div>
+            <button style={styles.button(true)} onClick={handleSendAlerts}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+              </svg>
+              Send Email Alerts
+            </button>
+          </div>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', border: '1px solid #F0EEEC', overflow: 'hidden' }}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Date</th>
+                  <th style={styles.th}>User</th>
+                  <th style={styles.th}>Type</th>
+                  <th style={styles.th}>Details</th>
+                  <th style={styles.th}>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ ...styles.td, textAlign: 'center', color: '#A89B91', padding: '40px' }}>
+                      No transaction history yet. Actions like adding items, adjusting quantities, and checkouts will appear here.
+                    </td>
+                  </tr>
+                ) : (
+                  transactions.map(t => (
+                    <tr key={t.id}>
+                      <td style={styles.td}>
+                        <div style={{ fontSize: '13px', color: '#6B6B6B' }}>
+                          {new Date(t.created_at).toLocaleDateString()}{' '}
+                          {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </td>
+                      <td style={styles.td}>{t.user_name}</td>
+                      <td style={styles.td}>
+                        <span style={{
+                          ...styles.badge(
+                            t.transaction_type === 'CREATE' ? 'success' :
+                            t.transaction_type === 'DELETE' ? 'danger' :
+                            t.transaction_type === 'CHECKOUT' ? 'warning' : 'default'
+                          )
+                        }}>
+                          {t.transaction_type}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        {t.quantity_change !== undefined && t.quantity_change !== null ? (
+                          <span>
+                            Qty: {t.quantity_before} → {t.quantity_after}{' '}
+                            <span style={{ color: t.quantity_change > 0 ? '#4A7C59' : '#9B4F3A' }}>
+                              ({t.quantity_change > 0 ? '+' : ''}{t.quantity_change})
+                            </span>
+                          </span>
+                        ) : t.field_changed ? (
+                          <span>{t.field_changed}: {t.old_value || '(empty)'} → {t.new_value}</span>
+                        ) : '-'}
+                      </td>
+                      <td style={styles.td}>
+                        <span style={{ fontSize: '13px', color: '#6B6B6B' }}>{t.notes || '-'}</span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Barcode Scanner Modal */}
+      {showBarcodeScanner && (
+        <div style={styles.modal} onClick={() => { setShowBarcodeScanner(false); setScannedItem(null); setBarcodeInput(''); }}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>Barcode Lookup</h2>
+            <div style={styles.formGroup}>
+              <label style={styles.formLabel}>Scan or Enter Barcode/SKU</label>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <input
+                  type="text"
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleBarcodeLookup()}
+                  style={{ ...styles.formInput, flex: 1 }}
+                  placeholder="Enter barcode or SKU..."
+                  autoFocus
+                />
+                <button onClick={handleBarcodeLookup} style={styles.button(true)}>Search</button>
+              </div>
+            </div>
+            {scannedItem && (
+              <div style={{ ...styles.card, marginTop: '20px', backgroundColor: '#FAF9F7' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#2D2D2D', marginBottom: '12px' }}>{scannedItem.name}</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '14px' }}>
+                  <div><span style={{ color: '#6B6B6B' }}>SKU:</span> {scannedItem.sku || '-'}</div>
+                  <div><span style={{ color: '#6B6B6B' }}>Barcode:</span> {scannedItem.barcode || '-'}</div>
+                  <div><span style={{ color: '#6B6B6B' }}>Quantity:</span> {scannedItem.quantity} {scannedItem.unit}</div>
+                  <div><span style={{ color: '#6B6B6B' }}>Location:</span> {scannedItem.location?.name || '-'}</div>
+                  <div><span style={{ color: '#6B6B6B' }}>Category:</span> {scannedItem.category?.name || '-'}</div>
+                  <div>
+                    <span style={{ color: '#6B6B6B' }}>Status:</span>{' '}
+                    {scannedItem.is_low_stock ? <span style={styles.badge('danger')}>Low Stock</span> : <span style={styles.badge('success')}>OK</span>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                  <button onClick={() => { openEditItem(scannedItem); setShowBarcodeScanner(false); }} style={styles.button(true)}>Edit Item</button>
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>
+              <button onClick={() => { setShowBarcodeScanner(false); setScannedItem(null); setBarcodeInput(''); }} style={styles.button(false)}>Close</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Add/Edit Item Modal */}
