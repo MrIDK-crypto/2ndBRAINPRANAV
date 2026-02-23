@@ -100,6 +100,21 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
             const existing = next.get(syncId)
             if (existing) {
               const status = data.status === 'completed' ? 'complete' : data.status
+
+              // Status progression guard: don't regress from later phases back to earlier ones
+              // This prevents stale multi-worker responses from reverting confirmed selections
+              const STATUS_ORDER: Record<string, number> = {
+                'connecting': 0, 'syncing': 1, 'parsing': 2, 'awaiting_selection': 3,
+                'extracting': 4, 'embedding': 5, 'complete': 6, 'completed': 6, 'error': 7
+              }
+              const currentOrder = STATUS_ORDER[existing.status] ?? 0
+              const newOrder = STATUS_ORDER[status] ?? 0
+              // Allow progression forward, completion, and errors. Block regression.
+              if (newOrder < currentOrder && currentOrder >= 4) {
+                // Don't regress from extracting/embedding/complete back to earlier status
+                return prev
+              }
+
               const update: SyncProgress = {
                 ...existing,
                 status,
@@ -216,6 +231,16 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
           const next = new Map(prev)
           const existing = next.get(syncId)
           if (existing) {
+            // Status progression guard (same as polling)
+            const STATUS_ORDER: Record<string, number> = {
+              'connecting': 0, 'syncing': 1, 'parsing': 2, 'awaiting_selection': 3,
+              'extracting': 4, 'embedding': 5, 'complete': 6, 'completed': 6, 'error': 7
+            }
+            const currentOrder = STATUS_ORDER[existing.status] ?? 0
+            const newOrder = STATUS_ORDER[data.status] ?? 0
+            if (newOrder < currentOrder && currentOrder >= 4) {
+              return prev // Don't regress
+            }
             const update: SyncProgress = {
               ...existing,
               status: data.status,
