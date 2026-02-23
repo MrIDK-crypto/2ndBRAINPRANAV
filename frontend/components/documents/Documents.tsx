@@ -388,6 +388,20 @@ export default function Documents() {
     }
   }
 
+  // Add documents to a smart folder
+  const addDocumentsToFolder = async (folderId: string, docIds: string[]) => {
+    try {
+      await axios.post(
+        `${API_BASE}/projects/${folderId}/confirm`,
+        { document_ids: docIds },
+        { headers: authHeaders }
+      )
+      await loadSmartFolders()
+    } catch (e) {
+      console.error('Error adding documents to folder:', e)
+    }
+  }
+
   // Reset folder creation modal (and clean up abandoned project if needed)
   const resetFolderModal = async () => {
     // If user cancels during preview step, delete the empty project
@@ -1428,8 +1442,8 @@ export default function Documents() {
             <div style={{ padding: '6px 14px', fontSize: '11px', fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase' }}>
               Move to
             </div>
-            {/* Custom Folders first */}
-            {customFolders.map((folder) => (
+            {/* Smart Folders first */}
+            {smartFolders.map((folder) => (
               <button
                 key={folder.id}
                 onClick={(e) => { e.stopPropagation(); addDocumentsToFolder(folder.id, [docId]); setOpenMenuId(null) }}
@@ -1456,7 +1470,7 @@ export default function Documents() {
                 {folder.name}
               </button>
             ))}
-            {customFolders.length > 0 && (
+            {smartFolders.length > 0 && (
               <div style={{ height: '1px', backgroundColor: colors.border, margin: '4px 0' }} />
             )}
             {MOVE_CATEGORIES.map((cat) => (
@@ -2438,9 +2452,9 @@ export default function Documents() {
                     }}
                   >
                     <option value="">Move to...</option>
-                    {customFolders.length > 0 && (
-                      <optgroup label="Custom Folders">
-                        {customFolders.map(folder => (
+                    {smartFolders.length > 0 && (
+                      <optgroup label="Smart Folders">
+                        {smartFolders.map(folder => (
                           <option key={folder.id} value={`folder_${folder.id}`}>{folder.name}</option>
                         ))}
                       </optgroup>
