@@ -305,6 +305,63 @@ export default function Inventory() {
     }
   }
 
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      setIsLoading(true)
+      const response = await api.post('/inventory/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      alert(`${response.data.message}${response.data.errors?.length ? `\n\nWarnings:\n${response.data.errors.join('\n')}` : ''}`)
+      fetchData()
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to import file')
+    } finally {
+      setIsLoading(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
+  const handleLoadDemoData = async () => {
+    if (!confirm('This will add demo inventory data (lab equipment, consumables, reagents, etc.). Continue?')) return
+    try {
+      setIsLoading(true)
+      const response = await api.post('/inventory/demo-data')
+      alert(response.data.message)
+      fetchData()
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to load demo data')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleClearAll = async () => {
+    if (!confirm('WARNING: This will permanently delete ALL inventory data (items, categories, locations, vendors). This cannot be undone. Continue?')) return
+    if (!confirm('Are you absolutely sure? Type "DELETE" in the next prompt to confirm.')) return
+    const confirmation = prompt('Type DELETE to confirm:')
+    if (confirmation !== 'DELETE') {
+      alert('Deletion cancelled.')
+      return
+    }
+    try {
+      setIsLoading(true)
+      await api.delete('/inventory/clear-all')
+      alert('All inventory data has been cleared.')
+      fetchData()
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to clear inventory')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const resetItemForm = () => {
     setItemForm({
       name: '', description: '', sku: '', quantity: 0, min_quantity: 0,
@@ -350,7 +407,7 @@ export default function Inventory() {
     statValue: { fontSize: '24px', fontWeight: 700, color: '#2D2D2D' },
     statLabel: { fontSize: '13px', color: '#6B6B6B', marginTop: '4px' },
     alertBanner: {
-      backgroundColor: '#FEF3F2', border: '1px solid #FECACA', borderRadius: '12px',
+      backgroundColor: '#F9F1ED', border: '1px solid #E5CFC5', borderRadius: '12px',
       padding: '16px 20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px'
     },
     tabs: { display: 'flex', gap: '8px', marginBottom: '24px' },
@@ -386,11 +443,12 @@ export default function Inventory() {
       padding: '16px', borderBottom: '1px solid #F0EEEC', fontSize: '14px', color: '#2D2D2D'
     },
     badge: (type: 'warning' | 'danger' | 'success' | 'default') => {
+      // Warm taupe color scheme badges
       const colors = {
-        warning: { bg: '#FEF3C7', text: '#92400E' },
-        danger: { bg: '#FEE2E2', text: '#991B1B' },
-        success: { bg: '#D1FAE5', text: '#065F46' },
-        default: { bg: '#F3F4F6', text: '#4B5563' }
+        warning: { bg: '#F5E6D3', text: '#8B6914' },      // Warm amber
+        danger: { bg: '#F2DCD6', text: '#9B4F3A' },       // Warm terracotta
+        success: { bg: '#E8E3DF', text: '#6B5D54' },      // Muted taupe (OK status)
+        default: { bg: '#F7F5F3', text: '#6B5D54' }       // Light cream
       }
       return {
         padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 500,
@@ -456,7 +514,7 @@ export default function Inventory() {
             <div style={styles.statLabel}>Total Value</div>
           </div>
           <div style={styles.statCard}>
-            <div style={{ ...styles.statValue, color: stats.low_stock_count > 0 ? '#DC2626' : '#2D2D2D' }}>
+            <div style={{ ...styles.statValue, color: stats.low_stock_count > 0 ? '#9B4F3A' : '#2D2D2D' }}>
               {stats.low_stock_count}
             </div>
             <div style={styles.statLabel}>Low Stock Items</div>
@@ -471,12 +529,12 @@ export default function Inventory() {
       {/* Alerts */}
       {alerts && alerts.counts.total_alerts > 0 && (
         <div style={styles.alertBanner}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9B4F3A" strokeWidth="2">
             <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" />
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
-          <span style={{ color: '#991B1B', fontWeight: 500 }}>
+          <span style={{ color: '#9B4F3A', fontWeight: 500 }}>
             {alerts.counts.total_alerts} alert{alerts.counts.total_alerts > 1 ? 's' : ''}: {' '}
             {alerts.low_stock.length > 0 && `${alerts.low_stock.length} low stock`}
             {alerts.low_stock.length > 0 && alerts.expiring_warranty.length > 0 && ', '}
@@ -531,6 +589,22 @@ export default function Inventory() {
               </label>
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
+              {/* Import Button */}
+              <label style={{ ...styles.button(false), cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="17,8 12,3 7,8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                Import
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={handleImport}
+                  style={{ display: 'none' }}
+                />
+              </label>
+              {/* Export Button */}
               <button style={styles.button(false)} onClick={handleExport}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
@@ -539,6 +613,19 @@ export default function Inventory() {
                 </svg>
                 Export
               </button>
+              {/* Demo Data Button - show if no items OR error loading */}
+              {(items.length === 0 || error) && (
+                <button style={{ ...styles.button(false), backgroundColor: '#F5EBE6', color: '#8B6F5C' }} onClick={handleLoadDemoData}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14,2 14,8 20,8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <line x1="9" y1="15" x2="15" y2="15" />
+                  </svg>
+                  Load Demo Data
+                </button>
+              )}
+              {/* Add Item Button */}
               <button style={styles.button(true)} onClick={() => { resetItemForm(); setEditingItem(null); setShowAddItemModal(true); }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -566,8 +653,13 @@ export default function Inventory() {
               <tbody>
                 {filteredItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ ...styles.td, textAlign: 'center', color: '#9CA3AF', padding: '40px' }}>
-                      No items found. Click "Add Item" to create one.
+                    <td colSpan={7} style={{ ...styles.td, textAlign: 'center', color: '#A89B91', padding: '40px' }}>
+                      <div style={{ marginBottom: '12px' }}>No items found.</div>
+                      <div style={{ fontSize: '13px' }}>
+                        Click <strong>"Add Item"</strong> to create one manually,{' '}
+                        <strong>"Import"</strong> to upload a CSV/Excel file, or{' '}
+                        <strong>"Load Demo Data"</strong> to see example inventory.
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -575,11 +667,11 @@ export default function Inventory() {
                     <tr key={item.id}>
                       <td style={styles.td}>
                         <div style={{ fontWeight: 500 }}>{item.name}</div>
-                        {item.sku && <div style={{ fontSize: '12px', color: '#9CA3AF' }}>SKU: {item.sku}</div>}
+                        {item.sku && <div style={{ fontSize: '12px', color: '#A89B91' }}>SKU: {item.sku}</div>}
                       </td>
                       <td style={styles.td}>
                         {item.category ? (
-                          <span style={{ ...styles.badge('default'), backgroundColor: item.category.color + '20', color: item.category.color }}>
+                          <span style={{ ...styles.badge('default'), backgroundColor: '#F5EBE6', color: '#8B6F5C', border: '1px solid #E5D5CC' }}>
                             {item.category.name}
                           </span>
                         ) : '-'}
@@ -589,12 +681,12 @@ export default function Inventory() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <button
                             onClick={() => handleAdjustQuantity(item.id, -1)}
-                            style={{ padding: '4px 8px', border: '1px solid #E8E5E2', borderRadius: '4px', backgroundColor: '#FFF', cursor: 'pointer' }}
+                            style={{ padding: '4px 8px', border: '1px solid #E5D5CC', borderRadius: '4px', backgroundColor: '#FAF9F7', cursor: 'pointer', color: '#6B5D54' }}
                           >-</button>
                           <span style={{ fontWeight: 500 }}>{item.quantity} {item.unit}</span>
                           <button
                             onClick={() => handleAdjustQuantity(item.id, 1)}
-                            style={{ padding: '4px 8px', border: '1px solid #E8E5E2', borderRadius: '4px', backgroundColor: '#FFF', cursor: 'pointer' }}
+                            style={{ padding: '4px 8px', border: '1px solid #E5D5CC', borderRadius: '4px', backgroundColor: '#FAF9F7', cursor: 'pointer', color: '#6B5D54' }}
                           >+</button>
                         </div>
                       </td>
@@ -620,7 +712,7 @@ export default function Inventory() {
                           </button>
                           <button
                             onClick={() => handleDeleteItem(item.id)}
-                            style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626' }}
+                            style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
                             title="Delete"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -666,7 +758,7 @@ export default function Inventory() {
                   </div>
                   <button
                     onClick={() => handleDeleteCategory(cat.id)}
-                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626' }}
+                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3,6 5,6 21,6" />
@@ -677,7 +769,7 @@ export default function Inventory() {
               </div>
             ))}
             {categories.length === 0 && (
-              <p style={{ color: '#9CA3AF', gridColumn: '1 / -1', textAlign: 'center', padding: '40px' }}>
+              <p style={{ color: '#A89B91', gridColumn: '1 / -1', textAlign: 'center', padding: '40px' }}>
                 No categories yet. Create one to organize your inventory.
               </p>
             )}
@@ -713,7 +805,7 @@ export default function Inventory() {
                   </div>
                   <button
                     onClick={() => handleDeleteLocation(loc.id)}
-                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626' }}
+                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3,6 5,6 21,6" />
@@ -724,7 +816,7 @@ export default function Inventory() {
               </div>
             ))}
             {locations.length === 0 && (
-              <p style={{ color: '#9CA3AF', gridColumn: '1 / -1', textAlign: 'center', padding: '40px' }}>
+              <p style={{ color: '#A89B91', gridColumn: '1 / -1', textAlign: 'center', padding: '40px' }}>
                 No locations yet. Add physical locations for your inventory.
               </p>
             )}
@@ -758,7 +850,7 @@ export default function Inventory() {
                   </div>
                   <button
                     onClick={() => handleDeleteVendor(v.id)}
-                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626' }}
+                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3,6 5,6 21,6" />
@@ -769,7 +861,7 @@ export default function Inventory() {
               </div>
             ))}
             {vendors.length === 0 && (
-              <p style={{ color: '#9CA3AF', gridColumn: '1 / -1', textAlign: 'center', padding: '40px' }}>
+              <p style={{ color: '#A89B91', gridColumn: '1 / -1', textAlign: 'center', padding: '40px' }}>
                 No vendors yet. Add your suppliers and manufacturers.
               </p>
             )}

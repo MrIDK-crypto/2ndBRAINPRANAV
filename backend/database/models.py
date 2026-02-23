@@ -1671,7 +1671,9 @@ class InventoryItem(Base):
         if not self.warranty_expiry:
             return False
         from datetime import timedelta
-        return self.warranty_expiry <= utc_now() + timedelta(days=30)
+        # Ensure both datetimes are timezone-aware for comparison
+        warranty_aware = make_aware(self.warranty_expiry)
+        return warranty_aware <= utc_now() + timedelta(days=30)
 
     @property
     def total_value(self) -> float:
