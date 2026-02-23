@@ -32,7 +32,7 @@ const connectorConfig: Record<string, { logo: string; name: string }> = {
 }
 
 export default function GlobalSyncIndicator() {
-  const { activeSyncs, setEmailWhenDone, removeSync } = useSyncProgress()
+  const { activeSyncs, setEmailWhenDone, removeSync, updateSync } = useSyncProgress()
   const [expandedSync, setExpandedSync] = useState<string | null>(null)
 
   // Document selection modal state (global — works from any page)
@@ -90,6 +90,13 @@ export default function GlobalSyncIndicator() {
         throw new Error(errData.error || `Server error ${response.status}`)
       }
       console.log(`[GlobalSync] Confirmed ${selectedIds.length} docs for ${pendingConnectorType}`)
+      // Transition sync to extracting so the pill shows progress instead of "Select Documents"
+      updateSync(pendingSyncId, {
+        status: 'extracting' as any,
+        stage: 'Extracting document summaries...',
+        percentComplete: 33,
+        documents: undefined
+      })
       dismissedSyncsRef.current.add(pendingSyncId)
       setShowDocSelectionModal(false)
     } catch (err: any) {
@@ -134,6 +141,13 @@ export default function GlobalSyncIndicator() {
         throw new Error(errData.error || `Server error ${response.status}`)
       }
       console.log(`[GlobalSync] Import all for ${pendingConnectorType}`)
+      // Transition sync to extracting so the pill shows progress instead of "Select Documents"
+      updateSync(pendingSyncId, {
+        status: 'extracting' as any,
+        stage: 'Extracting document summaries...',
+        percentComplete: 33,
+        documents: undefined
+      })
       dismissedSyncsRef.current.add(pendingSyncId)
       setShowDocSelectionModal(false)
     } catch (err: any) {
