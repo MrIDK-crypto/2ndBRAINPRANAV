@@ -2033,7 +2033,7 @@ export default function Documents() {
                   All Documents
                 </div>
                 <div style={{ fontSize: '13px', color: colors.textMuted }}>
-                  {totalCount} files | {formatFileSize(sizes.all)}
+                  {totalCount} files
                 </div>
               </div>
             </button>
