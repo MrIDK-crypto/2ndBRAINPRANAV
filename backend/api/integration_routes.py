@@ -4537,6 +4537,30 @@ def confirm_sync_selection(connector_type: str):
                 progress_service = get_sync_progress_service()
 
                 progress_key = f"{tenant_id}:{connector_type}"
+                _last_persist = [0]
+
+                def _persist_phase(db_sess, conn_obj, status, stage, overall_pct, force=False):
+                    """Persist progress to DB for multi-worker polling."""
+                    now = time.time()
+                    if not force and (now - _last_persist[0]) < 5:
+                        return
+                    _last_persist[0] = now
+                    try:
+                        settings = dict(conn_obj.settings or {})
+                        settings['sync_progress'] = {
+                            'status': status, 'stage': stage,
+                            'total_items': selected_count, 'processed_items': 0,
+                            'overall_percent': round(overall_pct, 1),
+                        }
+                        conn_obj.settings = settings
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(conn_obj, 'settings')
+                        db_sess.commit()
+                    except Exception as pe:
+                        print(f"[SyncConfirm] Persist error: {pe}", flush=True)
+                        try: db_sess.rollback()
+                        except Exception: pass
+
                 _db = get_db()
                 try:
                     _connector = _db.query(Connector).filter(Connector.id == connector.id).first()
@@ -4544,7 +4568,7 @@ def confirm_sync_selection(connector_type: str):
                         print(f"[SyncConfirm] ERROR: Connector not found for extraction", flush=True)
                         return
 
-                    # Update progress - starting extraction
+                    # Update progress - starting extraction (clear documents from DB)
                     sync_progress[progress_key] = {
                         "status": "extracting",
                         "progress": 33,
@@ -4561,6 +4585,7 @@ def confirm_sync_selection(connector_type: str):
                             overall_percent=33.0,
                             extra_data=None  # Clear documents list from progress
                         )
+                    _persist_phase(_db, _connector, 'extracting', 'Extracting document summaries...', 33.0, force=True)
 
                     # Query the confirmed un-embedded docs
                     docs_to_embed = _db.query(Document).filter(
@@ -4617,6 +4642,7 @@ def confirm_sync_selection(connector_type: str):
                             stage='Embedding documents...',
                             overall_percent=66.0
                         )
+                    _persist_phase(_db, _connector, 'embedding', 'Embedding documents...', 66.0, force=True)
 
                     def embedding_progress(cur, total, msg):
                         pct = 66.0 + (cur / max(total, 1)) * 33.0
@@ -4646,7 +4672,7 @@ def confirm_sync_selection(connector_type: str):
                         import traceback
                         traceback.print_exc()
 
-                    # Update connector status
+                    # Update connector status + clear stale sync data from settings
                     try:
                         _db.close()
                     except Exception:
@@ -4660,6 +4686,14 @@ def confirm_sync_selection(connector_type: str):
                         _connector.last_sync_items_count = selected_count
                         _connector.total_items_synced += selected_count
                         _connector.error_message = None
+                        # Clear sync progress and sync_id from settings so DB fallback stops returning stale data
+                        settings = dict(_connector.settings or {})
+                        settings.pop('sync_progress', None)
+                        settings.pop('current_sync_id', None)
+                        settings.pop('sync_started_at', None)
+                        _connector.settings = settings
+                        from sqlalchemy.orm.attributes import flag_modified
+                        flag_modified(_connector, 'settings')
                         _db.commit()
 
                     # Mark complete
