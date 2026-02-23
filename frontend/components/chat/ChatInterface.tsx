@@ -546,10 +546,12 @@ export default function ChatInterface() {
               localSources = sourcesData.map((s: any, idx: number) => ({
                 doc_id: s.doc_id,
                 subject: s.title || `Source ${idx + 1}`,
-                project: 'Unknown',
+                project: s.is_shared ? 'UCLA CTSI' : 'Unknown',
                 score: s.score,
                 content: (s.content_preview || '').substring(0, 200) + '...',
-                source_url: s.source_url || ''
+                source_url: s.source_url || '',
+                is_shared: s.is_shared || false,
+                facility_name: s.facility_name || ''
               }))
 
               // Show sources immediately
@@ -570,10 +572,12 @@ export default function ChatInterface() {
                 localSources = parsedData.sources.map((s: any, idx: number) => ({
                   doc_id: s.doc_id,
                   subject: s.title || `Source ${idx + 1}`,
-                  project: 'Unknown',
+                  project: s.is_shared ? 'UCLA CTSI' : 'Unknown',
                   score: s.score,
                   content: (s.content_preview || '').substring(0, 200) + '...',
-                  source_url: s.source_url || ''
+                  source_url: s.source_url || '',
+                  is_shared: s.is_shared || false,
+                  facility_name: s.facility_name || ''
                 }))
               }
 
@@ -1125,7 +1129,8 @@ export default function ChatInterface() {
                             const sourceToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
                             // Only create clickable link if doc_id exists and looks like a valid UUID
                             const hasValidDocId = source.doc_id && source.doc_id.length >= 32
-                            // Use source_url directly if available (e.g., GitHub file links), otherwise fall back to document view
+                            const isShared = (source as any).is_shared === true
+                            // Use source_url directly if available (e.g., GitHub file links, shared CTSI), otherwise fall back to document view
                             const sourceViewUrl = source.source_url
                               ? source.source_url
                               : hasValidDocId
@@ -1144,19 +1149,25 @@ export default function ChatInterface() {
                                     gap: '4px',
                                     padding: '4px 10px',
                                     borderRadius: '12px',
-                                    backgroundColor: warmTheme.primaryLight,
+                                    backgroundColor: isShared ? '#E8F4FD' : warmTheme.primaryLight,
                                     fontSize: '12px',
-                                    color: warmTheme.primary,
+                                    color: isShared ? '#1565C0' : warmTheme.primary,
                                     textDecoration: 'none',
                                     transition: 'all 0.15s ease'
                                   }}
-                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F5EBE7'}
-                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = warmTheme.primaryLight}
+                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isShared ? '#D0E8F7' : '#F5EBE7'}
+                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isShared ? '#E8F4FD' : warmTheme.primaryLight}
                                 >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                  <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{source.subject?.split('/').pop() || source.subject}</span>
+                                  {isShared ? (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                  )}
+                                  <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isShared ? 'UCLA CTSI' : (source.subject?.split('/').pop() || source.subject)}</span>
                                 </a>
                               ) : (
                                 <span style={{

@@ -106,7 +106,8 @@ def list_documents():
                 joinedload(Document.connector)
             ).filter(
                 Document.tenant_id == getattr(g, 'tenant_id', 'local-tenant'),
-                Document.is_deleted == False
+                Document.is_deleted == False,
+                Document.source_type != 'ctsi_shared'  # Hide shared CTSI data from documents page
             )
 
             # Apply filters

@@ -1279,14 +1279,21 @@ def search():
 
                 for src in raw_sources:
                     doc_id = src.get('doc_id', '')
-                    sources.append({
+                    is_shared = src.get('is_shared', False)
+                    source_entry = {
                         "doc_id": doc_id,
                         "title": src.get('title', 'Untitled'),
                         "content_preview": (src.get('content', '') or src.get('content_preview', ''))[:300],
                         "score": src.get('rerank_score', src.get('score', 0)),
                         "metadata": src.get('metadata', {}),
-                        "source_url": source_url_map.get(doc_id, '')
-                    })
+                    }
+                    if is_shared:
+                        source_entry["source_url"] = src.get('source_url', '')
+                        source_entry["is_shared"] = True
+                        source_entry["facility_name"] = src.get('facility_name', '')
+                    else:
+                        source_entry["source_url"] = source_url_map.get(doc_id, '')
+                    sources.append(source_entry)
 
             # Build response
             response_data = {
@@ -1454,9 +1461,14 @@ def search_stream():
 
             stats = vector_store.get_stats(tenant_id)
             if stats.get('vector_count', 0) == 0:
-                yield f"event: chunk\ndata: {json.dumps({'content': 'Your knowledge base is empty. Please add some documents first.'})}\n\n"
-                yield f"event: done\ndata: {json.dumps({'confidence': 1.0, 'sources': []})}\n\n"
-                return
+                # Check if shared CTSI namespace has data before rejecting
+                from vector_stores.pinecone_store import SHARED_CTSI_NAMESPACE
+                shared_stats = vector_store.get_stats()
+                shared_count = shared_stats.get('namespaces', {}).get(SHARED_CTSI_NAMESPACE, 0)
+                if not shared_count:
+                    yield f"event: chunk\ndata: {json.dumps({'content': 'Your knowledge base is empty. Please add some documents first.'})}\n\n"
+                    yield f"event: done\ndata: {json.dumps({'confidence': 1.0, 'sources': []})}\n\n"
+                    return
 
             from services.enhanced_search_service import get_enhanced_search_service
             enhanced_service = get_enhanced_search_service()
@@ -1492,13 +1504,20 @@ def search_stream():
 
                     for src in raw_sources:
                         doc_id = src.get('doc_id', '')
-                        sources_for_response.append({
+                        is_shared = src.get('is_shared', False)
+                        source_entry = {
                             "doc_id": doc_id,
                             "title": src.get('title', 'Untitled'),
                             "content_preview": (src.get('content', '') or '')[:300],
                             "score": src.get('rerank_score', src.get('score', 0)),
-                            "source_url": source_url_map.get(doc_id, '')
-                        })
+                        }
+                        if is_shared:
+                            source_entry["source_url"] = src.get('source_url', '')
+                            source_entry["is_shared"] = True
+                            source_entry["facility_name"] = src.get('facility_name', '')
+                        else:
+                            source_entry["source_url"] = source_url_map.get(doc_id, '')
+                        sources_for_response.append(source_entry)
 
                     yield f"event: search_complete\ndata: {json.dumps({'expanded_query': event.get('expanded_query', query), 'num_sources': event.get('num_sources', 0), 'sources': sources_for_response})}\n\n"
 

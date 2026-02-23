@@ -28,6 +28,11 @@ from services.openai_client import get_openai_client
 # text-embedding-3-large supports native dimensionality reduction
 EMBEDDING_DIMENSIONS = 1536
 
+# Shared namespace for system-wide data (e.g., CTSI research cores)
+# Queried alongside tenant namespace but NOT subject to tenant isolation
+SHARED_CTSI_NAMESPACE = "ctsi-shared"
+SHARED_CTSI_TENANT_ID = "__system__"
+
 # Pinecone imports
 try:
     from pinecone import Pinecone, ServerlessSpec
@@ -569,6 +574,60 @@ class PineconeVectorStore:
         except Exception as e:
             print(f"[PineconeVectorStore] Error getting stats: {type(e).__name__}: {e}", flush=True)
             return {'error': str(e), 'total_vectors': 0, 'dimension': EMBEDDING_DIMENSIONS}
+
+    def get_query_embedding(self, query: str) -> List[float]:
+        """Public wrapper around _get_embedding for external callers."""
+        return self._get_embedding(query)
+
+    def search_shared_namespace(
+        self,
+        query_embedding: List[float],
+        namespace: str = SHARED_CTSI_NAMESPACE,
+        top_k: int = 5
+    ) -> List[Dict]:
+        """
+        Search a shared (system-wide) namespace without tenant isolation.
+
+        Used for pre-loaded datasets (e.g., CTSI research cores) that should
+        be accessible to all tenants. Results are tagged with is_shared=True.
+
+        Args:
+            query_embedding: Pre-computed query embedding vector
+            namespace: Shared namespace to query (default: ctsi-shared)
+            top_k: Number of results to return
+
+        Returns:
+            List of results with is_shared=True flag
+        """
+        try:
+            results = self.index.query(
+                vector=query_embedding,
+                namespace=namespace,
+                top_k=top_k,
+                include_metadata=True
+            )
+
+            formatted = []
+            for match in results.matches:
+                formatted.append({
+                    'id': match.id,
+                    'score': match.score,
+                    'doc_id': match.metadata.get('doc_id', ''),
+                    'chunk_idx': match.metadata.get('chunk_idx', 0),
+                    'title': match.metadata.get('title', ''),
+                    'content': match.metadata.get('content_preview', ''),
+                    'source_url': match.metadata.get('source_url', ''),
+                    'facility_name': match.metadata.get('facility_name', ''),
+                    'is_shared': True,
+                    'source_namespace': namespace,
+                    'metadata': {k: v for k, v in match.metadata.items()
+                               if k not in ['doc_id', 'chunk_idx', 'content_preview', 'tenant_id', 'title']}
+                })
+
+            return formatted
+        except Exception as e:
+            print(f"[PineconeVectorStore] Error searching shared namespace '{namespace}': {type(e).__name__}: {e}", flush=True)
+            return []
 
 
 class HybridPineconeStore(PineconeVectorStore):

@@ -1042,6 +1042,26 @@ class EnhancedSearchService:
 
         print(f"[EnhancedSearch] Initial retrieval: {len(initial_results)} results")
 
+        # Step 2b: Query shared CTSI namespace (accessible to all tenants)
+        try:
+            from vector_stores.pinecone_store import SHARED_CTSI_NAMESPACE
+            query_embedding = vector_store.get_query_embedding(search_query)
+            shared_top_k = max(top_k // 2, 3)
+            shared_results = vector_store.search_shared_namespace(
+                query_embedding=query_embedding,
+                namespace=SHARED_CTSI_NAMESPACE,
+                top_k=shared_top_k
+            )
+            if shared_results:
+                # Apply 0.9x score multiplier so tenant data gets slight priority
+                for r in shared_results:
+                    r['score'] = r.get('score', 0) * 0.9
+                initial_results.extend(shared_results)
+                print(f"[EnhancedSearch] Added {len(shared_results)} shared CTSI results")
+        except Exception as e:
+            # Shared search failure must never break tenant search
+            print(f"[EnhancedSearch] Shared namespace query failed (non-fatal): {e}")
+
         # Filter out very low cosine similarity results (clearly irrelevant)
         MIN_COSINE_SCORE = 0.20
         before_filter = len(initial_results)
