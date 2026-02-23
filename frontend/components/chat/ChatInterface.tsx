@@ -198,6 +198,11 @@ export default function ChatInterface() {
   const [feedbackState, setFeedbackState] = useState<Record<string, 'up' | 'down'>>({})
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
+  // Streaming state
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamingText, setStreamingText] = useState('')
+  const [streamingSources, setStreamingSources] = useState<any[]>([])
+
   // Auth headers for API calls
   const getAuthHeaders = () => {
     if (token) {
@@ -324,7 +329,7 @@ export default function ChatInterface() {
   // useEffect must be called before any conditional returns
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [messages, streamingText])
 
   // Fetch conversations on mount and auto-load the most recent one from the cloud
   useEffect(() => {
@@ -466,106 +471,202 @@ export default function ChatInterface() {
       // Append the current user message that was just sent (not yet saved to cloud)
       conversationHistory.push({ role: 'user', content: queryText })
 
-      // Use regular search endpoint (not streaming)
+      // Use streaming search endpoint (SSE)
       const aiMessageId = (Date.now() + 1).toString()
-      let sourceMapData: { [key: string]: { name: string; doc_id: string; source_url: string } } = {}
+      let localSourceMap: { [key: string]: { name: string; doc_id: string; source_url: string } } = {}
+      let localSources: any[] = []
+      let accumulatedText = ''
+      let streamDone = false
 
-      // Make API call to search endpoint
-      const response = await axios.post(`${API_BASE}/search`, {
-        query: queryText,
-        conversation_history: conversationHistory,
-        top_k: 15,
-        boost_doc_ids: uploadedDocIds
-      }, {
-        headers: getAuthHeaders()
+      // Reset streaming state
+      setStreamingText('')
+      setStreamingSources([])
+
+      const fetchHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) fetchHeaders['Authorization'] = `Bearer ${token}`
+
+      const streamResponse = await fetch(`${API_BASE}/search/stream`, {
+        method: 'POST',
+        headers: fetchHeaders,
+        body: JSON.stringify({
+          query: queryText,
+          conversation_history: conversationHistory,
+          top_k: 15,
+          boost_doc_ids: uploadedDocIds
+        })
       })
 
-      const data = response.data
-      const rawAnswer = data.answer || ''
-      const sourcesData = data.sources || []
+      if (!streamResponse.ok) {
+        throw new Error(`Search failed with status ${streamResponse.status}`)
+      }
 
-      // Build source mapping
-      sourcesData.forEach((s: any, idx: number) => {
-        const sourceName = s.title || `Source ${idx + 1}`
-        const doc_id = s.doc_id || ''
-        const source_url = s.source_url || ''
-        const cleanName = (sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName).replace(/:/g, ' -')
-        sourceMapData[`Source ${idx + 1}`] = { name: cleanName, doc_id, source_url }
-        sourceMapData[cleanName] = { name: cleanName, doc_id, source_url }
-      })
+      const reader = streamResponse.body!.getReader()
+      const decoder = new TextDecoder()
+      let sseBuffer = ''
 
-      // Clean up the answer
-      let cleanedAnswer = rawAnswer
-      cleanedAnswer = cleanedAnswer.replace(/Sources Used:.*$/gm, '')
-      cleanedAnswer = cleanedAnswer.replace(/.*Citation Coverage:.*$/gm, '')
-      cleanedAnswer = cleanedAnswer.replace(/^.*📊.*$/gm, '')
-      cleanedAnswer = cleanedAnswer.replace(/^.*📄 Sources:.*$/gm, '')
-      cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n').trim()
+      while (true) {
+        const { done: readerDone, value } = await reader.read()
+        if (readerDone) break
 
-      // Replace [Source X] with markers
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+)\]/g, (match: string, num: string) => {
-        const source = sourceMapData[`Source ${num}`]
-        return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+), Source (\d+)\]/g, (match: string, num1: string, num2: string) => {
-        const source1 = sourceMapData[`Source ${num1}`]
-        const source2 = sourceMapData[`Source ${num2}`]
-        const parts = []
-        if (source1) parts.push(`[[SOURCE:${source1.name}:${source1.doc_id}:${source1.source_url || ''}]]`)
-        if (source2) parts.push(`[[SOURCE:${source2.name}:${source2.doc_id}:${source2.source_url || ''}]]`)
-        return parts.join(', ')
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+(?:,\s*\d+)+)\]/g, (match: string, nums: string) => {
-        const numbers = nums.split(/,\s*/)
-        return numbers.map((n: string) => {
-          const source = sourceMapData[`Source ${n.trim()}`]
-          return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
-        }).filter(Boolean).join(', ')
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[Sources (\d+(?:,\s*\d+)+)\]/gi, (match: string, nums: string) => {
-        const numbers = nums.split(/,\s*/)
-        return numbers.map((n: string) => {
-          const source = sourceMapData[`Source ${n.trim()}`]
-          return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
-        }).filter(Boolean).join(', ')
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+):\s*[^\]]+\]/g, (match: string, num: string) => {
-        const source = sourceMapData[`Source ${num}`]
-        return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[(\d+)\]/g, (match: string, num: string) => {
-        const source = sourceMapData[`Source ${num}`]
-        return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
-      })
-      cleanedAnswer = cleanedAnswer.replace(/\[Sources?\s*\d+(?:,\s*\d+)*\]/gi, '')
-      cleanedAnswer = cleanedAnswer.replace(/(\[\[SOURCE:([^:]+):[^\]]+\]\])(?:\s*,?\s*\[\[SOURCE:\2:[^\]]+\]\])+/g, '$1')
-      cleanedAnswer = cleanedAnswer.replace(/\]\]\s+\[\[SOURCE:/g, ']], [[SOURCE:')
-      cleanedAnswer = cleanedAnswer.replace(/,\s*,/g, ',')
-      cleanedAnswer = cleanedAnswer.replace(/[^\S\n]{2,}/g, ' ')
-      cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n')
+        sseBuffer += decoder.decode(value, { stream: true })
+        const sseEvents = sseBuffer.split('\n\n')
+        sseBuffer = sseEvents.pop() || ''
 
-      const aiSources = sourcesData.map((s: any, idx: number) => ({
-        doc_id: s.doc_id,
-        subject: s.title || `Source ${idx + 1}`,
-        project: 'Unknown',
-        score: s.score,
-        content: (s.content_preview || '').substring(0, 200) + '...',
-        source_url: s.source_url || ''
-      }))
+        for (const eventStr of sseEvents) {
+          if (!eventStr.trim()) continue
 
-      // Add AI response message
-      setMessages(prev => [...prev, {
-        id: aiMessageId,
-        text: cleanedAnswer,
-        isUser: false,
-        sources: aiSources,
-        sourceMap: sourceMapData
-      }])
+          let eventType = ''
+          let eventData = ''
 
-      // Save to conversation
-      if (convId) {
-        saveMessage('assistant', cleanedAnswer, aiSources, convId)
-        fetchConversations()
+          for (const line of eventStr.split('\n')) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              eventData = line.slice(6)
+            }
+          }
+
+          if (!eventType || !eventData) continue
+
+          try {
+            const parsedData = JSON.parse(eventData)
+
+            if (eventType === 'search_complete') {
+              // Build source mapping immediately
+              const sourcesData = parsedData.sources || []
+              sourcesData.forEach((s: any, idx: number) => {
+                const sourceName = s.title || `Source ${idx + 1}`
+                const doc_id = s.doc_id || ''
+                const source_url = s.source_url || ''
+                const cleanName = (sourceName.split('/').pop()?.replace(/^(space_msg_|File-)/, '') || sourceName).replace(/:/g, ' -')
+                localSourceMap[`Source ${idx + 1}`] = { name: cleanName, doc_id, source_url }
+                localSourceMap[cleanName] = { name: cleanName, doc_id, source_url }
+              })
+
+              localSources = sourcesData.map((s: any, idx: number) => ({
+                doc_id: s.doc_id,
+                subject: s.title || `Source ${idx + 1}`,
+                project: 'Unknown',
+                score: s.score,
+                content: (s.content_preview || '').substring(0, 200) + '...',
+                source_url: s.source_url || ''
+              }))
+
+              // Show sources immediately
+              setStreamingSources(localSources)
+
+            } else if (eventType === 'chunk') {
+              accumulatedText += parsedData.content || ''
+              // Transition from Thinking to Streaming on first chunk
+              setIsLoading(false)
+              setIsStreaming(true)
+              setStreamingText(accumulatedText)
+
+            } else if (eventType === 'done') {
+              streamDone = true
+
+              // Use final sources from done event if available
+              if (parsedData.sources && parsedData.sources.length > 0) {
+                localSources = parsedData.sources.map((s: any, idx: number) => ({
+                  doc_id: s.doc_id,
+                  subject: s.title || `Source ${idx + 1}`,
+                  project: 'Unknown',
+                  score: s.score,
+                  content: (s.content_preview || '').substring(0, 200) + '...',
+                  source_url: s.source_url || ''
+                }))
+              }
+
+              // Apply source citation cleanup on accumulated text
+              let cleanedAnswer = accumulatedText
+              cleanedAnswer = cleanedAnswer.replace(/Sources Used:.*$/gm, '')
+              cleanedAnswer = cleanedAnswer.replace(/.*Citation Coverage:.*$/gm, '')
+              cleanedAnswer = cleanedAnswer.replace(/^.*📊.*$/gm, '')
+              cleanedAnswer = cleanedAnswer.replace(/^.*📄 Sources:.*$/gm, '')
+              cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n').trim()
+
+              // Replace [Source X] with markers
+              cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+)\]/g, (match: string, num: string) => {
+                const source = localSourceMap[`Source ${num}`]
+                return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
+              })
+              cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+), Source (\d+)\]/g, (match: string, num1: string, num2: string) => {
+                const source1 = localSourceMap[`Source ${num1}`]
+                const source2 = localSourceMap[`Source ${num2}`]
+                const parts: string[] = []
+                if (source1) parts.push(`[[SOURCE:${source1.name}:${source1.doc_id}:${source1.source_url || ''}]]`)
+                if (source2) parts.push(`[[SOURCE:${source2.name}:${source2.doc_id}:${source2.source_url || ''}]]`)
+                return parts.join(', ')
+              })
+              cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+(?:,\s*\d+)+)\]/g, (match: string, nums: string) => {
+                const numbers = nums.split(/,\s*/)
+                return numbers.map((n: string) => {
+                  const source = localSourceMap[`Source ${n.trim()}`]
+                  return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
+                }).filter(Boolean).join(', ')
+              })
+              cleanedAnswer = cleanedAnswer.replace(/\[Sources (\d+(?:,\s*\d+)+)\]/gi, (match: string, nums: string) => {
+                const numbers = nums.split(/,\s*/)
+                return numbers.map((n: string) => {
+                  const source = localSourceMap[`Source ${n.trim()}`]
+                  return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : null
+                }).filter(Boolean).join(', ')
+              })
+              cleanedAnswer = cleanedAnswer.replace(/\[Source (\d+):\s*[^\]]+\]/g, (match: string, num: string) => {
+                const source = localSourceMap[`Source ${num}`]
+                return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
+              })
+              cleanedAnswer = cleanedAnswer.replace(/\[(\d+)\]/g, (match: string, num: string) => {
+                const source = localSourceMap[`Source ${num}`]
+                return source ? `[[SOURCE:${source.name}:${source.doc_id}:${source.source_url || ''}]]` : ''
+              })
+              cleanedAnswer = cleanedAnswer.replace(/\[Sources?\s*\d+(?:,\s*\d+)*\]/gi, '')
+              cleanedAnswer = cleanedAnswer.replace(/(\[\[SOURCE:([^:]+):[^\]]+\]\])(?:\s*,?\s*\[\[SOURCE:\2:[^\]]+\]\])+/g, '$1')
+              cleanedAnswer = cleanedAnswer.replace(/\]\]\s+\[\[SOURCE:/g, ']], [[SOURCE:')
+              cleanedAnswer = cleanedAnswer.replace(/,\s*,/g, ',')
+              cleanedAnswer = cleanedAnswer.replace(/[^\S\n]{2,}/g, ' ')
+              cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n')
+
+              // Add final message and clear streaming state
+              setMessages(prev => [...prev, {
+                id: aiMessageId,
+                text: cleanedAnswer,
+                isUser: false,
+                sources: localSources,
+                sourceMap: localSourceMap
+              }])
+              setIsStreaming(false)
+              setStreamingText('')
+              setStreamingSources([])
+
+              // Save to conversation
+              if (convId) {
+                saveMessage('assistant', cleanedAnswer, localSources, convId)
+                fetchConversations()
+              }
+
+            } else if (eventType === 'error') {
+              throw new Error(parsedData.error || 'Search failed')
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message?.startsWith('Search failed')) throw parseErr
+            console.error('Error parsing SSE event:', parseErr)
+          }
+        }
+      }
+
+      // Handle stream ending without a done event
+      if (accumulatedText && !streamDone) {
+        setMessages(prev => [...prev, {
+          id: aiMessageId,
+          text: accumulatedText,
+          isUser: false,
+          sources: localSources,
+          sourceMap: localSourceMap
+        }])
+        setIsStreaming(false)
+        setStreamingText('')
+        setStreamingSources([])
       }
     } catch (error: any) {
       console.error('Error:', error)
@@ -586,6 +687,9 @@ export default function ChatInterface() {
       setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
+      setIsStreaming(false)
+      setStreamingText('')
+      setStreamingSources([])
     }
   }
 
@@ -1221,7 +1325,58 @@ export default function ChatInterface() {
                     </div>
                   </div>
                 )}
-                
+
+                {/* Streaming answer with blinking cursor */}
+                {isStreaming && streamingText && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <div style={{
+                      padding: '16px 20px',
+                      borderRadius: '16px',
+                      maxWidth: '100%',
+                      backgroundColor: '#FFFFFF',
+                    }}>
+                      <div
+                        className="streaming-content"
+                        style={{
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontSize: '15px',
+                          lineHeight: '1.6',
+                          color: warmTheme.textPrimary
+                        }}
+                      >
+                        {renderMarkdownMessage(streamingText)}
+                      </div>
+
+                      {/* Sources shown immediately during streaming */}
+                      {streamingSources.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {streamingSources
+                            .filter((source: any, idx: number, arr: any[]) => arr.findIndex((s: any) => (s.subject || s.doc_id) === (source.subject || source.doc_id)) === idx)
+                            .slice(0, 5).map((source: any, idx: number) => (
+                              <span key={idx} style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '4px 10px',
+                                borderRadius: '12px',
+                                backgroundColor: warmTheme.primaryLight,
+                                fontSize: '12px',
+                                color: warmTheme.primary,
+                              }}>
+                                <svg style={{ width: '12px', height: '12px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {(source.subject?.split('/').pop() || source.subject)}
+                                </span>
+                              </span>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -1465,6 +1620,16 @@ export default function ChatInterface() {
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.5; transform: scale(0.9); }
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        .streaming-content > :last-child::after {
+          content: '▌';
+          animation: blink 1s step-end infinite;
+          color: #C9A598;
+          margin-left: 2px;
         }
       `}</style>
     </div>

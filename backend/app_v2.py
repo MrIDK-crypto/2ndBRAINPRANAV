@@ -1500,7 +1500,7 @@ def search_stream():
                             "source_url": source_url_map.get(doc_id, '')
                         })
 
-                    yield f"event: search_complete\ndata: {json.dumps({'expanded_query': event.get('expanded_query', query), 'num_sources': event.get('num_sources', 0)})}\n\n"
+                    yield f"event: search_complete\ndata: {json.dumps({'expanded_query': event.get('expanded_query', query), 'num_sources': event.get('num_sources', 0), 'sources': sources_for_response})}\n\n"
 
                 elif event_type == 'chunk':
                     content = event.get('content', '')

@@ -591,6 +591,117 @@ def crawl_all_external_sites(
     return all_crawled
 
 
+def fallback_scrape_external_sites(
+    facilities: List[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Use Firecrawl single-page scraper as fallback for external sites
+    that returned 0 pages from the full crawl.
+
+    Checks the external/ directory for crawl files with 0 pages
+    and scrapes those URLs individually.
+    """
+    sys.path.insert(0, BACKEND_DIR)
+    from connectors.firecrawl_connector import FirecrawlScraper
+
+    scraper = FirecrawlScraper()
+    if not scraper.api_key:
+        print("[Fallback] WARNING: FIRECRAWL_API_KEY not set, skipping fallback scrape")
+        return {}
+
+    external_dir = os.path.join(OUTPUT_DIR, "external")
+    if not os.path.isdir(external_dir):
+        print("[Fallback] No external/ directory found, nothing to fallback scrape")
+        return {}
+
+    # Find crawl files with 0 pages
+    zero_page_files: List[Dict[str, Any]] = []
+    for fname in sorted(os.listdir(external_dir)):
+        if not fname.endswith("_crawl.json"):
+            continue
+        filepath = os.path.join(external_dir, fname)
+        with open(filepath) as f:
+            data = json.load(f)
+        if data.get("pages_crawled", 0) == 0 and data.get("source_url"):
+            zero_page_files.append({
+                "filepath": filepath,
+                "source_url": data["source_url"],
+                "facility_name": data.get("facility_name", "Unknown"),
+                "facility_slug": data.get("facility_slug", ""),
+            })
+
+    if not zero_page_files:
+        print("[Fallback] All external sites already have data, nothing to do")
+        return {}
+
+    print(f"\n{'=' * 60}")
+    print(f"FALLBACK: Single-page scraping {len(zero_page_files)} sites that returned 0 pages")
+    print(f"{'=' * 60}")
+
+    all_scraped: Dict[str, List[Dict[str, Any]]] = {}
+
+    for i, item in enumerate(zero_page_files):
+        url = item["source_url"]
+
+        # Skip urldefense.com URLs (these are URL-protected links that won't resolve)
+        if "urldefense.com" in url:
+            print(f"[Fallback] [{i+1}/{len(zero_page_files)}] Skipping urldefense URL: {url}")
+            continue
+
+        print(f"[Fallback] [{i+1}/{len(zero_page_files)}] Scraping: {url} ({item['facility_name']})")
+
+        result = scraper.scrape_url(url)
+        if not result:
+            print(f"[Fallback] Failed: {url}")
+            continue
+
+        markdown = result.get("markdown", "")
+        metadata = result.get("metadata", {})
+        title = metadata.get("title", "")
+
+        if len(markdown.strip()) < 50:
+            print(f"[Fallback] Too little content ({len(markdown)} chars): {url}")
+            continue
+
+        page_data = {
+            "url": url,
+            "title": title or item["facility_name"],
+            "content": markdown,
+            "doc_type": "webpage",
+            "metadata": {
+                "url": url,
+                "description": metadata.get("description", ""),
+                "word_count": len(markdown.split()),
+                "crawl_engine": "firecrawl_scraper",
+                "scraped_at": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+
+        pages = [page_data]
+        all_scraped[url] = pages
+
+        # Update the crawl file
+        with open(item["filepath"], "w") as f:
+            json.dump({
+                "source_url": url,
+                "facility_name": item["facility_name"],
+                "facility_slug": item["facility_slug"],
+                "pages_crawled": len(pages),
+                "crawled_at": datetime.now(timezone.utc).isoformat(),
+                "crawl_method": "single_page_fallback",
+                "pages": pages,
+            }, f, indent=2)
+
+        print(f"[Fallback] OK: {url} -> {title} ({len(markdown)} chars)")
+
+        # Small delay to avoid rate limiting
+        time.sleep(0.5)
+
+    success_count = len(all_scraped)
+    print(f"\n[Fallback] Done: {success_count}/{len(zero_page_files)} sites scraped successfully")
+    return all_scraped
+
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
@@ -604,6 +715,9 @@ def run_scrape(
 
     Saves combined output to _all_facilities.json.
     """
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     session = get_session()
     progress = load_progress()
@@ -638,6 +752,11 @@ def run_scrape(
         external_data = crawl_all_external_sites(
             facility_data, progress, max_pages=max_firecrawl_pages
         )
+
+    # ---- Level 3b: Fallback single-page scrape for 0-page sites ----
+    if not skip_firecrawl:
+        fallback_data = fallback_scrape_external_sites(facility_data)
+        external_data.update(fallback_data)
 
     # ---- Save combined output ----
     print("\n" + "=" * 60)
@@ -691,8 +810,11 @@ def run_ingest(tenant_id: Optional[str] = None, user_id: Optional[str] = None) -
         tenant_id: Tenant ID to ingest under. If None, auto-detects first tenant.
         user_id: User ID for audit trail. If None, auto-detects first user.
     """
-    # ---- Setup: Add backend to path and import DB dependencies ----
+    # ---- Setup: Add backend to path, load .env, import DB dependencies ----
     sys.path.insert(0, BACKEND_DIR)
+
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
     from database.models import (
         Document as DBDocument,
