@@ -174,6 +174,9 @@ oauth_states = {}
 sync_progress = {}
 _sync_progress_lock = threading.RLock()  # Protects sync_progress dict from concurrent access
 
+# Connectors that require document selection before extraction/embedding
+SELECTION_REQUIRED_CONNECTORS = {'gdrive', 'gdocs', 'gsheets', 'gslides', 'onedrive', 'notion'}
+
 # Thread pool for sync operations (prevents unbounded thread creation)
 _sync_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix='sync')
 
@@ -4143,6 +4146,53 @@ def _run_connector_sync(
                     total_committed += docs_in_batch
                     print(f"[Sync] Committed final batch of {docs_in_batch} documents ({total_committed} total)", flush=True)
 
+                # === SELECTION GATE: Pause for user selection if required ===
+                if connector_type in SELECTION_REQUIRED_CONNECTORS and total_committed > 0:
+                    # Query the newly saved documents (un-embedded, for this connector)
+                    pending_docs = db.query(Document).filter(
+                        Document.tenant_id == tenant_id,
+                        Document.connector_id == connector.id,
+                        Document.embedded_at == None,
+                        Document.is_deleted == False
+                    ).all()
+
+                    if pending_docs:
+                        # Build document metadata list for frontend selection modal
+                        doc_list = []
+                        for pdoc in pending_docs:
+                            meta = pdoc.doc_metadata or {}
+                            doc_list.append({
+                                "id": str(pdoc.id),
+                                "title": pdoc.title or "Untitled",
+                                "source_type": pdoc.source_type or connector_type,
+                                "doc_type": meta.get("mime_type", "document"),
+                                "size": meta.get("size") or meta.get("file_size"),
+                                "date": pdoc.source_created_at.isoformat() if pdoc.source_created_at else None
+                            })
+
+                        elapsed = time.time() - sync_start_time
+                        print(f"[Sync] PAUSING for document selection ({len(doc_list)} docs, elapsed: {elapsed:.1f}s)", flush=True)
+
+                        # Update progress to awaiting_selection
+                        sync_progress[progress_key]["status"] = "awaiting_selection"
+                        sync_progress[progress_key]["progress"] = 33
+                        sync_progress[progress_key]["documents"] = doc_list
+                        sync_progress[progress_key]["total_fetched"] = len(doc_list)
+
+                        if sync_id:
+                            progress_service.update_progress(
+                                sync_id,
+                                status='awaiting_selection',
+                                stage='Select documents to import',
+                                overall_percent=33.0,
+                                total_items=len(doc_list),
+                                extra_data={"documents": doc_list, "total_fetched": len(doc_list)}
+                            )
+                            _persist_progress_to_db(db, connector, 'awaiting_selection', 'Waiting for document selection', total_items=len(doc_list), overall_percent=33.0, force=True)
+
+                        # Return here — extraction/embedding will be triggered by the confirm endpoint
+                        return
+
                 # === PHASE 2: EXTRACTION (33% - 66%) ===
                 elapsed = time.time() - sync_start_time
                 print(f"[Sync] All {total_committed} documents committed to DB (elapsed: {elapsed:.1f}s), starting extraction phase...", flush=True)
@@ -4375,6 +4425,269 @@ def _run_connector_sync(
             db.close()
         except Exception:
             pass
+
+
+@integration_bp.route('/<connector_type>/sync/confirm', methods=['POST'])
+@require_auth
+def confirm_sync_selection(connector_type: str):
+    """
+    Confirm document selection after sync fetched files.
+    Receives selected document IDs, deletes unselected, and continues extraction+embedding.
+
+    Request:
+    {
+        "sync_id": "...",
+        "selected_document_ids": ["id1", "id2", ...]  // Empty or missing = import all
+    }
+
+    Response:
+    {
+        "success": true,
+        "sync_id": "...",
+        "selected_count": 32,
+        "deleted_count": 13
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        sync_id = data.get('sync_id')
+        selected_ids = data.get('selected_document_ids', [])
+
+        tenant_id = g.tenant_id
+        user_id = g.user_id
+
+        db = get_db()
+        try:
+            # Find the connector
+            connector = db.query(Connector).filter(
+                Connector.tenant_id == tenant_id,
+                Connector.connector_type == connector_type,
+                Connector.status != ConnectorStatus.DISCONNECTED
+            ).first()
+
+            if not connector:
+                return jsonify({"success": False, "error": f"No active {connector_type} connector found"}), 404
+
+            # Get all un-embedded documents for this connector (the ones awaiting selection)
+            pending_docs = db.query(Document).filter(
+                Document.tenant_id == tenant_id,
+                Document.connector_id == connector.id,
+                Document.embedded_at == None,
+                Document.is_deleted == False
+            ).all()
+
+            if not pending_docs:
+                return jsonify({"success": False, "error": "No pending documents found for selection"}), 404
+
+            import_all = not selected_ids  # Empty list = import all
+
+            if import_all:
+                # Import all — no deletion needed
+                selected_count = len(pending_docs)
+                deleted_count = 0
+                for doc in pending_docs:
+                    doc.status = DocumentStatus.CONFIRMED
+                    doc.classification = DocumentClassification.WORK
+                db.commit()
+                print(f"[SyncConfirm] Import all: {selected_count} documents confirmed", flush=True)
+            else:
+                # Delete unselected, confirm selected
+                selected_set = set(selected_ids)
+                to_delete = []
+                to_keep = []
+
+                for doc in pending_docs:
+                    if str(doc.id) in selected_set:
+                        doc.status = DocumentStatus.CONFIRMED
+                        doc.classification = DocumentClassification.WORK
+                        to_keep.append(doc)
+                    else:
+                        to_delete.append(doc)
+
+                # Hard-delete unselected documents
+                for doc in to_delete:
+                    db.delete(doc)
+
+                db.commit()
+                selected_count = len(to_keep)
+                deleted_count = len(to_delete)
+                print(f"[SyncConfirm] Selected {selected_count}, deleted {deleted_count} documents", flush=True)
+
+            # Spawn background thread to continue extraction + embedding
+            def _continue_extraction_embedding():
+                import time
+                from services.sync_progress_service import get_sync_progress_service
+                progress_service = get_sync_progress_service()
+
+                progress_key = f"{tenant_id}:{connector_type}"
+                _db = get_db()
+                try:
+                    _connector = _db.query(Connector).filter(Connector.id == connector.id).first()
+                    if not _connector:
+                        print(f"[SyncConfirm] ERROR: Connector not found for extraction", flush=True)
+                        return
+
+                    # Update progress - starting extraction
+                    sync_progress[progress_key] = {
+                        "status": "extracting",
+                        "progress": 33,
+                        "documents_found": selected_count,
+                        "documents_parsed": 0,
+                        "documents_embedded": 0,
+                        "current_file": "Extracting document summaries...",
+                        "error": None,
+                    }
+                    if sync_id:
+                        progress_service.update_progress(
+                            sync_id, status='extracting',
+                            stage='Extracting document summaries...',
+                            overall_percent=33.0,
+                            extra_data=None  # Clear documents list from progress
+                        )
+
+                    # Query the confirmed un-embedded docs
+                    docs_to_embed = _db.query(Document).filter(
+                        Document.tenant_id == tenant_id,
+                        Document.connector_id == _connector.id,
+                        Document.embedded_at == None,
+                        Document.status != DocumentStatus.PENDING,
+                        Document.is_deleted == False
+                    ).all()
+
+                    embed_total = len(docs_to_embed)
+                    print(f"[SyncConfirm] Starting extraction+embedding for {embed_total} documents", flush=True)
+
+                    if not docs_to_embed:
+                        print(f"[SyncConfirm] No documents to embed", flush=True)
+                        if sync_id:
+                            progress_service.complete_sync(sync_id)
+                        return
+
+                    # STEP 1: Extract structured summaries (33% - 66%)
+                    def extraction_progress(cur, total, msg):
+                        pct = 33.0 + (cur / max(total, 1)) * 33.0
+                        sync_progress[progress_key]["progress"] = int(pct)
+                        sync_progress[progress_key]["current_file"] = msg
+                        if sync_id:
+                            progress_service.update_progress(
+                                sync_id,
+                                current_item=msg,
+                                overall_percent=pct,
+                                stage=f'Extracting summaries ({cur}/{total})...'
+                            )
+
+                    try:
+                        from services.extraction_service import get_extraction_service
+                        extraction_service = get_extraction_service()
+                        extract_result = extraction_service.extract_documents(
+                            documents=docs_to_embed,
+                            db=_db,
+                            force=False,
+                            progress_callback=extraction_progress
+                        )
+                        print(f"[SyncConfirm] Extracted summaries for {extract_result.get('extracted', 0)} documents", flush=True)
+                    except Exception as extract_error:
+                        print(f"[SyncConfirm] EXTRACTION ERROR: {extract_error}", flush=True)
+                        import traceback
+                        traceback.print_exc()
+
+                    # STEP 2: Embed documents (66% - 99%)
+                    sync_progress[progress_key]["status"] = "embedding"
+                    sync_progress[progress_key]["progress"] = 66
+                    if sync_id:
+                        progress_service.update_progress(
+                            sync_id, status='embedding',
+                            stage='Embedding documents...',
+                            overall_percent=66.0
+                        )
+
+                    def embedding_progress(cur, total, msg):
+                        pct = 66.0 + (cur / max(total, 1)) * 33.0
+                        sync_progress[progress_key]["progress"] = int(pct)
+                        sync_progress[progress_key]["current_file"] = msg
+                        if sync_id:
+                            progress_service.update_progress(
+                                sync_id,
+                                current_item=msg,
+                                overall_percent=pct,
+                                stage=f'Embedding documents ({cur}/{total})...'
+                            )
+
+                    try:
+                        from services.embedding_service import get_embedding_service
+                        embedding_service = get_embedding_service()
+                        embed_result = embedding_service.embed_documents(
+                            documents=docs_to_embed,
+                            tenant_id=tenant_id,
+                            db=_db,
+                            force_reembed=False,
+                            progress_callback=embedding_progress
+                        )
+                        print(f"[SyncConfirm] Embedded {embed_result.get('embedded', 0)} documents, {embed_result.get('chunks', 0)} chunks", flush=True)
+                    except Exception as embed_error:
+                        print(f"[SyncConfirm] EMBEDDING ERROR: {embed_error}", flush=True)
+                        import traceback
+                        traceback.print_exc()
+
+                    # Update connector status
+                    try:
+                        _db.close()
+                    except Exception:
+                        pass
+                    _db = get_db()
+                    _connector = _db.query(Connector).filter(Connector.id == connector.id).first()
+                    if _connector:
+                        _connector.status = ConnectorStatus.CONNECTED
+                        _connector.last_sync_at = utc_now()
+                        _connector.last_sync_status = "success"
+                        _connector.last_sync_items_count = selected_count
+                        _connector.total_items_synced += selected_count
+                        _connector.error_message = None
+                        _db.commit()
+
+                    # Mark complete
+                    sync_progress[progress_key]["status"] = "completed"
+                    sync_progress[progress_key]["progress"] = 100
+                    if sync_id:
+                        progress_service.complete_sync(sync_id)
+                    print(f"[SyncConfirm] === EXTRACTION+EMBEDDING COMPLETE ===", flush=True)
+
+                except Exception as e:
+                    print(f"[SyncConfirm] FATAL ERROR: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                    sync_progress[progress_key] = {"status": "error", "error": str(e)[:500]}
+                    if sync_id:
+                        try:
+                            progress_service.complete_sync(sync_id, error_message=str(e))
+                        except Exception:
+                            pass
+                finally:
+                    try:
+                        _db.close()
+                    except Exception:
+                        pass
+
+            # Launch extraction+embedding in background thread
+            thread = threading.Thread(target=_continue_extraction_embedding, daemon=True)
+            thread.start()
+
+            return jsonify({
+                "success": True,
+                "sync_id": sync_id,
+                "selected_count": selected_count,
+                "deleted_count": deleted_count
+            })
+
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    except Exception as e:
+        print(f"[SyncConfirm] ERROR: {e}", flush=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @integration_bp.route('/sync/cancel-all', methods=['POST'])

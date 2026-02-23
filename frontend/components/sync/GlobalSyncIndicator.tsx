@@ -50,7 +50,8 @@ export default function GlobalSyncIndicator() {
           const config = connectorConfig[sync.connectorType] || connectorConfig.default
           const isComplete = sync.status === 'complete' || sync.status === 'completed'
           const isError = sync.status === 'error'
-          const isActive = !isComplete && !isError
+          const isAwaitingSelection = sync.status === 'awaiting_selection'
+          const isActive = !isComplete && !isError && !isAwaitingSelection
           const isExpanded = expandedSync === sync.syncId
 
           if (isExpanded) {
@@ -77,7 +78,7 @@ export default function GlobalSyncIndicator() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Image src={config.logo} alt={config.name} width={24} height={24} style={{ borderRadius: 4 }} />
                     <span style={{ fontWeight: 600, fontSize: 14 }}>
-                      {isComplete ? `${config.name} Synced` : isError ? `${config.name} Failed` : `Syncing ${config.name}`}
+                      {isComplete ? `${config.name} Synced` : isError ? `${config.name} Failed` : isAwaitingSelection ? `${config.name} — Select Documents` : `Syncing ${config.name}`}
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -122,10 +123,11 @@ export default function GlobalSyncIndicator() {
                         animation: 'spin 0.8s linear infinite'
                       }} />
                     )}
+                    {isAwaitingSelection && <span style={{ color: '#C9A598', fontSize: 16 }}>&#9998;</span>}
                     {isComplete && <span style={{ color: '#3B82F6', fontSize: 16 }}>&#10003;</span>}
                     {isError && <span style={{ color: '#64748B', fontSize: 16 }}>&#10005;</span>}
                     <span style={{ fontSize: 13, color: '#374151' }}>
-                      {sync.stage}
+                      {isAwaitingSelection ? 'Select documents to import' : sync.stage}
                     </span>
                   </div>
 
@@ -195,8 +197,8 @@ export default function GlobalSyncIndicator() {
               key={sync.syncId}
               onClick={() => setExpandedSync(sync.syncId)}
               style={{
-                background: isComplete ? '#3B82F6' : isError ? '#64748B' : '#fff',
-                color: isComplete || isError ? '#fff' : '#111827',
+                background: isComplete ? '#3B82F6' : isError ? '#64748B' : isAwaitingSelection ? '#C9A598' : '#fff',
+                color: isComplete || isError || isAwaitingSelection ? '#fff' : '#111827',
                 padding: '10px 16px',
                 borderRadius: 10,
                 boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
@@ -206,7 +208,7 @@ export default function GlobalSyncIndicator() {
                 gap: 10,
                 fontSize: 13,
                 fontWeight: 500,
-                border: isComplete || isError ? 'none' : '1px solid #E5E7EB'
+                border: isComplete || isError || isAwaitingSelection ? 'none' : '1px solid #E5E7EB'
               }}
             >
               {isActive && (
@@ -216,6 +218,7 @@ export default function GlobalSyncIndicator() {
                   animation: 'spin 1s linear infinite'
                 }} />
               )}
+              {isAwaitingSelection && <span>&#9998;</span>}
               {isComplete && <span>&#10003;</span>}
               {isError && <span>&#10005;</span>}
               <Image src={config.logo} alt={config.name} width={16} height={16} style={{ borderRadius: 3 }} />

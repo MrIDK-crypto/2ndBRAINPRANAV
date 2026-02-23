@@ -38,6 +38,7 @@ class SyncProgress:
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     notify_email: Optional[str] = None  # Email to notify on completion (server-side)
+    extra_data: Optional[Dict[str, Any]] = None  # Extra payload (e.g. documents list for selection)
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON serialization"""
@@ -58,6 +59,8 @@ class SyncProgress:
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }
+        if self.extra_data:
+            data.update(self.extra_data)
         return data
 
     @property
@@ -145,7 +148,8 @@ class SyncProgressService:
         failed_items: Optional[int] = None,
         current_item: Optional[str] = None,
         error_message: Optional[str] = None,
-        overall_percent: Optional[float] = None
+        overall_percent: Optional[float] = None,
+        extra_data: Optional[Dict[str, Any]] = None
     ):
         """Update sync progress with any combination of fields"""
         if sync_id not in self._progress:
@@ -170,6 +174,8 @@ class SyncProgressService:
             progress.error_message = error_message
         if overall_percent is not None:
             progress.overall_percent = overall_percent
+        if extra_data is not None:
+            progress.extra_data = extra_data
 
         # If status is complete or error, mark completion time
         if status in ('complete', 'completed', 'error'):

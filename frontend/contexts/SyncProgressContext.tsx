@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 interface SyncProgress {
   syncId: string
   connectorType: string
-  status: 'connecting' | 'syncing' | 'parsing' | 'extracting' | 'embedding' | 'complete' | 'completed' | 'error'
+  status: 'connecting' | 'syncing' | 'parsing' | 'extracting' | 'embedding' | 'complete' | 'completed' | 'error' | 'awaiting_selection'
   stage: string
   totalItems: number
   processedItems: number
@@ -15,6 +15,7 @@ interface SyncProgress {
   percentComplete: number
   emailWhenDone: boolean
   startedAt: number
+  documents?: Array<{ id: string; title: string; source_type: string; doc_type: string; size: number | null; date: string | null }>
 }
 
 interface SyncProgressContextType {
@@ -206,7 +207,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
           const next = new Map(prev)
           const existing = next.get(syncId)
           if (existing) {
-            next.set(syncId, {
+            const update: SyncProgress = {
               ...existing,
               status: data.status,
               stage: data.stage || existing.stage,
@@ -220,7 +221,12 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
                   ? Math.round((data.processed_items / data.total_items) * 100)
                   : existing.percentComplete
               )
-            })
+            }
+            // Carry documents list for awaiting_selection status
+            if (data.documents) {
+              update.documents = data.documents
+            }
+            next.set(syncId, update)
           }
           return next
         })
