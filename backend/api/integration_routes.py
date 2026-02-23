@@ -4456,12 +4456,18 @@ def confirm_sync_selection(connector_type: str):
         tenant_id = g.tenant_id
         user_id = g.user_id
 
+        # Map connector_type string to DB enum
+        type_map = _get_connector_type_map()
+        ct_enum = type_map.get(connector_type)
+        if not ct_enum:
+            return jsonify({"success": False, "error": f"Invalid connector type: {connector_type}"}), 400
+
         db = get_db()
         try:
             # Find the connector
             connector = db.query(Connector).filter(
                 Connector.tenant_id == tenant_id,
-                Connector.connector_type == connector_type,
+                Connector.connector_type == ct_enum,
                 Connector.status != ConnectorStatus.DISCONNECTED
             ).first()
 
