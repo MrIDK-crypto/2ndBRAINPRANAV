@@ -3535,7 +3535,7 @@ def _run_connector_sync(
 
     # DB persistence helper for multi-worker polling support
     _last_db_persist_time = [0]
-    def _persist_progress_to_db(db_session, connector_obj, status, stage, total_items=0, processed_items=0, failed_items=0, overall_percent=0, current_item=None, force=False):
+    def _persist_progress_to_db(db_session, connector_obj, status, stage, total_items=0, processed_items=0, failed_items=0, overall_percent=0, current_item=None, force=False, documents=None):
         """Write current progress to Connector.settings['sync_progress'] in DB.
         Throttled to every 5s unless force=True (for phase transitions)."""
         now = time.time()
@@ -3544,11 +3544,14 @@ def _run_connector_sync(
         _last_db_persist_time[0] = now
         try:
             settings = dict(connector_obj.settings or {})
-            settings['sync_progress'] = {
+            progress_data = {
                 'status': status, 'stage': stage, 'total_items': total_items,
                 'processed_items': processed_items, 'failed_items': failed_items,
                 'overall_percent': round(overall_percent, 1), 'current_item': current_item,
             }
+            if documents is not None:
+                progress_data['documents'] = documents
+            settings['sync_progress'] = progress_data
             connector_obj.settings = settings
             from sqlalchemy.orm.attributes import flag_modified
             flag_modified(connector_obj, 'settings')
@@ -4196,7 +4199,7 @@ def _run_connector_sync(
                                 total_items=len(doc_list),
                                 extra_data={"documents": doc_list, "total_fetched": len(doc_list)}
                             )
-                            _persist_progress_to_db(db, connector, 'awaiting_selection', 'Waiting for document selection', total_items=len(doc_list), overall_percent=33.0, force=True)
+                            _persist_progress_to_db(db, connector, 'awaiting_selection', 'Waiting for document selection', total_items=len(doc_list), overall_percent=33.0, force=True, documents=doc_list)
 
                         # Return here — extraction/embedding will be triggered by the confirm endpoint
                         return

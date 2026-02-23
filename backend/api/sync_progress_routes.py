@@ -173,6 +173,9 @@ def stream_progress(sync_id: str):
                                     "error_message": connector.error_message,
                                     "percent_complete": (processed_items / total_items * 100) if total_items > 0 else 0
                                 }
+                                # Pass through documents list for awaiting_selection
+                                if sync_prog.get('documents'):
+                                    db_state['documents'] = sync_prog['documents']
                             else:
                                 print(f"[SSE] No connector found in DB for sync_id {sync_id}")
                         finally:
@@ -350,7 +353,7 @@ def get_progress_status(sync_id: str):
                 processed = sync_prog.get('processed_items', 0)
                 pct = (processed / total * 100) if total > 0 else 0
 
-                return jsonify({
+                result = {
                     "success": True,
                     "sync_id": sync_id,
                     "status": sync_prog.get('status', 'syncing'),
@@ -360,9 +363,13 @@ def get_progress_status(sync_id: str):
                     "failed_items": sync_prog.get('failed_items', 0),
                     "current_item": sync_prog.get('current_item'),
                     "error_message": sync_prog.get('error_message'),
-                    "overall_percent": pct,
+                    "overall_percent": sync_prog.get('overall_percent', pct),
                     "percent_complete": pct
-                })
+                }
+                # Pass through documents list for awaiting_selection
+                if sync_prog.get('documents'):
+                    result['documents'] = sync_prog['documents']
+                return jsonify(result)
 
         return jsonify({
             "success": False,
