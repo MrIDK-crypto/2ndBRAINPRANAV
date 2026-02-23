@@ -114,6 +114,371 @@ except ImportError:
 
 
 # =============================================================================
+# QUERY INTENT EXTRACTION (Fixes "tell me about X" vs "X" problem)
+# =============================================================================
+
+class QueryIntentExtractor:
+    """
+    Extracts core intent from conversational queries.
+
+    This fixes the problem where "tell me about the 2nd brain documentation"
+    doesn't work but "documentation 2nd brain" does.
+    """
+
+    CONVERSATIONAL_PREFIXES = [
+        # "tell me" variations
+        r"^tell me about the\s+", r"^tell me about\s+", r"^tell me\s+",
+        # "what is" variations
+        r"^what is the\s+", r"^what is a\s+", r"^what is\s+",
+        r"^what are the\s+", r"^what are\s+", r"^what's the\s+", r"^what's\s+",
+        # "how" variations
+        r"^how do i\s+", r"^how does the\s+", r"^how does\s+", r"^how do\s+",
+        r"^how can i\s+", r"^how to\s+", r"^how is the\s+", r"^how is\s+",
+        # "explain" variations
+        r"^can you explain the\s+", r"^can you explain\s+",
+        r"^could you explain the\s+", r"^could you explain\s+",
+        r"^please explain the\s+", r"^please explain\s+", r"^explain the\s+", r"^explain\s+",
+        # "describe" variations
+        r"^can you describe the\s+", r"^can you describe\s+",
+        r"^describe the\s+", r"^describe\s+",
+        # "show/find/search" variations
+        r"^show me the\s+", r"^show me\s+", r"^find the\s+", r"^find\s+",
+        r"^search for the\s+", r"^search for\s+", r"^search\s+",
+        # "I want/need" variations
+        r"^i want to know about the\s+", r"^i want to know about\s+",
+        r"^i want to learn about\s+", r"^i need to know about\s+",
+        r"^i need information on\s+", r"^i need info on\s+",
+        # "give me" variations
+        r"^give me information about\s+", r"^give me info on\s+",
+        r"^give me the\s+", r"^give me\s+",
+        # Politeness prefixes
+        r"^please\s+", r"^can you\s+", r"^could you\s+", r"^would you\s+",
+    ]
+
+    STOPWORDS = {
+        'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+        'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+        'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by',
+        'about', 'into', 'through', 'during', 'before', 'after', 'above',
+        'below', 'from', 'up', 'down', 'out', 'off', 'over', 'under', 'again',
+        'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why',
+        'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+        'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so',
+        'than', 'too', 'very', 'just', 'and', 'but', 'if', 'or', 'because',
+        'as', 'until', 'while', 'tell', 'me', 'please', 'can', 'you', 'i',
+        'my', 'your', 'we', 'our', 'give', 'show', 'find', 'search', 'get',
+    }
+
+    @classmethod
+    def extract_intent(cls, query: str) -> str:
+        """Strip conversational prefixes to get core intent"""
+        result = query.strip()
+        for pattern in cls.CONVERSATIONAL_PREFIXES:
+            result = re.sub(pattern, '', result, flags=re.IGNORECASE)
+        return result.strip() or query
+
+    @classmethod
+    def get_keyword_terms(cls, query: str) -> List[str]:
+        """Extract meaningful keywords for hybrid search (removes stopwords)"""
+        intent = cls.extract_intent(query)
+        words = re.findall(r'\b\w+\b', intent.lower())
+        return [w for w in words if w not in cls.STOPWORDS and len(w) > 2]
+
+
+# =============================================================================
+# QUERY CONTEXTUALIZER (Coreference Resolution)
+# =============================================================================
+
+class QueryContextualizer:
+    """
+    Resolves pronouns and references using conversation history.
+
+    Transforms queries like:
+    - "what about its API?" → "what about 2nd brain's API?"
+    - "how does it work?" → "how does the RAG system work?"
+    - "tell me more" → "tell me more about knowledge gaps"
+    """
+
+    PRONOUNS = {
+        'it', 'its', "it's", 'this', 'that', 'these', 'those',
+        'they', 'them', 'their', 'theirs',
+    }
+
+    REFERENCE_PHRASES = {
+        'the same', 'the above', 'the previous', 'the mentioned',
+        'as discussed', 'as mentioned', 'like before'
+    }
+
+    FOLLOWUP_PATTERNS = [
+        r'^tell me more\.?$', r'^more details\.?$', r'^explain further\.?$',
+        r'^continue\.?$', r'^what else\??$', r'^examples?\??$',
+        r'^how\??$', r'^why\??$', r'^when\??$', r'^where\??$',
+    ]
+
+    def __init__(self, client=None):
+        self.client = client
+        self.followup_regex = re.compile('|'.join(self.FOLLOWUP_PATTERNS), re.IGNORECASE)
+
+    def needs_contextualization(self, query: str) -> bool:
+        """Check if query contains unresolved references"""
+        query_lower = query.lower()
+        if self.followup_regex.match(query.strip()):
+            return True
+        for pronoun in self.PRONOUNS:
+            if re.search(rf'\b{re.escape(pronoun)}\b', query_lower):
+                return True
+        for phrase in self.REFERENCE_PHRASES:
+            if phrase in query_lower:
+                return True
+        return False
+
+    def extract_topic_from_history(self, conversation_history: List[Dict]) -> Optional[str]:
+        """Extract main topic from conversation history"""
+        if not conversation_history:
+            return None
+        recent = conversation_history[-6:]
+        context_text = " ".join(m.get('content', '') for m in recent if m.get('role') == 'user')
+        words = re.findall(r'\b[A-Za-z][a-z]{3,}\b', context_text)
+        if words:
+            from collections import Counter
+            common = Counter(words).most_common(3)
+            return ' '.join(w for w, _ in common)
+        return None
+
+    def contextualize(self, query: str, conversation_history: List[Dict], use_llm: bool = True) -> Dict:
+        """Resolve references in query"""
+        if not self.needs_contextualization(query):
+            return {'original': query, 'resolved': query, 'was_resolved': False}
+
+        topic = self.extract_topic_from_history(conversation_history)
+        if not topic:
+            return {'original': query, 'resolved': query, 'was_resolved': False}
+
+        resolved = query
+        for pronoun in self.PRONOUNS:
+            pattern = rf'\b{re.escape(pronoun)}\b'
+            if re.search(pattern, query, re.IGNORECASE):
+                resolved = re.sub(pattern, topic, resolved, count=1, flags=re.IGNORECASE)
+                break
+
+        return {'original': query, 'resolved': resolved, 'was_resolved': resolved != query, 'topic': topic}
+
+
+# =============================================================================
+# QUERY CLASSIFIER (Adaptive Retrieval)
+# =============================================================================
+
+class QueryClassifier:
+    """Classifies query type for adaptive retrieval parameters"""
+
+    QUERY_TYPES = {
+        'FACTUAL': {
+            'patterns': [r'^what is\b', r'^who is\b', r'^define\b', r'^when did\b'],
+            'top_k': 5, 'mmr_lambda': 0.8
+        },
+        'EXPLORATORY': {
+            'patterns': [r'^tell me about\b', r'^explain\b', r'^overview\b', r'^describe\b'],
+            'top_k': 12, 'mmr_lambda': 0.6
+        },
+        'PROCEDURAL': {
+            'patterns': [r'^how do i\b', r'^how to\b', r'^steps to\b', r'^guide\b'],
+            'top_k': 8, 'mmr_lambda': 0.7
+        },
+        'COMPARATIVE': {
+            'patterns': [r'\bvs\.?\b', r'\bversus\b', r'\bcompare\b', r'\bdifference\b'],
+            'top_k': 10, 'mmr_lambda': 0.5
+        },
+        'TROUBLESHOOTING': {
+            'patterns': [r'\berror\b', r'\bproblem\b', r'\bfix\b', r'\bnot working\b', r"doesn't work"],
+            'top_k': 8, 'mmr_lambda': 0.7
+        },
+    }
+
+    @classmethod
+    def classify(cls, query: str) -> Dict:
+        query_lower = query.lower()
+        for qtype, config in cls.QUERY_TYPES.items():
+            for pattern in config['patterns']:
+                if re.search(pattern, query_lower):
+                    return {'type': qtype, 'top_k': config['top_k'], 'mmr_lambda': config['mmr_lambda']}
+        return {'type': 'GENERAL', 'top_k': 10, 'mmr_lambda': 0.7}
+
+
+# =============================================================================
+# QUERY DECOMPOSER (Complex Query Handling)
+# =============================================================================
+
+class QueryDecomposer:
+    """Breaks complex queries into sub-queries for better retrieval"""
+
+    COMPLEXITY_INDICATORS = [
+        r'\band\b.*\b(how|what|why|when|where)\b',
+        r'\b(how|what|why)\b.*\band\b.*\b(how|what|why)\b',
+        r'\bvs\.?\b|\bversus\b|\bcompare\b',
+        r'\?.*\?',
+    ]
+
+    def __init__(self, client=None):
+        self.client = client
+        self.complexity_regex = re.compile('|'.join(self.COMPLEXITY_INDICATORS), re.IGNORECASE)
+
+    def needs_decomposition(self, query: str) -> bool:
+        if self.complexity_regex.search(query):
+            return True
+        if query.count('?') > 1:
+            return True
+        if len(query.split()) > 15:
+            return True
+        return False
+
+    def decompose(self, query: str) -> List[str]:
+        """Decompose query into sub-queries"""
+        if not self.needs_decomposition(query):
+            return [query]
+
+        # Without LLM, use simple heuristics
+        if ' and ' in query.lower():
+            parts = re.split(r'\band\b', query, flags=re.IGNORECASE)
+            return [p.strip() for p in parts if len(p.strip()) > 5]
+
+        if query.count('?') > 1:
+            parts = [p.strip() + '?' for p in query.split('?') if p.strip()]
+            return parts[:3]
+
+        return [query]
+
+
+# =============================================================================
+# SOURCE SYNTHESIZER (Pre-analysis)
+# =============================================================================
+
+class SourceSynthesizer:
+    """Pre-analyzes sources for conflicts, key facts, and gaps"""
+
+    def __init__(self, client=None):
+        self.client = client
+
+    def synthesize(self, query: str, sources: List[Dict]) -> Dict:
+        """Analyze sources for key facts, conflicts, and gaps"""
+        if not sources:
+            return {'key_facts': [], 'conflicts': [], 'gaps': []}
+
+        key_facts = []
+        all_claims = {}
+        query_words = set(query.lower().split())
+
+        for src in sources[:5]:
+            content = src.get('content', '')[:2000]
+            sentences = re.split(r'[.!?]\n', content)
+
+            for sent in sentences[:10]:
+                sent = sent.strip()
+                if len(sent) < 20:
+                    continue
+                sent_words = set(sent.lower().split())
+                if query_words & sent_words:
+                    key_facts.append(sent[:200])
+
+                numbers = re.findall(r'\b\d+(?:\.\d+)?%?\b', sent)
+                for num in numbers:
+                    if num not in all_claims:
+                        all_claims[num] = []
+                    all_claims[num].append(src.get('title', 'Unknown'))
+
+        conflicts = []
+        for num, sources_list in all_claims.items():
+            if len(set(sources_list)) > 1:
+                conflicts.append(f"Value '{num}' appears in multiple sources: {', '.join(set(sources_list))}")
+
+        return {'key_facts': key_facts[:5], 'conflicts': conflicts[:3], 'gaps': []}
+
+
+# =============================================================================
+# CONTEXT COMPRESSOR (Relevance Extraction)
+# =============================================================================
+
+class ContextCompressor:
+    """Extracts only query-relevant sentences from sources"""
+
+    @classmethod
+    def extract_relevant_sentences(cls, query: str, content: str, max_sentences: int = 10) -> str:
+        if not content:
+            return ""
+
+        query_words = set(w.lower() for w in re.findall(r'\b\w{3,}\b', query))
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+
+        scored = []
+        for sent in sentences:
+            sent = sent.strip()
+            if len(sent) < 20:
+                continue
+            sent_words = set(w.lower() for w in re.findall(r'\b\w{3,}\b', sent))
+            overlap = len(query_words & sent_words)
+            if overlap > 0:
+                scored.append((sent, overlap))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return ' '.join(s for s, _ in scored[:max_sentences])
+
+    @classmethod
+    def compress_sources(cls, query: str, sources: List[Dict]) -> List[Dict]:
+        compressed = []
+        for src in sources:
+            content = src.get('content', '')
+            original_len = len(content)
+            if original_len > 500:
+                relevant = cls.extract_relevant_sentences(query, content)
+                if relevant:
+                    src = dict(src)
+                    src['content'] = relevant
+                    src['compressed_length'] = len(relevant)
+                    src['original_length'] = original_len
+            else:
+                src = dict(src)
+                src['compressed_length'] = original_len
+                src['original_length'] = original_len
+            compressed.append(src)
+        return compressed
+
+
+# =============================================================================
+# ANSWER EVALUATOR (Self-Correction)
+# =============================================================================
+
+class AnswerEvaluator:
+    """Evaluates answer quality for self-correction loop"""
+
+    def __init__(self, client=None):
+        self.client = client
+
+    def evaluate(self, query: str, answer: str, sources: List[Dict]) -> Dict:
+        """Evaluate answer quality (heuristic-based)"""
+        issues = []
+        quality_score = 0.7
+
+        if len(answer) < 50:
+            issues.append("Answer too short")
+            quality_score -= 0.3
+
+        no_info_phrases = ["don't have", "no information", "cannot find", "not found"]
+        if any(p in answer.lower() for p in no_info_phrases) and sources:
+            issues.append("Claims no info but sources exist")
+            quality_score -= 0.2
+
+        if sources and '[Source' not in answer and len(answer) > 100:
+            issues.append("Missing citations")
+            quality_score -= 0.1
+
+        return {
+            'quality_score': max(0, min(1, quality_score)),
+            'issues': issues,
+            'should_retry': quality_score < 0.6 and len(issues) > 0
+        }
+
+
+# =============================================================================
 # QUERY EXPANSION
 # =============================================================================
 
@@ -438,11 +803,26 @@ class QueryExpander:
         return 'general'
 
     @classmethod
+    def extract_intent(cls, query: str) -> str:
+        """Strip conversational prefixes to get core intent"""
+        return QueryIntentExtractor.extract_intent(query)
+
+    @classmethod
+    def get_keyword_terms(cls, query: str) -> List[str]:
+        """Extract meaningful keywords for hybrid search (removes stopwords)"""
+        return QueryIntentExtractor.get_keyword_terms(query)
+
+    @classmethod
     def expand(cls, query: str) -> Dict:
-        """Full query expansion with context awareness"""
-        expanded = cls.expand_acronyms(query)
-        synonyms = cls.get_synonyms(query)
-        context = cls.detect_context(query)
+        """Full query expansion with context awareness and intent extraction"""
+        # FIRST: Extract core intent (removes "tell me about the" etc.)
+        core_query = cls.extract_intent(query)
+        keywords = cls.get_keyword_terms(query)
+
+        # Then expand the CORE query (not the conversational version)
+        expanded = cls.expand_acronyms(core_query)
+        synonyms = cls.get_synonyms(core_query)
+        context = cls.detect_context(core_query)
 
         # Build enhanced search query
         search_parts = [expanded]
@@ -465,6 +845,8 @@ class QueryExpander:
 
         return {
             'original': query,
+            'core_query': core_query,  # NEW: The extracted intent
+            'keywords': keywords,  # NEW: Filtered keywords for hybrid search
             'expanded': expanded,
             'synonyms': synonyms,
             'context': context,
@@ -894,11 +1276,20 @@ class EnhancedSearchService:
         self.reranker = CrossEncoderReranker()
         self.hallucination_detector = HallucinationDetector(self.client)
 
+        # NEW: Advanced query understanding components
+        self.contextualizer = QueryContextualizer(self.client)
+        self.query_decomposer = QueryDecomposer(self.client)
+        self.source_synthesizer = SourceSynthesizer(self.client)
+        self.answer_evaluator = AnswerEvaluator(self.client)
+
         # Cache for embeddings
         self._embedding_cache = {}
 
-        print("[EnhancedSearch] Service initialized")
+        print("[EnhancedSearch] Service initialized with advanced query understanding")
         print(f"[EnhancedSearch] Cross-encoder available: {self.reranker.model is not None}")
+        print(f"[EnhancedSearch] Intent extraction: enabled")
+        print(f"[EnhancedSearch] Query contextualization: enabled")
+        print(f"[EnhancedSearch] Query decomposition: enabled")
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding with caching"""
@@ -989,7 +1380,9 @@ class EnhancedSearchService:
         use_expansion: bool = True,
         use_freshness: bool = True,
         mmr_lambda: float = 0.7,
-        boost_doc_ids: list = None
+        boost_doc_ids: list = None,
+        conversation_history: list = None,  # NEW: For coreference resolution
+        use_decomposition: bool = True  # NEW: Decompose complex queries
     ) -> Dict:
         """
         Enhanced search with all features.
@@ -1010,28 +1403,51 @@ class EnhancedSearchService:
             Dict with results and metadata
         """
         start_time = time.time()
+        features_applied = {}
 
-        # Step 1: Query expansion with context awareness
+        # Step 0: Coreference Resolution (resolve "it", "this", "that" from history)
+        contextualization = None
+        original_query = query
+        if conversation_history and self.contextualizer.needs_contextualization(query):
+            contextualization = self.contextualizer.contextualize(query, conversation_history)
+            if contextualization.get('was_resolved'):
+                query = contextualization['resolved']
+                features_applied['contextualization'] = True
+                print(f"[EnhancedSearch] Resolved: '{original_query}' -> '{query}'")
+
+        # Step 1: Query expansion with context awareness + intent extraction
         if use_expansion:
             expansion = QueryExpander.expand(query)
             # Use full search_query which includes synonyms and context expansions
             search_query = expansion['search_query']
+            core_query = expansion.get('core_query', query)
+            keywords = expansion.get('keywords', [])
             context = expansion.get('context', 'general')
+            features_applied['intent_extraction'] = core_query != query
             print(f"[EnhancedSearch] Context: {context}")
+            print(f"[EnhancedSearch] Core intent: {core_query}")
+            print(f"[EnhancedSearch] Keywords: {keywords}")
             print(f"[EnhancedSearch] Expanded: {query} -> {search_query[:150]}...")
         else:
-            expansion = {'original': query, 'expanded': query, 'synonyms': [], 'context': 'general'}
+            expansion = {'original': query, 'expanded': query, 'synonyms': [], 'context': 'general', 'keywords': []}
             search_query = query
+            core_query = query
+            keywords = []
+
+        # Step 1.5: Query Classification (adaptive retrieval)
+        classification = QueryClassifier.classify(query)
+        features_applied['classification'] = classification['type']
 
         # Step 2: Initial retrieval from Pinecone (get more for reranking)
         retrieve_k = top_k * 3 if use_reranking else top_k * 2
 
-        # Use hybrid search if available
+        # Use hybrid search if available - NOW WITH FILTERED KEYWORDS
         if hasattr(vector_store, 'hybrid_search'):
             initial_results = vector_store.hybrid_search(
                 query=search_query,
                 tenant_id=tenant_id,
-                top_k=retrieve_k
+                top_k=retrieve_k,
+                keywords=keywords if keywords else None  # Pass filtered keywords!
             )
         else:
             initial_results = vector_store.search(
@@ -1151,8 +1567,12 @@ class EnhancedSearchService:
 
         return {
             'query': query,
+            'original_query': original_query,  # NEW: Before contextualization
+            'core_query': core_query,  # NEW: After intent extraction
             'expanded_query': search_query,
             'expansion': expansion,
+            'contextualization': contextualization,  # NEW: Coreference resolution info
+            'query_classification': classification,  # NEW: Query type
             'results': initial_results,
             'num_results': len(initial_results),
             'search_time': search_time,
@@ -1160,7 +1580,8 @@ class EnhancedSearchService:
                 'expansion': use_expansion,
                 'reranking': reranked,
                 'mmr': mmr_applied,
-                'freshness': use_freshness
+                'freshness': use_freshness,
+                **features_applied  # NEW: Include all applied features
             }
         }
 
