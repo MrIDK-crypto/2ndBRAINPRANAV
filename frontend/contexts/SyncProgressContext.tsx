@@ -194,10 +194,14 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       return next
     })
 
-    // Do immediate status check (don't rely only on SSE)
+    // Do immediate status check
     pollSyncStatus(syncId, connectorType)
 
-    // Setup SSE connection
+    // ALWAYS poll every 3s — SSE may connect to a different worker in multi-worker deployments
+    // and never receive updates, so polling is the reliable source of truth
+    resources.pollInterval = setInterval(() => pollSyncStatus(syncId, connectorType), 3000)
+
+    // Setup SSE connection (supplementary — delivers faster updates when on the right worker)
     const es = new EventSource(
       `${API_BASE}/sync-progress/${syncId}/stream?token=${encodeURIComponent(token)}`,
       { withCredentials: true }
@@ -247,7 +251,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       console.log(`[GlobalSync] !!!!! SSE 'complete' event received for ${syncId} !!!!!`)
       handleEvent(e)
 
-      // Clear polling resources using the ref
+      // Clear polling — sync is done
       const res = syncResourcesRef.current.get(syncId)
       if (res) {
         if (res.pollInterval) {
@@ -286,18 +290,9 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       handleEvent(e)
     })
 
-    // Handle SSE connection errors - start polling fallback IMMEDIATELY
+    // SSE connection errors — just log, polling is already running
     es.onerror = () => {
-      const res = syncResourcesRef.current.get(syncId)
-      if (!res) return
-
-      // Only start polling if not already polling
-      if (res.pollInterval) return
-      console.log('[GlobalSync] SSE connection issue for', syncId, '- starting polling fallback')
-
-      // Start polling immediately (no delay) - SSE often fails
-      pollSyncStatus(syncId, connectorType)
-      res.pollInterval = setInterval(() => pollSyncStatus(syncId, connectorType), 2000)
+      console.log('[GlobalSync] SSE connection issue for', syncId, '(polling is active)')
     }
 
   }, [cleanupSync, sendEmailNotification, pollSyncStatus])
