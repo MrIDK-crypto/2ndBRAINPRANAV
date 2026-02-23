@@ -1229,11 +1229,25 @@ def search():
                 "is_empty_knowledge_base": True
             })
 
+        # Read tenant chat response mode setting (defaults to 3 = In-Depth)
+        response_mode = 3
+        try:
+            from database.models import Tenant
+            _settings_db = SessionLocal()
+            try:
+                tenant = _settings_db.query(Tenant).filter(Tenant.id == tenant_id).first()
+                if tenant and tenant.settings:
+                    response_mode = tenant.settings.get('chat_response_mode', 4)
+            finally:
+                _settings_db.close()
+        except Exception:
+            pass  # Default to 4 if anything fails
+
         # Use Enhanced Search Service
         if use_enhanced:
             from services.enhanced_search_service import get_enhanced_search_service
 
-            print(f"[SEARCH] Using ENHANCED search for tenant {tenant_id}: '{query}'", flush=True)
+            print(f"[SEARCH] Using ENHANCED search for tenant {tenant_id} (mode={response_mode}): '{query}'", flush=True)
 
             enhanced_service = get_enhanced_search_service()
             result = enhanced_service.search_and_answer(
@@ -1243,7 +1257,8 @@ def search():
                 top_k=top_k,
                 validate=True,
                 conversation_history=conversation_history,  # Pass conversation history
-                boost_doc_ids=boost_doc_ids  # Boost newly uploaded docs
+                boost_doc_ids=boost_doc_ids,  # Boost newly uploaded docs
+                response_mode=response_mode
             )
 
             # Format sources for response — enrich with source_url from DB
@@ -1403,7 +1418,7 @@ def search_stream():
     - event: error - Error occurred
     """
     from vector_stores.pinecone_store import get_hybrid_store
-    from database.models import SessionLocal, Document
+    from database.models import SessionLocal, Document, Tenant
 
     tenant_id = g.tenant_id
     print(f"[SEARCH-STREAM] Tenant: {tenant_id}", flush=True)
@@ -1422,6 +1437,15 @@ def search_stream():
     def generate():
         db = SessionLocal()
         try:
+            # Read tenant chat response mode setting (defaults to 3 = In-Depth)
+            response_mode = 3
+            try:
+                tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+                if tenant and tenant.settings:
+                    response_mode = tenant.settings.get('chat_response_mode', 4)
+            except Exception:
+                pass
+
             if not os.getenv("PINECONE_API_KEY"):
                 yield f"event: error\ndata: {json.dumps({'error': 'Pinecone not configured'})}\n\n"
                 return
@@ -1437,7 +1461,7 @@ def search_stream():
             from services.enhanced_search_service import get_enhanced_search_service
             enhanced_service = get_enhanced_search_service()
 
-            print(f"[SEARCH-STREAM] Starting: '{query}'", flush=True)
+            print(f"[SEARCH-STREAM] Starting (mode={response_mode}): '{query}'", flush=True)
 
             sources_for_response = []
             for event in enhanced_service.search_and_answer_stream(
@@ -1446,7 +1470,8 @@ def search_stream():
                 vector_store=vector_store,
                 top_k=top_k,
                 conversation_history=conversation_history,
-                boost_doc_ids=boost_doc_ids
+                boost_doc_ids=boost_doc_ids,
+                response_mode=response_mode
             ):
                 event_type = event.get('type')
 

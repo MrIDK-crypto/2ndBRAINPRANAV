@@ -1144,13 +1144,96 @@ class EnhancedSearchService:
             }
         }
 
+    def _get_mode_config(self, response_mode: int, query: str, context: str):
+        """
+        Get system prompt, user instruction, temperature, and max_tokens based on response mode.
+        Mode 1: Sources — just document titles/links, no AI answer
+        Mode 2: Sources & Summary — brief summary + source links
+        Mode 3: In-Depth — full comprehensive answer with insights (default)
+        """
+        if response_mode == 1:
+            system_prompt = """You are a document retrieval assistant. Your ONLY job is to identify which source documents are relevant to the user's question.
+
+RULES:
+- Do NOT explain, summarize, or interpret the content of the documents
+- Do NOT answer the question directly
+- Just list the relevant source documents with a one-line note on why each is relevant
+- If no sources are relevant, say "No relevant documents found for this query."
+- Use the format: [Source N] Title — brief relevance note"""
+
+            user_instruction = """List ONLY the relevant document titles with a brief note on why each is relevant to the question.
+Do NOT answer the question — just point to where the answer can be found.
+Format each as: [Source N] Title — why it's relevant"""
+            return system_prompt, user_instruction, 0.0, 500
+
+        elif response_mode == 2:
+            system_prompt = """You are a concise knowledge assistant. You answer based on the provided source documents.
+
+RULES:
+- Give a short summary (3-5 sentences max) answering the question
+- Direct the user to the relevant source documents for full details
+- Do NOT elaborate or explain in depth — let the documents speak for themselves
+- Cite sources with [Source N]
+- If sources don't contain the answer, say so briefly"""
+
+            user_instruction = """Provide a brief summary (3-5 sentences max) answering the question. Cite sources with [Source N]. Point users to the relevant documents for more detail. Do not go in depth.
+
+End with "Sources Used: [list numbers]"."""
+            return system_prompt, user_instruction, 0.1, 700
+
+        else:  # Mode 3 (default) — current full behavior: in-depth with insights
+            system_prompt = """You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
+
+CRITICAL ACCURACY RULES (NEVER VIOLATE):
+1. **ONLY use information explicitly stated in the sources** - Never infer, assume, or add information not in the sources
+2. **If sources don't contain the answer, say so clearly** - "Based on the provided documents, I don't have information about [topic]."
+3. **Quote directly when possible** - Use exact text from sources for key claims
+4. **Distinguish facts from interpretation** - If you're explaining something, make clear what's from sources vs your explanation
+5. **Never hallucinate code, numbers, dates, or names** - Only include these if they appear in sources
+
+RESPONSE FORMAT:
+- Use **headers** (## Section) for organization
+- Use **code blocks** (```language) ONLY for actual source code - NEVER for tabular data
+- Use **numbered lists** for steps/processes
+- Use **bullet points** for features/items
+- Keep paragraphs focused and clear
+- For ANY tabular data, ALWAYS use proper markdown table syntax with | pipes and separator rows:
+  | Column 1 | Column 2 |
+  |----------|----------|
+  | Data 1   | Data 2   |
+  NEVER put tables inside code blocks (``` ```) — always use the pipe syntax above
+
+CITATION FORMAT:
+- Cite every factual claim: [Source 1], [Source 2]
+- For code snippets, cite the source file: [Source 3: filename.py]
+- If combining info from multiple sources, cite all: [Source 1, 2]
+
+HONESTY REQUIREMENTS:
+- If asked about something not in sources: "I don't have that information in my knowledge base."
+- If sources are unclear or contradictory: Acknowledge the uncertainty
+- If you can only partially answer: State what you know and what's missing
+- Never make up examples, URLs, or specific details
+
+Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
+
+            user_instruction = """Provide a DETAILED, well-formatted answer:
+- Use numbered steps for processes/procedures
+- Include code blocks for any code content
+- Be thorough - explain concepts fully with examples
+- Use conversation history for context (e.g., understand pronouns like "it", "that", "them")
+- Cite key facts with [Source X]
+
+End with "Sources Used: [list numbers]"."""
+            return system_prompt, user_instruction, 0.1, 2000
+
     def generate_answer(
         self,
         query: str,
         search_results: Dict,
         validate: bool = True,
         max_context_tokens: int = 12000,
-        conversation_history: list = None
+        conversation_history: list = None,
+        response_mode: int = 3
     ) -> Dict:
         """
         Generate answer with strict citation enforcement and conversation context.
@@ -1161,6 +1244,7 @@ class EnhancedSearchService:
             validate: Run hallucination detection
             max_context_tokens: Max tokens for context
             conversation_history: Previous messages for multi-turn conversations
+            response_mode: 1=Links Only, 2=Brief, 3=Balanced, 4=Detailed (default)
 
         Returns:
             Dict with answer and validation results
@@ -1215,40 +1299,8 @@ class EnhancedSearchService:
 
         context = "\n---\n".join(context_parts)
 
-        # Enhanced prompt with strict accuracy and anti-hallucination rules
-        system_prompt = """You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
-
-CRITICAL ACCURACY RULES (NEVER VIOLATE):
-1. **ONLY use information explicitly stated in the sources** - Never infer, assume, or add information not in the sources
-2. **If sources don't contain the answer, say so clearly** - "Based on the provided documents, I don't have information about [topic]."
-3. **Quote directly when possible** - Use exact text from sources for key claims
-4. **Distinguish facts from interpretation** - If you're explaining something, make clear what's from sources vs your explanation
-5. **Never hallucinate code, numbers, dates, or names** - Only include these if they appear in sources
-
-RESPONSE FORMAT:
-- Use **headers** (## Section) for organization
-- Use **code blocks** (```language) ONLY for actual source code - NEVER for tabular data
-- Use **numbered lists** for steps/processes
-- Use **bullet points** for features/items
-- Keep paragraphs focused and clear
-- For ANY tabular data, ALWAYS use proper markdown table syntax with | pipes and separator rows:
-  | Column 1 | Column 2 |
-  |----------|----------|
-  | Data 1   | Data 2   |
-  NEVER put tables inside code blocks (``` ```) — always use the pipe syntax above
-
-CITATION FORMAT:
-- Cite every factual claim: [Source 1], [Source 2]
-- For code snippets, cite the source file: [Source 3: filename.py]
-- If combining info from multiple sources, cite all: [Source 1, 2]
-
-HONESTY REQUIREMENTS:
-- If asked about something not in sources: "I don't have that information in my knowledge base."
-- If sources are unclear or contradictory: Acknowledge the uncertainty
-- If you can only partially answer: State what you know and what's missing
-- Never make up examples, URLs, or specific details
-
-Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
+        # Get mode-specific prompt configuration
+        system_prompt, user_instruction, temperature, max_tokens = self._get_mode_config(response_mode, query, context)
 
         # Build conversation context if history exists
         conversation_context = ""
@@ -1265,14 +1317,7 @@ Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
 
 CURRENT QUESTION: {query}
 
-Provide a DETAILED, well-formatted answer:
-- Use numbered steps for processes/procedures
-- Include code blocks for any code content
-- Be thorough - explain concepts fully with examples
-- Use conversation history for context (e.g., understand pronouns like "it", "that", "them")
-- Cite key facts with [Source X]
-
-End with "Sources Used: [list numbers]"."""
+{user_instruction}"""
 
         try:
             # Build messages array with conversation history
@@ -1291,8 +1336,8 @@ End with "Sources Used: [list numbers]"."""
 
             response = self.client.chat_completion(
                 messages=messages,
-                temperature=0.1,  # Low for factual consistency
-                max_tokens=2000
+                temperature=temperature,
+                max_tokens=max_tokens
             )
 
             answer = response.choices[0].message.content.strip()
@@ -1341,7 +1386,8 @@ End with "Sources Used: [list numbers]"."""
         top_k: int = 10,
         validate: bool = True,
         conversation_history: list = None,
-        boost_doc_ids: list = None
+        boost_doc_ids: list = None,
+        response_mode: int = 3
     ) -> Dict:
         """
         Complete enhanced RAG pipeline with conversation history support.
@@ -1411,7 +1457,8 @@ End with "Sources Used: [list numbers]"."""
             query=query,
             search_results=search_results,
             validate=validate,
-            conversation_history=conversation_history or []
+            conversation_history=conversation_history or [],
+            response_mode=response_mode
         )
 
         return {
@@ -1433,7 +1480,8 @@ End with "Sources Used: [list numbers]"."""
         query: str,
         search_results: Dict,
         max_context_tokens: int = 12000,
-        conversation_history: list = None
+        conversation_history: list = None,
+        response_mode: int = 3
     ):
         """
         Generate answer with STREAMING - yields chunks as they arrive.
@@ -1478,35 +1526,8 @@ End with "Sources Used: [list numbers]"."""
 
         context = "\n---\n".join(context_parts)
 
-        # Same prompt as non-streaming
-        system_prompt = """You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
-
-CRITICAL ACCURACY RULES (NEVER VIOLATE):
-1. **ONLY use information explicitly stated in the sources** - Never infer, assume, or add information not in the sources
-2. **If sources don't contain the answer, say so clearly** - "Based on the provided documents, I don't have information about [topic]."
-3. **Quote directly when possible** - Use exact text from sources for key claims
-4. **Distinguish facts from interpretation** - If you're explaining something, make clear what's from sources vs your explanation
-5. **Never hallucinate code, numbers, dates, or names** - Only include these if they appear in sources
-
-RESPONSE FORMAT:
-- Use **headers** (## Section) for organization
-- Use **code blocks** (```language) for any code - with the actual code from sources
-- Use **numbered lists** for steps/processes
-- Use **bullet points** for features/items
-- Keep paragraphs focused and clear
-
-CITATION FORMAT:
-- Cite every factual claim: [Source 1], [Source 2]
-- For code snippets, cite the source file: [Source 3: filename.py]
-- If combining info from multiple sources, cite all: [Source 1, 2]
-
-HONESTY REQUIREMENTS:
-- If asked about something not in sources: "I don't have that information in my knowledge base."
-- If sources are unclear or contradictory: Acknowledge the uncertainty
-- If you can only partially answer: State what you know and what's missing
-- Never make up examples, URLs, or specific details
-
-Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
+        # Get mode-specific prompt configuration
+        system_prompt, user_instruction, temperature, max_tokens = self._get_mode_config(response_mode, query, context)
 
         conversation_context = ""
         if conversation_history and len(conversation_history) > 0:
@@ -1522,14 +1543,7 @@ Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
 
 CURRENT QUESTION: {query}
 
-Provide a DETAILED, well-formatted answer:
-- Use numbered steps for processes/procedures
-- Include code blocks for any code content
-- Be thorough - explain concepts fully with examples
-- Use conversation history for context (e.g., understand pronouns like "it", "that", "them")
-- Cite key facts with [Source X]
-
-End with "Sources Used: [list numbers]"."""
+{user_instruction}"""
 
         try:
             messages = [{"role": "system", "content": system_prompt}]
@@ -1547,8 +1561,8 @@ End with "Sources Used: [list numbers]"."""
             full_answer = ""
             stream = self.client.chat_completion_stream(
                 messages=messages,
-                temperature=0.1,
-                max_tokens=2000
+                temperature=temperature,
+                max_tokens=max_tokens
             )
 
             for chunk in stream:
@@ -1588,7 +1602,8 @@ End with "Sources Used: [list numbers]"."""
         vector_store,
         top_k: int = 10,
         conversation_history: list = None,
-        boost_doc_ids: list = None
+        boost_doc_ids: list = None,
+        response_mode: int = 3
     ):
         """
         Complete RAG pipeline with STREAMING response.
@@ -1645,7 +1660,8 @@ End with "Sources Used: [list numbers]"."""
         for event in self.generate_answer_stream(
             query=query,
             search_results=search_results,
-            conversation_history=conversation_history or []
+            conversation_history=conversation_history or [],
+            response_mode=response_mode
         ):
             yield event
 

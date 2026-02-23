@@ -1468,6 +1468,79 @@ def revoke_invitation(invitation_id):
         db.close()
 
 
+@auth_bp.route('/tenant-settings', methods=['GET'])
+@require_auth
+def get_tenant_settings():
+    """
+    Get tenant settings (any authenticated user).
+    Returns the tenant's settings JSON.
+    """
+    try:
+        db = get_db()
+        try:
+            tenant = db.query(Tenant).filter(Tenant.id == g.tenant_id).first()
+            if not tenant:
+                return jsonify({"success": False, "error": "Tenant not found"}), 404
+
+            return jsonify({
+                "success": True,
+                "settings": tenant.settings or {}
+            })
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@auth_bp.route('/tenant-settings', methods=['PUT'])
+@require_auth
+def update_tenant_settings():
+    """
+    Update tenant settings (admin only).
+    Merges provided keys into existing settings JSON.
+
+    Request body:
+    {
+        "chat_response_mode": 1-3
+    }
+    """
+    try:
+        db = get_db()
+        try:
+            user = db.query(User).filter(User.id == g.user_id).first()
+            if not user or user.role.value != 'admin':
+                return jsonify({"success": False, "error": "Admin access required"}), 403
+
+            tenant = db.query(Tenant).filter(Tenant.id == g.tenant_id).first()
+            if not tenant:
+                return jsonify({"success": False, "error": "Tenant not found"}), 404
+
+            data = request.get_json() or {}
+
+            # Validate chat_response_mode if provided
+            if 'chat_response_mode' in data:
+                mode = data['chat_response_mode']
+                if not isinstance(mode, int) or mode < 1 or mode > 3:
+                    return jsonify({"success": False, "error": "chat_response_mode must be 1-3"}), 400
+
+            # Merge into existing settings
+            current_settings = dict(tenant.settings or {})
+            for key, value in data.items():
+                current_settings[key] = value
+            tenant.settings = current_settings
+
+            db.commit()
+
+            return jsonify({
+                "success": True,
+                "settings": tenant.settings
+            })
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @auth_bp.route('/invitation/<token>', methods=['GET'])
 def get_invitation_info(token):
     """
