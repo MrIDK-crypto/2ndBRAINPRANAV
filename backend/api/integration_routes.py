@@ -4097,11 +4097,18 @@ def _run_connector_sync(
                         classification_reason = f"Auto-classified as WORK: {doc.source} research content"
                         print(f"[Sync] Auto-classified research document as WORK: {doc.title[:50]}")
                     elif doc.source in ('onedrive', 'gdrive', 'box', 'notion', 'github'):
-                        # Cloud storage and known work sources auto-confirm as WORK
-                        classification = DocumentClassification.WORK
-                        status = DocumentStatus.CONFIRMED
-                        classification_confidence = 0.9
-                        classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
+                        # Cloud storage and known work sources
+                        # For selection-required connectors, save as PENDING until user confirms
+                        if connector_type in SELECTION_REQUIRED_CONNECTORS:
+                            classification = DocumentClassification.UNKNOWN
+                            status = DocumentStatus.PENDING
+                            classification_confidence = None
+                            classification_reason = "Awaiting user selection"
+                        else:
+                            classification = DocumentClassification.WORK
+                            status = DocumentStatus.CONFIRMED
+                            classification_confidence = 0.9
+                            classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
                     else:
                         # Other sources need AI classification
                         classification = DocumentClassification.UNKNOWN
@@ -4147,7 +4154,8 @@ def _run_connector_sync(
                     print(f"[Sync] Committed final batch of {docs_in_batch} documents ({total_committed} total)", flush=True)
 
                 # === SELECTION GATE: Pause for user selection if required ===
-                if connector_type in SELECTION_REQUIRED_CONNECTORS and total_committed > 0:
+                # Check for ANY un-embedded docs (including from previous interrupted syncs)
+                if connector_type in SELECTION_REQUIRED_CONNECTORS:
                     # Query the newly saved documents (un-embedded, for this connector)
                     pending_docs = db.query(Document).filter(
                         Document.tenant_id == tenant_id,
