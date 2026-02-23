@@ -315,7 +315,7 @@ def get_progress_status(sync_id: str):
 
     if progress:
         # Flatten for frontend
-        return jsonify({
+        result = {
             "success": True,
             "sync_id": sync_id,
             "status": progress.get('status', 'unknown'),
@@ -327,7 +327,11 @@ def get_progress_status(sync_id: str):
             "error_message": progress.get('error_message'),
             "overall_percent": progress.get('overall_percent', progress.get('percent_complete', 0)),
             "percent_complete": progress.get('percent_complete', 0)
-        })
+        }
+        # Pass through documents list for awaiting_selection status
+        if progress.get('documents'):
+            result['documents'] = progress['documents']
+        return jsonify(result)
 
     # Fallback: Check database for multi-worker deployments
     from database.models import SessionLocal, Connector, ConnectorStatus

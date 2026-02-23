@@ -100,14 +100,19 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
             const existing = next.get(syncId)
             if (existing) {
               const status = data.status === 'completed' ? 'complete' : data.status
-              next.set(syncId, {
+              const update: SyncProgress = {
                 ...existing,
                 status,
                 stage: data.stage || data.current_item || 'Processing...',
                 totalItems: data.total_items ?? existing.totalItems,
                 processedItems: data.processed_items ?? existing.processedItems,
                 percentComplete: data.overall_percent ?? data.percent_complete ?? existing.percentComplete
-              })
+              }
+              // Carry documents list for awaiting_selection status
+              if (data.documents) {
+                update.documents = data.documents
+              }
+              next.set(syncId, update)
             }
             return next
           })
