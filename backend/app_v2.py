@@ -43,6 +43,7 @@ _cors_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIG
 _cors_origins.extend([
     "http://localhost:3000",
     "http://localhost:3006",
+    "http://localhost:3007",
     "https://use2ndbrain.com",
     "https://www.use2ndbrain.com",
     "https://api.use2ndbrain.com",
@@ -202,6 +203,7 @@ from api.email_forwarding_routes import email_forwarding_bp
 from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
 from api.project_routes import project_bp
+from api.inventory_routes import inventory_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -222,6 +224,7 @@ app.register_blueprint(email_forwarding_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
 app.register_blueprint(project_bp)
+app.register_blueprint(inventory_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")

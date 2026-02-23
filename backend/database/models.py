@@ -1458,6 +1458,269 @@ class DeletedDocument(Base):
         return f"<DeletedDocument {self.external_id[:20]}>"
 
 
+# ============================================================================
+# INVENTORY MODELS
+# ============================================================================
+
+class InventoryCategory(Base):
+    """
+    Category for organizing inventory items.
+    Examples: Lab Equipment, Reagents, Office Supplies, Safety Equipment
+    """
+    __tablename__ = "inventory_categories"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    color = Column(String(7), default="#C9A598")  # Hex color for UI display
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    items = relationship("InventoryItem", back_populates="category")
+
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'name', name='uq_inventory_category_name'),
+    )
+
+    def __repr__(self):
+        return f"<InventoryCategory {self.name}>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "name": self.name,
+            "description": self.description,
+            "color": self.color,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "item_count": len(self.items) if self.items else 0
+        }
+
+
+class InventoryLocation(Base):
+    """
+    Physical location for inventory items.
+    Examples: Lab Room 101, Storage Closet A, Freezer -80C
+    """
+    __tablename__ = "inventory_locations"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    building = Column(String(100))
+    room = Column(String(50))
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    items = relationship("InventoryItem", back_populates="location")
+
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'name', name='uq_inventory_location_name'),
+    )
+
+    def __repr__(self):
+        return f"<InventoryLocation {self.name}>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "name": self.name,
+            "description": self.description,
+            "building": self.building,
+            "room": self.room,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "item_count": len(self.items) if self.items else 0
+        }
+
+
+class InventoryVendor(Base):
+    """
+    Vendor/supplier for inventory items.
+    """
+    __tablename__ = "inventory_vendors"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    name = Column(String(255), nullable=False)
+    contact_name = Column(String(255))
+    contact_email = Column(String(320))
+    contact_phone = Column(String(20))
+    website = Column(String(500))
+    address = Column(Text)
+    notes = Column(Text)
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    items = relationship("InventoryItem", back_populates="vendor")
+
+    __table_args__ = (
+        UniqueConstraint('tenant_id', 'name', name='uq_inventory_vendor_name'),
+    )
+
+    def __repr__(self):
+        return f"<InventoryVendor {self.name}>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "name": self.name,
+            "contact_name": self.contact_name,
+            "contact_email": self.contact_email,
+            "contact_phone": self.contact_phone,
+            "website": self.website,
+            "address": self.address,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "item_count": len(self.items) if self.items else 0
+        }
+
+
+class InventoryItem(Base):
+    """
+    Individual inventory item with tracking for quantity, location, warranty, etc.
+    """
+    __tablename__ = "inventory_items"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Basic info
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    sku = Column(String(100))  # Stock Keeping Unit / Part Number
+    barcode = Column(String(100))
+
+    # Quantity tracking
+    quantity = Column(Integer, default=0, nullable=False)
+    min_quantity = Column(Integer, default=0)  # Alert threshold for low stock
+    unit = Column(String(50), default="units")  # units, boxes, liters, etc.
+
+    # Pricing
+    unit_price = Column(Float)
+    currency = Column(String(3), default="USD")
+
+    # Foreign keys
+    category_id = Column(String(36), ForeignKey("inventory_categories.id"), nullable=True)
+    location_id = Column(String(36), ForeignKey("inventory_locations.id"), nullable=True)
+    vendor_id = Column(String(36), ForeignKey("inventory_vendors.id"), nullable=True)
+
+    # Purchase info
+    purchase_date = Column(DateTime(timezone=True))
+    purchase_price = Column(Float)
+    purchase_order_number = Column(String(100))
+
+    # Warranty tracking
+    warranty_expiry = Column(DateTime(timezone=True))
+    warranty_notes = Column(Text)
+
+    # Additional metadata
+    serial_number = Column(String(255))
+    model_number = Column(String(255))
+    manufacturer = Column(String(255))
+    notes = Column(Text)
+    image_url = Column(String(500))
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+
+    # Relationships
+    category = relationship("InventoryCategory", back_populates="items")
+    location = relationship("InventoryLocation", back_populates="items")
+    vendor = relationship("InventoryVendor", back_populates="items")
+
+    __table_args__ = (
+        Index('ix_inventory_item_tenant_category', 'tenant_id', 'category_id'),
+        Index('ix_inventory_item_tenant_location', 'tenant_id', 'location_id'),
+        Index('ix_inventory_item_tenant_vendor', 'tenant_id', 'vendor_id'),
+        Index('ix_inventory_item_low_stock', 'tenant_id', 'quantity', 'min_quantity'),
+        Index('ix_inventory_item_warranty', 'tenant_id', 'warranty_expiry'),
+    )
+
+    def __repr__(self):
+        return f"<InventoryItem {self.name}>"
+
+    @property
+    def is_low_stock(self) -> bool:
+        """Check if item is below minimum quantity threshold"""
+        return self.quantity <= self.min_quantity
+
+    @property
+    def is_warranty_expiring_soon(self) -> bool:
+        """Check if warranty expires within 30 days"""
+        if not self.warranty_expiry:
+            return False
+        from datetime import timedelta
+        return self.warranty_expiry <= utc_now() + timedelta(days=30)
+
+    @property
+    def total_value(self) -> float:
+        """Calculate total value of this item (quantity × unit_price)"""
+        if self.unit_price:
+            return self.quantity * self.unit_price
+        return 0.0
+
+    def to_dict(self, include_relations: bool = True) -> Dict[str, Any]:
+        data = {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "name": self.name,
+            "description": self.description,
+            "sku": self.sku,
+            "barcode": self.barcode,
+            "quantity": self.quantity,
+            "min_quantity": self.min_quantity,
+            "unit": self.unit,
+            "unit_price": self.unit_price,
+            "currency": self.currency,
+            "category_id": self.category_id,
+            "location_id": self.location_id,
+            "vendor_id": self.vendor_id,
+            "purchase_date": self.purchase_date.isoformat() if self.purchase_date else None,
+            "purchase_price": self.purchase_price,
+            "purchase_order_number": self.purchase_order_number,
+            "warranty_expiry": self.warranty_expiry.isoformat() if self.warranty_expiry else None,
+            "warranty_notes": self.warranty_notes,
+            "serial_number": self.serial_number,
+            "model_number": self.model_number,
+            "manufacturer": self.manufacturer,
+            "notes": self.notes,
+            "image_url": self.image_url,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            # Computed properties
+            "is_low_stock": self.is_low_stock,
+            "is_warranty_expiring_soon": self.is_warranty_expiring_soon,
+            "total_value": self.total_value,
+        }
+        if include_relations:
+            data["category"] = self.category.to_dict() if self.category else None
+            data["location"] = self.location.to_dict() if self.location else None
+            data["vendor"] = self.vendor.to_dict() if self.vendor else None
+        return data
+
+
 def _migrate_enum_values():
     """Add any missing enum values to PostgreSQL enum types.
 

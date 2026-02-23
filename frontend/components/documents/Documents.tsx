@@ -1354,15 +1354,16 @@ export default function Documents() {
   // Action Menu Component - with Move to category options
   const ActionMenu = ({ docId, docName }: { docId: string; docName: string }) => {
     return (
-      <div style={{ position: 'relative' }} ref={openMenuId === docId ? menuRef : null}>
+      <div style={{ position: 'relative', zIndex: 10 }} ref={openMenuId === docId ? menuRef : null}>
         <button
           onClick={(e) => {
             e.stopPropagation()
+            e.preventDefault()
             setOpenMenuId(openMenuId === docId ? null : docId)
           }}
           style={{
-            width: '32px',
-            height: '32px',
+            width: '40px',
+            height: '40px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1371,11 +1372,14 @@ export default function Documents() {
             borderRadius: '6px',
             cursor: 'pointer',
             transition: 'background-color 0.15s ease',
+            position: 'relative',
+            zIndex: 10,
+            pointerEvents: 'auto',
           }}
           onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.borderLight}
           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill={colors.textMuted}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill={colors.textMuted} style={{ pointerEvents: 'none' }}>
             <circle cx="8" cy="3" r="1.5"/>
             <circle cx="8" cy="8" r="1.5"/>
             <circle cx="8" cy="13" r="1.5"/>
@@ -1393,8 +1397,7 @@ export default function Documents() {
             borderRadius: '8px',
             boxShadow: shadows.lg,
             minWidth: '180px',
-            zIndex: Z_INDEX.dropdown,
-            overflow: 'hidden',
+            zIndex: 9999,
           }}>
             {/* View Options */}
             <button
@@ -1425,6 +1428,37 @@ export default function Documents() {
             <div style={{ padding: '6px 14px', fontSize: '11px', fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase' }}>
               Move to
             </div>
+            {/* Custom Folders first */}
+            {customFolders.map((folder) => (
+              <button
+                key={folder.id}
+                onClick={(e) => { e.stopPropagation(); addDocumentsToFolder(folder.id, [docId]); setOpenMenuId(null) }}
+                style={{
+                  width: '100%',
+                  padding: '8px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  color: colors.textSecondary,
+                  textAlign: 'left',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.borderLight}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill={folder.color}>
+                  <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                </svg>
+                {folder.name}
+              </button>
+            ))}
+            {customFolders.length > 0 && (
+              <div style={{ height: '1px', backgroundColor: colors.border, margin: '4px 0' }} />
+            )}
             {MOVE_CATEGORIES.map((cat) => (
               <button
                 key={cat.value}
@@ -2342,7 +2376,7 @@ export default function Documents() {
           borderRadius: '12px',
           border: `1px solid ${colors.border}`,
           boxShadow: shadows.sm,
-          overflow: 'hidden',
+          overflow: 'visible',
         }}>
           {/* Filter Bar */}
           <div style={{
@@ -2382,7 +2416,14 @@ export default function Documents() {
                   <select
                     onChange={(e) => {
                       if (e.target.value) {
-                        handleBulkMoveToCategory(e.target.value)
+                        if (e.target.value.startsWith('folder_')) {
+                          // Move to custom folder
+                          const folderId = e.target.value.replace('folder_', '')
+                          addDocumentsToFolder(folderId, Array.from(selectedDocs))
+                          setSelectedDocs(new Set())
+                        } else {
+                          handleBulkMoveToCategory(e.target.value)
+                        }
                         e.target.value = ''
                       }
                     }}
@@ -2397,9 +2438,18 @@ export default function Documents() {
                     }}
                   >
                     <option value="">Move to...</option>
-                    {MOVE_CATEGORIES.map(cat => (
-                      <option key={cat.value} value={cat.value}>{cat.label}</option>
-                    ))}
+                    {customFolders.length > 0 && (
+                      <optgroup label="Custom Folders">
+                        {customFolders.map(folder => (
+                          <option key={folder.id} value={`folder_${folder.id}`}>{folder.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Categories">
+                      {MOVE_CATEGORIES.map(cat => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                    </optgroup>
                   </select>
                   {/* Bulk Delete Button */}
                   <button
@@ -2563,7 +2613,7 @@ export default function Documents() {
               {/* Table Header */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 48px',
+                gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 60px',
                 gap: '16px',
                 padding: '12px 20px',
                 backgroundColor: colors.border,
@@ -2637,7 +2687,7 @@ export default function Documents() {
                       key={doc.id}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 48px',
+                        gridTemplateColumns: '36px 2fr 1fr 1fr 1fr 60px',
                         gap: '16px',
                         padding: '16px 20px',
                         alignItems: 'center',
@@ -2740,7 +2790,19 @@ export default function Documents() {
                       </span>
 
                       {/* Actions */}
-                      <div onClick={(e) => e.stopPropagation()}>
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '100%',
+                          height: '100%',
+                          position: 'relative',
+                          zIndex: 5,
+                          pointerEvents: 'auto',
+                        }}
+                      >
                         <ActionMenu docId={doc.id} docName={doc.name} />
                       </div>
                     </div>

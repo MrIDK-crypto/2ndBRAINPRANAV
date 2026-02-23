@@ -51,6 +51,7 @@ export default function Sidebar({
     if (pathname === '/documents') return 'Documents'
     if (pathname === '/knowledge-gaps') return 'Knowledge Gaps'
     if (pathname === '/training-guides') return 'Training Videos'
+    if (pathname === '/inventory') return 'Inventory'
     if (pathname === '/analytics') return 'Analytics'
     if (pathname === '/' || pathname === '/chat') return 'ChatBot'
     return 'ChatBot'
@@ -87,7 +88,7 @@ export default function Sidebar({
 
   const showChatHistory = currentActive === 'ChatBot' && (conversations.length > 0 || onNewChat)
 
-  // Menu items configuration - Order: Integrations, Documents, Knowledge Gaps, ChatBot, Training Guides
+  // Menu items configuration - Order: Integrations, Documents, Knowledge Gaps, ChatBot, Training Guides, Inventory, Analytics
   // Using inline SVG icons for better quality and consistency
   const allMenuItems = [
     { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations', adminOnly: true },
@@ -95,6 +96,7 @@ export default function Sidebar({
     { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
     { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
     { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
+    { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
     { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
   ]
 
@@ -153,6 +155,14 @@ export default function Sidebar({
             <line x1="18" y1="20" x2="18" y2="10" />
             <line x1="12" y1="20" x2="12" y2="4" />
             <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+        )
+      case 'inventory':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
+            <polyline points="3.27,6.96 12,12.01 20.73,6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
           </svg>
         )
       default:
