@@ -1146,10 +1146,12 @@ class EnhancedSearchService:
 
     def _get_mode_config(self, response_mode: int, query: str, context: str):
         """
-        Get system prompt, user instruction, temperature, and max_tokens based on response mode.
+        Get system prompt, user instruction, temperature, max_tokens, and frequency_penalty based on response mode.
         Mode 1: Sources — just document titles/links, no AI answer
         Mode 2: Sources & Summary — brief summary + source links
         Mode 3: In-Depth — full comprehensive answer with insights (default)
+
+        Returns: (system_prompt, user_instruction, temperature, max_tokens, frequency_penalty)
         """
         if response_mode == 1:
             system_prompt = """You are a document retrieval assistant. Your ONLY job is to identify which source documents are relevant to the user's question.
@@ -1157,29 +1159,34 @@ class EnhancedSearchService:
 RULES:
 - Do NOT explain, summarize, or interpret the content of the documents
 - Do NOT answer the question directly
-- Just list the relevant source documents with a one-line note on why each is relevant
+- List each UNIQUE relevant document ONCE with a one-line note on why it is relevant
+- NEVER repeat the same document — if multiple sources have the same title, list it only once
 - If no sources are relevant, say "No relevant documents found for this query."
-- Use the format: [Source N] Title — brief relevance note"""
+- Keep your response SHORT — just a clean numbered list"""
 
-            user_instruction = """List ONLY the relevant document titles with a brief note on why each is relevant to the question.
-Do NOT answer the question — just point to where the answer can be found.
-Format each as: [Source N] Title — why it's relevant"""
-            return system_prompt, user_instruction, 0.0, 500
+            user_instruction = """List each UNIQUE relevant document title ONCE with a one-line relevance note.
+Do NOT repeat any document. Do NOT answer the question.
+Format: [Source N] Title — why it's relevant
+Keep it short and clean."""
+            return system_prompt, user_instruction, 0.0, 400, 0.8
 
         elif response_mode == 2:
             system_prompt = """You are a concise knowledge assistant. You answer based on the provided source documents.
 
 RULES:
-- Give a short summary (3-5 sentences max) answering the question
-- Direct the user to the relevant source documents for full details
-- Do NOT elaborate or explain in depth — let the documents speak for themselves
+- Give a short summary (2-4 sentences max) answering the question
+- Then list the relevant source documents the user should read
+- NEVER repeat yourself — each sentence should add new information
+- NEVER list the same document more than once
+- Do NOT elaborate or explain in depth
 - Cite sources with [Source N]
-- If sources don't contain the answer, say so briefly"""
+- If sources don't contain the answer, say so in one sentence"""
 
-            user_instruction = """Provide a brief summary (3-5 sentences max) answering the question. Cite sources with [Source N]. Point users to the relevant documents for more detail. Do not go in depth.
+            user_instruction = """Answer in 2-4 sentences max. Then list the relevant documents to read.
+NEVER repeat the same information or document name. Be concise.
 
 End with "Sources Used: [list numbers]"."""
-            return system_prompt, user_instruction, 0.1, 700
+            return system_prompt, user_instruction, 0.1, 500, 0.8
 
         else:  # Mode 3 (default) — current full behavior: in-depth with insights
             system_prompt = """You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
@@ -1224,7 +1231,7 @@ Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
 - Cite key facts with [Source X]
 
 End with "Sources Used: [list numbers]"."""
-            return system_prompt, user_instruction, 0.1, 2000
+            return system_prompt, user_instruction, 0.1, 2000, 0.0
 
     def generate_answer(
         self,
@@ -1300,7 +1307,7 @@ End with "Sources Used: [list numbers]"."""
         context = "\n---\n".join(context_parts)
 
         # Get mode-specific prompt configuration
-        system_prompt, user_instruction, temperature, max_tokens = self._get_mode_config(response_mode, query, context)
+        system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context)
 
         # Build conversation context if history exists
         conversation_context = ""
@@ -1334,10 +1341,14 @@ CURRENT QUESTION: {query}
             # Add current query with sources
             messages.append({"role": "user", "content": user_prompt})
 
+            completion_kwargs = {}
+            if freq_penalty > 0:
+                completion_kwargs['frequency_penalty'] = freq_penalty
             response = self.client.chat_completion(
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                **completion_kwargs
             )
 
             answer = response.choices[0].message.content.strip()
@@ -1527,7 +1538,7 @@ CURRENT QUESTION: {query}
         context = "\n---\n".join(context_parts)
 
         # Get mode-specific prompt configuration
-        system_prompt, user_instruction, temperature, max_tokens = self._get_mode_config(response_mode, query, context)
+        system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context)
 
         conversation_context = ""
         if conversation_history and len(conversation_history) > 0:
@@ -1559,10 +1570,14 @@ CURRENT QUESTION: {query}
 
             # STREAM the response
             full_answer = ""
+            stream_kwargs = {}
+            if freq_penalty > 0:
+                stream_kwargs['frequency_penalty'] = freq_penalty
             stream = self.client.chat_completion_stream(
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                **stream_kwargs
             )
 
             for chunk in stream:
