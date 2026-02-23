@@ -10,10 +10,7 @@ import EmailForwardingCard from './EmailForwardingCard'
 import { useAuth } from '@/contexts/AuthContext'
 import WebsiteBuilderModal from './WebsiteBuilderModal'
 import { useSyncProgress } from '@/contexts/SyncProgressContext'
-import DocumentSelectionModal, { PendingDoc } from './DocumentSelectionModal'
 import { Mail, CheckCircle2 } from 'lucide-react'
-
-const SELECTION_REQUIRED_CONNECTORS = new Set(['gdrive', 'gdocs', 'gsheets', 'gslides', 'onedrive', 'notion'])
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
@@ -3007,13 +3004,6 @@ export default function Integrations() {
   const [syncingConnector, setSyncingConnector] = useState<string | null>(null)
   const [syncEstimatedSeconds, setSyncEstimatedSeconds] = useState<number | null>(null)
 
-  // Document selection modal state (for selective import)
-  const [showDocSelectionModal, setShowDocSelectionModal] = useState(false)
-  const [pendingDocuments, setPendingDocuments] = useState<PendingDoc[]>([])
-  const [pendingSyncId, setPendingSyncId] = useState<string | null>(null)
-  const [pendingConnectorType, setPendingConnectorType] = useState<string | null>(null)
-  const [isConfirmingSelection, setIsConfirmingSelection] = useState(false)
-
   // Integration details modal state
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null)
@@ -3237,68 +3227,6 @@ export default function Integrations() {
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
   }, [])
-
-  // Watch activeSyncs for awaiting_selection status → open document selection modal
-  useEffect(() => {
-    for (const sync of Array.from(activeSyncs.values())) {
-      if (
-        sync.status === 'awaiting_selection' &&
-        sync.documents &&
-        sync.documents.length > 0 &&
-        SELECTION_REQUIRED_CONNECTORS.has(sync.connectorType) &&
-        !showDocSelectionModal
-      ) {
-        console.log(`[Sync] Detected awaiting_selection for ${sync.connectorType}, showing document selection modal`)
-        setPendingDocuments(sync.documents as PendingDoc[])
-        setPendingSyncId(sync.syncId)
-        setPendingConnectorType(sync.connectorType)
-        setShowDocSelectionModal(true)
-        break
-      }
-    }
-  }, [activeSyncs, showDocSelectionModal])
-
-  // Confirm selected documents for import
-  const confirmDocumentSelection = async (selectedIds: string[]) => {
-    if (!pendingSyncId || !pendingConnectorType) return
-    setIsConfirmingSelection(true)
-    try {
-      const authToken = getAuthToken()
-      await axios.post(
-        `${API_BASE}/integrations/${pendingConnectorType}/sync/confirm`,
-        { sync_id: pendingSyncId, selected_document_ids: selectedIds },
-        { headers: { Authorization: `Bearer ${authToken}` } }
-      )
-      console.log(`[Sync] Confirmed ${selectedIds.length} docs for ${pendingConnectorType}`)
-      setShowDocSelectionModal(false)
-    } catch (err) {
-      console.error('[Sync] Confirm selection error:', err)
-      setSyncStatus('Error confirming document selection. Please try again.')
-    } finally {
-      setIsConfirmingSelection(false)
-    }
-  }
-
-  // Import all documents (skip selection)
-  const importAllDocuments = async () => {
-    if (!pendingSyncId || !pendingConnectorType) return
-    setIsConfirmingSelection(true)
-    try {
-      const authToken = getAuthToken()
-      await axios.post(
-        `${API_BASE}/integrations/${pendingConnectorType}/sync/confirm`,
-        { sync_id: pendingSyncId, selected_document_ids: [] },
-        { headers: { Authorization: `Bearer ${authToken}` } }
-      )
-      console.log(`[Sync] Import all for ${pendingConnectorType}`)
-      setShowDocSelectionModal(false)
-    } catch (err) {
-      console.error('[Sync] Import all error:', err)
-      setSyncStatus('Error importing documents. Please try again.')
-    } finally {
-      setIsConfirmingSelection(false)
-    }
-  }
 
   const checkIntegrationStatuses = async () => {
     const token = getAuthToken()
@@ -4549,18 +4477,6 @@ export default function Integrations() {
         channels={slackChannels}
         onSave={saveSlackChannels}
         isLoading={loadingChannels}
-      />
-
-      {/* Document Selection Modal (for selective import after sync) */}
-      <DocumentSelectionModal
-        isOpen={showDocSelectionModal}
-        onClose={() => setShowDocSelectionModal(false)}
-        onConfirm={confirmDocumentSelection}
-        onImportAll={importAllDocuments}
-        documents={pendingDocuments}
-        connectorName={pendingConnectorType || ''}
-        connectorLogo=""
-        isConfirming={isConfirmingSelection}
       />
 
       {/* GitHub Repository Selection Modal */}

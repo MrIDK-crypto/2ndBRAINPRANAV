@@ -1,8 +1,15 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { useSyncProgress } from '@/contexts/SyncProgressContext'
+import DocumentSelectionModal, { PendingDoc } from '../integrations/DocumentSelectionModal'
+
+const SELECTION_REQUIRED_CONNECTORS = new Set(['gdrive', 'gdocs', 'gsheets', 'gslides', 'onedrive', 'notion'])
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL
+  ? `${process.env.NEXT_PUBLIC_API_URL}/api`
+  : 'http://localhost:5006/api'
 
 const connectorConfig: Record<string, { logo: string; name: string }> = {
   github: { logo: '/github.png', name: 'GitHub' },
@@ -28,7 +35,114 @@ export default function GlobalSyncIndicator() {
   const { activeSyncs, setEmailWhenDone, removeSync } = useSyncProgress()
   const [expandedSync, setExpandedSync] = useState<string | null>(null)
 
-  if (activeSyncs.size === 0) return null
+  // Document selection modal state (global — works from any page)
+  const [showDocSelectionModal, setShowDocSelectionModal] = useState(false)
+  const [pendingDocuments, setPendingDocuments] = useState<PendingDoc[]>([])
+  const [pendingSyncId, setPendingSyncId] = useState<string | null>(null)
+  const [pendingConnectorType, setPendingConnectorType] = useState<string | null>(null)
+  const [isConfirmingSelection, setIsConfirmingSelection] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+  // Track which sync IDs we've already shown the modal for (prevent re-opening after close)
+  const dismissedSyncsRef = useRef<Set<string>>(new Set())
+
+  // Watch activeSyncs for awaiting_selection status → auto-open document selection modal
+  useEffect(() => {
+    for (const sync of Array.from(activeSyncs.values())) {
+      if (
+        sync.status === 'awaiting_selection' &&
+        sync.documents &&
+        sync.documents.length > 0 &&
+        SELECTION_REQUIRED_CONNECTORS.has(sync.connectorType) &&
+        !showDocSelectionModal &&
+        !dismissedSyncsRef.current.has(sync.syncId)
+      ) {
+        console.log(`[GlobalSync] Detected awaiting_selection for ${sync.connectorType} (${sync.syncId}), opening selection modal`)
+        setPendingDocuments(sync.documents as PendingDoc[])
+        setPendingSyncId(sync.syncId)
+        setPendingConnectorType(sync.connectorType)
+        setConfirmError(null)
+        setShowDocSelectionModal(true)
+        break
+      }
+    }
+  }, [activeSyncs, showDocSelectionModal])
+
+  // Confirm selected documents for import
+  const confirmDocumentSelection = async (selectedIds: string[]) => {
+    if (!pendingSyncId || !pendingConnectorType) return
+    setIsConfirmingSelection(true)
+    setConfirmError(null)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(
+        `${API_BASE}/integrations/${pendingConnectorType}/sync/confirm`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ sync_id: pendingSyncId, selected_document_ids: selectedIds })
+        }
+      )
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || `Server error ${response.status}`)
+      }
+      console.log(`[GlobalSync] Confirmed ${selectedIds.length} docs for ${pendingConnectorType}`)
+      dismissedSyncsRef.current.add(pendingSyncId)
+      setShowDocSelectionModal(false)
+    } catch (err: any) {
+      console.error('[GlobalSync] Confirm selection error:', err)
+      setConfirmError(err.message || 'Failed to confirm selection. Please try again.')
+    } finally {
+      setIsConfirmingSelection(false)
+    }
+  }
+
+  // Import all documents (skip selection)
+  const importAllDocuments = async () => {
+    if (!pendingSyncId || !pendingConnectorType) return
+    setIsConfirmingSelection(true)
+    setConfirmError(null)
+    try {
+      const token = localStorage.getItem('accessToken')
+      const response = await fetch(
+        `${API_BASE}/integrations/${pendingConnectorType}/sync/confirm`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ sync_id: pendingSyncId, selected_document_ids: [] })
+        }
+      )
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || `Server error ${response.status}`)
+      }
+      console.log(`[GlobalSync] Import all for ${pendingConnectorType}`)
+      dismissedSyncsRef.current.add(pendingSyncId)
+      setShowDocSelectionModal(false)
+    } catch (err: any) {
+      console.error('[GlobalSync] Import all error:', err)
+      setConfirmError(err.message || 'Failed to import documents. Please try again.')
+    } finally {
+      setIsConfirmingSelection(false)
+    }
+  }
+
+  // Cancel / close modal — mark as dismissed so it doesn't re-open
+  const handleCloseModal = () => {
+    if (pendingSyncId) {
+      dismissedSyncsRef.current.add(pendingSyncId)
+    }
+    setShowDocSelectionModal(false)
+    setConfirmError(null)
+  }
+
+  if (activeSyncs.size === 0 && !showDocSelectionModal) return null
 
   return (
     <>
@@ -37,6 +151,7 @@ export default function GlobalSyncIndicator() {
         @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }
       `}</style>
 
+      {/* Floating sync indicator pills */}
       <div style={{
         position: 'fixed',
         bottom: 24,
@@ -131,6 +246,34 @@ export default function GlobalSyncIndicator() {
                     </span>
                   </div>
 
+                  {/* Awaiting selection: show button to open modal */}
+                  {isAwaitingSelection && sync.documents && sync.documents.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setPendingDocuments(sync.documents as PendingDoc[])
+                        setPendingSyncId(sync.syncId)
+                        setPendingConnectorType(sync.connectorType)
+                        setConfirmError(null)
+                        dismissedSyncsRef.current.delete(sync.syncId)
+                        setShowDocSelectionModal(true)
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        borderRadius: 8,
+                        border: 'none',
+                        backgroundColor: '#C9A598',
+                        color: '#fff',
+                        fontSize: 14,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        marginBottom: 8
+                      }}
+                    >
+                      Choose Documents ({sync.documents.length})
+                    </button>
+                  )}
+
                   {/* Progress bar */}
                   {isActive && (
                     <div style={{
@@ -150,7 +293,6 @@ export default function GlobalSyncIndicator() {
                       }} />
                     </div>
                   )}
-
 
                   {/* Email checkbox */}
                   {isActive && (
@@ -191,11 +333,23 @@ export default function GlobalSyncIndicator() {
             )
           }
 
-          // Minimized pill
+          // Minimized pill — click opens modal directly for awaiting_selection
           return (
             <div
               key={sync.syncId}
-              onClick={() => setExpandedSync(sync.syncId)}
+              onClick={() => {
+                if (isAwaitingSelection && sync.documents && sync.documents.length > 0) {
+                  // Open selection modal directly
+                  setPendingDocuments(sync.documents as PendingDoc[])
+                  setPendingSyncId(sync.syncId)
+                  setPendingConnectorType(sync.connectorType)
+                  setConfirmError(null)
+                  dismissedSyncsRef.current.delete(sync.syncId)
+                  setShowDocSelectionModal(true)
+                } else {
+                  setExpandedSync(sync.syncId)
+                }
+              }}
               style={{
                 background: isComplete ? '#3B82F6' : isError ? '#64748B' : isAwaitingSelection ? '#C9A598' : '#fff',
                 color: isComplete || isError || isAwaitingSelection ? '#fff' : '#111827',
@@ -233,10 +387,64 @@ export default function GlobalSyncIndicator() {
                   {sync.percentComplete}%
                 </span>
               )}
+              {isAwaitingSelection && (
+                <span style={{
+                  background: 'rgba(255,255,255,0.25)',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontSize: 11
+                }}>
+                  Select
+                </span>
+              )}
             </div>
           )
         })}
       </div>
+
+      {/* Document Selection Modal (global — renders from any page) */}
+      <DocumentSelectionModal
+        isOpen={showDocSelectionModal}
+        onClose={handleCloseModal}
+        onConfirm={confirmDocumentSelection}
+        onImportAll={importAllDocuments}
+        documents={pendingDocuments}
+        connectorName={pendingConnectorType || ''}
+        connectorLogo=""
+        isConfirming={isConfirmingSelection}
+      />
+
+      {/* Error toast for confirm failures */}
+      {confirmError && (
+        <div style={{
+          position: 'fixed',
+          top: 24,
+          right: 24,
+          zIndex: 10001,
+          background: '#FEF2F2',
+          border: '1px solid #FECACA',
+          borderRadius: 8,
+          padding: '12px 16px',
+          fontSize: 13,
+          color: '#991B1B',
+          maxWidth: 350,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
+        }}>
+          <span>{confirmError}</span>
+          <button
+            onClick={() => setConfirmError(null)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 16, color: '#991B1B', padding: '0 4px'
+            }}
+          >
+            x
+          </button>
+        </div>
+      )}
     </>
   )
 }

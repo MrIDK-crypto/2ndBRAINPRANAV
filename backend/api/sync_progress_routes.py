@@ -318,10 +318,11 @@ def get_progress_status(sync_id: str):
 
     if progress:
         # Flatten for frontend
+        status_val = progress.get('status', 'unknown')
         result = {
             "success": True,
             "sync_id": sync_id,
-            "status": progress.get('status', 'unknown'),
+            "status": status_val,
             "stage": progress.get('stage', ''),
             "total_items": progress.get('total_items', 0),
             "processed_items": progress.get('processed_items', 0),
@@ -334,13 +335,14 @@ def get_progress_status(sync_id: str):
         # Pass through documents list for awaiting_selection status
         if progress.get('documents'):
             result['documents'] = progress['documents']
+            print(f"[SyncStatus] In-memory hit for {sync_id}: status={status_val}, docs={len(progress['documents'])}", flush=True)
         return jsonify(result)
 
     # Fallback: Check database for multi-worker deployments
     from database.models import SessionLocal, Connector, ConnectorStatus
     db = SessionLocal()
     try:
-        # Find connector with this sync_id
+        # Find connector with this sync_id - check ALL connectors for tenant
         connectors = db.query(Connector).filter(
             Connector.tenant_id == g.tenant_id
         ).all()
@@ -352,11 +354,12 @@ def get_progress_status(sync_id: str):
                 total = sync_prog.get('total_items', 0)
                 processed = sync_prog.get('processed_items', 0)
                 pct = (processed / total * 100) if total > 0 else 0
+                status_val = sync_prog.get('status', 'syncing')
 
                 result = {
                     "success": True,
                     "sync_id": sync_id,
-                    "status": sync_prog.get('status', 'syncing'),
+                    "status": status_val,
                     "stage": sync_prog.get('stage', 'Syncing...'),
                     "total_items": total,
                     "processed_items": processed,
@@ -367,10 +370,13 @@ def get_progress_status(sync_id: str):
                     "percent_complete": pct
                 }
                 # Pass through documents list for awaiting_selection
-                if sync_prog.get('documents'):
+                has_docs = bool(sync_prog.get('documents'))
+                if has_docs:
                     result['documents'] = sync_prog['documents']
+                print(f"[SyncStatus] DB fallback hit for {sync_id}: status={status_val}, has_docs={has_docs}, connector={connector.connector_type}", flush=True)
                 return jsonify(result)
 
+        print(f"[SyncStatus] No connector found for sync_id={sync_id}, tenant={g.tenant_id}, checked {len(connectors)} connectors", flush=True)
         return jsonify({
             "success": False,
             "error": "Sync not found"
