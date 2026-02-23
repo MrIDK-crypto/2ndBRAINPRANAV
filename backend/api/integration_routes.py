@@ -1906,24 +1906,9 @@ def notion_callback():
 
             db.commit()
 
-            if is_first_connection:
-                connector_id = connector.id
-                tenant_id = state_data["tenant_id"]
-                user_id = state_data["user_id"]
-
-                def run_initial_sync():
-                    _run_connector_sync(
-                        connector_id=connector_id,
-                        connector_type="notion",
-                        since=None,
-                        tenant_id=tenant_id,
-                        user_id=user_id,
-                        full_sync=True
-                    )
-
-                thread = threading.Thread(target=run_initial_sync)
-                thread.daemon = True
-                thread.start()
+            # NOTE: No auto-sync on first connection for selection-required connectors.
+            # The frontend triggers sync with a proper sync_id, which is required for
+            # the document selection flow (awaiting_selection → confirm).
 
             return redirect(f"{FRONTEND_URL}/integrations?success=notion")
 
@@ -2029,24 +2014,9 @@ def gdrive_callback():
 
             db.commit()
 
-            if is_first_connection:
-                connector_id = connector.id
-                tenant_id = state_data["tenant_id"]
-                user_id = state_data["user_id"]
-
-                def run_initial_sync():
-                    _run_connector_sync(
-                        connector_id=connector_id,
-                        connector_type="gdrive",
-                        since=None,
-                        tenant_id=tenant_id,
-                        user_id=user_id,
-                        full_sync=True
-                    )
-
-                thread = threading.Thread(target=run_initial_sync)
-                thread.daemon = True
-                thread.start()
+            # NOTE: No auto-sync on first connection for selection-required connectors.
+            # The frontend triggers sync with a proper sync_id, which is required for
+            # the document selection flow (awaiting_selection → confirm).
 
             return redirect(f"{FRONTEND_URL}/integrations?success=gdrive")
 
@@ -2123,12 +2093,9 @@ def gdocs_callback():
                 )
                 db.add(connector)
             db.commit()
-            if is_first:
-                cid, tid, uid = connector.id, state_data["tenant_id"], state_data["user_id"]
-                def run_sync():
-                    _run_connector_sync(connector_id=cid, connector_type="gdocs", since=None, tenant_id=tid, user_id=uid, full_sync=True)
-                thread = threading.Thread(target=run_sync, daemon=True)
-                thread.start()
+            # NOTE: No auto-sync on first connection for selection-required connectors.
+            # The frontend triggers sync with a proper sync_id, which is required for
+            # the document selection flow (awaiting_selection → confirm).
             return redirect(f"{FRONTEND_URL}/integrations?success=gdocs")
         finally:
             db.close()
@@ -2202,12 +2169,9 @@ def gsheets_callback():
                 )
                 db.add(connector)
             db.commit()
-            if is_first:
-                cid, tid, uid = connector.id, state_data["tenant_id"], state_data["user_id"]
-                def run_sync():
-                    _run_connector_sync(connector_id=cid, connector_type="gsheets", since=None, tenant_id=tid, user_id=uid, full_sync=True)
-                thread = threading.Thread(target=run_sync, daemon=True)
-                thread.start()
+            # NOTE: No auto-sync on first connection for selection-required connectors.
+            # The frontend triggers sync with a proper sync_id, which is required for
+            # the document selection flow (awaiting_selection → confirm).
             return redirect(f"{FRONTEND_URL}/integrations?success=gsheets")
         finally:
             db.close()
@@ -2281,12 +2245,9 @@ def gslides_callback():
                 )
                 db.add(connector)
             db.commit()
-            if is_first:
-                cid, tid, uid = connector.id, state_data["tenant_id"], state_data["user_id"]
-                def run_sync():
-                    _run_connector_sync(connector_id=cid, connector_type="gslides", since=None, tenant_id=tid, user_id=uid, full_sync=True)
-                thread = threading.Thread(target=run_sync, daemon=True)
-                thread.start()
+            # NOTE: No auto-sync on first connection for selection-required connectors.
+            # The frontend triggers sync with a proper sync_id, which is required for
+            # the document selection flow (awaiting_selection → confirm).
             return redirect(f"{FRONTEND_URL}/integrations?success=gslides")
         finally:
             db.close()
@@ -3408,6 +3369,7 @@ def sync_connector(connector_type: str):
                 s = c.settings or {}
                 s['current_sync_id'] = sync_id
                 s['sync_started_at'] = utc_now().isoformat()
+                s.pop('sync_progress', None)  # Clear stale progress from previous sync
                 c.settings = s
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(c, 'settings')
@@ -3577,6 +3539,10 @@ def _run_connector_sync(
             return
 
         print(f"[Sync] Connector settings: {connector.settings}")
+
+        # Immediately persist "syncing" status to DB so other workers don't serve stale awaiting_selection
+        if sync_id:
+            _persist_progress_to_db(db, connector, 'syncing', 'Starting sync...', overall_percent=5.0, force=True)
 
         try:
             # Get connector class
@@ -4494,6 +4460,29 @@ def confirm_sync_selection(connector_type: str):
             ).all()
 
             if not pending_docs:
+                # Clear stale awaiting_selection from DB so the modal doesn't re-open
+                try:
+                    settings = dict(connector.settings or {})
+                    settings.pop('sync_progress', None)
+                    connector.settings = settings
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(connector, 'settings')
+                    db.commit()
+                    print(f"[SyncConfirm] Cleared stale sync_progress from connector settings (no pending docs)", flush=True)
+                except Exception as clear_err:
+                    print(f"[SyncConfirm] Warning: Failed to clear stale settings: {clear_err}", flush=True)
+                # Also clear in-memory progress for this connector
+                progress_key = f"{tenant_id}:{connector_type}"
+                if progress_key in sync_progress:
+                    sync_progress[progress_key]["status"] = "error"
+                    sync_progress[progress_key]["error"] = "No pending documents found"
+                    sync_progress[progress_key].pop("documents", None)
+                if sync_id:
+                    try:
+                        from services.sync_progress_service import get_sync_progress_service
+                        get_sync_progress_service().complete_sync(sync_id, error_message="No pending documents found for selection")
+                    except Exception:
+                        pass
                 return jsonify({"success": False, "error": "No pending documents found for selection"}), 404
 
             import_all = not selected_ids  # Empty list = import all
@@ -4718,6 +4707,37 @@ def confirm_sync_selection(connector_type: str):
                         _db.close()
                     except Exception:
                         pass
+
+            # Pre-emptively clear awaiting_selection from in-memory progress and DB
+            # BEFORE launching the thread, so polling doesn't return stale status
+            progress_key = f"{tenant_id}:{connector_type}"
+            if progress_key in sync_progress:
+                sync_progress[progress_key]["status"] = "extracting"
+                sync_progress[progress_key]["current_file"] = "Preparing extraction..."
+                sync_progress[progress_key].pop("documents", None)
+            # Clear awaiting_selection from DB settings
+            try:
+                settings = dict(connector.settings or {})
+                settings['sync_progress'] = {'status': 'extracting', 'stage': 'Starting extraction...', 'overall_percent': 33.0}
+                connector.settings = settings
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(connector, 'settings')
+                db.commit()
+            except Exception:
+                try: db.rollback()
+                except Exception: pass
+            # Update progress service
+            if sync_id:
+                try:
+                    from services.sync_progress_service import get_sync_progress_service
+                    get_sync_progress_service().update_progress(
+                        sync_id, status='extracting',
+                        stage='Preparing extraction...',
+                        overall_percent=33.0,
+                        extra_data=None  # Clear documents list
+                    )
+                except Exception:
+                    pass
 
             # Launch extraction+embedding in background thread
             thread = threading.Thread(target=_continue_extraction_embedding, daemon=True)

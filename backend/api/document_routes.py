@@ -2441,6 +2441,26 @@ def delete_all_documents():
                 Document.tenant_id == tenant_id
             ).delete()
 
+            # Clear stale sync_progress from all connectors so awaiting_selection modal doesn't re-open
+            from database.models import Connector as ConnectorModel
+            connectors = db.query(ConnectorModel).filter(
+                ConnectorModel.tenant_id == tenant_id
+            ).all()
+            for conn in connectors:
+                settings = dict(conn.settings or {})
+                changed = False
+                if 'sync_progress' in settings:
+                    settings.pop('sync_progress')
+                    changed = True
+                if 'current_sync_id' in settings:
+                    settings.pop('current_sync_id')
+                    changed = True
+                if changed:
+                    conn.settings = settings
+                    from sqlalchemy.orm.attributes import flag_modified
+                    flag_modified(conn, 'settings')
+            print(f"[DeleteAll] Cleared sync_progress from {len(connectors)} connectors", flush=True)
+
             db.commit()
 
             return jsonify({

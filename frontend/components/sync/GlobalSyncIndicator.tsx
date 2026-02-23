@@ -94,7 +94,18 @@ export default function GlobalSyncIndicator() {
       setShowDocSelectionModal(false)
     } catch (err: any) {
       console.error('[GlobalSync] Confirm selection error:', err)
-      setConfirmError(err.message || 'Failed to confirm selection. Please try again.')
+      // On "no pending documents" error (404), close modal — docs are stale
+      if (err.message?.includes('No pending documents') || err.message?.includes('404')) {
+        console.log('[GlobalSync] No pending docs — closing stale modal')
+        if (pendingSyncId) {
+          dismissedSyncsRef.current.add(pendingSyncId)
+          removeSync(pendingSyncId)
+        }
+        setShowDocSelectionModal(false)
+        setConfirmError('Documents not found — they may have been cleaned. Please re-sync.')
+      } else {
+        setConfirmError(err.message || 'Failed to confirm selection. Please try again.')
+      }
     } finally {
       setIsConfirmingSelection(false)
     }
@@ -127,7 +138,18 @@ export default function GlobalSyncIndicator() {
       setShowDocSelectionModal(false)
     } catch (err: any) {
       console.error('[GlobalSync] Import all error:', err)
-      setConfirmError(err.message || 'Failed to import documents. Please try again.')
+      // On "no pending documents" error (404), close modal — docs are stale
+      if (err.message?.includes('No pending documents') || err.message?.includes('404')) {
+        console.log('[GlobalSync] No pending docs — closing stale modal')
+        if (pendingSyncId) {
+          dismissedSyncsRef.current.add(pendingSyncId)
+          removeSync(pendingSyncId)
+        }
+        setShowDocSelectionModal(false)
+        setConfirmError('Documents not found — they may have been cleaned. Please re-sync.')
+      } else {
+        setConfirmError(err.message || 'Failed to import documents. Please try again.')
+      }
     } finally {
       setIsConfirmingSelection(false)
     }
