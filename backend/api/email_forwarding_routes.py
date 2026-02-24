@@ -37,7 +37,7 @@ def get_db():
 @require_auth
 def fetch_emails():
     """
-    Fetch forwarded emails from beatatucla@gmail.com inbox
+    Fetch forwarded emails from the configured inbox
 
     Response:
     {
@@ -114,7 +114,7 @@ def get_status():
     Response:
     {
         "success": true,
-        "forwarding_address": "beatatucla+tenant123@gmail.com",
+        "forwarding_address": "pranav+tenant123@use2ndbrain.com",
         "instructions": "Forward emails to...",
         "configured": true
     }
@@ -122,7 +122,7 @@ def get_status():
     import os
     from services.email_forwarding_service import EmailForwardingService
 
-    base_email = os.getenv("FORWARD_EMAIL_ADDRESS", "beatatucla@gmail.com")
+    base_email = os.getenv("FORWARD_EMAIL_ADDRESS", "pranav@use2ndbrain.com")
     email_password = os.getenv("FORWARD_EMAIL_PASSWORD")
 
     # Generate tenant-specific email address using plus addressing
@@ -152,7 +152,7 @@ def get_status_public():
     """
     import os
 
-    email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "beatatucla@gmail.com")
+    email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "pranav@use2ndbrain.com")
     email_password = os.getenv("FORWARD_EMAIL_PASSWORD")
 
     return jsonify({

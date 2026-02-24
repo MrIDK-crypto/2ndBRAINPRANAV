@@ -26,7 +26,7 @@ else
     echo "To set up email forwarding:"
     echo ""
     echo "1. Go to: https://myaccount.google.com/apppasswords"
-    echo "2. Sign in to beatatucla@gmail.com"
+    echo "2. Sign in to pranav@use2ndbrain.com"
     echo "3. Create app password named '2nd Brain'"
     echo "4. Copy the 16-character password"
     echo ""
@@ -48,7 +48,7 @@ import imaplib
 import os
 
 # Read .env manually (no dependency on python-dotenv)
-email_address = "beatatucla@gmail.com"
+email_address = "pranav@use2ndbrain.com"
 email_password = None
 
 try:
@@ -98,7 +98,7 @@ except Exception as e:
     print("")
     print("Common issues:")
     print("- Wrong password (check you copied it correctly)")
-    print("- 2FA not enabled on beatatucla@gmail.com")
+    print("- 2FA not enabled on pranav@use2ndbrain.com")
     print("- IMAP not enabled in Gmail settings")
     exit(1)
 EOF

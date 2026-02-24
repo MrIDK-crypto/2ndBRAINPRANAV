@@ -278,8 +278,8 @@ View your documents: {FRONTEND_URL}/documents
 
     # Test email redirect mapping (for development/testing)
     TEST_EMAIL_REDIRECTS = {
-        'test@example.com': 'beatatucla@gmail.com',
-        'test@test.com': 'beatatucla@gmail.com',
+        'test@example.com': 'pranav@use2ndbrain.com',
+        'test@test.com': 'pranav@use2ndbrain.com',
     }
 
     def _send_email(

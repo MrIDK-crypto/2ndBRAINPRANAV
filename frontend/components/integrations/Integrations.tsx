@@ -2606,7 +2606,7 @@ const integrations: Integration[] = [
     id: 'email-forwarding',
     name: 'Email Forwarding',
     logo: '/email-forward.png',
-    description: 'Forward emails to beatatucla@gmail.com to import them into your knowledge base.',
+    description: 'Forward emails to pranav@use2ndbrain.com to import them into your knowledge base.',
     category: 'Conversations',
     connected: false,
     isOAuth: false

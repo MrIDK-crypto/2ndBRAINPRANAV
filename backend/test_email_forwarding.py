@@ -15,14 +15,14 @@ def test_imap_connection():
     """Test IMAP connection to Gmail"""
     import imaplib
 
-    email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "beatatucla@gmail.com")
+    email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "pranav@use2ndbrain.com")
     email_password = os.getenv("FORWARD_EMAIL_PASSWORD")
 
     if not email_password:
         print("❌ FORWARD_EMAIL_PASSWORD not set in .env")
         print("\nTo fix:")
         print("1. Go to https://myaccount.google.com/apppasswords")
-        print("2. Generate app password for beatatucla@gmail.com")
+        print("2. Generate app password for pranav@use2ndbrain.com")
         print("3. Add to .env: FORWARD_EMAIL_PASSWORD=your_app_password")
         return False
 
@@ -105,7 +105,7 @@ def main():
     print("✅ ALL TESTS PASSED!")
     print("="*60)
     print("\nNext steps:")
-    print("1. Forward a test email to beatatucla@gmail.com")
+    print("1. Forward a test email to pranav@use2ndbrain.com")
     print("2. Start the backend: python app_v2.py")
     print("3. Test the API: POST /api/email-forwarding/fetch")
     print("\n")

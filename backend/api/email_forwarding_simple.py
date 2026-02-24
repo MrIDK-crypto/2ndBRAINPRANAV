@@ -36,7 +36,7 @@ def save_email_to_file(email_data):
 @email_forwarding_bp.route('/status-public', methods=['GET'])
 def get_status_public():
     """Get email forwarding status"""
-    email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "beatatucla@gmail.com")
+    email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "pranav@use2ndbrain.com")
     email_password = os.getenv("FORWARD_EMAIL_PASSWORD")
 
     return jsonify({
@@ -50,7 +50,7 @@ def get_status_public():
 def fetch_emails_public():
     """Fetch forwarded emails via IMAP"""
     try:
-        email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "beatatucla@gmail.com")
+        email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "pranav@use2ndbrain.com")
         email_password = os.getenv("FORWARD_EMAIL_PASSWORD")
 
         if not email_password:

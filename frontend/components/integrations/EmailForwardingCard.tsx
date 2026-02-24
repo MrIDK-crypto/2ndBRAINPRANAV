@@ -118,7 +118,7 @@ export default function EmailForwardingCard() {
         </p>
         <div className="border border-gray-300 rounded-lg px-4 py-3 bg-gray-50">
           <code className="text-base font-mono text-gray-900">
-            {loading ? 'Loading...' : (status?.forwarding_address || 'beatatucla@gmail.com')}
+            {loading ? 'Loading...' : (status?.forwarding_address || 'pranav@use2ndbrain.com')}
           </code>
         </div>
       </div>
