@@ -123,47 +123,6 @@ class VideoStatus(PyEnum):
     FAILED = "failed"
 
 
-class AtomType(PyEnum):
-    """Knowledge Atom types"""
-    CONCEPT = "concept"
-    DECISION = "decision"
-    PROCESS = "process"
-    FACT = "fact"
-    INSIGHT = "insight"
-    DEFINITION = "definition"
-
-
-class AtomLinkType(PyEnum):
-    """Types of relationships between Knowledge Atoms"""
-    RELATED = "related"
-    SUPPORTS = "supports"
-    CONTRADICTS = "contradicts"
-    ELABORATES = "elaborates"
-    DEPENDS_ON = "depends_on"
-    SUPERSEDES = "supersedes"
-
-
-class GraphEntityType(PyEnum):
-    """Types of entities in the knowledge graph"""
-    PERSON = "person"
-    SYSTEM = "system"
-    PROCESS = "process"
-    DECISION = "decision"
-    TOPIC = "topic"
-    ORG = "org"
-
-
-class GraphRelationType(PyEnum):
-    """Types of relations in the knowledge graph"""
-    OWNS = "owns"
-    DECIDES = "decides"
-    USES = "uses"
-    DEPENDS_ON = "depends_on"
-    RELATED_TO = "related_to"
-    MANAGES = "manages"
-    MENTIONS = "mentions"
-
-
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
@@ -812,12 +771,6 @@ class Document(Base):
     structured_summary = Column(JSON, nullable=True)
     structured_summary_at = Column(DateTime(timezone=True))  # When extraction was done
 
-    # Progressive Summarization levels (L0=raw content, L1=structured_summary above)
-    summary_l2_highlights = Column(JSON, nullable=True)   # [{"text": "...", "importance": 0.0-1.0}]
-    summary_l3_executive = Column(Text, nullable=True)     # 3 sentences max
-    summary_l4_oneliner = Column(String(200), nullable=True)
-    summary_levels_generated_at = Column(DateTime(timezone=True))
-
     # Metadata
     doc_metadata = Column(JSON, default=dict)  # Source-specific metadata
 
@@ -901,18 +854,13 @@ class Document(Base):
             "is_deleted": self.is_deleted,
             "embedded_at": self.embedded_at.isoformat() if self.embedded_at else None,
             "has_structured_summary": self.structured_summary is not None,
-            "file_size": self.doc_metadata.get("file_size") if isinstance(self.doc_metadata, dict) else None,
-            "summary_l4_oneliner": self.summary_l4_oneliner,
-            "has_summary_levels": self.summary_levels_generated_at is not None,
+            "file_size": self.doc_metadata.get("file_size") if isinstance(self.doc_metadata, dict) else None
         }
         if include_content:
             data["content"] = self.content
             data["content_html"] = self.content_html
             data["metadata"] = self.doc_metadata
             data["structured_summary"] = self.structured_summary
-            data["summary_l2_highlights"] = self.summary_l2_highlights
-            data["summary_l3_executive"] = self.summary_l3_executive
-            data["summary_l4_oneliner"] = self.summary_l4_oneliner
         return data
 
 
@@ -983,13 +931,6 @@ class Project(Base):
     document_count = Column(Integer, default=0)
     gap_count = Column(Integer, default=0)
 
-    # PARA Taxonomy (Projects / Areas / Resources / Archives)
-    para_category = Column(String(20), default="resources", nullable=True, index=True)
-    para_metadata = Column(JSON, default=dict)
-    ai_classification_confidence = Column(Float, nullable=True)
-    ai_classification_reason = Column(Text, nullable=True)
-    user_override_category = Column(Boolean, default=False)
-
     # Audit
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
@@ -999,10 +940,6 @@ class Project(Base):
     tenant = relationship("Tenant", back_populates="projects")
     documents = relationship("Document", back_populates="project")
     knowledge_gaps = relationship("KnowledgeGap", back_populates="project")
-
-    __table_args__ = (
-        Index('ix_project_tenant_para', 'tenant_id', 'para_category'),
-    )
 
     def __repr__(self):
         return f"<Project {self.name}>"
@@ -1018,10 +955,6 @@ class Project(Base):
             "is_auto_generated": self.is_auto_generated,
             "document_count": self.document_count,
             "gap_count": self.gap_count,
-            "para_category": self.para_category or "resources",
-            "para_metadata": self.para_metadata or {},
-            "ai_classification_confidence": self.ai_classification_confidence,
-            "user_override_category": self.user_override_category or False,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "is_archived": self.is_archived
         }
@@ -2150,251 +2083,6 @@ def _migrate_enum_values():
         print("✓ Enum migration complete")
     except Exception as e:
         print(f"✗ Enum migration failed: {e}")
-
-
-# ============================================================================
-# KNOWLEDGE ATOMS
-# ============================================================================
-
-class KnowledgeAtom(Base):
-    """
-    A Knowledge Atom = one atomic piece of knowledge (concept, decision, process, etc.).
-    Auto-extracted from documents or manually created.
-    """
-    __tablename__ = "knowledge_atoms"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
-
-    # Core content
-    title = Column(String(500), nullable=False)
-    content = Column(Text, nullable=False)
-    atom_type = Column(Enum(AtomType), nullable=False, default=AtomType.CONCEPT)
-
-    # Source tracking
-    source_document_id = Column(String(36), ForeignKey("documents.id"), nullable=True)
-    is_manual = Column(Boolean, default=False)
-
-    # AI extraction metadata
-    extraction_confidence = Column(Float, nullable=True)
-    extraction_metadata = Column(JSON, default=dict)
-
-    # Project association
-    project_id = Column(String(36), ForeignKey("projects.id"), nullable=True)
-
-    # User interaction
-    is_pinned = Column(Boolean, default=False)
-    user_rating = Column(Integer, nullable=True)  # 1-5
-    view_count = Column(Integer, default=0)
-
-    # Audit
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
-    is_deleted = Column(Boolean, default=False)
-
-    # Relationships
-    tenant = relationship("Tenant")
-    source_document = relationship("Document")
-    project = relationship("Project")
-    outgoing_links = relationship("AtomLink", foreign_keys="AtomLink.source_atom_id", back_populates="source_atom", cascade="all, delete-orphan")
-    incoming_links = relationship("AtomLink", foreign_keys="AtomLink.target_atom_id", back_populates="target_atom", cascade="all, delete-orphan")
-
-    __table_args__ = (
-        Index('ix_atom_tenant_type', 'tenant_id', 'atom_type'),
-        Index('ix_atom_tenant_project', 'tenant_id', 'project_id'),
-        Index('ix_atom_tenant_created', 'tenant_id', 'created_at'),
-        Index('ix_atom_source_doc', 'tenant_id', 'source_document_id'),
-    )
-
-    def __repr__(self):
-        return f"<KnowledgeAtom {self.title[:30] if self.title else self.id[:8]}>"
-
-    def to_dict(self, include_links: bool = False) -> Dict[str, Any]:
-        data = {
-            "id": self.id,
-            "tenant_id": self.tenant_id,
-            "title": self.title,
-            "content": self.content,
-            "atom_type": self.atom_type.value if self.atom_type else "concept",
-            "source_document_id": self.source_document_id,
-            "is_manual": self.is_manual,
-            "extraction_confidence": self.extraction_confidence,
-            "project_id": self.project_id,
-            "is_pinned": self.is_pinned,
-            "view_count": self.view_count,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-        }
-        if include_links:
-            data["outgoing_links"] = [link.to_dict() for link in (self.outgoing_links or [])]
-            data["incoming_links"] = [link.to_dict() for link in (self.incoming_links or [])]
-        return data
-
-
-class AtomLink(Base):
-    """Bidirectional link between two Knowledge Atoms."""
-    __tablename__ = "atom_links"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
-
-    source_atom_id = Column(String(36), ForeignKey("knowledge_atoms.id"), nullable=False)
-    target_atom_id = Column(String(36), ForeignKey("knowledge_atoms.id"), nullable=False)
-    link_type = Column(Enum(AtomLinkType), nullable=False, default=AtomLinkType.RELATED)
-
-    confidence = Column(Float, default=1.0)
-    is_manual = Column(Boolean, default=False)
-    reason = Column(Text, nullable=True)
-
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-
-    # Relationships
-    source_atom = relationship("KnowledgeAtom", foreign_keys=[source_atom_id], back_populates="outgoing_links")
-    target_atom = relationship("KnowledgeAtom", foreign_keys=[target_atom_id], back_populates="incoming_links")
-
-    __table_args__ = (
-        Index('ix_atomlink_source', 'source_atom_id'),
-        Index('ix_atomlink_target', 'target_atom_id'),
-        UniqueConstraint('source_atom_id', 'target_atom_id', 'link_type', name='uq_atom_link'),
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "source_atom_id": self.source_atom_id,
-            "target_atom_id": self.target_atom_id,
-            "link_type": self.link_type.value if self.link_type else "related",
-            "confidence": self.confidence,
-            "is_manual": self.is_manual,
-            "reason": self.reason,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "source_title": self.source_atom.title if self.source_atom else None,
-            "target_title": self.target_atom.title if self.target_atom else None,
-        }
-
-
-# ============================================================================
-# KNOWLEDGE GRAPH (GraphRAG)
-# ============================================================================
-
-class GraphEntity(Base):
-    """Entity node in the knowledge graph."""
-    __tablename__ = "graph_entities"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
-
-    canonical_name = Column(String(500), nullable=False)
-    entity_type = Column(Enum(GraphEntityType), nullable=False, default=GraphEntityType.TOPIC)
-    aliases = Column(JSON, default=list)  # Alternative names
-    description = Column(Text, nullable=True)
-
-    # Community detection
-    community_id = Column(String(36), ForeignKey("graph_communities.id", use_alter=True), nullable=True)
-    community_level = Column(Integer, default=0)
-
-    # Stats
-    mention_count = Column(Integer, default=1)
-    document_count = Column(Integer, default=1)
-    document_ids = Column(JSON, default=list)
-    properties = Column(JSON, default=dict)
-
-    # Audit
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
-
-    __table_args__ = (
-        Index('ix_graph_entity_tenant_type', 'tenant_id', 'entity_type'),
-        Index('ix_graph_entity_tenant_name', 'tenant_id', 'canonical_name'),
-        Index('ix_graph_entity_community', 'tenant_id', 'community_id'),
-        UniqueConstraint('tenant_id', 'canonical_name', 'entity_type', name='uq_graph_entity'),
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "canonical_name": self.canonical_name,
-            "entity_type": self.entity_type.value if self.entity_type else "topic",
-            "aliases": self.aliases or [],
-            "description": self.description,
-            "community_id": self.community_id,
-            "mention_count": self.mention_count,
-            "document_count": self.document_count,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
-
-
-class GraphRelation(Base):
-    """Directed edge in the knowledge graph."""
-    __tablename__ = "graph_relations"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
-
-    source_entity_id = Column(String(36), ForeignKey("graph_entities.id"), nullable=False)
-    target_entity_id = Column(String(36), ForeignKey("graph_entities.id"), nullable=False)
-    relation_type = Column(Enum(GraphRelationType), nullable=False, default=GraphRelationType.RELATED_TO)
-
-    confidence = Column(Float, default=0.7)
-    evidence_doc_ids = Column(JSON, default=list)
-    evidence_text = Column(Text, nullable=True)
-
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-
-    # Relationships
-    source_entity = relationship("GraphEntity", foreign_keys=[source_entity_id])
-    target_entity = relationship("GraphEntity", foreign_keys=[target_entity_id])
-
-    __table_args__ = (
-        Index('ix_graph_rel_source', 'source_entity_id'),
-        Index('ix_graph_rel_target', 'target_entity_id'),
-        Index('ix_graph_rel_tenant_type', 'tenant_id', 'relation_type'),
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "source_entity_id": self.source_entity_id,
-            "target_entity_id": self.target_entity_id,
-            "relation_type": self.relation_type.value if self.relation_type else "related_to",
-            "confidence": self.confidence,
-            "evidence_text": self.evidence_text,
-            "source_name": self.source_entity.canonical_name if self.source_entity else None,
-            "target_name": self.target_entity.canonical_name if self.target_entity else None,
-        }
-
-
-class GraphCommunity(Base):
-    """Community cluster in the knowledge graph (Leiden/Louvain)."""
-    __tablename__ = "graph_communities"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
-
-    name = Column(String(500), nullable=False)
-    level = Column(Integer, default=0)
-    parent_community_id = Column(String(36), nullable=True)
-    summary = Column(Text, nullable=True)
-
-    entity_count = Column(Integer, default=0)
-    top_entities = Column(JSON, default=list)  # [{"name": "...", "type": "..."}]
-
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
-
-    __table_args__ = (
-        Index('ix_graph_community_tenant', 'tenant_id', 'level'),
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "level": self.level,
-            "parent_community_id": self.parent_community_id,
-            "summary": self.summary,
-            "entity_count": self.entity_count,
-            "top_entities": self.top_entities or [],
-        }
 
 
 def init_database():

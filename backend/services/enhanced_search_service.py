@@ -1253,188 +1253,6 @@ class FreshnessScorer:
 
 
 # =============================================================================
-# CONFLICT DETECTOR (Cross-Source Contradiction Detection)
-# =============================================================================
-
-class ConflictDetector:
-    """
-    Lightweight cross-source conflict detection for search results.
-    Detects contradictions between different documents so the LLM can
-    flag them and ask the user for clarification.
-    """
-
-    # Negation pairs
-    NEGATION_PAIRS = [
-        ("is", "is not"), ("are", "are not"), ("will", "will not"),
-        ("can", "cannot"), ("can", "can't"), ("should", "should not"),
-        ("does", "does not"), ("does", "doesn't"),
-        ("has", "has not"), ("has", "hasn't"),
-        ("was", "was not"), ("were", "were not"),
-    ]
-
-    # Semantic opposites
-    OPPOSITES = [
-        ("good", "bad"), ("high", "low"), ("fast", "slow"),
-        ("easy", "hard"), ("simple", "complex"), ("increase", "decrease"),
-        ("grow", "shrink"), ("more", "less"), ("better", "worse"),
-        ("approve", "reject"), ("accept", "decline"), ("allow", "deny"),
-        ("required", "optional"), ("mandatory", "voluntary"),
-        ("before", "after"), ("above", "below"),
-        ("succeeded", "failed"), ("success", "failure"),
-    ]
-
-    def detect_conflicts(self, search_results: List[Dict]) -> List[Dict]:
-        """
-        Scan search result chunks for contradictory claims across different documents.
-
-        Args:
-            search_results: List of search result dicts with 'content', 'title', 'doc_id'
-
-        Returns:
-            List of conflict dicts with claim1, claim2, doc1_title, doc2_title, type
-        """
-        if len(search_results) < 2:
-            return []
-
-        # Extract claims from each source
-        doc_claims = []
-        for result in search_results[:10]:  # Cap at 10 sources
-            content = result.get('content', '') or result.get('content_preview', '')
-            doc_id = result.get('doc_id', '')
-            title = result.get('title', 'Untitled')
-            claims = self._extract_claims(content, doc_id, title)
-            doc_claims.extend(claims)
-
-        # Compare claims across documents
-        conflicts = []
-        seen = set()
-
-        for i, c1 in enumerate(doc_claims):
-            for c2 in doc_claims[i + 1:]:
-                if c1['doc_id'] == c2['doc_id']:
-                    continue
-
-                conflict_type = self._check_contradiction(c1, c2)
-                if conflict_type:
-                    key = tuple(sorted([c1['text'][:40], c2['text'][:40]]))
-                    if key not in seen:
-                        seen.add(key)
-                        conflicts.append({
-                            'claim1': c1['text'],
-                            'doc1_title': c1['doc_title'],
-                            'doc1_id': c1['doc_id'],
-                            'claim2': c2['text'],
-                            'doc2_title': c2['doc_title'],
-                            'doc2_id': c2['doc_id'],
-                            'type': conflict_type,
-                            'topic': c1.get('topic', 'general'),
-                        })
-
-        return conflicts[:5]  # Cap at 5 conflicts per query
-
-    def _extract_claims(self, text: str, doc_id: str, doc_title: str) -> List[Dict]:
-        """Extract verifiable claims (numeric, definitive statements)."""
-        claims = []
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if len(sentence) < 25 or len(sentence) > 300:
-                continue
-
-            is_claim = False
-            topic = "general"
-
-            # Numeric claims (dates, percentages, counts)
-            if re.search(r"\d+(?:%|x|times|days|weeks|months|years|users|customers|people|hours|minutes)", sentence, re.I):
-                is_claim = True
-                topic = self._extract_topic(sentence)
-
-            # Definitive policy/process statements
-            if re.search(r"\b(must|always|never|required|mandatory|policy|standard|approved|deadline)\b", sentence, re.I):
-                is_claim = True
-                topic = self._extract_topic(sentence)
-
-            if is_claim:
-                claims.append({
-                    'text': sentence,
-                    'doc_id': doc_id,
-                    'doc_title': doc_title,
-                    'topic': topic,
-                    'numbers': re.findall(r"\d+(?:\.\d+)?", sentence),
-                })
-
-        return claims
-
-    def _extract_topic(self, sentence: str) -> str:
-        """Extract rough topic from sentence for grouping."""
-        words = sentence.split()
-        stop = {"the", "this", "that", "they", "their", "there", "these", "those", "which",
-                "what", "when", "where", "will", "would", "should", "could", "have", "has",
-                "been", "being", "with", "from", "into", "about", "over", "after", "before"}
-        for word in words[:8]:
-            clean = re.sub(r'[^a-zA-Z]', '', word)
-            if clean and len(clean) > 2 and clean.lower() not in stop:
-                return clean.lower()
-        return "general"
-
-    def _check_contradiction(self, c1: Dict, c2: Dict) -> Optional[str]:
-        """Check if two claims contradict each other."""
-        text1 = c1['text'].lower()
-        text2 = c2['text'].lower()
-
-        # Must share the same topic to be contradictory
-        if c1.get('topic', '') != c2.get('topic', '') and c1.get('topic') != 'general':
-            return None
-
-        # Check word overlap (claims must be about the same thing)
-        words1 = set(re.findall(r'\b\w{4,}\b', text1))
-        words2 = set(re.findall(r'\b\w{4,}\b', text2))
-        overlap = words1 & words2
-        if len(overlap) < 3:
-            return None
-
-        # Numeric contradiction (same context, different numbers)
-        nums1 = c1.get('numbers', [])
-        nums2 = c2.get('numbers', [])
-        if nums1 and nums2 and nums1[0] != nums2[0] and len(overlap) >= 4:
-            return "NUMERIC_CONFLICT"
-
-        # Negation contradiction
-        for pos, neg in self.NEGATION_PAIRS:
-            if (f" {pos} " in text1 and f" {neg} " in text2) or \
-               (f" {neg} " in text1 and f" {pos} " in text2):
-                return "NEGATION_CONFLICT"
-
-        # Semantic opposition
-        for w1, w2 in self.OPPOSITES:
-            if (w1 in text1 and w2 in text2) or (w2 in text1 and w1 in text2):
-                return "SEMANTIC_CONFLICT"
-
-        return None
-
-    def build_conflict_prompt(self, conflicts: List[Dict]) -> str:
-        """Build a prompt section that instructs the LLM to flag conflicts."""
-        if not conflicts:
-            return ""
-
-        lines = ["CONFLICTING INFORMATION DETECTED - You MUST flag these to the user:"]
-        for i, conflict in enumerate(conflicts, 1):
-            lines.append(
-                f"  Conflict {i} ({conflict['type']}):\n"
-                f"    - \"{conflict['claim1'][:120]}\" (from: {conflict['doc1_title']})\n"
-                f"    - \"{conflict['claim2'][:120]}\" (from: {conflict['doc2_title']})"
-            )
-
-        lines.append(
-            "\nIMPORTANT: When answering, explicitly mention these conflicting claims, "
-            "present both versions with their sources, and ask the user which is correct "
-            "or if they can provide clarification. Do NOT silently pick one version."
-        )
-        return "\n".join(lines)
-
-
-# =============================================================================
 # ENHANCED SEARCH SERVICE
 # =============================================================================
 
@@ -1457,7 +1275,6 @@ class EnhancedSearchService:
         # Initialize components
         self.reranker = CrossEncoderReranker()
         self.hallucination_detector = HallucinationDetector(self.client)
-        self.conflict_detector = ConflictDetector()
 
         # NEW: Advanced query understanding components
         self.contextualizer = QueryContextualizer(self.client)
@@ -1473,7 +1290,6 @@ class EnhancedSearchService:
         print(f"[EnhancedSearch] Intent extraction: enabled")
         print(f"[EnhancedSearch] Query contextualization: enabled")
         print(f"[EnhancedSearch] Query decomposition: enabled")
-        print(f"[EnhancedSearch] Conflict detection: enabled")
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding with caching"""
@@ -1865,8 +1681,7 @@ End with "Sources Used: [list numbers]"."""
         validate: bool = True,
         max_context_tokens: int = 12000,
         conversation_history: list = None,
-        response_mode: int = 3,
-        graph_context: str = ""
+        response_mode: int = 3
     ) -> Dict:
         """
         Generate answer with strict citation enforcement and conversation context.
@@ -1878,7 +1693,6 @@ End with "Sources Used: [list numbers]"."""
             max_context_tokens: Max tokens for context
             conversation_history: Previous messages for multi-turn conversations
             response_mode: 1=Links Only, 2=Brief, 3=Balanced, 4=Detailed (default)
-            graph_context: Pre-built knowledge graph context text
 
         Returns:
             Dict with answer and validation results
@@ -1933,12 +1747,6 @@ End with "Sources Used: [list numbers]"."""
 
         context = "\n---\n".join(context_parts)
 
-        # Detect conflicts across sources
-        conflicts = self.conflict_detector.detect_conflicts(sources_used)
-        conflict_prompt = self.conflict_detector.build_conflict_prompt(conflicts)
-        if conflicts:
-            print(f"[EnhancedSearch] Detected {len(conflicts)} conflicts across sources", flush=True)
-
         # Get mode-specific prompt configuration
         system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context)
 
@@ -1952,20 +1760,10 @@ End with "Sources Used: [list numbers]"."""
                 conversation_context += f"{role}: {content}\n"
             conversation_context += "\n"
 
-        # Build knowledge graph context block
-        graph_block = ""
-        if graph_context:
-            graph_block = f"KNOWLEDGE GRAPH CONTEXT (entity relationships from your organization's knowledge graph):\n{graph_context}\n\n"
-
-        # Build conflict block
-        conflict_block = ""
-        if conflict_prompt:
-            conflict_block = f"{conflict_prompt}\n\n"
-
-        user_prompt = f"""{conversation_context}{graph_block}SOURCE DOCUMENTS:
+        user_prompt = f"""{conversation_context}SOURCE DOCUMENTS:
 {context}
 
-{conflict_block}CURRENT QUESTION: {query}
+CURRENT QUESTION: {query}
 
 {user_instruction}"""
 
@@ -2014,7 +1812,7 @@ End with "Sources Used: [list numbers]"."""
             if citation_check:
                 base_confidence = min(base_confidence, citation_check['cited_ratio'])
 
-            result = {
+            return {
                 'answer': answer,
                 'confidence': base_confidence,
                 'sources': sources_used[:10],
@@ -2023,17 +1821,6 @@ End with "Sources Used: [list numbers]"."""
                 'context_chars': total_chars,
                 'sources_used': len(context_parts)
             }
-
-            if conflicts:
-                result['conflicts'] = [{
-                    'claim1': c['claim1'][:200],
-                    'doc1_title': c['doc1_title'],
-                    'claim2': c['claim2'][:200],
-                    'doc2_title': c['doc2_title'],
-                    'type': c['type'],
-                } for c in conflicts]
-
-            return result
 
         except Exception as e:
             return {
@@ -2052,8 +1839,7 @@ End with "Sources Used: [list numbers]"."""
         validate: bool = True,
         conversation_history: list = None,
         boost_doc_ids: list = None,
-        response_mode: int = 3,
-        graph_context: str = ""
+        response_mode: int = 3
     ) -> Dict:
         """
         Complete enhanced RAG pipeline with conversation history support.
@@ -2066,7 +1852,6 @@ End with "Sources Used: [list numbers]"."""
             validate: Run hallucination detection
             conversation_history: Previous messages for context (list of {role, content})
             boost_doc_ids: List of document IDs to boost in results (for newly uploaded docs)
-            graph_context: Pre-built knowledge graph context text from GraphRAGSearchService
 
         Returns:
             Complete response with answer, sources, and metadata
@@ -2125,17 +1910,10 @@ End with "Sources Used: [list numbers]"."""
             search_results=search_results,
             validate=validate,
             conversation_history=conversation_history or [],
-            response_mode=response_mode,
-            graph_context=graph_context
+            response_mode=response_mode
         )
 
-        features = search_results.get('features_used', {})
-        if graph_context:
-            features['graph_context'] = True
-        if answer_result.get('conflicts'):
-            features['conflict_detection'] = True
-
-        result = {
+        return {
             'query': query,
             'expanded_query': search_results.get('expanded_query'),
             'answer': answer_result['answer'],
@@ -2143,16 +1921,11 @@ End with "Sources Used: [list numbers]"."""
             'sources': answer_result['sources'],
             'num_sources': len(answer_result['sources']),
             'search_time': search_results.get('search_time', 0),
-            'features_used': features,
+            'features_used': search_results.get('features_used', {}),
             'hallucination_check': answer_result.get('hallucination_check'),
             'citation_check': answer_result.get('citation_check'),
             'context_chars': answer_result.get('context_chars', 0)
         }
-
-        if answer_result.get('conflicts'):
-            result['conflicts'] = answer_result['conflicts']
-
-        return result
 
     def generate_answer_stream(
         self,
@@ -2160,8 +1933,7 @@ End with "Sources Used: [list numbers]"."""
         search_results: Dict,
         max_context_tokens: int = 12000,
         conversation_history: list = None,
-        response_mode: int = 3,
-        graph_context: str = ""
+        response_mode: int = 3
     ):
         """
         Generate answer with STREAMING - yields chunks as they arrive.
@@ -2206,10 +1978,6 @@ End with "Sources Used: [list numbers]"."""
 
         context = "\n---\n".join(context_parts)
 
-        # Detect conflicts across sources
-        conflicts = self.conflict_detector.detect_conflicts(results[:15])
-        conflict_prompt = self.conflict_detector.build_conflict_prompt(conflicts)
-
         # Get mode-specific prompt configuration
         system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context)
 
@@ -2222,20 +1990,8 @@ End with "Sources Used: [list numbers]"."""
                 conversation_context += f"{role}: {content}\n"
             conversation_context += "\n"
 
-        # Build knowledge graph context block
-        graph_block = ""
-        if graph_context:
-            graph_block = f"KNOWLEDGE GRAPH CONTEXT (entity relationships from your organization's knowledge graph):\n{graph_context}\n\n"
-
-        # Build conflict block
-        conflict_block = ""
-        if conflict_prompt:
-            conflict_block = f"{conflict_prompt}\n\n"
-
-        user_prompt = f"""{conversation_context}{graph_block}SOURCE DOCUMENTS:
+        user_prompt = f"""{conversation_context}SOURCE DOCUMENTS:
 {context}
-
-{conflict_block}
 
 CURRENT QUESTION: {query}
 
@@ -2303,8 +2059,7 @@ CURRENT QUESTION: {query}
         top_k: int = 10,
         conversation_history: list = None,
         boost_doc_ids: list = None,
-        response_mode: int = 3,
-        graph_context: str = ""
+        response_mode: int = 3
     ):
         """
         Complete RAG pipeline with STREAMING response.
@@ -2362,8 +2117,7 @@ CURRENT QUESTION: {query}
             query=query,
             search_results=search_results,
             conversation_history=conversation_history or [],
-            response_mode=response_mode,
-            graph_context=graph_context
+            response_mode=response_mode
         ):
             yield event
 

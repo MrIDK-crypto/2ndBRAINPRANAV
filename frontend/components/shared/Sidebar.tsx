@@ -50,7 +50,6 @@ export default function Sidebar({
     if (pathname === '/integrations') return 'Integrations'
     if (pathname === '/documents') return 'Documents'
     if (pathname === '/knowledge-gaps') return 'Knowledge Gaps'
-    if (pathname === '/atoms') return 'Knowledge'
     if (pathname === '/training-guides') return 'Training Videos'
     if (pathname === '/inventory') return 'Inventory'
     if (pathname === '/analytics') return 'Analytics'
@@ -95,7 +94,6 @@ export default function Sidebar({
     { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations', adminOnly: true },
     { id: 'Documents', label: 'Documents', href: '/documents', icon: 'documents', adminOnly: false },
     { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
-    { id: 'Knowledge', label: 'Knowledge', href: '/atoms', icon: 'knowledge', adminOnly: false },
     { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
     { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
     { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
@@ -157,20 +155,6 @@ export default function Sidebar({
             <line x1="18" y1="20" x2="18" y2="10" />
             <line x1="12" y1="20" x2="12" y2="4" />
             <line x1="6" y1="20" x2="6" y2="14" />
-          </svg>
-        )
-      case 'knowledge':
-        return (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <circle cx="5" cy="6" r="2" />
-            <circle cx="19" cy="6" r="2" />
-            <circle cx="5" cy="18" r="2" />
-            <circle cx="19" cy="18" r="2" />
-            <line x1="9.5" y1="10" x2="6.5" y2="7.5" />
-            <line x1="14.5" y1="10" x2="17.5" y2="7.5" />
-            <line x1="9.5" y1="14" x2="6.5" y2="16.5" />
-            <line x1="14.5" y1="14" x2="17.5" y2="16.5" />
           </svg>
         )
       case 'inventory':

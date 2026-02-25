@@ -18,10 +18,6 @@ interface DocumentViewerProps {
     summary?: string
     metadata?: any
     source_url?: string
-    structured_summary?: any
-    summary_l2_highlights?: Array<{ text: string; importance: number }>
-    summary_l3_executive?: string
-    summary_l4_oneliner?: string
   }
   onClose: () => void
 }
@@ -186,8 +182,7 @@ const classificationBadgeColors: Record<string, { bg: string; text: string }> = 
 }
 
 export default function DocumentViewer({ document, onClose }: DocumentViewerProps) {
-  const [activeTab, setActiveTab] = useState<'content' | 'raw' | 'summary'>('content')
-  const hasSummaryLevels = !!(document.summary_l2_highlights || document.summary_l3_executive || document.summary_l4_oneliner || document.structured_summary)
+  const [activeTab, setActiveTab] = useState<'content' | 'raw'>('content')
 
   // Handle escape key to close
   React.useEffect(() => {
@@ -390,24 +385,6 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
             >
               {'</>'} Raw
             </button>
-            {hasSummaryLevels && (
-              <button
-                onClick={() => setActiveTab('summary')}
-                style={{
-                  padding: '12px 20px',
-                  border: 'none',
-                  backgroundColor: activeTab === 'summary' ? colors.pageBg : 'transparent',
-                  borderBottom: activeTab === 'summary' ? `2px solid ${colors.primary}` : '2px solid transparent',
-                  color: activeTab === 'summary' ? colors.primary : colors.textMuted,
-                  fontWeight: 500,
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s'
-                }}
-              >
-                Summaries
-              </button>
-            )}
           </div>
         )}
 
@@ -458,149 +435,6 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               {activeTab === 'content' ? (
                 <div style={{ maxWidth: '100%' }}>
                   {renderMarkdownContent(document.content)}
-                </div>
-              ) : activeTab === 'summary' ? (
-                <div style={{ maxWidth: '100%' }}>
-                  {/* L4: One-liner */}
-                  {document.summary_l4_oneliner && (
-                    <div style={{
-                      backgroundColor: '#FFF8F0',
-                      border: `1px solid #FCD34D`,
-                      borderRadius: '10px',
-                      padding: '14px 18px',
-                      marginBottom: '16px',
-                    }}>
-                      <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 600, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        One-Liner
-                      </p>
-                      <p style={{ margin: 0, fontSize: '15px', fontWeight: 500, color: colors.textPrimary, lineHeight: '1.5' }}>
-                        {document.summary_l4_oneliner}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* L3: Executive Summary */}
-                  {document.summary_l3_executive && (
-                    <div style={{
-                      backgroundColor: colors.cardBg,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '10px',
-                      padding: '16px 18px',
-                      marginBottom: '16px',
-                    }}>
-                      <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 600, color: colors.primary, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Executive Summary
-                      </p>
-                      <p style={{ margin: 0, fontSize: '14px', color: colors.textPrimary, lineHeight: '1.7' }}>
-                        {document.summary_l3_executive}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* L2: Highlights */}
-                  {document.summary_l2_highlights && document.summary_l2_highlights.length > 0 && (
-                    <div style={{
-                      backgroundColor: colors.cardBg,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '10px',
-                      padding: '16px 18px',
-                      marginBottom: '16px',
-                    }}>
-                      <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: 600, color: colors.primary, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Key Highlights
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {document.summary_l2_highlights.map((h, i) => (
-                          <div key={i} style={{
-                            display: 'flex',
-                            gap: '10px',
-                            alignItems: 'flex-start',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            backgroundColor: h.importance >= 0.8 ? '#FFF8F0' : 'transparent',
-                            borderLeft: `3px solid`,
-                            borderLeftColor: `rgba(212, 165, 154, ${0.3 + h.importance * 0.7})`,
-                          }}>
-                            <span style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: colors.textMuted,
-                              padding: '2px 6px',
-                              backgroundColor: colors.border,
-                              borderRadius: '4px',
-                              flexShrink: 0,
-                            }}>
-                              {Math.round(h.importance * 100)}%
-                            </span>
-                            <p style={{ margin: 0, fontSize: '13px', color: colors.textSecondary, lineHeight: '1.6' }}>
-                              {h.text}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* L1: Structured Summary */}
-                  {document.structured_summary && (
-                    <div style={{
-                      backgroundColor: colors.cardBg,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: '10px',
-                      padding: '16px 18px',
-                    }}>
-                      <p style={{ margin: '0 0 12px', fontSize: '11px', fontWeight: 600, color: colors.primary, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Structured Extraction
-                      </p>
-                      {document.structured_summary.summary && (
-                        <p style={{ margin: '0 0 12px', fontSize: '14px', color: colors.textPrimary, lineHeight: '1.6' }}>
-                          {document.structured_summary.summary}
-                        </p>
-                      )}
-                      {document.structured_summary.key_topics?.length > 0 && (
-                        <div style={{ marginBottom: '10px' }}>
-                          <p style={{ margin: '0 0 6px', fontSize: '12px', fontWeight: 500, color: colors.textMuted }}>Topics</p>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            {document.structured_summary.key_topics.map((t: string, i: number) => (
-                              <span key={i} style={{
-                                padding: '3px 10px',
-                                borderRadius: '12px',
-                                backgroundColor: colors.border,
-                                fontSize: '12px',
-                                color: colors.textSecondary,
-                              }}>{t}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {document.structured_summary.decisions?.length > 0 && (
-                        <div style={{ marginBottom: '10px' }}>
-                          <p style={{ margin: '0 0 6px', fontSize: '12px', fontWeight: 500, color: colors.textMuted }}>Decisions</p>
-                          <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                            {document.structured_summary.decisions.map((d: string, i: number) => (
-                              <li key={i} style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '1.5', marginBottom: '4px' }}>{d}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {document.structured_summary.action_items?.length > 0 && (
-                        <div>
-                          <p style={{ margin: '0 0 6px', fontSize: '12px', fontWeight: 500, color: colors.textMuted }}>Action Items</p>
-                          <ul style={{ margin: 0, paddingLeft: '18px' }}>
-                            {document.structured_summary.action_items.map((a: string, i: number) => (
-                              <li key={i} style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '1.5', marginBottom: '4px' }}>{a}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {!document.summary_l4_oneliner && !document.summary_l3_executive && !document.summary_l2_highlights?.length && !document.structured_summary && (
-                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                      <p style={{ color: colors.textMuted, fontSize: '14px' }}>No summaries generated yet.</p>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <pre
