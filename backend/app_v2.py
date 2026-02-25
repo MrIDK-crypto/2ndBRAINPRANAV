@@ -204,6 +204,8 @@ from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
 from api.project_routes import project_bp
 from api.inventory_routes import inventory_bp
+from api.atom_routes import atom_bp
+from api.graph_routes import graph_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -225,6 +227,8 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
 app.register_blueprint(project_bp)
 app.register_blueprint(inventory_bp)
+app.register_blueprint(atom_bp)
+app.register_blueprint(graph_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")
@@ -1151,6 +1155,7 @@ def search():
     include_sources = data.get('include_sources', True)
     use_enhanced = data.get('enhanced', True)  # Enhanced mode on by default
     boost_doc_ids = data.get('boost_doc_ids', [])  # IDs of newly uploaded docs to boost
+    use_graph = data.get('use_graph', True)  # GraphRAG context enrichment
 
     if not query:
         return jsonify({
@@ -1243,6 +1248,35 @@ def search():
         except Exception:
             pass  # Default to 4 if anything fails
 
+        # Fetch GraphRAG context (knowledge graph enrichment)
+        graph_context_text = ""
+        graph_meta = None
+        if use_graph:
+            try:
+                from services.graphrag_search_service import GraphRAGSearchService
+                graph_db = SessionLocal()
+                try:
+                    graph_service = GraphRAGSearchService()
+                    graph_result = graph_service.get_graph_context(
+                        query=query,
+                        tenant_id=tenant_id,
+                        db=graph_db,
+                        max_depth=2,
+                        max_entities=8,
+                    )
+                    graph_context_text = graph_result.get("context_text", "")
+                    if graph_context_text:
+                        graph_meta = {
+                            "entities_found": len(graph_result.get("entities", [])),
+                            "relations_found": len(graph_result.get("relations", [])),
+                            "communities_found": len(graph_result.get("communities", [])),
+                        }
+                        print(f"[SEARCH] GraphRAG context: {graph_meta}", flush=True)
+                finally:
+                    graph_db.close()
+            except Exception as graph_err:
+                print(f"[SEARCH] GraphRAG context skipped: {graph_err}", flush=True)
+
         # Use Enhanced Search Service
         if use_enhanced:
             from services.enhanced_search_service import get_enhanced_search_service
@@ -1258,7 +1292,8 @@ def search():
                 validate=True,
                 conversation_history=conversation_history,  # Pass conversation history
                 boost_doc_ids=boost_doc_ids,  # Boost newly uploaded docs
-                response_mode=response_mode
+                response_mode=response_mode,
+                graph_context=graph_context_text
             )
 
             # Format sources for response — enrich with source_url from DB
@@ -1320,6 +1355,12 @@ def search():
 
             if result.get('citation_check'):
                 response_data['citation_coverage'] = result['citation_check'].get('cited_ratio', 1.0)
+
+            if graph_meta:
+                response_data['graph_context'] = graph_meta
+
+            if result.get('conflicts'):
+                response_data['conflicts'] = result['conflicts']
 
             print(f"[SEARCH] Enhanced search complete: {len(sources)} sources, "
                   f"confidence={result.get('confidence', 0):.2f}, "
@@ -1435,11 +1476,32 @@ def search_stream():
     conversation_history = data.get('conversation_history', [])
     top_k = data.get('top_k', 10)
     boost_doc_ids = data.get('boost_doc_ids', [])
+    use_graph = data.get('use_graph', True)
 
     if not query:
         def error_gen():
             yield f"event: error\ndata: {json.dumps({'error': 'Query required'})}\n\n"
         return Response(error_gen(), mimetype='text/event-stream')
+
+    # Fetch graph context outside the generator (before streaming starts)
+    graph_context_text = ""
+    if use_graph:
+        try:
+            from services.graphrag_search_service import GraphRAGSearchService
+            graph_db = SessionLocal()
+            try:
+                graph_service = GraphRAGSearchService()
+                graph_result = graph_service.get_graph_context(
+                    query=query, tenant_id=tenant_id, db=graph_db,
+                    max_depth=2, max_entities=8,
+                )
+                graph_context_text = graph_result.get("context_text", "")
+                if graph_context_text:
+                    print(f"[SEARCH-STREAM] GraphRAG: {len(graph_result.get('entities', []))} entities", flush=True)
+            finally:
+                graph_db.close()
+        except Exception as graph_err:
+            print(f"[SEARCH-STREAM] GraphRAG skipped: {graph_err}", flush=True)
 
     def generate():
         db = SessionLocal()
@@ -1483,7 +1545,8 @@ def search_stream():
                 top_k=top_k,
                 conversation_history=conversation_history,
                 boost_doc_ids=boost_doc_ids,
-                response_mode=response_mode
+                response_mode=response_mode,
+                graph_context=graph_context_text
             ):
                 event_type = event.get('type')
 

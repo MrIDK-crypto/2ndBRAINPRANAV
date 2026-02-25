@@ -2479,3 +2479,98 @@ def delete_all_documents():
             "success": False,
             "error": str(e)
         }), 500
+
+
+# ---- Progressive Summarization Endpoints ----
+
+@document_bp.route('/<document_id>/summaries', methods=['GET'])
+@require_auth
+def get_document_summaries(document_id: str):
+    """Get all summary levels for a document."""
+    tenant_id = g.tenant_id
+    db = SessionLocal()
+    try:
+        doc = (
+            db.query(Document)
+            .filter(Document.id == document_id, Document.tenant_id == tenant_id)
+            .first()
+        )
+        if not doc:
+            return jsonify({"error": "Document not found"}), 404
+
+        return jsonify({
+            "success": True,
+            "document_id": document_id,
+            "summaries": {
+                "l1_structured": doc.structured_summary,
+                "l2_highlights": doc.summary_l2_highlights,
+                "l3_executive": doc.summary_l3_executive,
+                "l4_oneliner": doc.summary_l4_oneliner,
+            },
+            "generated_at": doc.summary_levels_generated_at.isoformat() if doc.summary_levels_generated_at else None,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@document_bp.route('/<document_id>/summaries/generate', methods=['POST'])
+@require_auth
+def generate_document_summaries(document_id: str):
+    """Trigger summary generation for a single document."""
+    tenant_id = g.tenant_id
+    data = request.get_json() or {}
+    levels = data.get('levels', ['l2', 'l3', 'l4'])
+
+    db = SessionLocal()
+    try:
+        from services.progressive_summary_service import ProgressiveSummaryService
+        service = ProgressiveSummaryService()
+        result = service.generate_and_save(document_id, tenant_id, db, levels=levels)
+
+        if "error" in result:
+            return jsonify({"success": False, "error": result["error"]}), 404
+
+        return jsonify({"success": True, "summaries": result})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@document_bp.route('/bulk-summarize', methods=['POST'])
+@require_auth
+def bulk_summarize_documents():
+    """
+    Generate summaries for documents that don't have them yet.
+
+    Request body (optional):
+        force: bool - regenerate even if already present (default false)
+        limit: int - max documents to process (default 50)
+        levels: list - which levels to generate (default ["l2", "l3", "l4"])
+    """
+    tenant_id = g.tenant_id
+    data = request.get_json() or {}
+    force = data.get('force', False)
+    limit = min(data.get('limit', 50), 200)
+    levels = data.get('levels', ['l2', 'l3', 'l4'])
+
+    db = SessionLocal()
+    try:
+        from services.progressive_summary_service import ProgressiveSummaryService
+        service = ProgressiveSummaryService()
+        result = service.bulk_generate(
+            tenant_id=tenant_id,
+            db=db,
+            force=force,
+            limit=limit,
+            levels=levels,
+        )
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()

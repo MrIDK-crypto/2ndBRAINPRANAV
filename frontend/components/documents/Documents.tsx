@@ -65,6 +65,7 @@ interface Document {
   classificationConfidence?: number
   embedded_at?: string | null
   fileSize?: number
+  summary_l4_oneliner?: string
 }
 
 interface FullDocument {
@@ -81,6 +82,10 @@ interface FullDocument {
   summary?: string
   metadata?: any
   source_url?: string
+  structured_summary?: any
+  summary_l2_highlights?: Array<{ text: string; importance: number }>
+  summary_l3_executive?: string
+  summary_l4_oneliner?: string
 }
 
 // Status mapping for visual indicators
@@ -676,6 +681,7 @@ export default function Documents() {
             classificationConfidence: doc.classification_confidence,
             embedded_at: doc.embedded_at || null,
             fileSize: doc.file_size || 0,
+            summary_l4_oneliner: doc.summary_l4_oneliner || undefined,
           }
         })
 
@@ -2776,16 +2782,33 @@ export default function Documents() {
                             </div>
                           )
                         })()}
-                        <span style={{
-                          fontSize: '14px',
-                          fontWeight: 500,
-                          color: colors.textPrimary,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {doc.name}
-                        </span>
+                        <div style={{ overflow: 'hidden', minWidth: 0 }}>
+                          <span style={{
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            color: colors.textPrimary,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            display: 'block',
+                          }}>
+                            {doc.name}
+                          </span>
+                          {doc.summary_l4_oneliner && (
+                            <span style={{
+                              fontSize: '12px',
+                              color: colors.textMuted,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              display: 'block',
+                              marginTop: '2px',
+                              lineHeight: '16px',
+                            }}>
+                              {doc.summary_l4_oneliner}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Type */}

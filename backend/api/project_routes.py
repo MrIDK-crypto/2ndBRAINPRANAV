@@ -7,11 +7,13 @@ from flask import Blueprint, request, jsonify, g
 from database.models import SessionLocal, Project, Document, utc_now
 from services.auth_service import require_auth
 from services.openai_client import get_openai_client
+from services.para_classification_service import PARAClassificationService
 
 project_bp = Blueprint('project', __name__)
 
-# Pinecone store singleton
+# Singletons
 _vector_store = None
+_para_service = PARAClassificationService()
 
 
 def _get_vector_store():
@@ -30,16 +32,23 @@ def _get_vector_store():
 @project_bp.route('/api/projects', methods=['GET'])
 @require_auth
 def list_projects():
-    """List all smart folders for the current tenant."""
+    """List all smart folders for the current tenant. Filter by ?category= (PARA)."""
     tenant_id = g.tenant_id
+    category = request.args.get('category', '').lower().strip()
+    include_archived = request.args.get('include_archived', 'false').lower() == 'true'
     db = SessionLocal()
     try:
-        projects = (
-            db.query(Project)
-            .filter(Project.tenant_id == tenant_id, Project.is_archived == False)
-            .order_by(Project.created_at.desc())
-            .all()
-        )
+        query = db.query(Project).filter(Project.tenant_id == tenant_id)
+
+        if category and category in ('projects', 'areas', 'resources', 'archives'):
+            query = query.filter(Project.para_category == category)
+            # Show archived items when explicitly filtering for archives
+            if category != 'archives' and not include_archived:
+                query = query.filter(Project.is_archived == False)
+        elif not include_archived:
+            query = query.filter(Project.is_archived == False)
+
+        projects = query.order_by(Project.created_at.desc()).all()
 
         result = []
         for p in projects:
@@ -90,7 +99,13 @@ def smart_create_project():
 
     db = SessionLocal()
     try:
-        # 1. Create the project in DB
+        # 1. Classify via heuristic (fast, no GPT call during create)
+        classification = _para_service.classify_project_heuristic(
+            name=name,
+            description=description,
+        )
+
+        # 2. Create the project in DB
         project = Project(
             tenant_id=tenant_id,
             name=name,
@@ -98,6 +113,9 @@ def smart_create_project():
             color=color,
             is_auto_generated=False,
             document_count=0,
+            para_category=classification["category"],
+            ai_classification_confidence=classification["confidence"],
+            ai_classification_reason=classification["reason"],
         )
         db.add(project)
         db.commit()
@@ -309,6 +327,125 @@ def remove_document_from_project(project_id, doc_id):
     except Exception as e:
         db.rollback()
         print(f"[ProjectRoutes] Error removing document: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@project_bp.route('/api/projects/<project_id>/category', methods=['PUT'])
+@require_auth
+def update_project_category(project_id):
+    """
+    Update a project's PARA category (user override).
+
+    Request body:
+        category: str - one of "projects", "areas", "resources", "archives"
+    """
+    tenant_id = g.tenant_id
+    data = request.get_json()
+    category = (data.get('category') or '').lower().strip()
+
+    valid = {'projects', 'areas', 'resources', 'archives'}
+    if category not in valid:
+        return jsonify({"error": f"Invalid category. Must be one of: {', '.join(sorted(valid))}"}), 400
+
+    db = SessionLocal()
+    try:
+        project = (
+            db.query(Project)
+            .filter(Project.id == project_id, Project.tenant_id == tenant_id)
+            .first()
+        )
+        if not project:
+            return jsonify({"error": "Folder not found"}), 404
+
+        old_category = project.para_category
+        project.para_category = category
+        project.user_override_category = True
+        project.updated_at = utc_now()
+
+        # Archive/unarchive based on category
+        if category == 'archives':
+            project.is_archived = True
+            project.para_metadata = {
+                **(project.para_metadata or {}),
+                "archived_reason": "User moved to archives",
+                "original_category": old_category,
+            }
+        elif old_category == 'archives':
+            project.is_archived = False
+
+        db.commit()
+
+        result = project.to_dict()
+        return jsonify({"success": True, "project": result})
+
+    except Exception as e:
+        db.rollback()
+        print(f"[ProjectRoutes] Error updating category: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@project_bp.route('/api/projects/auto-classify', methods=['POST'])
+@require_auth
+def auto_classify_projects():
+    """
+    Trigger AI classification of all projects into PARA categories.
+
+    Request body (optional):
+        use_ai: bool - use GPT (default true), false for heuristic-only
+        force: bool - reclassify even user-overridden projects (default false)
+    """
+    tenant_id = g.tenant_id
+    data = request.get_json() or {}
+    use_ai = data.get('use_ai', True)
+    force = data.get('force', False)
+
+    db = SessionLocal()
+    try:
+        result = _para_service.bulk_classify_projects(
+            tenant_id=tenant_id,
+            db=db,
+            use_ai=use_ai,
+            force=force,
+        )
+        return jsonify({"success": True, **result})
+
+    except Exception as e:
+        db.rollback()
+        print(f"[ProjectRoutes] Error auto-classifying: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@project_bp.route('/api/projects/para-stats', methods=['GET'])
+@require_auth
+def para_stats():
+    """Get PARA category distribution for the current tenant."""
+    tenant_id = g.tenant_id
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+
+        counts = (
+            db.query(Project.para_category, func.count(Project.id))
+            .filter(Project.tenant_id == tenant_id)
+            .group_by(Project.para_category)
+            .all()
+        )
+
+        stats = {cat: 0 for cat in ('projects', 'areas', 'resources', 'archives')}
+        for cat, count in counts:
+            key = cat or 'resources'
+            stats[key] = stats.get(key, 0) + count
+
+        return jsonify({"success": True, "stats": stats, "total": sum(stats.values())})
+
+    except Exception as e:
+        print(f"[ProjectRoutes] Error getting PARA stats: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         db.close()
