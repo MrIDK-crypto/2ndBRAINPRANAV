@@ -204,6 +204,7 @@ from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
 from api.project_routes import project_bp
 from api.inventory_routes import inventory_bp
+from api.grant_routes import grant_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -225,6 +226,7 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
 app.register_blueprint(project_bp)
 app.register_blueprint(inventory_bp)
+app.register_blueprint(grant_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")

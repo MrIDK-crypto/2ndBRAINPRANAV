@@ -53,6 +53,7 @@ export default function Sidebar({
     if (pathname === '/training-guides') return 'Training Videos'
     if (pathname === '/inventory') return 'Inventory'
     if (pathname === '/analytics') return 'Analytics'
+    if (pathname === '/grants') return 'Grant Finder'
     if (pathname === '/' || pathname === '/chat') return 'ChatBot'
     return 'ChatBot'
   }
@@ -94,6 +95,7 @@ export default function Sidebar({
     { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations', adminOnly: true },
     { id: 'Documents', label: 'Documents', href: '/documents', icon: 'documents', adminOnly: false },
     { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
+    { id: 'Grant Finder', label: 'Grant Finder', href: '/grants', icon: 'grants', adminOnly: false },
     { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
     { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
     { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
@@ -163,6 +165,15 @@ export default function Sidebar({
             <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
             <polyline points="3.27,6.96 12,12.01 20.73,6.96" />
             <line x1="12" y1="22.08" x2="12" y2="12" />
+          </svg>
+        )
+      case 'grants':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            <path d="M11 8v6" />
+            <path d="M8 11h6" />
           </svg>
         )
       default:
