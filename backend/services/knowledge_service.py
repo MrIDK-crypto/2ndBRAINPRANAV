@@ -9,6 +9,7 @@ Supports two modes of gap analysis:
 
 import os
 import io
+import re
 import json
 import pickle
 import asyncio
@@ -79,6 +80,110 @@ class GapAnalysisResult:
     categories_found: Dict[str, int]
 
 
+# ==========================================================================
+# QUESTION QUALITY VALIDATION
+# ==========================================================================
+
+# Generic patterns that indicate low-quality questions
+GENERIC_QUESTION_PATTERNS = [
+    r'^what is the (process|procedure|workflow|approach|method|strategy|plan) for',
+    r'^can you (explain|describe|elaborate|clarify|tell me about)',
+    r'^what are the (details|specifics|key points|main aspects) of',
+    r'^how does .+ work\?$',
+    r'^what is .+\?$',
+    r'^who is responsible for .+\?$',
+    r'^what are the (goals|objectives|requirements) for',
+    r'^please (describe|explain|document|outline)',
+    r'^is there (a|any) documentation for',
+    r'^what (should|do) we know about',
+]
+
+# Compiled patterns for performance
+_GENERIC_PATTERNS = [re.compile(p, re.IGNORECASE) for p in GENERIC_QUESTION_PATTERNS]
+
+
+def validate_question_quality(question_text: str, gap_title: str = "") -> Tuple[bool, str]:
+    """
+    Validate whether a generated question is specific enough.
+
+    Returns:
+        (is_valid, reason) - True if question passes quality check
+    """
+    if not question_text or len(question_text.strip()) < 20:
+        return False, "Question too short"
+
+    q = question_text.strip().lower()
+
+    # Check against generic patterns
+    for pattern in _GENERIC_PATTERNS:
+        if pattern.search(q):
+            return False, f"Matches generic pattern: {pattern.pattern}"
+
+    # Check for specificity signals (names, dates, systems, numbers)
+    specificity_signals = [
+        r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b',  # Proper names (John Smith)
+        r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b',  # Dates (2024-01-15)
+        r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d',  # Date references
+        r'\b(?:Q[1-4]|H[12])\s*\d{4}\b',  # Quarter/half references
+        r'\bv\d+\.\d+\b',  # Version numbers
+        r'\b(?:Slack|email|doc|spreadsheet|meeting|thread|PR|ticket|issue)\b',  # Document references
+    ]
+
+    has_specificity = any(re.search(p, question_text) for p in specificity_signals)
+
+    # Questions with evidence quotes or specific references are always valid
+    if '"' in question_text or "'" in question_text:
+        has_specificity = True
+
+    # If the question references specific entities from the gap title, it's more specific
+    if gap_title:
+        title_words = set(w.lower() for w in gap_title.split() if len(w) > 3)
+        question_words = set(w.lower() for w in question_text.split() if len(w) > 3)
+        overlap = title_words & question_words
+        if len(overlap) >= 2:
+            has_specificity = True
+
+    if not has_specificity:
+        # Allow if question is long enough (likely contains sufficient detail)
+        if len(question_text) > 100:
+            return True, "Long enough to be specific"
+        return False, "No specificity signals (no names, dates, systems, or document references)"
+
+    return True, "Passes quality check"
+
+
+def filter_and_improve_gaps(gaps_data: List[Dict]) -> List[Dict]:
+    """
+    Filter out low-quality gaps and improve question quality.
+
+    Returns filtered list with only high-quality, evidence-grounded gaps.
+    """
+    filtered = []
+    for gap in gaps_data:
+        questions = gap.get("questions", [])
+        if not questions:
+            continue
+
+        # Check if at least one question passes quality validation
+        valid_questions = []
+        for q in questions:
+            q_text = q if isinstance(q, str) else q.get('text', '')
+            is_valid, reason = validate_question_quality(q_text, gap.get("title", ""))
+            if is_valid:
+                valid_questions.append(q)
+            else:
+                logger.debug(f"[QualityFilter] Rejected question: '{q_text[:80]}...' - {reason}")
+
+        if valid_questions:
+            gap["questions"] = valid_questions
+            filtered.append(gap)
+        else:
+            logger.info(f"[QualityFilter] Dropped gap '{gap.get('title', '')[:60]}' - all questions too generic")
+
+    logger.info(f"[QualityFilter] Kept {len(filtered)}/{len(gaps_data)} gaps after quality filtering")
+    return filtered
+
+
 class KnowledgeService:
     """
     Knowledge service for managing gaps, answers, and embeddings.
@@ -90,39 +195,61 @@ class KnowledgeService:
     - Embedding index rebuilding
     """
 
-    # Gap analysis prompt
-    GAP_ANALYSIS_PROMPT = """Analyze the following documents and identify knowledge gaps - information that is missing, unclear, or needs documentation.
+    # Gap analysis prompt - Evidence-anchored with MECE framework
+    GAP_ANALYSIS_PROMPT = """You are a senior knowledge management consultant using the MECE (Mutually Exclusive, Collectively Exhaustive) framework to audit organizational knowledge.
 
 DOCUMENTS:
 {documents}
 
-For each gap you identify, provide:
-1. A clear title describing the missing knowledge
-2. A description of why this information is important
-3. A category (decision, technical, process, context, relationship, timeline, outcome, rationale)
-4. A priority (1-5, 5 being highest)
-5. 3-5 specific questions that would help fill this gap
+## YOUR TASK
+Identify SPECIFIC knowledge gaps — information that is missing, incomplete, or contradictory. Every gap MUST be grounded in evidence from the documents above.
 
-Focus on:
-- Decisions mentioned but not explained
-- Technical details that are assumed but not documented
-- Processes that are referenced but not described
-- Context that would help understand the situation
-- Relationships between people/teams that are unclear
-- Timelines and deadlines that aren't specified
-- Outcomes of projects/decisions that aren't recorded
-- Rationale behind important choices
+## MECE DOMAINS (check each one):
+1. DECISIONS — Who decided what, when, why, and what alternatives were rejected?
+2. PROCESSES — Are all steps documented? What happens when things fail?
+3. PEOPLE/OWNERSHIP — Who owns what? What happens if they leave? (bus factor)
+4. SYSTEMS/TECHNICAL — Are dependencies, configurations, and integrations documented?
+5. TIMELINES — Are deadlines, milestones, and review dates specified?
+6. RATIONALE — Is the "why" behind choices captured, not just the "what"?
+7. CONTEXT — Would a new team member understand this without asking someone?
+8. OUTCOMES — Are results and lessons learned recorded?
+
+## RULES (CRITICAL):
+- Every question MUST reference a specific person, system, date, project, or decision FROM the documents
+- Do NOT generate generic questions like "What is the process for X?" or "Can you explain Y?"
+- Each question must cite the evidence that triggered it
+- Prioritize using Pyramid Principle: most critical/highest-risk gaps first
+
+## EXAMPLES OF GOOD vs BAD QUESTIONS:
+BAD: "What is the deployment process?"
+GOOD: "The Jan 15 email from Sarah mentions 'the usual deployment steps' for the billing service — what are these exact steps, and what happens if step 3 (database migration) fails?"
+
+BAD: "Who is responsible for the API?"
+GOOD: "Three separate Slack threads (Dec 3, Dec 7, Dec 12) reference Mike as the only person who knows how to restart the payment gateway — who else has been trained on this, and where is the runbook?"
+
+BAD: "What are the project timelines?"
+GOOD: "The Q4 planning doc mentions a 'hard deadline' for SOC2 compliance but no specific date — when exactly is the audit, and which of the 12 controls listed in the spreadsheet are still incomplete?"
+
+## CHAIN OF THOUGHT (follow for each gap):
+1. What specific text/evidence in the documents triggered this gap?
+2. What exactly is missing — be precise
+3. Who in the organization would know the answer?
+4. What is the business risk if this gap isn't filled?
+5. Generate 2-4 questions that are specific enough that the respondent knows EXACTLY what to answer
 
 Respond in JSON format:
 {{
     "gaps": [
         {{
-            "title": "...",
-            "description": "...",
+            "title": "Specific title referencing actual entities",
+            "description": "Why this gap matters, citing specific evidence from documents",
             "category": "decision|technical|process|context|relationship|timeline|outcome|rationale",
             "priority": 1-5,
-            "questions": ["question1", "question2", ...],
-            "related_topics": ["topic1", "topic2"]
+            "evidence_quote": "Direct quote or reference from the source document that triggered this gap",
+            "suggested_respondent": "Name or role of person who should answer",
+            "questions": ["Specific evidence-grounded question 1", "Question 2", ...],
+            "related_topics": ["topic1", "topic2"],
+            "business_risk": "What happens if this gap is not filled"
         }}
     ]
 }}
@@ -147,77 +274,107 @@ Respond in JSON format:
         self,
         doc: Document,
         use_summary: bool = True,
-        max_content_chars: int = 4000
+        max_content_chars: int = 4000,
+        detail_level: str = 'standard'
     ) -> str:
         """
         Prepare document content for Knowledge Gap analysis.
-
-        Uses structured_summary when available (efficient, pre-extracted).
-        Falls back to truncated content if no summary exists.
 
         Args:
             doc: Document model instance
             use_summary: Whether to use structured_summary (default True)
             max_content_chars: Max chars if falling back to raw content
+            detail_level: 'standard' (summary + key content) or 'detailed' (more raw content)
 
         Returns:
             Formatted document text for analysis
         """
         # Header with metadata
         doc_text = f"---\n"
+        doc_text += f"[DOC_ID: {doc.id}]\n"
         doc_text += f"Title: {doc.title or 'Untitled'}\n"
         doc_text += f"Type: {doc.source_type or 'unknown'}\n"
         doc_text += f"Date: {doc.source_created_at.isoformat() if doc.source_created_at else 'Unknown'}\n"
         if doc.sender:
             doc_text += f"From: {doc.sender}\n"
+        if doc.sender_email:
+            doc_text += f"Email: {doc.sender_email}\n"
 
-        # Use structured summary if available (Phase 2 extraction)
-        if use_summary and doc.structured_summary:
-            summary = doc.structured_summary
-            doc_text += f"\nSummary: {summary.get('summary', 'No summary')}\n"
+        if detail_level == 'detailed':
+            # DETAILED MODE: Include both structured summary AND raw content
+            # This gives the LLM the full picture for evidence-grounded gap detection
+            if doc.structured_summary:
+                summary = doc.structured_summary
+                doc_text += f"\n[STRUCTURED SUMMARY]\n"
+                doc_text += f"Summary: {summary.get('summary', 'No summary')}\n"
+                if summary.get('key_topics'):
+                    doc_text += f"Key Topics: {', '.join(summary['key_topics'])}\n"
+                entities = summary.get('entities', {})
+                if entities.get('people'):
+                    doc_text += f"People: {', '.join(entities['people'])}\n"
+                if entities.get('systems'):
+                    doc_text += f"Systems: {', '.join(entities['systems'])}\n"
+                if entities.get('organizations'):
+                    doc_text += f"Organizations: {', '.join(entities['organizations'])}\n"
+                if summary.get('decisions'):
+                    doc_text += f"Decisions: {'; '.join(summary['decisions'])}\n"
+                if summary.get('processes'):
+                    doc_text += f"Processes: {'; '.join(summary['processes'])}\n"
+                if summary.get('dates'):
+                    dates_str = '; '.join([f"{d.get('date', '?')}: {d.get('event', '?')}"
+                                           for d in summary['dates'][:5]])
+                    doc_text += f"Key Dates: {dates_str}\n"
+                if summary.get('action_items'):
+                    doc_text += f"Action Items: {'; '.join(summary['action_items'][:5])}\n"
 
-            # Key topics
-            if summary.get('key_topics'):
-                doc_text += f"Key Topics: {', '.join(summary['key_topics'])}\n"
-
-            # Entities
-            entities = summary.get('entities', {})
-            if entities.get('people'):
-                doc_text += f"People: {', '.join(entities['people'])}\n"
-            if entities.get('systems'):
-                doc_text += f"Systems: {', '.join(entities['systems'])}\n"
-            if entities.get('organizations'):
-                doc_text += f"Organizations: {', '.join(entities['organizations'])}\n"
-
-            # Decisions (critical for gap analysis)
-            if summary.get('decisions'):
-                doc_text += f"Decisions: {'; '.join(summary['decisions'])}\n"
-
-            # Processes
-            if summary.get('processes'):
-                doc_text += f"Processes: {'; '.join(summary['processes'])}\n"
-
-            # Dates/deadlines
-            if summary.get('dates'):
-                dates_str = '; '.join([f"{d.get('date', '?')}: {d.get('event', '?')}"
-                                       for d in summary['dates'][:5]])
-                doc_text += f"Key Dates: {dates_str}\n"
-
-            # Action items
-            if summary.get('action_items'):
-                doc_text += f"Action Items: {'; '.join(summary['action_items'][:5])}\n"
-
-            # Technical details
-            if summary.get('technical_details'):
-                doc_text += f"Technical: {'; '.join(summary['technical_details'][:3])}\n"
-
-            doc_text += f"Word Count: ~{summary.get('word_count', 'unknown')}\n"
-        else:
-            # Fallback: use truncated raw content
+            # Always include raw content in detailed mode (up to 8000 chars)
             content = doc.content or ''
-            if len(content) > max_content_chars:
-                content = content[:max_content_chars] + f"\n[... truncated, {len(doc.content)} total chars]"
-            doc_text += f"\nContent:\n{content}\n"
+            detail_chars = min(max_content_chars * 2, 8000)  # Double the budget in detailed mode
+            if content:
+                if len(content) > detail_chars:
+                    content = content[:detail_chars] + f"\n[... truncated, {len(doc.content)} total chars]"
+                doc_text += f"\n[FULL CONTENT]\n{content}\n"
+
+        else:
+            # STANDARD MODE: Use structured summary when available
+            if use_summary and doc.structured_summary:
+                summary = doc.structured_summary
+                doc_text += f"\nSummary: {summary.get('summary', 'No summary')}\n"
+
+                if summary.get('key_topics'):
+                    doc_text += f"Key Topics: {', '.join(summary['key_topics'])}\n"
+                entities = summary.get('entities', {})
+                if entities.get('people'):
+                    doc_text += f"People: {', '.join(entities['people'])}\n"
+                if entities.get('systems'):
+                    doc_text += f"Systems: {', '.join(entities['systems'])}\n"
+                if entities.get('organizations'):
+                    doc_text += f"Organizations: {', '.join(entities['organizations'])}\n"
+                if summary.get('decisions'):
+                    doc_text += f"Decisions: {'; '.join(summary['decisions'])}\n"
+                if summary.get('processes'):
+                    doc_text += f"Processes: {'; '.join(summary['processes'])}\n"
+                if summary.get('dates'):
+                    dates_str = '; '.join([f"{d.get('date', '?')}: {d.get('event', '?')}"
+                                           for d in summary['dates'][:5]])
+                    doc_text += f"Key Dates: {dates_str}\n"
+                if summary.get('action_items'):
+                    doc_text += f"Action Items: {'; '.join(summary['action_items'][:5])}\n"
+                if summary.get('technical_details'):
+                    doc_text += f"Technical: {'; '.join(summary['technical_details'][:3])}\n"
+                doc_text += f"Word Count: ~{summary.get('word_count', 'unknown')}\n"
+
+                # NEW: Also include a snippet of raw content for evidence grounding
+                content = doc.content or ''
+                if content:
+                    snippet_len = min(2000, len(content))
+                    doc_text += f"\n[Content Excerpt]\n{content[:snippet_len]}\n"
+            else:
+                # Fallback: use truncated raw content
+                content = doc.content or ''
+                if len(content) > max_content_chars:
+                    content = content[:max_content_chars] + f"\n[... truncated, {len(doc.content)} total chars]"
+                doc_text += f"\nContent:\n{content}\n"
 
         doc_text += "---\n"
         return doc_text
@@ -231,9 +388,8 @@ Respond in JSON format:
         """
         Prepare multiple documents for Knowledge Gap analysis with token budgeting.
 
-        Prioritizes documents with structured summaries.
-        Falls back gracefully when summaries don't exist.
-        Implements smart sampling if over budget.
+        Uses 'detailed' mode for small corpora (<=30 docs) to include more raw content
+        for evidence grounding. Falls back to 'standard' for larger corpora.
 
         Args:
             documents: List of Document instances
@@ -251,6 +407,9 @@ Respond in JSON format:
                 reverse=True
             )
 
+        # Use detailed mode for small corpora to include more evidence for grounding
+        detail_level = 'detailed' if len(documents) <= 30 else 'standard'
+
         doc_texts = []
         total_chars = 0
         stats = {
@@ -259,7 +418,8 @@ Respond in JSON format:
             "documents_with_summary": 0,
             "documents_with_fallback": 0,
             "documents_skipped": 0,
-            "total_chars": 0
+            "total_chars": 0,
+            "detail_level": detail_level
         }
 
         for doc in documents:
@@ -271,21 +431,23 @@ Respond in JSON format:
                 )
                 break
 
-            # Prepare document (prefer summary)
+            # Prepare document with appropriate detail level
             has_summary = bool(doc.structured_summary)
             doc_text = self._prepare_document_for_analysis(
                 doc,
                 use_summary=True,
-                max_content_chars=4000  # Fallback limit per doc
+                max_content_chars=4000,
+                detail_level=detail_level
             )
 
             # Check if adding this doc exceeds budget
             if total_chars + len(doc_text) > max_total_chars:
-                # Try with smaller content limit
+                # Try with smaller content limit in standard mode
                 doc_text = self._prepare_document_for_analysis(
                     doc,
                     use_summary=True,
-                    max_content_chars=2000
+                    max_content_chars=2000,
+                    detail_level='standard'
                 )
                 if total_chars + len(doc_text) > max_total_chars:
                     continue  # Skip this doc
@@ -304,6 +466,7 @@ Respond in JSON format:
 
         # Log stats
         logger.info(f"[KnowledgeGap] Document preparation stats:")
+        logger.info(f"  - Detail level: {detail_level}")
         logger.info(f"  - Total documents: {stats['total_documents']}")
         logger.info(f"  - Included: {stats['documents_included']}")
         logger.info(f"  - With summary: {stats['documents_with_summary']}")
@@ -402,7 +565,7 @@ Respond in JSON format:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a knowledge management expert. Analyze documents to identify gaps in organizational knowledge. Always respond with valid JSON."
+                        "content": "You are a senior McKinsey-trained knowledge management consultant. You use MECE frameworks, evidence-based analysis, and the Pyramid Principle to identify critical knowledge gaps in organizations. Every question you generate MUST reference specific people, systems, dates, or decisions from the source documents. Generic questions are UNACCEPTABLE. Always respond with valid JSON."
                     },
                     {
                         "role": "user",
@@ -419,7 +582,11 @@ Respond in JSON format:
             result_data = json.loads(result_text)
 
             gaps_data = result_data.get("gaps", [])
-            print(f"[GapAnalysis] Found {len(gaps_data)} gaps in GPT response")
+            print(f"[GapAnalysis] Found {len(gaps_data)} gaps in GPT response (pre-filter)")
+
+            # Quality filter: remove generic/low-quality gaps
+            gaps_data = filter_and_improve_gaps(gaps_data)
+            print(f"[GapAnalysis] {len(gaps_data)} gaps passed quality filter")
 
             # Save gaps to database
             category_counts = {}
@@ -442,7 +609,7 @@ Respond in JSON format:
                 # Track category counts
                 category_counts[category.value] = category_counts.get(category.value, 0) + 1
 
-                # Create gap
+                # Create gap with evidence grounding
                 gap = KnowledgeGap(
                     tenant_id=tenant_id,
                     project_id=project_id,
@@ -457,7 +624,10 @@ Respond in JSON format:
                     ],
                     context={
                         "related_topics": gap_data.get("related_topics", []),
-                        "analyzed_documents": [doc.id for doc in documents[:10]]
+                        "analyzed_documents": [doc.id for doc in documents[:10]],
+                        "evidence_quote": gap_data.get("evidence_quote", ""),
+                        "suggested_respondent": gap_data.get("suggested_respondent", ""),
+                        "business_risk": gap_data.get("business_risk", "")
                     }
                 )
                 self.db.add(gap)
@@ -1010,34 +1180,28 @@ Respond in JSON format:
             # Initialize intelligent gap detector
             detector = get_intelligent_gap_detector()
 
-            # Process each document
+            # Process each document - always use full content for NLP pattern matching
             docs_processed = 0
             for doc in documents:
-                # Get content - prefer structured summary, fallback to raw
+                # Always prioritize raw content for intelligent mode (NLP needs full text)
+                raw_content = doc.content or ""
+                content_parts = []
+
+                # Add structured metadata as header for context
                 if doc.structured_summary:
                     summary = doc.structured_summary
-                    content_parts = []
-                    content_parts.append(f"Summary: {summary.get('summary', '')}")
-
-                    if summary.get('key_topics'):
-                        content_parts.append(f"Topics: {', '.join(summary['key_topics'])}")
+                    if summary.get('entities', {}).get('people'):
+                        content_parts.append(f"[People mentioned: {', '.join(summary['entities']['people'])}]")
                     if summary.get('decisions'):
-                        content_parts.append(f"Decisions: {'; '.join(summary['decisions'])}")
+                        content_parts.append(f"[Decisions: {'; '.join(summary['decisions'])}]")
                     if summary.get('processes'):
-                        content_parts.append(f"Processes: {'; '.join(summary['processes'])}")
-                    if summary.get('action_items'):
-                        content_parts.append(f"Actions: {'; '.join(summary['action_items'][:5])}")
-                    if summary.get('technical_details'):
-                        content_parts.append(f"Technical: {'; '.join(summary['technical_details'][:3])}")
+                        content_parts.append(f"[Processes: {'; '.join(summary['processes'])}]")
 
-                    # Include raw content for better pattern matching
-                    raw_content = doc.content or ""
-                    if len(raw_content) > 0:
-                        content_parts.append(f"\nFull Content:\n{raw_content[:30000]}")
+                # Full raw content is critical for pattern matching
+                if raw_content:
+                    content_parts.append(raw_content[:50000])
 
-                    content = "\n".join(content_parts)
-                else:
-                    content = (doc.content or "")[:30000]
+                content = "\n".join(content_parts)
 
                 if len(content) > 100:
                     detector.add_document(
@@ -1075,6 +1239,11 @@ Respond in JSON format:
 
                 category_counts[category.value] = category_counts.get(category.value, 0) + 1
 
+                # Extract evidence and source docs from intelligent detector output
+                gap_context = gap_data.get("context", {})
+                evidence_list = gap_data.get("evidence", [])
+                source_doc_ids = gap_data.get("source_docs", [])
+
                 gap = KnowledgeGap(
                     tenant_id=tenant_id,
                     project_id=project_id,
@@ -1085,10 +1254,13 @@ Respond in JSON format:
                     status=GapStatus.OPEN,
                     questions=gap_data.get("questions", []),
                     context={
-                        **gap_data.get("context", {}),
+                        **gap_context,
                         "analysis_type": "intelligent",
+                        "evidence": evidence_list[:5],
+                        "source_docs": source_doc_ids[:10],
                         "stats": result.get("stats", {})
-                    }
+                    },
+                    related_document_ids=source_doc_ids[:10] if source_doc_ids else [doc.id for doc in documents[:5]]
                 )
                 self.db.add(gap)
                 saved_gaps.append(gap)

@@ -170,7 +170,7 @@ def analyze_gaps():
         project_id = data.get('project_id')
         force = data.get('force', False)
         include_pending = data.get('include_pending', True)
-        mode = data.get('mode', 'simple')  # Default to simple for faster results
+        mode = data.get('mode', 'intelligent')  # Default to intelligent for best quality (NLP-based, zero GPT cost)
         max_documents = min(data.get('max_documents', 100), 500)  # Cap at 500
 
         # Run synchronously for local testing (no Celery/Redis needed)
@@ -585,6 +585,12 @@ def get_gap_context(gap_id: str):
             category = gap_dict.get('category', '')
             evidence = gap_dict.get('evidence', '')
             raw_context = gap_dict.get('context', '')
+            if isinstance(raw_context, str):
+                try:
+                    raw_context = json.loads(raw_context)
+                except (json.JSONDecodeError, TypeError):
+                    raw_context = {}
+            raw_context = raw_context or {}
 
             # Build question text
             question_text = description
@@ -594,27 +600,51 @@ def get_gap_context(gap_id: str):
                 else:
                     question_text = questions[0]
 
-            # Build prompt for LLM
-            prompt = f"""Given a knowledge gap question from a knowledge management system, generate a brief 2-3 sentence context that explains:
-1. What topic/area this question relates to
-2. Why this information might be important
+            # Extract evidence from context fields
+            evidence_quote = raw_context.get('evidence_quote', '') if isinstance(raw_context, dict) else ''
+            suggested_respondent = raw_context.get('suggested_respondent', '') if isinstance(raw_context, dict) else ''
+            business_risk = raw_context.get('business_risk', '') if isinstance(raw_context, dict) else ''
 
-Question: {question_text}
+            # Fetch actual source document excerpts for evidence grounding
+            source_doc_ids = raw_context.get('analyzed_documents', []) if isinstance(raw_context, dict) else []
+            source_doc_ids = source_doc_ids or raw_context.get('source_docs', []) if isinstance(raw_context, dict) else []
+            source_excerpts = ""
+            if source_doc_ids:
+                source_docs = db.query(Document).filter(
+                    Document.id.in_(source_doc_ids[:5])
+                ).all()
+                for sdoc in source_docs:
+                    content_snippet = (sdoc.content or '')[:500]
+                    if content_snippet:
+                        source_excerpts += f"\n- [{sdoc.title or 'Untitled'}]: \"{content_snippet}...\""
+
+            # Build evidence-based prompt
+            prompt = f"""Given a knowledge gap and its source evidence, write 2-3 sentences of EVIDENCE-BASED context.
+Do NOT invent information. Only use facts from the evidence provided below.
+
+Knowledge Gap: {question_text}
 Category: {category or 'General'}
-{f'Evidence/Background: {evidence[:500]}' if evidence else ''}
-{f'Raw context: {str(raw_context)[:500]}' if raw_context else ''}
+Gap Description: {description[:300]}
+{f'Evidence Quote: "{evidence_quote}"' if evidence_quote else ''}
+{f'Suggested Respondent: {suggested_respondent}' if suggested_respondent else ''}
+{f'Business Risk: {business_risk}' if business_risk else ''}
+{f'Source Document Excerpts:{source_excerpts}' if source_excerpts else ''}
 
-Write 2-3 sentences of helpful context. Be specific and informative. Do not repeat the question."""
+RULES:
+- Only state facts found in the evidence above
+- If the evidence mentions specific people, systems, or dates, include them
+- Explain WHY this gap matters based on the evidence, not speculation
+- If there isn't enough evidence, say what IS known and what needs clarification"""
 
             # Call LLM
             client = get_openai_client()
             response = client.chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that provides brief, informative context for knowledge gap questions. Be concise and specific."},
+                    {"role": "system", "content": "You are a knowledge management analyst. Provide factual, evidence-based context summaries. Never invent information — only reference what's in the provided evidence."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                max_tokens=150
+                temperature=0.2,
+                max_tokens=200
             )
 
             context_summary = response.choices[0].message.content.strip()

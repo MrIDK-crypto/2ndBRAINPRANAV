@@ -149,6 +149,7 @@ class Gap:
     source_pattern: str  # Which detection pattern found this
     quality_score: float = 0.0  # NEW: Quality score 0-1
     fingerprint: str = ""  # NEW: For deduplication
+    source_doc_ids: List[str] = field(default_factory=list)  # Document IDs that triggered this gap
 
 
 @dataclass
@@ -1626,9 +1627,13 @@ class GroundedQuestionGenerator:
                     self.seen_fingerprints.add(fingerprint)
                     quality_score = self._calculate_quality(frame, questions)
 
+                    # Evidence-grounded description
+                    desc = f"The {frame.frame_type.lower()} \"{frame.trigger}\" is missing its {missing_slot}. "
+                    desc += f"Source evidence: \"{frame.source_sentence[:200]}\""
+
                     gap = Gap(
                         gap_type=f"MISSING_{missing_slot.upper()}",
-                        description=f"Missing {missing_slot} for {frame.frame_type}: {frame.trigger}",
+                        description=desc,
                         evidence=[frame.source_sentence],
                         related_entities=[frame.trigger],
                         confidence=0.9,
@@ -1637,7 +1642,8 @@ class GroundedQuestionGenerator:
                         category=self._frame_to_category(frame.frame_type),
                         source_pattern="FRAME_EXTRACTION",
                         quality_score=quality_score,
-                        fingerprint=fingerprint
+                        fingerprint=fingerprint,
+                        source_doc_ids=[frame.source_doc_id] if frame.source_doc_id else []
                     )
                     gaps.append(gap)
 
@@ -1789,36 +1795,42 @@ class GroundedQuestionGenerator:
         return min(max(score, 0.0), 1.0)
 
     def _frame_slot_questions(self, frame: Frame, missing_slot: str) -> List[str]:
-        """Generate questions for missing frame slots"""
-        context = frame.source_sentence[:100]
+        """Generate evidence-grounded questions for missing frame slots"""
+        trigger = frame.trigger
+        context = frame.source_sentence[:150]
+        doc_ref = f" (from doc {frame.source_doc_id})" if frame.source_doc_id else ""
+
+        # Extract named entities from source sentence for specificity
+        entities = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', frame.source_sentence)
+        entity_ref = f" involving {', '.join(entities[:3])}" if entities else ""
 
         questions = {
             "DECISION": {
-                "what": [f"What exactly was decided? Context: '{context}'"],
-                "who_decided": [f"Who made this decision? Context: '{context}'"],
-                "why": [f"Why was this decided? Context: '{context}'"],
-                "alternatives": [f"What alternatives were considered? Context: '{context}'"],
-                "when": [f"When was this decided? Context: '{context}'"],
-                "impact": [f"What was the impact? Context: '{context}'"]
+                "what": [f"The document mentions \"{trigger}\" but doesn't specify the exact decision{entity_ref} — what was actually decided and what changed as a result?{doc_ref}"],
+                "who_decided": [f"Who approved or made the call on \"{trigger}\"? The document says: \"{context}\" but doesn't name the decision-maker{doc_ref}"],
+                "why": [f"The decision to \"{trigger}\" is documented, but the rationale is missing — what problem was this solving, and what constraints led to this choice?{doc_ref}"],
+                "alternatives": [f"When \"{trigger}\" was decided, what other options were on the table? The document doesn't record what was rejected or why{doc_ref}"],
+                "when": [f"When exactly was \"{trigger}\" decided? The document references it without a date{doc_ref}"],
+                "impact": [f"What was the measurable impact of \"{trigger}\"? The outcome isn't documented{doc_ref}"]
             },
             "PROCESS": {
-                "what": [f"What process? Context: '{context}'"],
-                "steps": [f"What are the steps? Context: '{context}'"],
-                "owner": [f"Who owns this process? Context: '{context}'"],
+                "what": [f"The document references \"{trigger}\" as a process but doesn't describe what it involves{entity_ref}{doc_ref}"],
+                "steps": [f"What are the exact steps for \"{trigger}\"? The document mentions it but doesn't list the procedure — what happens first, and what could go wrong at each step?{doc_ref}"],
+                "owner": [f"Who is responsible for running \"{trigger}\"? The document describes it without naming an owner or backup{doc_ref}"],
             },
             "OWNERSHIP": {
-                "what": [f"What is owned? Context: '{context}'"],
-                "who": [f"Who owns this? Context: '{context}'"],
+                "what": [f"The document mentions ownership by{entity_ref} but doesn't specify what exactly they own or manage — what systems/processes are included?{doc_ref}"],
+                "who": [f"\"{trigger}\" doesn't have a documented owner — who maintains this, and who is the backup if they're unavailable?{doc_ref}"],
             },
             "PROBLEM": {
-                "what": [f"What is the problem? Context: '{context}'"],
-                "impact": [f"What is the impact? Context: '{context}'"],
-                "solution": [f"What is the solution? Context: '{context}'"],
+                "what": [f"The document references a problem around \"{trigger}\" — what exactly is the issue, and when did it first appear?{doc_ref}"],
+                "impact": [f"What is the business impact of the \"{trigger}\" problem? The document mentions it without quantifying the effect{doc_ref}"],
+                "solution": [f"Has \"{trigger}\" been resolved? The document describes the problem but not the resolution or workaround{doc_ref}"],
             }
         }
 
         frame_questions = questions.get(frame.frame_type, {})
-        return frame_questions.get(missing_slot, [f"What is the {missing_slot}? Context: '{context}'"])
+        return frame_questions.get(missing_slot, [f"The document mentions \"{trigger}\" but doesn't explain the {missing_slot} — can you provide this detail?{doc_ref}"])
 
     def _calculate_priority(self, frame_type: str, missing_slot: str) -> int:
         """Calculate priority"""
@@ -1958,16 +1970,18 @@ class IntelligentGapDetector:
         }
 
     def to_knowledge_gaps(self, result: Dict[str, Any], project_id: Optional[str] = None) -> List[Dict]:
-        """Convert to database format"""
+        """Convert to database format with evidence grounding"""
         knowledge_gaps = []
 
         for gap in result.get("gaps", []):
             knowledge_gaps.append({
                 "title": gap.description[:200],
-                "description": f"Pattern: {gap.source_pattern}. Evidence: {'; '.join(gap.evidence[:2])}",
+                "description": f"[{gap.source_pattern}] {gap.description}. Evidence: \"{'; '.join(gap.evidence[:2])}\"",
                 "category": gap.category,
                 "priority": gap.priority,
                 "questions": [{"text": q, "answered": False} for q in gap.grounded_questions],
+                "evidence": gap.evidence[:5],
+                "source_docs": gap.source_doc_ids[:10],
                 "context": {
                     "gap_type": gap.gap_type,
                     "source_pattern": gap.source_pattern,
@@ -1975,7 +1989,8 @@ class IntelligentGapDetector:
                     "quality_score": gap.quality_score,
                     "fingerprint": gap.fingerprint,
                     "related_entities": gap.related_entities[:5],
-                    "evidence": gap.evidence[:3]
+                    "evidence": gap.evidence[:5],
+                    "source_docs": gap.source_doc_ids[:10]
                 }
             })
 
