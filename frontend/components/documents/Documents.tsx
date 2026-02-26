@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Image from 'next/image'
 import axios from 'axios'
 import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import DocumentViewer from './DocumentViewer'
 import Sidebar from '../shared/Sidebar'
 import {
@@ -290,6 +290,7 @@ export default function Documents() {
   const authHeaders = useAuthHeaders()
   const { token, user, logout } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const gapsMenuRef = useRef<HTMLDivElement>(null)
@@ -308,6 +309,16 @@ export default function Documents() {
       loadSmartFolders()
     }
   }, [token])
+
+  // Auto-open a specific document when navigated from Knowledge Gaps
+  const highlightHandledRef = useRef(false)
+  useEffect(() => {
+    const highlightId = searchParams.get('highlight')
+    if (highlightId && hasLoadedRef.current && authHeaders?.Authorization && !highlightHandledRef.current) {
+      highlightHandledRef.current = true
+      viewDocument(highlightId)
+    }
+  }, [searchParams, authHeaders, documents])
 
   // Load smart folders from backend
   const loadSmartFolders = async () => {

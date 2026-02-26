@@ -18,7 +18,7 @@ from collections import defaultdict
 # MAIN ENTRY POINTS
 # =============================================================================
 
-def analyze_code_gaps(documents: List[Dict], max_gaps_per_category: int = 5) -> Dict[str, Any]:
+def analyze_code_gaps(documents: List[Dict], max_gaps_per_category: int = 8) -> Dict[str, Any]:
     """
     Analyze GitHub code documents using multi-layered analysis.
 
@@ -95,7 +95,7 @@ def analyze_code_gaps(documents: List[Dict], max_gaps_per_category: int = 5) -> 
 
 def analyze_code_gaps_with_llm(
     documents: List[Dict],
-    max_gaps_per_category: int = 5,
+    max_gaps_per_category: int = 8,
     use_llm: bool = True
 ) -> Dict[str, Any]:
     """

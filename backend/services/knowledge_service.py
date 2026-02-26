@@ -1096,6 +1096,103 @@ Respond in JSON format:
                 categories_found={"error": str(e)}
             )
 
+    def _refine_gaps_with_llm(self, raw_gaps: list, max_gaps: int = 25) -> list:
+        """
+        Lightweight LLM pass to refine NLP-detected gaps.
+
+        Takes raw gap data from the intelligent detector and uses GPT to:
+        1. Filter out truly generic/useless gaps
+        2. Rewrite questions to be specific and actionable (what's MISSING, not what's there)
+        3. Re-prioritize based on business value
+
+        Cost: ~1 API call with ~2-4K input tokens (gap summaries only, not full documents)
+        """
+        if not raw_gaps:
+            return raw_gaps
+
+        # Build compact representation for LLM
+        gap_summaries = []
+        for i, gap in enumerate(raw_gaps[:max_gaps]):
+            questions = gap.get("questions", [])
+            q_texts = []
+            for q in questions[:3]:
+                if isinstance(q, dict):
+                    q_texts.append(q.get("text", str(q)))
+                else:
+                    q_texts.append(str(q))
+            evidence = gap.get("evidence", []) or []
+            gap_summaries.append({
+                "index": i,
+                "type": gap.get("context", {}).get("gap_type", "UNKNOWN"),
+                "description": (gap.get("description", "") or "")[:200],
+                "evidence": [str(e)[:150] for e in evidence[:2]],
+                "questions": q_texts,
+                "category": gap.get("category", "context"),
+            })
+
+        prompt = f"""You are refining knowledge gap questions identified by an NLP system. The NLP system found patterns in organizational documents but its questions tend to DESCRIBE what exists rather than identify what's MISSING.
+
+GAPS DETECTED (with evidence):
+{json.dumps(gap_summaries, indent=2)}
+
+YOUR TASK — For each gap, evaluate and improve:
+1. KEEP only gaps that identify genuinely MISSING knowledge (not descriptions of what already exists)
+2. REWRITE each question to ask about what's MISSING — reference the evidence, name specific entities, ask what's undocumented
+3. REMOVE gaps that are generic platform descriptions, obvious definitions, or already answered in the evidence
+4. PRIORITIZE: 5=critical missing knowledge (bus factor, undocumented process), 1=nice-to-have
+
+RULES:
+- Questions must ask about what's MISSING or INCOMPLETE, not describe what's there
+- Each question must reference specific evidence from the gap
+- Remove any gap that sounds like "What is X?" or "Can you describe Y?"
+- Good questions: "The email mentions 'the usual deployment steps' — what ARE those steps?" or "Only Mike knows how to restart the payment gateway — who else is trained?"
+
+Return JSON:
+{{"refined_gaps": [
+  {{"index": 0, "keep": true, "refined_questions": ["Specific question about what's missing..."], "priority": 4}},
+  {{"index": 1, "keep": false}},
+  ...
+]}}"""
+
+        try:
+            response = self.client.chat_completion(
+                messages=[
+                    {"role": "system", "content": "You refine knowledge gap questions to be specific and actionable. Return valid JSON only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=3000,
+                response_format={"type": "json_object"}
+            )
+
+            result_text = response.choices[0].message.content
+            result = json.loads(result_text)
+            refined = result.get("refined_gaps", [])
+
+            # Apply refinements back to original gaps
+            output = []
+            for r in refined:
+                if not r.get("keep", True):
+                    continue
+                idx = r.get("index", -1)
+                if 0 <= idx < len(raw_gaps):
+                    gap = raw_gaps[idx].copy()
+                    if r.get("refined_questions"):
+                        gap["questions"] = [
+                            {"text": q, "answered": False}
+                            for q in r["refined_questions"]
+                        ]
+                    if r.get("priority"):
+                        gap["priority"] = r["priority"]
+                    output.append(gap)
+
+            logger.info(f"[LLM Refinement] {len(raw_gaps)} raw → {len(output)} refined gaps")
+            return output if output else raw_gaps  # Fallback to originals if empty
+
+        except Exception as e:
+            logger.warning(f"[LLM Refinement] Failed, using raw NLP gaps: {e}")
+            return raw_gaps
+
     def analyze_gaps_intelligent(
         self,
         tenant_id: str,
@@ -1219,11 +1316,18 @@ Respond in JSON format:
             # Convert to knowledge gaps
             gaps_data = detector.to_knowledge_gaps(result, project_id)
 
+            # Stage 2: LLM refinement pass (lightweight, ~1 API call)
+            try:
+                gaps_data = self._refine_gaps_with_llm(gaps_data, max_gaps=25)
+                logger.info(f"[Intelligent] LLM refinement complete: {len(gaps_data)} gaps")
+            except Exception as e:
+                logger.warning(f"[Intelligent] LLM refinement skipped: {e}")
+
             # Save gaps to database
             category_counts = {}
             saved_gaps = []
 
-            for gap_data in gaps_data[:50]:  # Limit to top 50 gaps
+            for gap_data in gaps_data[:30]:  # Limit to top 30 gaps (quality over quantity)
                 category_str = gap_data.get("category", "context").lower()
                 category_map = {
                     "decision": GapCategory.DECISION,

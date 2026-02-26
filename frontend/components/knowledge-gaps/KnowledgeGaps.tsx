@@ -425,7 +425,7 @@ export default function KnowledgeGaps() {
   const [gaps, setGaps] = useState<KnowledgeGap[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
-  const [timeStrategy, setTimeStrategy] = useState<'10' | '20' | '30' | 'all'>('20')
+  const [timeStrategy, setTimeStrategy] = useState<'10' | '20' | '30' | 'all'>('10')
   const [viewMode, setViewMode] = useState<'focus' | 'list'>('focus')
   const [currentGapIndex, setCurrentGapIndex] = useState(0)
 

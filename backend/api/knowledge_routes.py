@@ -184,7 +184,7 @@ def analyze_gaps():
             # Run the appropriate analysis mode
             if mode == 'code':
                 # Code-aware gap detection for GitHub repositories
-                from services.code_gap_detector import analyze_code_gaps
+                from services.code_gap_detector import analyze_code_gaps_with_llm
 
                 # Get GitHub documents
                 documents = db.query(Document).filter(
@@ -228,7 +228,7 @@ def analyze_gaps():
                 doc_id_set = set(str(doc.id) for doc in documents)
 
                 print(f"[GapAnalysis] Analyzing {len(doc_dicts)} GitHub documents")
-                code_result = analyze_code_gaps(doc_dicts, max_gaps_per_category=5)
+                code_result = analyze_code_gaps_with_llm(doc_dicts, max_gaps_per_category=8, use_llm=True)
 
                 # Save gaps to database
                 gaps_created = 0

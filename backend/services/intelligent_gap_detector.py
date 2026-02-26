@@ -1938,13 +1938,39 @@ class IntelligentGapDetector:
         contradictions = self.verifier.find_contradictions()
         single_source = self.verifier.find_single_source_knowledge()
 
+        # Sort each signal type by quality/confidence before slicing
+        # (ensures highest-signal gaps surface consistently regardless of document order)
+        sorted_missing_roles = sorted(
+            self.all_missing_roles,
+            key=lambda r: len(r.get('roles_missing', [])),
+            reverse=True
+        )[:50]
+
+        sorted_claims = sorted(
+            unsupported_claims,
+            key=lambda c: len(c.get('claim', '')),
+            reverse=True
+        )[:20]
+
+        sorted_relations = sorted(
+            missing_relations,
+            key=lambda r: len(r.get('shared_documents', [])),
+            reverse=True
+        )[:20]
+
+        sorted_contradictions = sorted(
+            contradictions,
+            key=lambda c: len(c.get('claim1', '')) + len(c.get('claim2', '')),
+            reverse=True
+        )[:10]
+
         gaps = self.question_generator.generate_questions(
             frames=frames_with_gaps,
-            missing_roles=self.all_missing_roles[:50],
-            unsupported_claims=unsupported_claims[:20],
-            missing_relations=missing_relations[:20],
+            missing_roles=sorted_missing_roles,
+            unsupported_claims=sorted_claims,
+            missing_relations=sorted_relations,
             bus_factor_risks=bus_factor_risks,
-            contradictions=contradictions[:10]
+            contradictions=sorted_contradictions
         )
 
         logger.info(f"[IntelligentGap] Complete: {len(gaps)} gaps")
