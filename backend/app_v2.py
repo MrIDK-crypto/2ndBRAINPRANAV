@@ -204,7 +204,6 @@ from api.admin_routes import admin_bp, ensure_admins, fix_untitled_conversations
 from api.website_routes import website_bp
 from api.project_routes import project_bp
 from api.inventory_routes import inventory_bp
-from api.grant_routes import grant_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -226,7 +225,6 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(website_bp)
 app.register_blueprint(project_bp)
 app.register_blueprint(inventory_bp)
-app.register_blueprint(grant_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")
@@ -1297,12 +1295,22 @@ def search():
                         source_entry["source_url"] = source_url_map.get(doc_id, '')
                     sources.append(source_entry)
 
+            # Check if any sources are from grant data
+            answer_text = result.get('answer', '')
+            has_grant_sources = any(
+                s.get('metadata', {}).get('source_type') == 'grant'
+                or 'grant' in (s.get('title', '') or '').lower()[:10]
+                for s in raw_sources
+            ) if raw_sources else False
+            if has_grant_sources:
+                answer_text += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER and Grants.gov."
+
             # Build response
             response_data = {
                 "success": True,
                 "query": query,
                 "expanded_query": result.get('expanded_query'),
-                "answer": result.get('answer', ''),
+                "answer": answer_text,
                 "confidence": result.get('confidence', 0),
                 "query_type": "enhanced_rag",
                 "sources": sources,
@@ -1388,6 +1396,10 @@ def search():
                         "score": result.get('score', 0),
                         "metadata": result.get('metadata', {})
                     })
+
+            # Check if any sources are from grant data
+            if any(r.get('metadata', {}).get('source_type') == 'grant' for r in results):
+                answer += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER and Grants.gov."
 
             return jsonify({
                 "success": True,
