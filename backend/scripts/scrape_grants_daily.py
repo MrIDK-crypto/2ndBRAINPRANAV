@@ -41,14 +41,40 @@ logger = logging.getLogger(__name__)
 
 # Broad research topics (always searched)
 BASE_SEARCH_QUERIES = [
+    # Life sciences / biomedical
     "biomedical research",
     "clinical trial",
     "health sciences",
-    "technology innovation",
-    "environmental science",
-    "data science machine learning",
-    "public health",
     "neuroscience",
+    "cancer research",
+    "genomics genetics",
+    "immunology",
+    "sleep research",
+    "aging longevity",
+    "molecular biology",
+    # Social sciences / economics
+    "social science research",
+    "economics research",
+    "behavioral science",
+    "education research",
+    "psychology research",
+    # STEM / engineering
+    "technology innovation",
+    "artificial intelligence",
+    "data science machine learning",
+    "engineering research",
+    "computer science",
+    "robotics automation",
+    # Environment / earth sciences
+    "environmental science",
+    "climate change research",
+    "energy research",
+    # Public health / policy
+    "public health",
+    "health disparities",
+    "global health",
+    # Interdisciplinary
+    "interdisciplinary research",
 ]
 
 
@@ -154,7 +180,7 @@ def _scrape_for_tenant(db, tenant_id: str, dry_run: bool = False, limit_per_quer
 
         # Deduplicate queries
         queries = list(dict.fromkeys(q.lower().strip() for q in queries))
-        logger.info(f"Searching {len(queries)} queries across NIH RePORTER + Grants.gov")
+        logger.info(f"Searching {len(queries)} queries across NIH RePORTER + Grants.gov + NSF")
 
         # Collect all grant results
         all_grants = {}  # keyed by external_id for dedup
@@ -166,6 +192,10 @@ def _scrape_for_tenant(db, tenant_id: str, dry_run: bool = False, limit_per_quer
 
                 gov_results = finder.search_grants_gov(query=query, limit=limit_per_query)
                 for g in gov_results:
+                    all_grants[g['id']] = g
+
+                nsf_results = finder.search_nsf_awards(query=query, limit=limit_per_query)
+                for g in nsf_results:
                     all_grants[g['id']] = g
             except Exception as e:
                 logger.warning(f"Error searching '{query}': {e}")

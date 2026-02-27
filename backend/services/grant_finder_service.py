@@ -252,6 +252,71 @@ class GrantFinderService:
             return []
 
     # ========================================================================
+    # NSF AWARD SEARCH (National Science Foundation)
+    # ========================================================================
+
+    def search_nsf_awards(
+        self,
+        query: str,
+        limit: int = 20
+    ) -> List[Dict]:
+        """Search NSF Award Search API for funded research grants."""
+        try:
+            params = {
+                "keyword": query,
+                "printFields": "id,title,abstractText,agency,piFirstName,piLastName,piEmail,awardeeName,awardeeCity,awardeeStateCode,startDate,expDate,fundsObligatedAmt,fundProgramName,primaryProgram",
+                "offset": 1,
+                "rpp": min(limit, 25)
+            }
+
+            resp = requests.get(
+                "https://api.nsf.gov/services/v1/awards.json",
+                params=params,
+                timeout=15
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            results = []
+            for item in data.get("response", {}).get("award", []):
+                pi_name = f"{item.get('piFirstName', '')} {item.get('piLastName', '')}".strip()
+                location = f"{item.get('awardeeCity', '')}, {item.get('awardeeStateCode', '')}".strip(', ')
+
+                results.append({
+                    "id": f"nsf_{item.get('id', '')}",
+                    "source": "nsf",
+                    "title": (item.get("title") or "Untitled").strip(),
+                    "abstract": (item.get("abstractText") or "")[:2000],
+                    "agency": "NSF",
+                    "agency_full": "National Science Foundation",
+                    "pi_name": pi_name,
+                    "pi_title": "",
+                    "organization": item.get("awardeeName", ""),
+                    "org_location": location,
+                    "award_amount": int(item.get("fundsObligatedAmt", 0) or 0),
+                    "start_date": item.get("startDate", ""),
+                    "end_date": item.get("expDate", ""),
+                    "deadline": None,
+                    "activity_code": item.get("primaryProgram", ""),
+                    "project_num": item.get("id", ""),
+                    "status": "active",
+                    "url": f"https://www.nsf.gov/awardsearch/showAward?AWD_ID={item.get('id', '')}",
+                    "fit_score": 0,
+                    "fit_reasons": [],
+                    "matching_docs": []
+                })
+
+            logger.info(f"[GrantFinder] NSF returned {len(results)} results for '{query}'")
+            return results
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[GrantFinder] NSF API error: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"[GrantFinder] NSF parse error: {e}")
+            return []
+
+    # ========================================================================
     # COMBINED SEARCH + SCORING
     # ========================================================================
 

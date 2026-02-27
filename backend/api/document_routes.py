@@ -107,7 +107,8 @@ def list_documents():
             ).filter(
                 Document.tenant_id == getattr(g, 'tenant_id', 'local-tenant'),
                 Document.is_deleted == False,
-                Document.source_type != 'ctsi_shared'  # Hide shared CTSI data from documents page
+                Document.source_type != 'ctsi_shared',  # Hide shared CTSI data from documents page
+                Document.source_type != 'grant'  # Grants are accessed via chatbot RAG, not docs page
             )
 
             # Apply filters
