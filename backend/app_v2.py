@@ -1303,7 +1303,19 @@ def search():
                 for s in raw_sources
             ) if raw_sources else False
             if has_grant_sources:
-                answer_text += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER and Grants.gov."
+                # Get the actual last scrape timestamp
+                try:
+                    last_grant = db.query(Document.created_at).filter(
+                        Document.tenant_id == tenant_id,
+                        Document.source_type == 'grant'
+                    ).order_by(Document.created_at.desc()).first()
+                    if last_grant and last_grant[0]:
+                        last_scrape = last_grant[0].strftime('%B %d, %Y at %I:%M %p UTC')
+                        answer_text += f"\n\n---\n📋 Grant data sourced from NIH RePORTER, Grants.gov, and NSF. Last updated: {last_scrape}."
+                    else:
+                        answer_text += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER, Grants.gov, and NSF."
+                except Exception:
+                    answer_text += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER, Grants.gov, and NSF."
 
             # Build response
             response_data = {
@@ -1399,7 +1411,18 @@ def search():
 
             # Check if any sources are from grant data
             if any(r.get('metadata', {}).get('source_type') == 'grant' for r in results):
-                answer += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER and Grants.gov."
+                try:
+                    last_grant = db.query(Document.created_at).filter(
+                        Document.tenant_id == tenant_id,
+                        Document.source_type == 'grant'
+                    ).order_by(Document.created_at.desc()).first()
+                    if last_grant and last_grant[0]:
+                        last_scrape = last_grant[0].strftime('%B %d, %Y at %I:%M %p UTC')
+                        answer += f"\n\n---\n📋 Grant data sourced from NIH RePORTER, Grants.gov, and NSF. Last updated: {last_scrape}."
+                    else:
+                        answer += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER, Grants.gov, and NSF."
+                except Exception:
+                    answer += "\n\n---\n📋 Grant data is updated daily from NIH RePORTER, Grants.gov, and NSF."
 
             return jsonify({
                 "success": True,
