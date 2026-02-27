@@ -1536,9 +1536,15 @@ class EnhancedSearchService:
 
             # Filter out clearly irrelevant results after reranking
             # ms-marco cross-encoder: scores > 0 = relevant, < -3 = irrelevant
+            # Grant documents use structured format that cross-encoder penalizes unfairly — exempt them
             MIN_RERANK_SCORE = -2.0
             before_rerank_filter = len(initial_results)
-            filtered = [r for r in initial_results if r.get('rerank_score', 0) >= MIN_RERANK_SCORE]
+            filtered = [
+                r for r in initial_results
+                if r.get('rerank_score', 0) >= MIN_RERANK_SCORE
+                or r.get('metadata', {}).get('source_type') == 'grant'
+                or (r.get('title', '') or '').startswith('Grant:')
+            ]
             if not filtered and initial_results:
                 # Keep at least the top 2 results
                 filtered = initial_results[:2]
