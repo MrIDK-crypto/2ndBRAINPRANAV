@@ -1446,8 +1446,7 @@ class EnhancedSearchService:
             initial_results = vector_store.hybrid_search(
                 query=search_query,
                 tenant_id=tenant_id,
-                top_k=retrieve_k,
-                keywords=keywords if keywords else None  # Pass filtered keywords!
+                top_k=retrieve_k
             )
         else:
             initial_results = vector_store.search(
