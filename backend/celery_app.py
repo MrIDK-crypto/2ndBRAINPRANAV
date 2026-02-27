@@ -19,7 +19,8 @@ celery = Celery(
         'tasks.sync_tasks',
         'tasks.gap_analysis_tasks',
         'tasks.embedding_tasks',
-        'tasks.video_tasks'
+        'tasks.video_tasks',
+        'tasks.grant_scrape_tasks'
     ]
 )
 
@@ -67,6 +68,7 @@ celery.conf.update(
         'tasks.gap_analysis_tasks.*': {'queue': 'high_priority'},
         'tasks.embedding_tasks.*': {'queue': 'default'},
         'tasks.video_tasks.*': {'queue': 'low_priority'},
+        'tasks.grant_scrape_tasks.*': {'queue': 'low_priority'},
     },
 
     # Monitoring
@@ -78,6 +80,11 @@ celery.conf.update(
         'cleanup-old-results': {
             'task': 'tasks.maintenance.cleanup_old_results',
             'schedule': 3600.0,  # Run every hour
+        },
+        'scrape-grants-daily': {
+            'task': 'tasks.grant_scrape_tasks.scrape_grants_daily',
+            'schedule': 86400.0,  # Run every 24 hours
+            'args': ('local-tenant', 20),
         },
     },
 )
