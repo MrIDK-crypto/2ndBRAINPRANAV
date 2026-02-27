@@ -1297,11 +1297,23 @@ def search():
 
             # Check if any sources are from grant data
             answer_text = result.get('answer', '')
-            has_grant_sources = any(
-                s.get('metadata', {}).get('source_type') == 'grant'
-                or 'grant' in (s.get('title', '') or '').lower()[:10]
-                for s in raw_sources
-            ) if raw_sources else False
+            has_grant_sources = False
+            if raw_sources:
+                # Check 1: metadata from Pinecone
+                has_grant_sources = any(
+                    s.get('metadata', {}).get('source_type') == 'grant'
+                    for s in raw_sources
+                )
+                # Check 2: query DB for source_type of returned docs (most reliable)
+                if not has_grant_sources and doc_ids:
+                    try:
+                        grant_count = db.query(Document.id).filter(
+                            Document.id.in_(doc_ids),
+                            Document.source_type == 'grant'
+                        ).limit(1).count()
+                        has_grant_sources = grant_count > 0
+                    except Exception:
+                        pass
             if has_grant_sources:
                 # Get the actual last scrape timestamp
                 try:
@@ -1410,7 +1422,18 @@ def search():
                     })
 
             # Check if any sources are from grant data
-            if any(r.get('metadata', {}).get('source_type') == 'grant' for r in results):
+            has_grant = any(r.get('metadata', {}).get('source_type') == 'grant' for r in results)
+            if not has_grant:
+                basic_doc_ids = [r.get('doc_id', '') for r in results if r.get('doc_id')]
+                if basic_doc_ids:
+                    try:
+                        has_grant = db.query(Document.id).filter(
+                            Document.id.in_(basic_doc_ids),
+                            Document.source_type == 'grant'
+                        ).limit(1).count() > 0
+                    except Exception:
+                        pass
+            if has_grant:
                 try:
                     last_grant = db.query(Document.created_at).filter(
                         Document.tenant_id == tenant_id,

@@ -1650,11 +1650,12 @@ RESPONSE FORMAT:
 - Use **numbered lists** for steps/processes
 - Use **bullet points** for features/items
 - Keep paragraphs focused and clear
-- For ANY tabular data, ALWAYS use proper markdown table syntax with | pipes and separator rows:
+- For ANY tabular data, ALWAYS use proper markdown tables:
   | Column 1 | Column 2 |
   |----------|----------|
   | Data 1   | Data 2   |
-  NEVER put tables inside code blocks (``` ```) — always use the pipe syntax above
+  | Data 3   | Data 4   |
+  RULES: Use ONE separator row (|---|---|) ONLY after the header row. Do NOT add separator rows between data rows. Do NOT add blank rows or --- between data rows. NEVER put tables inside code blocks.
 
 CITATION FORMAT:
 - Cite every factual claim: [Source 1], [Source 2]
