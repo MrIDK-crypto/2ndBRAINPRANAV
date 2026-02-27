@@ -100,27 +100,36 @@ class GrantFinderService:
                 if amount_max:
                     criteria["award_amount_range"]["max_amount"] = amount_max
 
-            body = {
-                "criteria": criteria,
-                "offset": 0,
-                "limit": min(limit, 50),
-                "sort_field": "project_start_date",
-                "sort_order": "desc",
-                "include_fields": [
-                    "ApplId", "ProjectNum", "ProjectTitle", "AbstractText",
-                    "Organization", "AwardAmount", "IsActive",
-                    "ProjectStartDate", "ProjectEndDate",
-                    "PrincipalInvestigators", "AgencyIcAdmin",
-                    "AgencyIcFundings", "ActivityCode"
-                ]
-            }
-
-            resp = requests.post(NIH_REPORTER_URL, json=body, timeout=15)
-            resp.raise_for_status()
-            data = resp.json()
-
+            # NIH RePORTER supports up to 500 results per request
+            page_size = min(limit, 500)
             results = []
-            for item in data.get("results", []):
+            offset = 0
+
+            while len(results) < limit:
+                body = {
+                    "criteria": criteria,
+                    "offset": offset,
+                    "limit": min(page_size, limit - len(results)),
+                    "sort_field": "project_start_date",
+                    "sort_order": "desc",
+                    "include_fields": [
+                        "ApplId", "ProjectNum", "ProjectTitle", "AbstractText",
+                        "Organization", "AwardAmount", "IsActive",
+                        "ProjectStartDate", "ProjectEndDate",
+                        "PrincipalInvestigators", "AgencyIcAdmin",
+                        "AgencyIcFundings", "ActivityCode"
+                    ]
+                }
+
+                resp = requests.post(NIH_REPORTER_URL, json=body, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+
+                page_results = data.get("results", [])
+                if not page_results:
+                    break
+
+                for item in page_results:
                 # Extract PI name
                 pis = item.get("principal_investigators") or []
                 contact_pi = next((p for p in pis if p.get("is_contact_pi")), pis[0] if pis else {})
@@ -167,6 +176,11 @@ class GrantFinderService:
                     "matching_docs": []
                 })
 
+                offset += len(page_results)
+                # Stop if we got fewer results than requested (last page)
+                if len(page_results) < page_size:
+                    break
+
             logger.info(f"[GrantFinder] NIH RePORTER returned {len(results)} results for '{query}'")
             return results
 
@@ -189,30 +203,35 @@ class GrantFinderService:
         amount_max: Optional[int] = None,
         limit: int = 20
     ) -> List[Dict]:
-        """Search Grants.gov for open funding opportunities."""
+        """Search Grants.gov for open funding opportunities with pagination."""
         try:
-            body = {
-                "keyword": query,
-                "oppStatuses": "posted|forecasted",
-                "rows": min(limit, 25),
-                "startRecordNum": 0,
-                "sortBy": "openDate|desc"
-            }
-
-            # Filter by agency if specified
-            if agencies:
-                # Grants.gov uses agency codes like "NSF", "HHS-NIH", "DOD"
-                body["agencies"] = ",".join(agencies)
-
-            # Filter by funding category for science/research
-            body["fundingCategories"] = "ST"  # Science & Technology
-
-            resp = requests.post(GRANTS_GOV_URL, json=body, timeout=15)
-            resp.raise_for_status()
-            data = resp.json()
-
             results = []
-            for item in data.get("data", {}).get("oppHits", []):
+            page_size = 25  # Grants.gov max per page
+            start_record = 0
+
+            while len(results) < limit:
+                body = {
+                    "keyword": query,
+                    "oppStatuses": "posted|forecasted",
+                    "rows": min(page_size, limit - len(results)),
+                    "startRecordNum": start_record,
+                    "sortBy": "openDate|desc"
+                }
+
+                if agencies:
+                    body["agencies"] = ",".join(agencies)
+
+                body["fundingCategories"] = "ST"  # Science & Technology
+
+                resp = requests.post(GRANTS_GOV_URL, json=body, timeout=15)
+                resp.raise_for_status()
+                data = resp.json()
+
+                page_items = data.get("data", {}).get("oppHits", [])
+                if not page_items:
+                    break
+
+                for item in page_items:
                 # Parse dates
                 open_date = item.get("openDate", "")
                 close_date = item.get("closeDate", "")
@@ -241,6 +260,10 @@ class GrantFinderService:
                     "matching_docs": []
                 })
 
+                start_record += len(page_items)
+                if len(page_items) < page_size:
+                    break
+
             logger.info(f"[GrantFinder] Grants.gov returned {len(results)} results for '{query}'")
             return results
 
@@ -260,51 +283,63 @@ class GrantFinderService:
         query: str,
         limit: int = 20
     ) -> List[Dict]:
-        """Search NSF Award Search API for funded research grants."""
+        """Search NSF Award Search API for funded research grants with pagination."""
         try:
-            params = {
-                "keyword": query,
-                "printFields": "id,title,abstractText,agency,piFirstName,piLastName,piEmail,awardeeName,awardeeCity,awardeeStateCode,startDate,expDate,fundsObligatedAmt,fundProgramName,primaryProgram",
-                "offset": 1,
-                "rpp": min(limit, 25)
-            }
-
-            resp = requests.get(
-                "https://api.nsf.gov/services/v1/awards.json",
-                params=params,
-                timeout=15
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
             results = []
-            for item in data.get("response", {}).get("award", []):
-                pi_name = f"{item.get('piFirstName', '')} {item.get('piLastName', '')}".strip()
-                location = f"{item.get('awardeeCity', '')}, {item.get('awardeeStateCode', '')}".strip(', ')
+            page_size = 25  # NSF max per page
+            offset = 1  # NSF uses 1-based offset
 
-                results.append({
-                    "id": f"nsf_{item.get('id', '')}",
-                    "source": "nsf",
-                    "title": (item.get("title") or "Untitled").strip(),
-                    "abstract": (item.get("abstractText") or "")[:2000],
-                    "agency": "NSF",
-                    "agency_full": "National Science Foundation",
-                    "pi_name": pi_name,
-                    "pi_title": "",
-                    "organization": item.get("awardeeName", ""),
-                    "org_location": location,
-                    "award_amount": int(item.get("fundsObligatedAmt", 0) or 0),
-                    "start_date": item.get("startDate", ""),
-                    "end_date": item.get("expDate", ""),
-                    "deadline": None,
-                    "activity_code": item.get("primaryProgram", ""),
-                    "project_num": item.get("id", ""),
-                    "status": "active",
-                    "url": f"https://www.nsf.gov/awardsearch/showAward?AWD_ID={item.get('id', '')}",
-                    "fit_score": 0,
-                    "fit_reasons": [],
-                    "matching_docs": []
-                })
+            while len(results) < limit:
+                params = {
+                    "keyword": query,
+                    "printFields": "id,title,abstractText,agency,piFirstName,piLastName,piEmail,awardeeName,awardeeCity,awardeeStateCode,startDate,expDate,fundsObligatedAmt,fundProgramName,primaryProgram",
+                    "offset": offset,
+                    "rpp": min(page_size, limit - len(results))
+                }
+
+                resp = requests.get(
+                    "https://api.nsf.gov/services/v1/awards.json",
+                    params=params,
+                    timeout=15
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+                page_items = data.get("response", {}).get("award", [])
+                if not page_items:
+                    break
+
+                for item in page_items:
+                    pi_name = f"{item.get('piFirstName', '')} {item.get('piLastName', '')}".strip()
+                    location = f"{item.get('awardeeCity', '')}, {item.get('awardeeStateCode', '')}".strip(', ')
+
+                    results.append({
+                        "id": f"nsf_{item.get('id', '')}",
+                        "source": "nsf",
+                        "title": (item.get("title") or "Untitled").strip(),
+                        "abstract": (item.get("abstractText") or "")[:2000],
+                        "agency": "NSF",
+                        "agency_full": "National Science Foundation",
+                        "pi_name": pi_name,
+                        "pi_title": "",
+                        "organization": item.get("awardeeName", ""),
+                        "org_location": location,
+                        "award_amount": int(item.get("fundsObligatedAmt", 0) or 0),
+                        "start_date": item.get("startDate", ""),
+                        "end_date": item.get("expDate", ""),
+                        "deadline": None,
+                        "activity_code": item.get("primaryProgram", ""),
+                        "project_num": item.get("id", ""),
+                        "status": "active",
+                        "url": f"https://www.nsf.gov/awardsearch/showAward?AWD_ID={item.get('id', '')}",
+                        "fit_score": 0,
+                        "fit_reasons": [],
+                        "matching_docs": []
+                    })
+
+                offset += len(page_items)
+                if len(page_items) < page_size:
+                    break
 
             logger.info(f"[GrantFinder] NSF returned {len(results)} results for '{query}'")
             return results

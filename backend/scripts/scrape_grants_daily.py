@@ -302,8 +302,8 @@ def main():
                         help='Tenant ID to ingest grants for (default: auto-detect all tenants)')
     parser.add_argument('--dry-run', action='store_true',
                         help='Preview what would be ingested without saving')
-    parser.add_argument('--limit', type=int, default=20,
-                        help='Max results per query per source (default: 20)')
+    parser.add_argument('--limit', type=int, default=500,
+                        help='Max results per query per source (default: 500)')
     args = parser.parse_args()
 
     logger.info("=" * 60)
