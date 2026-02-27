@@ -1,6 +1,7 @@
 """
 Daily Grant Scraper
-Fetches grants from NIH RePORTER and Grants.gov, saves as Documents, embeds into Pinecone.
+Fetches grants from NIH RePORTER, Grants.gov, NSF, SBIR, and Federal RePORTER.
+Saves as Documents, embeds into Pinecone.
 
 Usage:
     cd backend
@@ -180,7 +181,7 @@ def _scrape_for_tenant(db, tenant_id: str, dry_run: bool = False, limit_per_quer
 
         # Deduplicate queries
         queries = list(dict.fromkeys(q.lower().strip() for q in queries))
-        logger.info(f"Searching {len(queries)} queries across NIH RePORTER + Grants.gov + NSF")
+        logger.info(f"Searching {len(queries)} queries across NIH RePORTER + Grants.gov + NSF + Federal RePORTER + SBIR")
 
         # Collect all grant results
         all_grants = {}  # keyed by external_id for dedup
@@ -197,10 +198,31 @@ def _scrape_for_tenant(db, tenant_id: str, dry_run: bool = False, limit_per_quer
                 nsf_results = finder.search_nsf_awards(query=query, limit=limit_per_query)
                 for g in nsf_results:
                     all_grants[g['id']] = g
+
+                fed_results = finder.search_federal_reporter(query=query, limit=limit_per_query)
+                for g in fed_results:
+                    all_grants[g['id']] = g
             except Exception as e:
                 logger.warning(f"Error searching '{query}': {e}")
 
-        logger.info(f"Found {len(all_grants)} unique grants across all queries")
+        # SBIR: Query by agency for recent awards (separate from keyword queries)
+        sbir_agencies = ["DOD", "HHS", "NASA", "NSF", "DOE"]
+        for agency in sbir_agencies:
+            try:
+                sbir_results = finder.search_sbir(agency=agency, limit=limit_per_query)
+                for g in sbir_results:
+                    all_grants[g['id']] = g
+            except Exception as e:
+                logger.warning(f"SBIR error for {agency}: {e}")
+
+        logger.info(f"Found {len(all_grants)} unique grants across all queries (before cross-source dedup)")
+
+        # Cross-source deduplication by normalized title
+        before_dedup = len(all_grants)
+        deduped_list = GrantFinderService.deduplicate_cross_source(list(all_grants.values()))
+        all_grants = {g['id']: g for g in deduped_list}
+        if before_dedup != len(all_grants):
+            logger.info(f"Cross-source dedup: removed {before_dedup - len(all_grants)} duplicates, {len(all_grants)} remaining")
 
         if not all_grants:
             logger.info("No grants found. Exiting.")
