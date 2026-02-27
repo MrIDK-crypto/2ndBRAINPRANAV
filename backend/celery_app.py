@@ -84,7 +84,6 @@ celery.conf.update(
         'scrape-grants-daily': {
             'task': 'tasks.grant_scrape_tasks.scrape_grants_daily',
             'schedule': 86400.0,  # Run every 24 hours
-            'args': ('local-tenant', 20),
         },
     },
 )

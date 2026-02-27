@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 @celery.task(bind=True, name='tasks.grant_scrape_tasks.scrape_grants_daily')
-def scrape_grants_daily_task(self, tenant_id: str = 'local-tenant', limit_per_query: int = 20):
+def scrape_grants_daily_task(self, tenant_id: str = None, limit_per_query: int = 20):
     """
     Daily background task to scrape grants and ingest into knowledge base.
 

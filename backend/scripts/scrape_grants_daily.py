@@ -102,11 +102,46 @@ def grant_to_document_content(grant: dict) -> str:
     return "\n".join(parts)
 
 
-def scrape_and_ingest(tenant_id: str, dry_run: bool = False, limit_per_query: int = 20):
-    """Main scraper logic."""
+def scrape_and_ingest(tenant_id: str = None, dry_run: bool = False, limit_per_query: int = 20):
+    """Main scraper logic. If tenant_id is None, scrape for all tenants."""
     init_database()
     db = SessionLocal()
 
+    try:
+        # Auto-detect tenants if none specified
+        if not tenant_id:
+            tenants = db.query(Tenant).all()
+            if not tenants:
+                logger.warning("No tenants found in database. Nothing to scrape for.")
+                return
+            tenant_ids = [t.id for t in tenants]
+            logger.info(f"Auto-detected {len(tenant_ids)} tenant(s): {tenant_ids}")
+        else:
+            # Verify tenant exists
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            if not tenant:
+                logger.warning(f"Tenant '{tenant_id}' not found. Falling back to all tenants.")
+                tenants = db.query(Tenant).all()
+                if not tenants:
+                    logger.warning("No tenants found in database. Nothing to scrape for.")
+                    return
+                tenant_ids = [t.id for t in tenants]
+            else:
+                tenant_ids = [tenant_id]
+
+        for tid in tenant_ids:
+            logger.info(f"--- Scraping grants for tenant: {tid} ---")
+            _scrape_for_tenant(db, tid, dry_run, limit_per_query)
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Scraper failed: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+def _scrape_for_tenant(db, tenant_id: str, dry_run: bool = False, limit_per_query: int = 20):
+    """Scrape and ingest grants for a single tenant."""
     try:
         finder = GrantFinderService()
 
@@ -228,15 +263,13 @@ def scrape_and_ingest(tenant_id: str, dry_run: bool = False, limit_per_query: in
 
     except Exception as e:
         db.rollback()
-        logger.error(f"Scraper failed: {e}", exc_info=True)
-    finally:
-        db.close()
+        logger.error(f"Scraper failed for tenant {tenant_id}: {e}", exc_info=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description='Daily grant scraper for 2nd Brain')
-    parser.add_argument('--tenant-id', default='local-tenant',
-                        help='Tenant ID to ingest grants for (default: local-tenant)')
+    parser.add_argument('--tenant-id', default=None,
+                        help='Tenant ID to ingest grants for (default: auto-detect all tenants)')
     parser.add_argument('--dry-run', action='store_true',
                         help='Preview what would be ingested without saving')
     parser.add_argument('--limit', type=int, default=20,
