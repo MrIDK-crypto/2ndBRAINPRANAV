@@ -53,7 +53,7 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
     }}>
       {/* Left: Logo */}
       <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-        <Image src="/owl.png" alt="2nd Brain" width={28} height={28} style={{ objectFit: 'contain' }} />
+        <Image src="/owl.png" alt="2nd Brain" width={42} height={42} style={{ objectFit: 'contain' }} />
         <span style={{
           fontWeight: 700,
           fontSize: '17px',
