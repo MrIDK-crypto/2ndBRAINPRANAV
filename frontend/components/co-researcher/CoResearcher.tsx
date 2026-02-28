@@ -65,6 +65,36 @@ export default function CoResearcher() {
       isUser: false,
       timestamp: new Date(),
     },
+    {
+      id: '2',
+      text: "I obtained the following proteins from my analysis: ABP, Chek2, Wnt, BMP, Serpine, and MAPK. Which of these would be good candidates for further study?",
+      isUser: true,
+      timestamp: new Date(),
+    },
+    {
+      id: '3',
+      text: "Let me cross-reference these proteins against your lab's knowledge base and prior research to give you an informed recommendation.",
+      isUser: false,
+      timestamp: new Date(),
+      actions: [
+        { icon: 'search', text: 'Searched knowledge base for "ABP, Chek2, Wnt, BMP, Serpine, MAPK"' },
+        { icon: 'doc', text: 'Found 23 relevant documents across lab notebooks, Slack, and Drive' },
+        { icon: 'search', text: 'Cross-referenced with published signaling pathway databases' },
+        { icon: 'doc', text: 'Retrieved 4 prior Serpine experiment records (2023-2024)' },
+        { icon: 'plan', text: 'Updated research plan with protein evaluation findings' },
+      ],
+    },
+    {
+      id: '4',
+      text: "ABP, Chek2, Wnt, BMP, and MAPK appear to be strong candidates for further investigation due to their relevance in signaling and regulatory pathways.\n\nHowever, Serpine may not be an ideal protein to prioritize for follow-up studies. Previous research efforts within your lab have already examined Serpine extensively, and those studies did not lead to productive outcomes. Based on this prior experience, it would be more effective to focus downstream analysis on the remaining proteins that offer greater potential for novel insight.",
+      isUser: false,
+      timestamp: new Date(),
+      actions: [
+        { icon: 'doc', text: 'Reviewed 4 Serpine experiments from Dr. Patel\'s 2023 lab notes — inconclusive results' },
+        { icon: 'search', text: 'Confirmed ABP/Chek2/Wnt/BMP/MAPK pathway relevance via PubMed cross-reference' },
+        { icon: 'plan', text: 'Generated final protein candidate recommendation' },
+      ],
+    },
   ])
   const [inputValue, setInputValue] = useState('')
 
@@ -74,28 +104,44 @@ export default function CoResearcher() {
       id: 'phase1',
       title: 'Initial context gathering',
       items: [
-        { text: 'Understand research question and background', status: 'done' },
-        { text: 'Search knowledge base for existing data', status: 'active' },
-        { text: 'Identify key sources and references', status: 'pending' },
-        { text: 'Map out knowledge gaps', status: 'pending' },
+        { text: 'Review submitted protein list (6 candidates)', status: 'done' },
+        { text: 'Search lab knowledge base for prior work', status: 'done' },
+        { text: 'Cross-reference with published pathway data', status: 'done' },
+        { text: 'Check for previous lab experiments on each protein', status: 'done' },
       ],
     },
     {
       id: 'phase2',
       title: 'Deep analysis',
       items: [
-        { text: 'Cross-reference findings across sources', status: 'pending' },
-        { text: 'Synthesize key insights', status: 'pending' },
-        { text: 'Draft summary with citations', status: 'pending' },
+        { text: 'Evaluate signaling pathway relevance per protein', status: 'done' },
+        { text: 'Assess novelty and research potential', status: 'done' },
+        { text: 'Review past Serpine research outcomes (2023-2024)', status: 'done' },
+        { text: 'Generate protein candidate recommendation', status: 'done' },
+      ],
+    },
+    {
+      id: 'phase3',
+      title: 'Follow-up',
+      items: [
+        { text: 'Identify downstream analysis steps for top 5', status: 'active' },
+        { text: 'Suggest experimental validation approach', status: 'pending' },
+        { text: 'Draft research summary with citations', status: 'pending' },
       ],
     },
   ])
 
   // Product overview / research brief content
   const [overviewContent, setOverviewContent] = useState({
-    heading: 'What we\'re researching',
-    description: 'Start a conversation to define your research topic. A structured brief will appear here as the co-researcher gathers context.',
-    keyPoints: [] as string[],
+    heading: 'Protein Candidate Evaluation',
+    description: 'Evaluating six proteins from recent proteomics analysis for downstream study candidacy. Cross-referencing against lab\'s historical experiments, published signaling pathway databases, and internal knowledge base.',
+    keyPoints: [
+      '6 proteins submitted: ABP, Chek2, Wnt, BMP, Serpine, MAPK',
+      '5 strong candidates identified for further study',
+      'Serpine deprioritized — prior lab work (2023-2024) inconclusive',
+      '23 relevant documents found across lab notebooks and Slack',
+      'Signaling & regulatory pathway overlap confirmed for top 5',
+    ],
   })
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -267,6 +313,7 @@ export default function CoResearcher() {
                           lineHeight: '1.6',
                           color: theme.textPrimary,
                           fontFamily: font,
+                          whiteSpace: 'pre-wrap',
                         }}>
                           {msg.text}
                         </div>

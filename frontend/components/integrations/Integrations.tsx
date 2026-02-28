@@ -264,7 +264,7 @@ const ChannelSelectionModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: selectedChannels.size === 0 ? '#9ca3af' : '#3B82F6',
+              backgroundColor: selectedChannels.size === 0 ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
@@ -651,8 +651,8 @@ const PollingProgressModal = ({
               width: '56px',
               height: '56px',
               borderRadius: '16px',
-              backgroundColor: progress.status === 'completed' ? '#3B82F6' :
-                               progress.status === 'error' ? '#8A8A8A' : '#3B82F6',
+              backgroundColor: progress.status === 'completed' ? '#C9A598' :
+                               progress.status === 'error' ? '#8A8A8A' : '#C9A598',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -745,7 +745,7 @@ const PollingProgressModal = ({
                   style={{
                     width: `${progress.progress}%`,
                     height: '100%',
-                    backgroundColor: '#3B82F6',
+                    backgroundColor: '#C9A598',
                     borderRadius: '3px',
                     transition: 'width 0.5s ease-out'
                   }}
@@ -781,8 +781,8 @@ const PollingProgressModal = ({
               marginBottom: '12px'
             }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="#3B82F6" strokeWidth="1.5" />
-                <path d="M8 5v3M8 10h.01" stroke="#3B82F6" strokeWidth="1.5" strokeLinecap="round" />
+                <circle cx="8" cy="8" r="7" stroke="#C9A598" strokeWidth="1.5" />
+                <path d="M8 5v3M8 10h.01" stroke="#C9A598" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
               <span style={{
                 fontFamily: '"Work Sans", sans-serif',
@@ -802,7 +802,7 @@ const PollingProgressModal = ({
               padding: '12px 14px',
               backgroundColor: emailWhenComplete ? '#EFF6FF' : '#F8FAFC',
               borderRadius: '10px',
-              border: emailWhenComplete ? '1px solid #3B82F6' : '1px solid #E2E8F0',
+              border: emailWhenComplete ? '1px solid #C9A598' : '1px solid #E2E8F0',
               marginBottom: '12px',
               cursor: 'pointer',
               transition: 'all 0.2s'
@@ -814,12 +814,12 @@ const PollingProgressModal = ({
                 style={{
                   width: 18,
                   height: 18,
-                  accentColor: '#3B82F6',
+                  accentColor: '#C9A598',
                   cursor: 'pointer'
                 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Mail size={16} color={emailWhenComplete ? '#3B82F6' : '#64748B'} />
+                <Mail size={16} color={emailWhenComplete ? '#C9A598' : '#64748B'} />
                 <span style={{
                   fontFamily: '"Work Sans", sans-serif',
                   fontSize: '13px',
@@ -830,7 +830,7 @@ const PollingProgressModal = ({
                 </span>
               </div>
               {emailWhenComplete && (
-                <CheckCircle2 size={16} color="#3B82F6" />
+                <CheckCircle2 size={16} color="#C9A598" />
               )}
             </label>
 
@@ -876,7 +876,7 @@ const PollingProgressModal = ({
                   fontFamily: '"Work Sans", sans-serif',
                   fontSize: '24px',
                   fontWeight: 600,
-                  color: '#3B82F6'
+                  color: '#C9A598'
                 }}>
                   {progress.documentsFound}
                 </div>
@@ -896,7 +896,7 @@ const PollingProgressModal = ({
                 padding: '12px',
                 borderRadius: '10px',
                 border: 'none',
-                backgroundColor: '#3B82F6',
+                backgroundColor: '#C9A598',
                 color: '#fff',
                 fontFamily: '"Work Sans", sans-serif',
                 fontSize: '14px',
@@ -904,8 +904,8 @@ const PollingProgressModal = ({
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#3B82F6'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#3B82F6'}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#C9A598'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#C9A598'}
             >
               Done
             </button>
@@ -1097,7 +1097,7 @@ const SlackTokenModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: !token.startsWith('xoxb-') ? '#9ca3af' : '#3B82F6',
+              backgroundColor: !token.startsWith('xoxb-') ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
@@ -1215,7 +1215,7 @@ const PubMedConfigModal = ({
             color: '#71717A',
             marginTop: '4px'
           }}>
-            Use PubMed search syntax. <a href="https://pubmed.ncbi.nlm.nih.gov/help/" target="_blank" rel="noopener" style={{color: '#3B82F6', textDecoration: 'underline'}}>Learn more</a>
+            Use PubMed search syntax. <a href="https://pubmed.ncbi.nlm.nih.gov/help/" target="_blank" rel="noopener" style={{color: '#C9A598', textDecoration: 'underline'}}>Learn more</a>
           </p>
         </div>
 
@@ -1317,7 +1317,7 @@ const PubMedConfigModal = ({
             color: '#71717A',
             marginTop: '4px'
           }}>
-            Get an API key from <a href="https://www.ncbi.nlm.nih.gov/account/settings/" target="_blank" rel="noopener" style={{color: '#3B82F6', textDecoration: 'underline'}}>NCBI Account Settings</a>
+            Get an API key from <a href="https://www.ncbi.nlm.nih.gov/account/settings/" target="_blank" rel="noopener" style={{color: '#C9A598', textDecoration: 'underline'}}>NCBI Account Settings</a>
           </p>
         </div>
 
@@ -1370,7 +1370,7 @@ const PubMedConfigModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: !searchQuery.trim() ? '#9ca3af' : '#3B82F6',
+              backgroundColor: !searchQuery.trim() ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
@@ -1490,9 +1490,9 @@ const QuartzyConfigModal = ({
             style={{
               padding: '10px 20px',
               border: 'none',
-              borderBottom: activeTab === 'api' ? '2px solid #3B82F6' : '2px solid transparent',
+              borderBottom: activeTab === 'api' ? '2px solid #C9A598' : '2px solid transparent',
               backgroundColor: 'transparent',
-              color: activeTab === 'api' ? '#3B82F6' : '#6B7280',
+              color: activeTab === 'api' ? '#C9A598' : '#6B7280',
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -1506,9 +1506,9 @@ const QuartzyConfigModal = ({
             style={{
               padding: '10px 20px',
               border: 'none',
-              borderBottom: activeTab === 'csv' ? '2px solid #3B82F6' : '2px solid transparent',
+              borderBottom: activeTab === 'csv' ? '2px solid #C9A598' : '2px solid transparent',
               backgroundColor: 'transparent',
-              color: activeTab === 'csv' ? '#3B82F6' : '#6B7280',
+              color: activeTab === 'csv' ? '#C9A598' : '#6B7280',
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -1552,7 +1552,7 @@ const QuartzyConfigModal = ({
                 color: '#71717A',
                 marginTop: '4px'
               }}>
-                Generate a token in <a href="https://app.quartzy.com/settings" target="_blank" rel="noopener" style={{color: '#3B82F6', textDecoration: 'underline'}}>Quartzy Settings &gt; API</a>
+                Generate a token in <a href="https://app.quartzy.com/settings" target="_blank" rel="noopener" style={{color: '#C9A598', textDecoration: 'underline'}}>Quartzy Settings &gt; API</a>
               </p>
             </div>
 
@@ -1582,7 +1582,7 @@ const QuartzyConfigModal = ({
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               style={{
-                border: `2px dashed ${dragOver ? '#3B82F6' : '#D4D4D8'}`,
+                border: `2px dashed ${dragOver ? '#C9A598' : '#D4D4D8'}`,
                 borderRadius: '12px',
                 padding: '40px 20px',
                 textAlign: 'center',
@@ -1712,7 +1712,7 @@ const QuartzyConfigModal = ({
               padding: '10px 20px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: (activeTab === 'api' ? !accessToken.trim() : !selectedFile) ? '#9ca3af' : '#3B82F6',
+              backgroundColor: (activeTab === 'api' ? !accessToken.trim() : !selectedFile) ? '#9ca3af' : '#C9A598',
               color: '#fff',
               fontSize: '14px',
               fontWeight: 500,
@@ -1836,7 +1836,7 @@ const WebScraperConfigModal = ({
         <button
           onClick={handleSubmit}
           disabled={!startUrl.trim() || isLoading || !!urlError}
-          style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#3B82F6', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
+          style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
         >
           {isLoading ? 'Syncing...' : 'Sync'}
         </button>
@@ -1886,7 +1886,7 @@ const IntegrationDetailsModal = ({
         'Choose how often to check for new messages',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://api.slack.com/docs'
     },
     gmail: {
@@ -1904,7 +1904,7 @@ const IntegrationDetailsModal = ({
         'Set up any filters you want (optional)',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://developers.google.com/gmail/api'
     },
     box: {
@@ -1922,7 +1922,7 @@ const IntegrationDetailsModal = ({
         'Choose which file types to include',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://developer.box.com/docs'
     },
     github: {
@@ -1940,7 +1940,7 @@ const IntegrationDetailsModal = ({
         'Choose what content to include',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.github.com/en/rest'
     },
     zotero: {
@@ -1958,7 +1958,7 @@ const IntegrationDetailsModal = ({
         'Click Start to begin importing',
         'Your papers will appear in Documents'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://www.zotero.org/support/dev/web_api/v3/start'
     },
     quartzy: {
@@ -1976,7 +1976,7 @@ const IntegrationDetailsModal = ({
         'Or just upload an exported spreadsheet',
         'Your items will be searchable instantly'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://support.quartzy.com/hc/en-us/articles/5333106670747-Quartzy-API-and-Webhooks'
     },
     website_builder: {
@@ -1994,7 +1994,7 @@ const IntegrationDetailsModal = ({
         'Enter your lab name and choose a theme',
         'Preview and download your generated website'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: '#'
     },
     powerpoint: {
@@ -2012,7 +2012,7 @@ const IntegrationDetailsModal = ({
         'Select the files you want',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.microsoft.com/en-us/office/dev/add-ins/'
     },
     excel: {
@@ -2030,7 +2030,7 @@ const IntegrationDetailsModal = ({
         'Select the files you want',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.microsoft.com/en-us/office/dev/add-ins/'
     },
     pubmed: {
@@ -2048,7 +2048,7 @@ const IntegrationDetailsModal = ({
         'Choose a date range (optional)',
         'Click Start to find and import papers'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://pubmed.ncbi.nlm.nih.gov/help/'
     },
     firecrawl: {
@@ -2066,7 +2066,7 @@ const IntegrationDetailsModal = ({
         'Click Start to begin reading the site',
         'Content will appear in your Documents'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.firecrawl.dev/'
     },
     'email-forwarding': {
@@ -2084,7 +2084,7 @@ const IntegrationDetailsModal = ({
         'Wait a moment for processing',
         'Find your email in Documents'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: '#'
     },
     notion: {
@@ -2102,7 +2102,7 @@ const IntegrationDetailsModal = ({
         'Select the pages you want',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://developers.notion.com/'
     },
     gdrive: {
@@ -2120,7 +2120,7 @@ const IntegrationDetailsModal = ({
         'Select the file types you want',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://developers.google.com/drive'
     },
     gdocs: {
@@ -2138,7 +2138,7 @@ const IntegrationDetailsModal = ({
         'Confirm your selection',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://developers.google.com/docs'
     },
     gsheets: {
@@ -2156,7 +2156,7 @@ const IntegrationDetailsModal = ({
         'Select specific sheets (optional)',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://developers.google.com/sheets'
     },
     gslides: {
@@ -2174,7 +2174,7 @@ const IntegrationDetailsModal = ({
         'Confirm your selection',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://developers.google.com/slides'
     },
     onedrive: {
@@ -2192,7 +2192,7 @@ const IntegrationDetailsModal = ({
         'Select the file types you want',
         'Click Start to begin importing'
       ],
-      brandColor: '#3B82F6',
+      brandColor: '#C9A598',
       docsUrl: 'https://docs.microsoft.com/en-us/onedrive/developer/'
     }
   }
@@ -2202,7 +2202,7 @@ const IntegrationDetailsModal = ({
     features: ['Feature details coming soon'],
     dataTypes: ['Various'],
     setupSteps: ['Connect to get started'],
-    brandColor: '#3B82F6',
+    brandColor: '#C9A598',
     docsUrl: '#'
   }
 
@@ -2880,7 +2880,7 @@ const IntegrationCard = ({
                 width: '16px',
                 height: '16px',
                 borderRadius: '50%',
-                backgroundColor: '#3B82F6',
+                backgroundColor: '#C9A598',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}
@@ -2899,7 +2899,7 @@ const IntegrationCard = ({
               padding: '6px 10px',
               borderRadius: '375px',
               border: 'none',
-              backgroundColor: '#3B82F6',
+              backgroundColor: '#C9A598',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
               flexShrink: 0
@@ -4636,7 +4636,7 @@ export default function Integrations() {
                   style={{
                     padding: '10px 20px', borderRadius: 8,
                     border: 'none',
-                    background: selectedRepos.length === 0 ? '#9CA3AF' : '#3B82F6',
+                    background: selectedRepos.length === 0 ? '#9CA3AF' : '#C9A598',
                     color: '#fff',
                     cursor: selectedRepos.length === 0 ? 'not-allowed' : 'pointer',
                     fontSize: 14, fontWeight: 600
