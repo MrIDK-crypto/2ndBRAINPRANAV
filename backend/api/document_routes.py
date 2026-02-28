@@ -6,6 +6,7 @@ REST endpoints for document management and classification.
 import zipfile
 import io
 import mimetypes
+import werkzeug.exceptions
 
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy.orm import Session, joinedload
@@ -517,7 +518,10 @@ def upload_documents():
             # Check if this is a file upload or text paste
             if request.content_type and 'multipart/form-data' in request.content_type:
                 # Handle file uploads
-                files = request.files.getlist('files')
+                try:
+                    files = request.files.getlist('files')
+                except werkzeug.exceptions.RequestEntityTooLarge:
+                    raise  # Let Flask's 413 handler deal with it
                 if not files:
                     return jsonify({
                         "success": False,
