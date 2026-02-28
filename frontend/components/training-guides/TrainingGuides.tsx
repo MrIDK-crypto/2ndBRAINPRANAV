@@ -1,10 +1,10 @@
 'use client'
 
 import React from 'react'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import { useAuth } from '@/contexts/AuthContext'
 
-// Wellspring-Inspired Warm Design System
+// Wellspring Warm Design System
 const warmTheme = {
   primary: '#C9A598',
   primaryHover: '#B8948A',
@@ -23,9 +23,9 @@ export default function TrainingGuides() {
   const { user } = useAuth()
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: warmTheme.pageBg }}>
-      {/* Sidebar */}
-      <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: warmTheme.pageBg }}>
+      {/* Top Navigation */}
+      <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
 
       {/* Main Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
@@ -39,7 +39,7 @@ export default function TrainingGuides() {
             fontSize: '26px',
             fontWeight: 700,
             color: warmTheme.textPrimary,
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
           }}>
             Training Videos
           </h1>
@@ -87,7 +87,7 @@ export default function TrainingGuides() {
               fontWeight: 700,
               color: warmTheme.textPrimary,
               marginBottom: '12px',
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
             }}>
               Coming Soon
             </h2>

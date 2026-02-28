@@ -18,18 +18,18 @@ interface InvitationInfo {
   message: string | null
 }
 
-// Wellspring-inspired warm color palette
+// Synthetic Sciences color palette
 const colors = {
   primary: '#C9A598',
   primaryHover: '#B8948A',
   secondary: '#C9A598',
   background: '#FAF9F7',
-  card: '#FFFFFE',
+  card: '#FFFFFF',
   text: '#2D2D2D',
   textMuted: '#6B6B6B',
   border: '#F0EEEC',
-  error: '#dc2626',
-  errorBg: '#fef2f2',
+  error: '#D97B7B',
+  errorBg: '#FDF2F2',
   success: '#9CB896',
 }
 
@@ -449,7 +449,7 @@ export default function SignupPage() {
                   fontSize: '15px',
                   borderRadius: '8px',
                   border: `1px solid ${fieldErrors.email ? colors.error : colors.border}`,
-                  backgroundColor: invitation?.recipient_email ? '#f8fafc' : colors.card,
+                  backgroundColor: invitation?.recipient_email ? '#FAF9F7' : colors.card,
                   outline: 'none',
                   transition: 'border-color 0.2s',
                   boxSizing: 'border-box',

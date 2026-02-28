@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- "Neural Iris" — symmetrical radial pattern, black on white -->
+  <!-- Six curved petal-paths forming a pinwheel/iris, like a camera aperture -->
+
+  <!-- Outer circle -->
+  <circle cx="60" cy="60" r="56" stroke="#1A1A1A" stroke-width="2.5" fill="none"/>
+
+  <!-- Six aperture blades — curved arcs creating a spiral iris effect -->
+  <path d="M60 16 C75 35, 85 50, 60 60" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <path d="M98.1 38 C82 42, 68 35, 60 60" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <path d="M98.1 82 C87 67, 82 50, 60 60" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <path d="M60 104 C45 85, 35 70, 60 60" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <path d="M21.9 82 C38 78, 52 85, 60 60" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <path d="M21.9 38 C33 53, 38 70, 60 60" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+
+  <!-- Center dot -->
+  <circle cx="60" cy="60" r="4.5" fill="#1A1A1A"/>
+</svg>

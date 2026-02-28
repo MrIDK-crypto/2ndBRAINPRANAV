@@ -7,18 +7,18 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { validateLogin, getPasswordStrength } from '@/utils/validation'
 
-// Wellspring-inspired warm color palette
+// Synthetic Sciences design system
 const colors = {
-  primary: '#C9A598', // Warm coral
+  primary: '#C9A598',
   primaryHover: '#B8948A',
-  secondary: '#C9A598', // Coral accent
-  background: '#FAF9F7', // Warm cream background
-  card: '#FFFFFE',
+  secondary: '#C9A598',
+  background: '#FAF9F7',
+  card: '#FFFFFF',
   text: '#2D2D2D',
   textMuted: '#6B6B6B',
   border: '#F0EEEC',
-  error: '#dc2626',
-  errorBg: '#fef2f2',
+  error: '#D97B7B',
+  errorBg: '#FDF2F2',
 }
 
 export default function Login() {

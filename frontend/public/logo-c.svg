@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Option C: "Atomic Core" — three concentric orbit rings at angles, with a solid center -->
+  <!-- Horizontal orbit -->
+  <ellipse cx="60" cy="60" rx="46" ry="16" stroke="#1A1A1A" stroke-width="2.2" fill="none" transform="rotate(0 60 60)"/>
+  <!-- 60deg orbit -->
+  <ellipse cx="60" cy="60" rx="46" ry="16" stroke="#1A1A1A" stroke-width="2.2" fill="none" transform="rotate(60 60 60)"/>
+  <!-- 120deg orbit -->
+  <ellipse cx="60" cy="60" rx="46" ry="16" stroke="#1A1A1A" stroke-width="2.2" fill="none" transform="rotate(120 60 60)"/>
+  <!-- Center sphere -->
+  <circle cx="60" cy="60" r="8" fill="#1A1A1A"/>
+</svg>

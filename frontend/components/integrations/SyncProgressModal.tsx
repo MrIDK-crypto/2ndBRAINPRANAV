@@ -52,16 +52,16 @@ const connectorConfig: Record<string, { logo: string; name: string }> = {
   default: { logo: '/owl.png', name: 'Integration' }
 }
 
-// Warm Coral theme (matches app-wide palette)
+// Wellspring Warm theme (matches app-wide palette)
 const colors = {
   primary: '#C9A598',
   primaryLight: '#FBF4F1',
-  primaryBorder: '#E8D5CE',
+  primaryBorder: '#E8D5CF',
   success: '#9CB896',
   successLight: '#F0F7EE',
   successBorder: '#C8DCC3',
-  error: '#B87070',
-  errorLight: '#FBF0F0',
+  error: '#D97B7B',
+  errorLight: '#FDF2F2',
   errorBorder: '#E0B8B8',
   gray: '#6B6B6B',
   grayLight: '#FAF9F7',

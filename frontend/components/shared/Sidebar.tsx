@@ -106,7 +106,7 @@ export default function Sidebar({
 
   // SVG icon components
   const renderIcon = (iconId: string, isActive: boolean) => {
-    const color = isActive ? '#C9A598' : '#8A8A8A'
+    const color = isActive ? '#C9A598' : '#9A9A9A'
 
     switch (iconId) {
       case 'integrations':
@@ -198,8 +198,8 @@ export default function Sidebar({
               </div>
               <h1
                 style={{
-                  color: '#1A1A1A',
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  color: '#2D2D2D',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '20px',
                   fontWeight: 700,
                   lineHeight: '24px',
@@ -240,7 +240,7 @@ export default function Sidebar({
                 backgroundColor: 'transparent',
                 fontSize: '14px',
                 color: '#374151',
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
               }}
             />
           </div>
@@ -266,7 +266,7 @@ export default function Sidebar({
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
-                      e.currentTarget.style.backgroundColor = '#FAF8F6'
+                      e.currentTarget.style.backgroundColor = '#F7F5F3'
                     }
                   }}
                   onMouseLeave={(e) => {
@@ -281,8 +281,8 @@ export default function Sidebar({
                   </div>
                   <span
                     style={{
-                      color: isActive ? '#C9A598' : '#5C5C5C',
-                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      color: isActive ? '#C9A598' : '#6B6B6B',
+                      fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                       fontSize: '15px',
                       fontWeight: isActive ? 500 : 400
                     }}
@@ -308,7 +308,7 @@ export default function Sidebar({
                   gap: '6px',
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: '#7A7A7A',
+                  color: '#9A9A9A',
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   background: 'none',
@@ -348,8 +348,8 @@ export default function Sidebar({
                   }}
                   title="New Chat"
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#F3F4F6'
-                    e.currentTarget.style.color = '#7A7A7A'
+                    e.currentTarget.style.backgroundColor = '#F7F5F3'
+                    e.currentTarget.style.color = '#9A9A9A'
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = 'transparent'
@@ -371,7 +371,7 @@ export default function Sidebar({
                     <div style={{
                       width: '16px',
                       height: '16px',
-                      border: '2px solid #ECEAE8',
+                      border: '2px solid #F0EEEC',
                       borderTopColor: '#C9A598',
                       borderRadius: '50%',
                       animation: 'spin 1s linear infinite'
@@ -398,7 +398,7 @@ export default function Sidebar({
                       }}
                       onMouseEnter={(e) => {
                         if (currentConversationId !== conv.id) {
-                          e.currentTarget.style.backgroundColor = '#F5F3F1'
+                          e.currentTarget.style.backgroundColor = '#F7F5F3'
                         }
                       }}
                       onMouseLeave={(e) => {
@@ -416,7 +416,7 @@ export default function Sidebar({
                       <span style={{
                         flex: 1,
                         fontSize: '13px',
-                        color: currentConversationId === conv.id ? '#C9A598' : '#4A4A4A',
+                        color: currentConversationId === conv.id ? '#C9A598' : '#2D2D2D',
                         fontWeight: currentConversationId === conv.id ? 500 : 400,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
@@ -453,7 +453,7 @@ export default function Sidebar({
                           className="chat-delete-btn"
                           title="Delete conversation"
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.color = '#EF4444'
+                            e.currentTarget.style.color = '#D97B7B'
                           }}
                           onMouseLeave={(e) => {
                             e.currentTarget.style.color = '#9CA3AF'
@@ -480,7 +480,7 @@ export default function Sidebar({
       <div style={{ padding: '0 24px' }}>
         <div
           style={{
-            borderTop: '1px solid #ECEAE8',
+            borderTop: '1px solid #F0EEEC',
             paddingTop: '20px',
             marginTop: '20px'
           }}
@@ -497,7 +497,7 @@ export default function Sidebar({
                   transition: 'background-color 0.15s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#F5F3F1'
+                  e.currentTarget.style.backgroundColor = '#F7F5F3'
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = 'transparent'
@@ -509,23 +509,23 @@ export default function Sidebar({
                   borderRadius: '50%',
                   overflow: 'hidden',
                   flexShrink: 0,
-                  border: '2px solid #ECEAE8'
+                  border: '2px solid #F0EEEC'
                 }}>
                   <Image src="/Maya.png" alt="User" width={40} height={40} />
                 </div>
                 <div>
                   <div style={{
-                    color: '#1A1A1A',
+                    color: '#2D2D2D',
                     fontSize: '14px',
                     fontWeight: 600,
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
                   }}>
                     {userName}
                   </div>
                   <div style={{
-                    color: '#7A7A7A',
+                    color: '#9A9A9A',
                     fontSize: '12px',
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
                   }}>
                     Account settings
                   </div>

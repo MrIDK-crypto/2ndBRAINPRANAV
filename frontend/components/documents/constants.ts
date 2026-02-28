@@ -3,46 +3,46 @@
 // Single source of truth for categories, source types, colors, etc.
 // ============================================================================
 
-// Design System — Wellspring-Inspired Warm Palette
+// Design System — Wellspring Warm Palette
 export const colors = {
-  // Primary - Warm Coral/Salmon
-  primary: '#D4A59A',
-  primaryHover: '#C4958A',
+  // Primary - Warm brown accent
+  primary: '#C9A598',
+  primaryHover: '#B8948A',
   primaryLight: '#FBF4F1',
 
-  // Backgrounds - Warm Cream/Off-white
+  // Backgrounds - Warm neutrals
   pageBg: '#FAF9F7',
   cardBg: '#F7F5F3',
 
-  // Text - Warm Tones
+  // Text - Warm tones
   textPrimary: '#2D2D2D',
   textSecondary: '#6B6B6B',
   textMuted: '#9A9A9A',
 
-  // Borders & Dividers - Very Subtle
+  // Borders & Dividers - Warm
   border: '#F0EEEC',
   borderLight: '#F7F5F3',
 
-  // Status Colors - Soft Muted Palette
-  statusActive: '#D4A59A',
+  // Status Colors - Wellspring Warm Palette
+  statusActive: '#C9A598',
   statusSuccess: '#9CB896',
-  statusPending: '#E8E8E8',
-  statusArchived: '#BEBEBE',
-  statusAccent: '#F0E6E3',
+  statusPending: '#F0EEEC',
+  statusArchived: '#9A9A9A',
+  statusAccent: '#FBF4F1',
 
   // Searchable status
-  searchableActiveBg: '#F4F7F2',
-  searchableActiveDot: '#A3B899',
-  searchableActiveText: '#7A8F70',
-  searchableInactiveBg: '#FDF8F6',
+  searchableActiveBg: '#F0F7EE',
+  searchableActiveDot: '#9CB896',
+  searchableActiveText: '#5A7D54',
+  searchableInactiveBg: '#FBF4F1',
   searchableInactiveDot: '#C9A598',
-  searchableInactiveText: '#B8958A',
+  searchableInactiveText: '#B8948A',
 
   // Classification badges
   classificationWork: '#9CB896',
-  classificationPersonal: '#E8C77B',
-  classificationSpam: '#D4A59A',
-  classificationUnknown: '#BEBEBE',
+  classificationPersonal: '#F59E0B',
+  classificationSpam: '#C9A598',
+  classificationUnknown: '#9A9A9A',
 }
 
 export const shadows = {
@@ -133,27 +133,27 @@ export interface SourceTypeInfo {
 }
 
 export const SOURCE_TYPE_MAP: Record<string, SourceTypeInfo> = {
-  github:     { label: 'GitHub',        icon: '💻', color: '#2D2D2D', docType: 'Code' },
+  github:     { label: 'GitHub',        icon: '💻', color: '#0F172A', docType: 'Code' },
   webscraper: { label: 'Web Page',      icon: '🌐', color: '#6B8F9A', docType: 'Web Page' },
   firecrawl:  { label: 'Web Page',      icon: '🌐', color: '#6B8F9A', docType: 'Web Page' },
-  email:      { label: 'Gmail',         icon: '✉️', color: '#C4958A', docType: 'Email' },
-  gmail:      { label: 'Gmail',         icon: '✉️', color: '#C4958A', docType: 'Email' },
+  email:      { label: 'Gmail',         icon: '✉️', color: '#2563EB', docType: 'Email' },
+  gmail:      { label: 'Gmail',         icon: '✉️', color: '#2563EB', docType: 'Email' },
   slack:      { label: 'Slack',         icon: '💬', color: '#9A7B9A', docType: 'Slack Message' },
   box:        { label: 'Box',           icon: '📦', color: '#6B8F9A', docType: 'Box File' },
-  notion:     { label: 'Notion',        icon: '📝', color: '#2D2D2D', docType: 'Notion Page' },
+  notion:     { label: 'Notion',        icon: '📝', color: '#0F172A', docType: 'Notion Page' },
   gdrive:     { label: 'Google Drive',  icon: '📁', color: '#6B9A6B', docType: 'Google Drive' },
-  zotero:     { label: 'Zotero',        icon: '📚', color: '#C4958A', docType: 'Zotero' },
+  zotero:     { label: 'Zotero',        icon: '📚', color: '#2563EB', docType: 'Zotero' },
   outlook:    { label: 'Outlook',       icon: '📧', color: '#6B8F9A', docType: 'Outlook Email' },
   onedrive:   { label: 'OneDrive',      icon: '☁️', color: '#6B8F9A', docType: 'OneDrive File' },
-  file:       { label: 'Upload',        icon: '📄', color: '#9A9A9A', docType: 'Document' },
-  manual_upload: { label: 'Upload',     icon: '📄', color: '#9A9A9A', docType: 'Document' },
-  manual_paste:  { label: 'Paste',      icon: '📋', color: '#9A9A9A', docType: 'Document' },
+  file:       { label: 'Upload',        icon: '📄', color: '#94A3B8', docType: 'Document' },
+  manual_upload: { label: 'Upload',     icon: '📄', color: '#94A3B8', docType: 'Document' },
+  manual_paste:  { label: 'Paste',      icon: '📋', color: '#94A3B8', docType: 'Document' },
 }
 
 export const DEFAULT_SOURCE_INFO: SourceTypeInfo = {
   label: 'Document',
   icon: '📄',
-  color: '#9A9A9A',
+  color: '#94A3B8',
   docType: 'Document',
 }
 

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Option B: "Linked Minds" — two interlocking brain hemispheres / infinity knot -->
+  <path d="M60 40 C40 40, 20 48, 20 60 C20 72, 40 80, 60 80" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <path d="M60 40 C80 40, 100 48, 100 60 C100 72, 80 80, 60 80" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <!-- Top crossing arc -->
+  <path d="M38 46 C48 30, 72 30, 82 46" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <!-- Bottom crossing arc -->
+  <path d="M38 74 C48 90, 72 90, 82 74" stroke="#1A1A1A" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+  <!-- Center vertical line -->
+  <line x1="60" y1="32" x2="60" y2="88" stroke="#1A1A1A" stroke-width="2.2"/>
+  <!-- Center dot -->
+  <circle cx="60" cy="60" r="4" fill="#1A1A1A"/>
+</svg>

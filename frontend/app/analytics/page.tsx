@@ -1,12 +1,13 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import Sidebar from '@/components/shared/Sidebar'
+import TopNav from '@/components/shared/TopNav'
 import { useAuth } from '@/contexts/AuthContext'
 import axios from 'axios'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
+// Wellspring Warm Brown Design System
 const colors = {
   primary: '#C9A598',
   primaryLight: '#FBF4F1',
@@ -17,7 +18,7 @@ const colors = {
   textMuted: '#9A9A9A',
   border: '#F0EEEC',
   success: '#9CB896',
-  accent: '#7B9EBD',
+  accent: '#C9A598',
 }
 
 interface Metrics {
@@ -260,8 +261,8 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
-      <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: colors.pageBg }}>
+      <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
 
       <div style={{ flex: 1, padding: '32px', overflow: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
@@ -336,7 +337,7 @@ export default function AnalyticsPage() {
             {apiError && (
               <div style={{
                 padding: '12px 16px',
-                backgroundColor: '#FEF2F2',
+                backgroundColor: '#FDF2F2',
                 border: '1px solid #FECACA',
                 borderRadius: '10px',
                 marginBottom: '20px',

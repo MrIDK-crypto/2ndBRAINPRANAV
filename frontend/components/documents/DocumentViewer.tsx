@@ -39,8 +39,8 @@ function renderMarkdownContent(content: string): React.ReactNode {
         <pre
           key={key++}
           style={{
-            backgroundColor: '#2D2D2D',
-            color: '#E8E0DB',
+            backgroundColor: '#0F172A',
+            color: '#E2E8F0',
             padding: '16px',
             borderRadius: '8px',
             overflow: 'auto',
@@ -286,7 +286,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
             justifyContent: 'space-between',
             padding: '20px 24px',
             borderBottom: `1px solid ${colors.border}`,
-            backgroundColor: isCodeDocument ? '#2D2D2D' : colors.cardBg
+            backgroundColor: isCodeDocument ? '#0F172A' : colors.cardBg
           }}
         >
           <div style={{ flex: 1, paddingRight: '16px' }}>
@@ -311,7 +311,7 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
             </div>
             <h2
               style={{
-                color: isCodeDocument ? '#F0EEEC' : colors.textPrimary,
+                color: isCodeDocument ? '#E2E8F0' : colors.textPrimary,
                 fontSize: '18px',
                 fontWeight: 600,
                 lineHeight: '1.4',
@@ -439,8 +439,8 @@ export default function DocumentViewer({ document, onClose }: DocumentViewerProp
               ) : (
                 <pre
                   style={{
-                    backgroundColor: '#2D2D2D',
-                    color: '#E8E0DB',
+                    backgroundColor: '#0F172A',
+                    color: '#E2E8F0',
                     padding: '20px',
                     borderRadius: '8px',
                     overflow: 'auto',

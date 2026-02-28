@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { flushSync } from 'react-dom'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import Image from 'next/image'
 import axios from 'axios'
 import { useAuth } from '@/contexts/AuthContext'
@@ -33,14 +33,14 @@ interface Conversation {
   message_count: number
 }
 
-// Wellspring-Inspired Warm Design System
+// Wellspring Warm Design System
 const warmTheme = {
   primary: '#C9A598',
   primaryHover: '#B8948A',
   primaryLight: '#FBF4F1',
   pageBg: '#FAF9F7',
   chatBg: '#FAF9F7',
-  cardBg: '#FFFFFE',
+  cardBg: '#FFFFFF',
   textPrimary: '#2D2D2D',
   textSecondary: '#6B6B6B',
   textMuted: '#9A9A9A',
@@ -49,13 +49,29 @@ const warmTheme = {
   statusSuccess: '#9CB896',
 }
 
+// Format relative time for conversation history
+const formatRelativeTime = (dateStr: string) => {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m`
+  if (diffHours < 24) return `${diffHours}h`
+  if (diffDays < 7) return `${diffDays}d`
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 // Initialize Mermaid for diagram rendering
 if (typeof window !== 'undefined') {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'neutral',
     securityLevel: 'loose',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
   })
 }
 
@@ -113,24 +129,24 @@ const WelcomeCard = ({ icon, title, description, onClick }: any) => (
       flexDirection: 'column',
       justifyContent: 'center',
       alignItems: 'flex-start',
-      gap: '8px',
+      gap: '12px',
       flex: 1,
-      padding: '16px',
+      padding: '24px',
       borderRadius: '16px',
-      backgroundColor: '#FFFFFE',
-      border: `1px solid #F0EEEC`,
+      backgroundColor: '#FFFFFF',
+      border: `1px solid #E2E8F0`,
       cursor: 'pointer',
       transition: 'all 0.15s ease',
     }}
     onMouseEnter={(e) => {
       e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.06)'
       e.currentTarget.style.transform = 'translateY(-2px)'
-      e.currentTarget.style.borderColor = '#D4A59A'
+      e.currentTarget.style.borderColor = '#3B82F6'
     }}
     onMouseLeave={(e) => {
       e.currentTarget.style.boxShadow = 'none'
       e.currentTarget.style.transform = 'translateY(0)'
-      e.currentTarget.style.borderColor = '#F0EEEC'
+      e.currentTarget.style.borderColor = '#E2E8F0'
     }}
   >
     <div
@@ -140,29 +156,29 @@ const WelcomeCard = ({ icon, title, description, onClick }: any) => (
         justifyContent: 'center',
         borderRadius: '12px',
         backgroundColor: warmTheme.primaryLight,
-        width: '40px',
-        height: '40px'
+        width: '48px',
+        height: '48px'
       }}
     >
-      <div style={{ width: '21.5px', height: '21.5px', flexShrink: 0 }}>
-        <Image src={icon} alt={title} width={21.5} height={21.5} />
+      <div style={{ width: '26px', height: '26px', flexShrink: 0 }}>
+        <Image src={icon} alt={title} width={26} height={26} />
       </div>
     </div>
     <div>
       <h3 style={{
         color: warmTheme.textPrimary,
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        fontSize: '14px',
+        fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
+        fontSize: '16px',
         fontWeight: 600,
-        marginBottom: '4px'
+        marginBottom: '6px'
       }}>
         {title}
       </h3>
       <p style={{
         color: warmTheme.textSecondary,
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        fontSize: '12px',
-        lineHeight: 1.4
+        fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
+        fontSize: '14px',
+        lineHeight: 1.5
       }}>
         {description}
       </p>
@@ -189,8 +205,17 @@ export default function ChatInterface() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
 
-  // Chat History State
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  // Chat History State — sample data for demo
+  const sampleConversations: Conversation[] = [
+    { id: 'sample-1', title: 'Q3 revenue analysis breakdown', created_at: new Date(Date.now() - 1800000).toISOString(), updated_at: new Date(Date.now() - 1800000).toISOString(), last_message_at: new Date(Date.now() - 1800000).toISOString(), is_archived: false, is_pinned: true, message_count: 8 },
+    { id: 'sample-2', title: 'Onboarding checklist for new hires', created_at: new Date(Date.now() - 7200000).toISOString(), updated_at: new Date(Date.now() - 7200000).toISOString(), last_message_at: new Date(Date.now() - 7200000).toISOString(), is_archived: false, is_pinned: false, message_count: 5 },
+    { id: 'sample-3', title: 'Slack channel migration plan', created_at: new Date(Date.now() - 86400000).toISOString(), updated_at: new Date(Date.now() - 86400000).toISOString(), last_message_at: new Date(Date.now() - 86400000).toISOString(), is_archived: false, is_pinned: false, message_count: 12 },
+    { id: 'sample-4', title: 'Product roadmap priorities', created_at: new Date(Date.now() - 172800000).toISOString(), updated_at: new Date(Date.now() - 172800000).toISOString(), last_message_at: new Date(Date.now() - 172800000).toISOString(), is_archived: false, is_pinned: false, message_count: 3 },
+    { id: 'sample-5', title: 'Customer feedback themes', created_at: new Date(Date.now() - 259200000).toISOString(), updated_at: new Date(Date.now() - 259200000).toISOString(), last_message_at: new Date(Date.now() - 259200000).toISOString(), is_archived: false, is_pinned: false, message_count: 7 },
+    { id: 'sample-6', title: 'API documentation gaps', created_at: new Date(Date.now() - 432000000).toISOString(), updated_at: new Date(Date.now() - 432000000).toISOString(), last_message_at: new Date(Date.now() - 432000000).toISOString(), is_archived: false, is_pinned: false, message_count: 4 },
+    { id: 'sample-7', title: 'Compliance requirements review', created_at: new Date(Date.now() - 604800000).toISOString(), updated_at: new Date(Date.now() - 604800000).toISOString(), last_message_at: new Date(Date.now() - 604800000).toISOString(), is_archived: false, is_pinned: false, message_count: 9 },
+  ]
+  const [conversations, setConversations] = useState<Conversation[]>(sampleConversations)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
 
@@ -244,8 +269,8 @@ export default function ChatInterface() {
       })
       if (response.data.success) {
         const convs = response.data.conversations || []
-        setConversations(convs)
-        return convs
+        setConversations(convs.length > 0 ? convs : sampleConversations)
+        return convs.length > 0 ? convs : sampleConversations
       }
     } catch (error) {
       console.error('Error fetching conversations:', error)
@@ -882,7 +907,7 @@ export default function ChatInterface() {
           li: ({ children }: any) => <li className="mb-1">{children}</li>,
           // Style links
           a: ({ href, children }: any) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#8B5E4B', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '2px' }} onMouseEnter={(e) => e.currentTarget.style.color = '#6B4436'} onMouseLeave={(e) => e.currentTarget.style.color = '#8B5E4B'}>
+            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '2px' }} onMouseEnter={(e) => e.currentTarget.style.color = '#1D4ED8'} onMouseLeave={(e) => e.currentTarget.style.color = '#2563EB'}>
               {children}
             </a>
           ),
@@ -967,46 +992,193 @@ export default function ChatInterface() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: warmTheme.pageBg }}>
-      {/* Sidebar - Always Visible */}
-      <Sidebar
-        activeItem={activeItem}
-        onItemClick={setActiveItem}
-        userName={user?.full_name?.split(' ')[0] || 'User'}
-        conversations={conversations}
-        currentConversationId={currentConversationId}
-        onLoadConversation={loadConversation}
-        onDeleteConversation={deleteConversation}
-        onNewChat={handleNewChat}
-        isLoadingHistory={isLoadingHistory}
-      />
+    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: warmTheme.pageBg }}>
+      {/* Top Navigation */}
+      <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} onNewChat={handleNewChat} />
 
-      {/* Main Content - Full page chat */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        {/* Chat Area */}
-        <div className="flex-1 flex items-center justify-center px-8 overflow-hidden" style={{ backgroundColor: warmTheme.chatBg }}>
-          <div
-            className="flex flex-col items-center gap-3 rounded-3xl px-5 pt-3 pb-3 w-full"
-            style={{ maxWidth: '1000px', height: '100%', backgroundColor: '#F7F5F3', border: '1px solid #F0EEEC' }}
-          >
+      {/* Main Content - Flex row: History Panel + Chat Area */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+        {/* Left: Conversation History Panel */}
+        <div style={{
+          width: '320px',
+          minWidth: '320px',
+          borderRight: `1px solid ${warmTheme.border}`,
+          backgroundColor: warmTheme.cardBg,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          {/* Header */}
+          <div style={{
+            padding: '16px 20px',
+            borderBottom: `1px solid ${warmTheme.border}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <span style={{
+              fontSize: '13px',
+              fontWeight: 600,
+              color: warmTheme.textSecondary,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+            }}>Chat History</span>
+            <button
+              onClick={handleNewChat}
+              style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '6px',
+                border: `1px solid ${warmTheme.border}`,
+                backgroundColor: 'transparent',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.15s',
+              }}
+              title="New Chat"
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = warmTheme.primaryLight }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={warmTheme.textSecondary} strokeWidth="2" strokeLinecap="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Conversation List */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
+            {isLoadingHistory ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '24px' }}>
+                <div style={{
+                  width: '20px',
+                  height: '20px',
+                  border: `2px solid ${warmTheme.border}`,
+                  borderTopColor: warmTheme.primary,
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite',
+                }} />
+              </div>
+            ) : conversations.length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '32px 16px',
+                color: warmTheme.textMuted,
+                fontSize: '13px',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+              }}>
+                No conversations yet
+              </div>
+            ) : (
+              conversations.map((conv) => {
+                const isSelected = currentConversationId === conv.id
+                return (
+                  <div
+                    key={conv.id}
+                    onClick={() => loadConversation(conv.id)}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      marginBottom: '2px',
+                      cursor: 'pointer',
+                      backgroundColor: isSelected ? warmTheme.primaryLight : 'transparent',
+                      transition: 'background-color 0.15s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = '#F7F5F3'
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: '13px',
+                        fontWeight: isSelected ? 600 : 400,
+                        color: isSelected ? warmTheme.primary : warmTheme.textPrimary,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+                      }}>
+                        {conv.title || 'New conversation'}
+                      </div>
+                      <div style={{
+                        fontSize: '11px',
+                        color: warmTheme.textMuted,
+                        marginTop: '2px',
+                      }}>
+                        {formatRelativeTime(conv.last_message_at || conv.updated_at)}
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteConversation(conv.id)
+                      }}
+                      style={{
+                        opacity: 0,
+                        padding: '4px',
+                        background: 'none',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        color: warmTheme.textMuted,
+                        display: 'flex',
+                        transition: 'opacity 0.15s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = '#D97B7B'
+                        e.currentTarget.style.opacity = '1'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = warmTheme.textMuted
+                      }}
+                      title="Delete conversation"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                      </svg>
+                    </button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Right: Chat Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex items-center justify-center overflow-hidden" style={{ backgroundColor: '#F7F5F3', padding: '4px 4px 0 4px' }}>
+            <div
+              className="flex flex-col items-center gap-3 rounded-2xl px-5 pt-3 pb-3 w-full"
+              style={{ height: '100%', backgroundColor: '#F7F5F3', border: '1px solid #F0EEEC' }}
+            >
             {/* Messages or Welcome Screen */}
             {messages.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-6 w-full overflow-auto">
                 <div style={{ textAlign: 'center' }}>
                   <div style={{
-                    width: '64px',
+                    width: '80px',
                     height: '80px',
-                    margin: '0 auto 16px',
+                    margin: '0 auto 20px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}>
-                    <Image src="/owl.png" alt="2nd Brain" width={64} height={80} style={{ objectFit: 'contain' }} />
+                    <Image src="/owl.png" alt="2nd Brain" width={80} height={80} style={{ objectFit: 'contain' }} />
                   </div>
                   <h2 style={{
                     color: warmTheme.textPrimary,
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '26px',
+                    fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
+                    fontSize: '30px',
                     fontWeight: 700,
                     marginBottom: '8px'
                   }}>
@@ -1014,15 +1186,15 @@ export default function ChatInterface() {
                   </h2>
                   <p style={{
                     color: warmTheme.textSecondary,
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '15px',
+                    fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
+                    fontSize: '16px',
                     marginBottom: '6px'
                   }}>
                     Ask me anything about your knowledge base.
                   </p>
                   <p style={{
                     color: warmTheme.textMuted,
-                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
                     fontSize: '13px'
                   }}>
                     Or try one of these to get started:
@@ -1030,7 +1202,7 @@ export default function ChatInterface() {
                 </div>
 
                 {/* Quick Actions Grid */}
-                <div className="grid grid-cols-3 gap-3 w-full max-w-3xl px-4">
+                <div className="grid grid-cols-3 gap-4 w-full max-w-4xl px-4">
                   <WelcomeCard
                     icon="/Research.svg"
                     title="Search Knowledge"
@@ -1090,7 +1262,7 @@ export default function ChatInterface() {
                       }}
                     >
                       <div style={{
-                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                        fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
                         fontSize: '15px',
                         lineHeight: '1.6',
                         color: warmTheme.textPrimary
@@ -1155,7 +1327,7 @@ export default function ChatInterface() {
                                     textDecoration: 'none',
                                     transition: 'all 0.15s ease'
                                   }}
-                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isShared ? '#D0E8F7' : '#F5EBE7'}
+                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isShared ? '#D0E8F7' : '#F0E8E4'}
                                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isShared ? '#E8F4FD' : warmTheme.primaryLight}
                                 >
                                   {isShared ? (
@@ -1349,7 +1521,7 @@ export default function ChatInterface() {
                       <div
                         className="streaming-content"
                         style={{
-                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
                           fontSize: '15px',
                           lineHeight: '1.6',
                           color: warmTheme.textPrimary
@@ -1522,7 +1694,7 @@ export default function ChatInterface() {
                   border: 'none',
                   outline: 'none',
                   fontSize: '15px',
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
                   color: warmTheme.textPrimary,
                   backgroundColor: 'transparent',
                   resize: 'none',
@@ -1620,7 +1792,8 @@ export default function ChatInterface() {
             </div>
           </div>
         </div>
-      </div>
+        </div>{/* end right chat area */}
+      </div>{/* end flex row */}
 
       {/* CSS Animations */}
       <style jsx global>{`
@@ -1635,6 +1808,13 @@ export default function ChatInterface() {
         @keyframes blink {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }
+        }
+        /* Show delete button on conversation hover */
+        div[style*="minWidth: 0"] + button {
+          opacity: 0 !important;
+        }
+        div[style*="cursor: pointer"]:hover > div + button {
+          opacity: 1 !important;
         }
         .streaming-content > :last-child::after {
           content: '▌';

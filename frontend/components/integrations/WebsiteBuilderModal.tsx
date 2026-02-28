@@ -206,7 +206,7 @@ export default function WebsiteBuilderModal({
           </div>
           <div>
             <h2 style={{
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
               fontSize: '20px',
               fontWeight: 600,
               margin: 0,

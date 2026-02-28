@@ -1,13 +1,14 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import axios from 'axios'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
+// Wellspring Warm Design System
 const colors = {
   primary: '#C9A598',
   primaryHover: '#B8948A',
@@ -20,7 +21,7 @@ const colors = {
   border: '#F0EEEC',
   borderDark: '#E8E5E2',
   success: '#9CB896',
-  danger: '#E57373',
+  danger: '#D97B7B',
 }
 
 interface ProfileData {
@@ -231,8 +232,8 @@ export default function Settings() {
   ]
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
-      <Sidebar activeItem={activeItem} onItemClick={setActiveItem} userName={user?.full_name?.split(' ')[0] || 'User'} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: colors.pageBg }}>
+      <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
@@ -243,7 +244,7 @@ export default function Settings() {
             fontWeight: 700,
             color: colors.textPrimary,
             margin: '0 0 24px',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           }}>
             Account Settings
           </h1>
@@ -474,7 +475,7 @@ export default function Settings() {
                         color: colors.textPrimary,
                         outline: 'none',
                         resize: 'vertical',
-                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                        fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                         boxSizing: 'border-box',
                       }}
                       onFocus={(e) => e.currentTarget.style.borderColor = colors.primary}
@@ -580,7 +581,7 @@ export default function Settings() {
                   <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 16px' }}>
                     Active Session
                   </h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', backgroundColor: '#F8F8F6', borderRadius: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px', backgroundColor: '#F7F5F3', borderRadius: '10px' }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: colors.success }} />
                     <div>
                       <div style={{ fontSize: '14px', fontWeight: 500, color: colors.textPrimary }}>Current Browser</div>

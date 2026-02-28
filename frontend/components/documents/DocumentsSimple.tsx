@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import axios from 'axios'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006')
@@ -44,8 +44,8 @@ export default function DocumentsSimple() {
   }
 
   return (
-    <div className="flex h-screen bg-primary overflow-hidden">
-      <Sidebar />
+    <div className="flex flex-col h-screen bg-primary overflow-hidden">
+      <TopNav />
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}

@@ -4,17 +4,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
-// Wellspring-Inspired Warm Design System
+// Wellspring Warm Brown Design System
 const theme = {
-  pageBg: '#FAF9F6',
+  pageBg: '#FAF9F7',
   cardBg: '#F7F5F3',
-  glassBg: 'rgba(250, 249, 246, 0.85)',
+  glassBg: 'rgba(250, 249, 247, 0.85)',
   ink: '#2D2D2D',
-  body: '#4A4A4A',
+  body: '#6B6B6B',
   muted: '#6B6B6B',
   subtle: '#9A9A9A',
   accent: '#C9A598',
@@ -29,8 +29,8 @@ const theme = {
 }
 
 const fonts = {
-  serif: '"Merriweather", Georgia, "Times New Roman", serif',
-  sans: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  serif: '"Instrument Serif", Georgia, "Times New Roman", serif',
+  sans: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
   mono: '"JetBrains Mono", "Fira Code", monospace',
 }
 
@@ -350,7 +350,7 @@ function FocusCard({
                 width: '80px',
                 height: '80px',
                 borderRadius: '50%',
-                background: isRecording ? '#EF4444' : theme.accent,
+                background: isRecording ? '#D97B7B' : theme.accent,
                 border: 'none',
                 cursor: 'pointer',
                 display: 'flex',
@@ -751,8 +751,8 @@ export default function KnowledgeGaps() {
   }, [viewMode, filteredGaps.length, authHeaders])
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: theme.pageBg }}>
-      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: theme.pageBg }}>
+      <TopNav userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* Progress Bar */}

@@ -3,12 +3,12 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
-import Sidebar from '@/components/shared/Sidebar'
+import TopNav from '@/components/shared/TopNav'
 import axios from 'axios'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
 
-// Wellspring-Inspired Warm Design System
+// Wellspring Warm Brown Design System
 const theme = {
   primary: '#C9A598',
   primaryHover: '#B8948A',
@@ -164,8 +164,8 @@ export default function SettingsPage() {
 
   if (authLoading) {
     return (
-      <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: theme.pageBg }}>
-        <Sidebar userName={userName} />
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: theme.pageBg }}>
+        <TopNav userName={userName} />
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{
             width: '40px',
@@ -215,8 +215,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: theme.pageBg }}>
-      <Sidebar userName={userName} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: theme.pageBg }}>
+      <TopNav userName={userName} />
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
@@ -231,7 +231,7 @@ export default function SettingsPage() {
               fontWeight: 700,
               color: theme.textPrimary,
               margin: 0,
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             }}>
               Account Settings
             </h1>
@@ -769,7 +769,7 @@ export default function SettingsPage() {
                 }}
                 onMouseEnter={(e) => {
                   if (!loggingOut) {
-                    e.currentTarget.style.backgroundColor = '#FDEAEA'
+                    e.currentTarget.style.backgroundColor = '#FBE8E8'
                   }
                 }}
                 onMouseLeave={(e) => {

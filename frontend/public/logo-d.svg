@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Option D: "Seed of Knowledge" — hexagonal seed-of-life sacred geometry pattern -->
+  <!-- Center circle -->
+  <circle cx="60" cy="60" r="22" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <!-- 6 surrounding circles -->
+  <circle cx="60" cy="38" r="22" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="79" cy="49" r="22" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="79" cy="71" r="22" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="60" cy="82" r="22" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="41" cy="71" r="22" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="41" cy="49" r="22" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+</svg>
