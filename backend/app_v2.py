@@ -1544,14 +1544,15 @@ def search_stream():
     if _hardcoded:
         def hardcoded_gen():
             answer = _hardcoded['answer']
-            yield f"event: search_complete\ndata: {json.dumps({'sources_count': 0})}\n\n"
+            yield f"event: search_complete\ndata: {json.dumps({'sources': []})}\n\n"
             # Stream word by word for natural feel
             words = answer.split(' ')
             for i, word in enumerate(words):
                 chunk = word if i == 0 else ' ' + word
-                yield f"event: chunk\ndata: {json.dumps({'text': chunk})}\n\n"
-            yield f"event: done\ndata: {json.dumps({'answer': answer, 'sources': [], 'hardcoded': True})}\n\n"
-        return Response(hardcoded_gen(), mimetype='text/event-stream')
+                yield f"event: chunk\ndata: {json.dumps({'content': chunk})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'answer': answer, 'sources': []})}\n\n"
+        return Response(hardcoded_gen(), mimetype='text/event-stream',
+                       headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
     def generate():
         db = SessionLocal()
