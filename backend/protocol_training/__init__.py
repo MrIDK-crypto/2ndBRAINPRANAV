@@ -18,6 +18,9 @@ CORPUS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'p
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'protocol_models')
 REPOS_DIR = os.path.join(CORPUS_DIR, 'repos')
 
-os.makedirs(CORPUS_DIR, exist_ok=True)
-os.makedirs(MODELS_DIR, exist_ok=True)
-os.makedirs(REPOS_DIR, exist_ok=True)
+try:
+    os.makedirs(CORPUS_DIR, exist_ok=True)
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(REPOS_DIR, exist_ok=True)
+except OSError:
+    pass  # Read-only filesystem (e.g., ECS Fargate) — directories created in Dockerfile

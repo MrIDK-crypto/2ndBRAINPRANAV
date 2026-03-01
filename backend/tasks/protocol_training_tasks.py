@@ -4,7 +4,15 @@ Celery Tasks for Protocol Training Pipeline
 Background tasks for corpus ingestion, pattern mining, and model training.
 """
 
+import os
+import sys
 import logging
+
+# Ensure /app is in Python path (Celery workers may fork with different cwd)
+_app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
+
 from celery_app import celery
 
 logger = logging.getLogger(__name__)
