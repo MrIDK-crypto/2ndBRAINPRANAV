@@ -35,6 +35,11 @@ function useReveal() {
 export default function LandingPage() {
   const rootRef = useReveal()
 
+  const smoothScroll = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault()
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   return (
     <div className="landing-root" ref={rootRef}>
       {/* ═══ Navigation ═══ */}
@@ -44,10 +49,10 @@ export default function LandingPage() {
           <span className="nav-logo-text">2nd Brain</span>
         </Link>
         <div className="nav-links">
-          <a href="#features">features</a>
-          <a href="#integrations">integrations</a>
+          <a href="#features" onClick={(e) => smoothScroll(e, 'features')}>features</a>
+          <a href="#integrations" onClick={(e) => smoothScroll(e, 'integrations')}>integrations</a>
           <Link href="/product">product</Link>
-          <a href="#pricing">pricing</a>
+          <a href="#pricing" onClick={(e) => smoothScroll(e, 'pricing')}>pricing</a>
         </div>
         <div className="nav-cta">
           <Link href="/login" className="btn-ghost">log in</Link>
@@ -556,10 +561,10 @@ export default function LandingPage() {
           <Link href="/signup" className="btn-footer">get started</Link>
         </div>
         <nav className="footer-nav">
-          <a href="#features">features</a>
-          <a href="#integrations">integrations</a>
+          <a href="#features" onClick={(e) => smoothScroll(e, 'features')}>features</a>
+          <a href="#integrations" onClick={(e) => smoothScroll(e, 'integrations')}>integrations</a>
           <Link href="/product">product</Link>
-          <a href="#pricing">pricing</a>
+          <a href="#pricing" onClick={(e) => smoothScroll(e, 'pricing')}>pricing</a>
           <Link href="/terms">terms</Link>
           <Link href="/privacy">privacy</Link>
         </nav>
