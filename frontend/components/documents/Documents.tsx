@@ -105,7 +105,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (ext === 'pdf' || fileType.includes('pdf')) {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -120,7 +120,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['doc', 'docx'].includes(ext) || fileType.includes('word') || fileType.includes('document')) {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -135,7 +135,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['xls', 'xlsx', 'csv'].includes(ext) || fileType.includes('excel') || fileType.includes('spreadsheet')) {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -150,7 +150,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['ppt', 'pptx'].includes(ext) || fileType.includes('powerpoint') || fileType.includes('presentation')) {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -165,7 +165,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'].includes(ext) || fileType.includes('image')) {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -180,7 +180,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (CODE_EXTENSIONS.has(ext) || fileType.includes('code')) {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -195,7 +195,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (fileType.includes('email') || fileType.includes('mail') || ext === 'eml') {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <rect x="2" y="4" width="20" height="16" rx="2"/>
@@ -209,7 +209,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['txt', 'rtf'].includes(ext) || fileType.includes('text')) {
     return {
       color: iconColor,
-      bgColor: '#E2E8F0',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -223,7 +223,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   // Default
   return {
     color: iconColor,
-    bgColor: '#E2E8F0',
+    bgColor: '#EEEBE8',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -1072,7 +1072,7 @@ export default function Documents() {
     iconType: 'all' | 'work' | 'code' | 'web' | 'personal'
   }) => {
     const iconColor = active ? colors.primaryHover : '#64748B'
-    const bgColor = active ? colors.primaryLight : '#F1F5F9'
+    const bgColor = active ? colors.primaryLight : '#F7F5F3'
 
     const icons = {
       all: (
@@ -1120,7 +1120,7 @@ export default function Documents() {
           alignItems: 'center',
           gap: '16px',
           padding: '20px 28px',
-          backgroundColor: active ? colors.primaryLight : '#F1F5F9',
+          backgroundColor: active ? colors.primaryLight : '#F7F5F3',
           border: `1px solid ${active ? '#D4C4BE' : colors.border}`,
           borderRadius: '16px',
           cursor: 'pointer',
@@ -1180,14 +1180,14 @@ export default function Documents() {
         alignItems: 'center',
         gap: '14px',
         padding: '16px 20px',
-        backgroundColor: active ? colors.primaryLight : '#F1F5F9',
+        backgroundColor: active ? colors.primaryLight : '#F7F5F3',
         border: `2px solid ${active ? colors.primary : colors.border}`,
         borderRadius: '12px',
         cursor: 'pointer',
         transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
         minWidth: '180px',
         flexShrink: 0,
-        boxShadow: active ? `0 4px 12px rgba(37, 99, 235, 0.2)` : shadows.sm,
+        boxShadow: active ? `0 4px 12px rgba(201, 165, 152, 0.2)` : shadows.sm,
         transform: active ? 'scale(1.02)' : 'scale(1)',
       }}
       onMouseEnter={(e) => {
@@ -1200,7 +1200,7 @@ export default function Documents() {
       onMouseLeave={(e) => {
         if (!active) {
           e.currentTarget.style.borderColor = colors.border
-          e.currentTarget.style.backgroundColor = '#F1F5F9'
+          e.currentTarget.style.backgroundColor = '#F7F5F3'
           e.currentTarget.style.transform = 'scale(1)'
         }
       }}
@@ -2013,20 +2013,20 @@ export default function Documents() {
                 alignItems: 'center',
                 gap: '16px',
                 padding: '20px 28px',
-                backgroundColor: (!activeIntegration && !activeCustomFolder) ? colors.primaryLight : '#F1F5F9',
+                backgroundColor: (!activeIntegration && !activeCustomFolder) ? colors.primaryLight : '#F7F5F3',
                 border: `2px solid ${!activeIntegration ? colors.primary : colors.border}`,
                 borderRadius: '16px',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
                 minWidth: '240px',
                 flexShrink: 0,
-                boxShadow: !activeIntegration ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                boxShadow: !activeIntegration ? '0 4px 12px rgba(201, 165, 152, 0.15)' : shadows.sm,
               }}
             >
               <div style={{
                 width: '44px',
                 height: '44px',
-                backgroundColor: !activeIntegration ? colors.primaryLight : '#E2E8F0',
+                backgroundColor: !activeIntegration ? colors.primaryLight : '#EEEBE8',
                 borderRadius: '10px',
                 display: 'flex',
                 alignItems: 'center',
@@ -2069,14 +2069,14 @@ export default function Documents() {
                     alignItems: 'center',
                     gap: '16px',
                     padding: '20px 28px',
-                    backgroundColor: isActive ? colors.primaryLight : '#F1F5F9',
+                    backgroundColor: isActive ? colors.primaryLight : '#F7F5F3',
                     border: `2px solid ${isActive ? colors.primary : colors.border}`,
                     borderRadius: '16px',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
                     minWidth: '240px',
                     flexShrink: 0,
-                    boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                    boxShadow: isActive ? '0 4px 12px rgba(201, 165, 152, 0.15)' : shadows.sm,
                     position: 'relative',
                   }}
                 >
@@ -2115,7 +2115,7 @@ export default function Documents() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: '#E2E8F0',
+                      backgroundColor: '#EEEBE8',
                       border: 'none',
                       borderRadius: '6px',
                       cursor: 'pointer',
@@ -2123,7 +2123,7 @@ export default function Documents() {
                       opacity: 0,
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#D4C4BE' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#E2E8F0' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#EEEBE8' }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2.5">
                       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
@@ -2272,21 +2272,21 @@ export default function Documents() {
                     alignItems: 'center',
                     gap: '16px',
                     padding: '20px 28px',
-                    backgroundColor: isActive ? colors.primaryLight : '#F1F5F9',
+                    backgroundColor: isActive ? colors.primaryLight : '#F7F5F3',
                     border: `2px solid ${isActive ? colors.primary : colors.border}`,
                     borderRadius: '16px',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
                     minWidth: '240px',
                     flexShrink: 0,
-                    boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                    boxShadow: isActive ? '0 4px 12px rgba(201, 165, 152, 0.15)' : shadows.sm,
                     position: 'relative',
                   }}
                 >
                   <div style={{
                     width: '44px',
                     height: '44px',
-                    backgroundColor: isActive ? colors.primaryLight : '#E2E8F0',
+                    backgroundColor: isActive ? colors.primaryLight : '#EEEBE8',
                     borderRadius: '10px',
                     display: 'flex',
                     alignItems: 'center',
@@ -2316,7 +2316,7 @@ export default function Documents() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: '#E2E8F0',
+                      backgroundColor: '#EEEBE8',
                       border: 'none',
                       borderRadius: '6px',
                       cursor: 'pointer',
@@ -2324,7 +2324,7 @@ export default function Documents() {
                       opacity: 0,
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#D4C4BE' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#E2E8F0' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#EEEBE8' }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2.5">
                       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
@@ -3214,7 +3214,7 @@ export default function Documents() {
                     Color
                   </label>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {['#B8A394', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#14B8A6'].map((color) => (
+                    {['#B8A394', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#C9A598', '#EF4444', '#14B8A6'].map((color) => (
                       <button
                         key={color}
                         onClick={() => setNewFolderColor(color)}

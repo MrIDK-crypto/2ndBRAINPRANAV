@@ -436,9 +436,9 @@ export default function WebsiteBuilderModal({
                   flex: 1,
                   padding: '12px 20px',
                   borderRadius: '10px',
-                  border: '2px solid #2563EB',
+                  border: '2px solid #C9A598',
                   backgroundColor: 'white',
-                  color: '#2563EB',
+                  color: '#C9A598',
                   fontSize: '14px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -546,8 +546,8 @@ export default function WebsiteBuilderModal({
                     style={{
                       padding: '10px 16px',
                       borderRadius: '8px',
-                      border: theme === t.value ? '2px solid #2563EB' : '1px solid #D4D4D8',
-                      backgroundColor: theme === t.value ? '#EFF6FF' : '#fff',
+                      border: theme === t.value ? '2px solid #C9A598' : '1px solid #D4D4D8',
+                      backgroundColor: theme === t.value ? '#FBF4F1' : '#fff',
                       fontSize: '13px',
                       fontFamily: 'Inter, sans-serif',
                       cursor: 'pointer',
@@ -637,14 +637,14 @@ export default function WebsiteBuilderModal({
             {/* Info Box */}
             <div style={{
               padding: '12px',
-              backgroundColor: '#DBEAFE',
+              backgroundColor: '#FBF4F1',
               borderRadius: '8px',
               marginBottom: '20px'
             }}>
               <p style={{
                 fontFamily: 'Inter, sans-serif',
                 fontSize: '13px',
-                color: '#1E40AF',
+                color: '#8B6F63',
                 margin: 0
               }}>
                 <strong>AI-Powered Templates:</strong> We extract information from your knowledge base and generate a professional website using curated templates with beautiful images and Notion-style avatars.

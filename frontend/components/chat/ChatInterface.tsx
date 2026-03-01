@@ -141,7 +141,7 @@ const WelcomeCard = ({ icon, title, description, onClick }: any) => (
     onMouseEnter={(e) => {
       e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.06)'
       e.currentTarget.style.transform = 'translateY(-2px)'
-      e.currentTarget.style.borderColor = '#3B82F6'
+      e.currentTarget.style.borderColor = '#C9A598'
     }}
     onMouseLeave={(e) => {
       e.currentTarget.style.boxShadow = 'none'
@@ -907,7 +907,7 @@ export default function ChatInterface() {
           li: ({ children }: any) => <li className="mb-1">{children}</li>,
           // Style links
           a: ({ href, children }: any) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '2px' }} onMouseEnter={(e) => e.currentTarget.style.color = '#1D4ED8'} onMouseLeave={(e) => e.currentTarget.style.color = '#2563EB'}>
+            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#B8948A', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '2px' }} onMouseEnter={(e) => e.currentTarget.style.color = '#A07D6F'} onMouseLeave={(e) => e.currentTarget.style.color = '#B8948A'}>
               {children}
             </a>
           ),

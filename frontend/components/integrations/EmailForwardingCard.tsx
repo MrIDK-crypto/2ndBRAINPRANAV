@@ -147,27 +147,28 @@ export default function EmailForwardingCard() {
 
       {/* Progress indicator while fetching */}
       {fetching && (
-        <div className="mt-4 p-4 rounded-lg border border-blue-200 bg-blue-50">
+        <div className="mt-4 p-4 rounded-lg" style={{ border: '1px solid #E8D5CE', backgroundColor: '#FBF4F1' }}>
           <div className="flex items-center gap-3">
             <div className="flex-shrink-0">
-              <svg className="animate-spin h-5 w-5 text-blue-600" viewBox="0 0 24 24" fill="none">
+              <svg className="animate-spin h-5 w-5" style={{ color: '#C9A598' }} viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-blue-900" style={{ fontFamily: 'Inter, sans-serif' }}>
+              <p className="text-sm font-medium" style={{ fontFamily: 'Inter, sans-serif', color: '#2D2D2D' }}>
                 Syncing emails...
               </p>
-              <p className="text-xs text-blue-700 mt-1" style={{ fontFamily: 'Inter, sans-serif' }}>
+              <p className="text-xs mt-1" style={{ fontFamily: 'Inter, sans-serif', color: '#6B6B6B' }}>
                 This may take a minute. Processing new emails and adding them to your knowledge base.
               </p>
             </div>
           </div>
-          <div className="mt-3 w-full bg-blue-200 rounded-full h-1.5 overflow-hidden">
+          <div className="mt-3 w-full rounded-full h-1.5 overflow-hidden" style={{ backgroundColor: '#E8D5CE' }}>
             <div
-              className="bg-blue-600 h-1.5 rounded-full"
+              className="h-1.5 rounded-full"
               style={{
+                backgroundColor: '#C9A598',
                 width: '30%',
                 animation: 'progressSlide 1.5s ease-in-out infinite'
               }}
