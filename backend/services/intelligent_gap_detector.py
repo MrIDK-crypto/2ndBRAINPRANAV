@@ -465,6 +465,24 @@ MISSING_PATTERNS = {
     ]
 }
 
+# =============================================================================
+# PROTOCOL-SPECIFIC PATTERNS (auto-merged from protocol training pipeline)
+# =============================================================================
+try:
+    from services.protocol_patterns import (
+        PROTOCOL_FRAME_TEMPLATES,
+        PROTOCOL_MISSING_PATTERNS,
+        PROTOCOL_QUESTION_TEMPLATES,
+    )
+    FRAME_TEMPLATES.update(PROTOCOL_FRAME_TEMPLATES)
+    MISSING_PATTERNS.update(PROTOCOL_MISSING_PATTERNS)
+    _PROTOCOL_PATTERNS_LOADED = True
+    logger.info("[IntelligentGap] Protocol patterns loaded successfully")
+except ImportError:
+    _PROTOCOL_PATTERNS_LOADED = False
+    PROTOCOL_QUESTION_TEMPLATES = {}
+    logger.debug("[IntelligentGap] Protocol patterns not available (run pattern miner first)")
+
 # Negation patterns
 NEGATION_PATTERNS = [
     r"\b(not|n't|never|no|none|neither|nor|nobody|nothing|nowhere|without)\b",
@@ -1785,8 +1803,10 @@ class GroundedQuestionGenerator:
             score += 0.1
 
         # Boost for high-value frame types
-        if frame.frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP"]:
+        if frame.frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP", "SAFETY_PRECAUTION"]:
             score += 0.2
+        elif frame.frame_type in ["PROTOCOL_STEP", "REAGENT_USAGE", "EQUIPMENT_SETUP"]:
+            score += 0.15
 
         # Penalize short/generic
         if len(frame.source_sentence) < 30:
@@ -1829,6 +1849,19 @@ class GroundedQuestionGenerator:
             }
         }
 
+        # Protocol-specific question templates
+        if frame.frame_type in PROTOCOL_QUESTION_TEMPLATES:
+            templates = PROTOCOL_QUESTION_TEMPLATES[frame.frame_type]
+            proto_questions = []
+            for template in templates:
+                q = template.replace("{action}", trigger).replace("{parameters}", missing_slot)
+                q = q.replace("{reagent_name}", trigger).replace("{equipment}", trigger)
+                q = q.replace("{hazard}", trigger).replace("{observation}", trigger)
+                q = q.replace("{criteria}", missing_slot)
+                proto_questions.append(f"{q} Context: \"{context}\"{doc_ref}")
+            if proto_questions:
+                return proto_questions[:2]
+
         frame_questions = questions.get(frame.frame_type, {})
         return frame_questions.get(missing_slot, [f"The document mentions \"{trigger}\" but doesn't explain the {missing_slot} — can you provide this detail?{doc_ref}"])
 
@@ -1840,13 +1873,16 @@ class GroundedQuestionGenerator:
             ("PROCESS", "owner"),
             ("CONSTRAINT", "why"),
             ("OWNERSHIP", "who"),
+            ("SAFETY_PRECAUTION", "precaution"),
+            ("SAFETY_PRECAUTION", "hazard"),
+            ("REAGENT_USAGE", "concentration"),
         ]
 
         if (frame_type, missing_slot) in high_priority:
             return 5
-        elif frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP"]:
+        elif frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP", "SAFETY_PRECAUTION"]:
             return 4
-        elif frame_type in ["PROCESS", "PROBLEM"]:
+        elif frame_type in ["PROCESS", "PROBLEM", "PROTOCOL_STEP", "REAGENT_USAGE"]:
             return 3
         else:
             return 2
@@ -1862,6 +1898,12 @@ class GroundedQuestionGenerator:
             "METRIC": "outcome",
             "PROBLEM": "technical",
             "OWNERSHIP": "relationship",
+            # Protocol-specific frame types
+            "PROTOCOL_STEP": "process",
+            "REAGENT_USAGE": "technical",
+            "EQUIPMENT_SETUP": "technical",
+            "SAFETY_PRECAUTION": "safety",
+            "EXPECTED_RESULT": "outcome",
         }
         return mapping.get(frame_type, "context")
 
@@ -1895,12 +1937,26 @@ class IntelligentGapDetector:
         self.all_frames: List[Frame] = []
         self.all_missing_roles: List[Dict] = []
         self.all_discourse_units: List[DiscourseUnit] = []
+        self.has_protocol_content: bool = False
+        self.protocol_doc_ids: List[str] = []
 
     def add_document(self, doc_id: str, title: str, content: str):
         """Process document through all layers"""
         logger.info(f"[IntelligentGap] Processing: {title}")
 
         content = content[:100000]
+
+        # Auto-detect protocol content
+        if _PROTOCOL_PATTERNS_LOADED:
+            try:
+                from services.protocol_classifier import is_protocol_content
+                is_protocol, confidence = is_protocol_content(content)
+                if is_protocol:
+                    self.has_protocol_content = True
+                    self.protocol_doc_ids.append(doc_id)
+                    logger.info(f"  - Protocol content detected (confidence: {confidence:.2f})")
+            except ImportError:
+                pass
 
         # Layer 1: Frame Extraction
         frames = self.frame_extractor.extract_frames(content, doc_id)
@@ -1973,10 +2029,48 @@ class IntelligentGapDetector:
             contradictions=sorted_contradictions
         )
 
-        logger.info(f"[IntelligentGap] Complete: {len(gaps)} gaps")
+        # Protocol-specific: reference corpus comparison
+        protocol_ref_gaps = []
+        if self.has_protocol_content and _PROTOCOL_PATTERNS_LOADED:
+            try:
+                from services.protocol_reference_store import get_store
+                store = get_store()
+                if store.protocols:
+                    for doc_id in self.protocol_doc_ids[:10]:
+                        # Find frames from this doc that look like protocol steps
+                        doc_steps = [
+                            f.source_sentence for f in self.all_frames
+                            if f.source_doc_id == doc_id and f.frame_type == "PROTOCOL_STEP"
+                        ]
+                        if doc_steps:
+                            missing = store.find_missing_steps(doc_steps)
+                            for m in missing[:5]:
+                                gap = Gap(
+                                    gap_type="MISSING_PROTOCOL_STEP",
+                                    description=f"Common step \"{m['verb']}\" found in {m['frequency']} similar reference protocols but missing from this document.",
+                                    evidence=[f"Similar protocols: {', '.join(m.get('similar_protocols', [])[:3])}"],
+                                    related_entities=[m['verb']],
+                                    confidence=0.7,
+                                    grounded_questions=[m['message']],
+                                    priority=3,
+                                    category="reproducibility",
+                                    source_pattern="REFERENCE_COMPARISON",
+                                    quality_score=0.65,
+                                    fingerprint=hashlib.md5(f"ref:{m['verb']}:{doc_id}".encode()).hexdigest()[:16],
+                                    source_doc_ids=[doc_id]
+                                )
+                                protocol_ref_gaps.append(gap)
+            except Exception as e:
+                logger.debug(f"[IntelligentGap] Reference comparison skipped: {e}")
+
+        all_gaps = gaps + protocol_ref_gaps
+        all_gaps.sort(key=lambda g: (-g.priority, -g.quality_score))
+
+        logger.info(f"[IntelligentGap] Complete: {len(all_gaps)} gaps"
+                     f"{f' ({len(protocol_ref_gaps)} from protocol reference)' if protocol_ref_gaps else ''}")
 
         return {
-            "gaps": gaps,
+            "gaps": all_gaps,
             "stats": {
                 "total_frames": len(self.all_frames),
                 "frames_with_gaps": len(frames_with_gaps),
@@ -1988,7 +2082,9 @@ class IntelligentGapDetector:
                 "bus_factor_risks": len(bus_factor_risks),
                 "contradictions": len(contradictions),
                 "single_source_topics": len(single_source),
-                "total_gaps": len(gaps)
+                "protocol_content_detected": self.has_protocol_content,
+                "protocol_reference_gaps": len(protocol_ref_gaps),
+                "total_gaps": len(all_gaps)
             },
             "bus_factor_risks": bus_factor_risks,
             "contradictions": contradictions,

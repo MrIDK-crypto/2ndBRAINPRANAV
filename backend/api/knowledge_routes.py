@@ -1380,3 +1380,79 @@ def get_gap_stats():
             "success": False,
             "error": str(e)
         }), 500
+
+
+# =============================================================================
+# PROTOCOL TRAINING ENDPOINTS
+# =============================================================================
+
+@knowledge_bp.route('/protocol-training/ingest', methods=['POST'])
+@require_auth
+def trigger_protocol_ingestion():
+    """Trigger protocol corpus ingestion (admin only)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        sources = data.get('sources', None)
+        max_protocols = data.get('max_protocols', 5000)
+
+        from tasks.protocol_training_tasks import ingest_protocol_corpus
+        task = ingest_protocol_corpus.delay(sources=sources, max_protocols=max_protocols)
+
+        return jsonify({
+            "success": True,
+            "task_id": task.id,
+            "message": f"Protocol corpus ingestion started (sources: {sources or 'all'})"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/train', methods=['POST'])
+@require_auth
+def trigger_protocol_training():
+    """Trigger ML model training (admin only)."""
+    try:
+        from tasks.protocol_training_tasks import train_protocol_models
+        task = train_protocol_models.delay()
+
+        return jsonify({
+            "success": True,
+            "task_id": task.id,
+            "message": "Protocol model training started"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/stats', methods=['GET'])
+@require_auth
+def get_protocol_training_stats():
+    """Get protocol corpus and training statistics."""
+    import os
+    try:
+        corpus_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'protocol_corpus')
+        models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'protocol_models')
+
+        stats = {
+            "corpus_available": False,
+            "models_available": False,
+            "corpus_stats": {},
+            "models": {},
+        }
+
+        stats_file = os.path.join(corpus_dir, 'corpus_stats.json')
+        if os.path.exists(stats_file):
+            with open(stats_file, 'r') as f:
+                stats['corpus_stats'] = json.load(f)
+            stats['corpus_available'] = True
+
+        for model_name in ['content_classifier.joblib', 'missing_step_detector.joblib', 'completeness_scorer.joblib']:
+            model_path = os.path.join(models_dir, model_name)
+            stats['models'][model_name] = os.path.exists(model_path)
+
+        stats['models_available'] = any(stats['models'].values())
+
+        return jsonify({"success": True, "data": stats})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
