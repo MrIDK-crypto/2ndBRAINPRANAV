@@ -28,6 +28,14 @@ def ingest_protocol_corpus(self, sources=None, max_protocols=5000):
                  Options: ['chemh', 'wlp', 'bioprotocolbench', 'protocolsio', 'openwetware']
         max_protocols: Max protocols per source (for API-based sources)
     """
+    # Debug: log filesystem state to diagnose ModuleNotFoundError
+    logger.warning(f'[ProtocolTask] cwd={os.getcwd()}')
+    logger.warning(f'[ProtocolTask] sys.path={sys.path[:5]}')
+    logger.warning(f'[ProtocolTask] /app contents={os.listdir("/app") if os.path.isdir("/app") else "NOT_FOUND"}')
+    logger.warning(f'[ProtocolTask] /app/protocol_training exists={os.path.isdir("/app/protocol_training")}')
+    if os.path.isdir('/app/protocol_training'):
+        logger.warning(f'[ProtocolTask] protocol_training contents={os.listdir("/app/protocol_training")}')
+
     from protocol_training import ingest_chemh, ingest_wlp, ingest_bioprotocolbench
     from protocol_training import ingest_protocolsio, ingest_openwetware
     from protocol_training.normalizer import normalize
