@@ -47,7 +47,7 @@ interface AuthContextType {
 }
 
 // Public routes that don't require authentication
-const PUBLIC_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/verification-pending', '/terms', '/privacy', '/landing', '/product']
+const PUBLIC_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/verification-pending', '/terms', '/privacy', '/landing', '/product']
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTenant(null)
     setToken(null)
     setRefreshToken(null)
-    router.push('/login')
+    router.push('/')
   }, [router])
 
   // Check auth on mount
@@ -86,20 +86,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Redirect based on auth state and email verification
   useEffect(() => {
     if (!isLoading) {
-      const isPublicRoute = PUBLIC_ROUTES.some(route => pathname?.startsWith(route))
+      const isPublicRoute = PUBLIC_ROUTES.some(route => route === '/' ? pathname === '/' : pathname?.startsWith(route))
       const isVerificationPending = pathname === '/verification-pending'
 
       if (!user && !isPublicRoute) {
-        // Not authenticated and not on public page -> redirect to login
-        router.push('/login')
+        // Not authenticated and not on public page -> redirect to landing
+        router.push('/')
       } else if (user && !user.email_verified && !isPublicRoute && !isVerificationPending && !window.location.hostname.includes('localhost')) {
         // Authenticated but email NOT verified -> redirect to verification pending (skip on localhost)
         router.push('/verification-pending')
       } else if (user && (user.email_verified || window.location.hostname.includes('localhost')) && isVerificationPending) {
         // Email is verified (or localhost) but on verification pending page -> redirect to integrations
         router.push('/integrations')
-      } else if (user && (user.email_verified || window.location.hostname.includes('localhost')) && pathname === '/login') {
-        // Authenticated and verified (or localhost) but on login page -> redirect to integrations
+      } else if (user && (user.email_verified || window.location.hostname.includes('localhost')) && (pathname === '/login' || pathname === '/')) {
+        // Authenticated and verified (or localhost) but on login/landing page -> redirect to integrations
         router.push('/integrations')
       }
     }
@@ -260,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTenant(null)
       setToken(null)
       setRefreshToken(null)
-      router.push('/login')
+      router.push('/')
     }
   }
 

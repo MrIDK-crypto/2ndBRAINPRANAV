@@ -53,7 +53,7 @@ export default function Sidebar({
     if (pathname === '/training-guides') return 'Training Videos'
     if (pathname === '/inventory') return 'Inventory'
     if (pathname === '/analytics') return 'Analytics'
-    if (pathname === '/' || pathname === '/chat') return 'ChatBot'
+    if (pathname === '/chat') return 'ChatBot'
     return 'ChatBot'
   }
 
@@ -94,7 +94,7 @@ export default function Sidebar({
     { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations', adminOnly: true },
     { id: 'Documents', label: 'Documents', href: '/documents', icon: 'documents', adminOnly: false },
     { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
-    { id: 'ChatBot', label: 'ChatBot', href: '/', icon: 'chatbot', adminOnly: false },
+    { id: 'ChatBot', label: 'ChatBot', href: '/chat', icon: 'chatbot', adminOnly: false },
     { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
     { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
     { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
@@ -185,7 +185,7 @@ export default function Sidebar({
       <div style={{ padding: '0 24px' }}>
         {/* Logo */}
         <div style={{ marginBottom: '32px' }}>
-          <Link href="/">
+          <Link href="/chat">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
               <div style={{ width: '48px', height: '60px', flexShrink: 0 }}>
                 <Image

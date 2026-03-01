@@ -15,7 +15,7 @@ const navItems = [
   { id: 'Integrations', label: 'integrations', href: '/integrations', adminOnly: true },
   { id: 'Documents', label: 'documents', href: '/documents' },
   { id: 'Knowledge Gaps', label: 'knowledge gaps', href: '/knowledge-gaps' },
-  { id: 'ChatBot', label: 'chatbot', href: '/', icon: 'chatbot' },
+  { id: 'ChatBot', label: 'chatbot', href: '/chat', icon: 'chatbot' },
   { id: 'Training Videos', label: 'training videos', href: '/training-guides' },
   { id: 'Co-Researcher', label: 'co-researcher', href: '/co-researcher' },
   { id: 'Inventory', label: 'inventory', href: '/inventory' },
@@ -33,7 +33,7 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
     : navItems.filter(item => !item.adminOnly)
 
   const isActive = (href: string) => {
-    if (href === '/') return pathname === '/' || pathname === '/chat'
+    if (href === '/chat') return pathname === '/chat'
     return pathname?.startsWith(href)
   }
 
