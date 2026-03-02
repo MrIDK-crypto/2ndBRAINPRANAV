@@ -8,14 +8,16 @@ import os
 import sys
 import logging
 
-# Ensure /app is in Python path (Celery workers may fork with different cwd)
-_app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _app_dir not in sys.path:
-    sys.path.insert(0, _app_dir)
-
 from celery_app import celery
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_app_in_path():
+    """Ensure /app is in sys.path — Celery prefork workers lose it after fork."""
+    app_dir = '/app'
+    if app_dir not in sys.path:
+        sys.path.insert(0, app_dir)
 
 
 @celery.task(bind=True, name='tasks.protocol_training_tasks.ingest_protocol_corpus')
@@ -28,13 +30,7 @@ def ingest_protocol_corpus(self, sources=None, max_protocols=5000):
                  Options: ['chemh', 'wlp', 'bioprotocolbench', 'protocolsio', 'openwetware']
         max_protocols: Max protocols per source (for API-based sources)
     """
-    # Debug: log filesystem state to diagnose ModuleNotFoundError
-    logger.warning(f'[ProtocolTask] cwd={os.getcwd()}')
-    logger.warning(f'[ProtocolTask] sys.path={sys.path[:5]}')
-    logger.warning(f'[ProtocolTask] /app contents={os.listdir("/app") if os.path.isdir("/app") else "NOT_FOUND"}')
-    logger.warning(f'[ProtocolTask] /app/protocol_training exists={os.path.isdir("/app/protocol_training")}')
-    if os.path.isdir('/app/protocol_training'):
-        logger.warning(f'[ProtocolTask] protocol_training contents={os.listdir("/app/protocol_training")}')
+    _ensure_app_in_path()
 
     from protocol_training import ingest_chemh, ingest_wlp, ingest_bioprotocolbench
     from protocol_training import ingest_protocolsio, ingest_openwetware
@@ -87,6 +83,7 @@ def ingest_protocol_corpus(self, sources=None, max_protocols=5000):
 @celery.task(bind=True, name='tasks.protocol_training_tasks.train_protocol_models')
 def train_protocol_models(self):
     """Train ML classifiers using the ingested protocol corpus."""
+    _ensure_app_in_path()
     from protocol_training.train_classifier import train_all
 
     try:
@@ -103,6 +100,7 @@ def train_protocol_models(self):
 @celery.task(bind=True, name='tasks.protocol_training_tasks.update_reference_store')
 def update_reference_store(self):
     """Reload the protocol reference store with latest corpus data."""
+    _ensure_app_in_path()
     from services.protocol_reference_store import reload_store
 
     try:
