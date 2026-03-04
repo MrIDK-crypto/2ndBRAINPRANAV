@@ -577,9 +577,8 @@ class NotionConnector(BaseConnector):
     def _download_and_parse_file(self, url: str, filename: str) -> Optional[str]:
         """Download a file from Notion's S3 URL and parse its content
 
-        Uses Azure Mistral Document AI (mistral-document-ai-2505) as the primary parser,
-        which handles PDF, DOCX, PPTX, XLSX, HTML, XML, PNG, JPG and more.
-        Falls back to local parsers (PyPDF2, python-docx, etc.) if Mistral is unavailable.
+        Uses Azure GPT-4o Vision for image files (PNG, JPG, etc.) to extract text via OCR.
+        Uses local parsers (PyPDF2, python-docx, openpyxl, etc.) for documents (PDF, DOCX, XLSX, PPTX).
         """
         if not url:
             return None
@@ -600,13 +599,13 @@ class NotionConnector(BaseConnector):
                 except UnicodeDecodeError:
                     return file_bytes.decode("latin-1")
 
-            # Try Azure Mistral Document AI first (handles all formats including images)
-            parsed = self._parse_with_mistral(file_bytes, filename, ext)
+            # Try GPT-4o Vision for images
+            parsed = self._parse_with_gpt4o_vision(file_bytes, filename, ext)
             if parsed:
                 return parsed
 
-            # Fallback to local parsers for common Office formats
-            print(f"[Notion] Mistral unavailable, trying local parser for {filename}")
+            # Use local parsers for non-image formats (PDF, DOCX, etc.)
+            print(f"[Notion] Using local parser for {filename}")
             return self._parse_with_local(file_bytes, filename, ext)
 
         except requests.exceptions.RequestException as e:
@@ -616,28 +615,88 @@ class NotionConnector(BaseConnector):
 
         return None
 
-    def _parse_with_mistral(self, file_bytes: bytes, filename: str, ext: str) -> Optional[str]:
-        """Parse file using Azure Mistral Document AI (mistral-document-ai-2505)"""
+    def _parse_with_gpt4o_vision(self, file_bytes: bytes, filename: str, ext: str) -> Optional[str]:
+        """Parse file using Azure GPT-4o Vision for images, returns None for other file types"""
+        # GPT-4o Vision only supports image formats
+        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'}
+        if ext.lower() not in image_extensions:
+            return None  # Let local parsers handle non-image files
+
         try:
-            from parsers.azure_doc_parser import AzureDocumentParser
-            parser = AzureDocumentParser()
+            from openai import AzureOpenAI
 
-            # Mistral parser expects a file path, so write to temp file
-            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-                tmp.write(file_bytes)
-                tmp_path = tmp.name
+            # Azure OpenAI Configuration
+            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "https://rishi-mihfdoty-eastus2.cognitiveservices.azure.com")
+            azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            azure_api_version = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
+            chat_deployment = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4.1")
 
-            try:
-                result = parser.parse(tmp_path)
-                if result and result.get("content"):
-                    content = result["content"].replace("\x00", "")
-                    print(f"[Notion] Parsed {filename} with Mistral Document AI: {len(content)} chars")
-                    return content
-            finally:
-                os.unlink(tmp_path)
+            if not azure_api_key:
+                print(f"[Notion] GPT-4o Vision not available: AZURE_OPENAI_API_KEY not set")
+                return None
+
+            client = AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                api_key=azure_api_key,
+                api_version=azure_api_version
+            )
+
+            # Encode image to base64
+            image_base64 = base64.b64encode(file_bytes).decode('utf-8')
+
+            # Determine MIME type
+            mime_types = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp',
+                '.bmp': 'image/bmp',
+                '.tiff': 'image/tiff'
+            }
+            mime_type = mime_types.get(ext.lower(), 'image/png')
+
+            # Call GPT-4o Vision
+            response = client.chat.completions.create(
+                model=chat_deployment,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": """Analyze this image and extract ALL text content and information:
+
+1. Extract ALL visible text (typed, printed, or handwritten)
+2. Describe any diagrams, charts, tables, or visual elements
+3. Preserve the structure and layout of the content
+4. If it's a document/screenshot, extract the full content
+5. If it contains data or numbers, include them accurately
+
+Return the extracted content in plain text format, preserving the original structure as much as possible."""
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{image_base64}",
+                                    "detail": "high"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=4000,
+                temperature=0.1
+            )
+
+            content = response.choices[0].message.content
+            if content:
+                content = content.strip().replace("\x00", "")
+                print(f"[Notion] Parsed {filename} with GPT-4o Vision: {len(content)} chars")
+                return content
 
         except Exception as e:
-            print(f"[Notion] Mistral Document AI not available for {filename}: {e}")
+            print(f"[Notion] GPT-4o Vision failed for {filename}: {e}")
 
         return None
 
