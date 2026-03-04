@@ -617,29 +617,37 @@ class NotionConnector(BaseConnector):
         return None
 
     def _parse_with_mistral(self, file_bytes: bytes, filename: str, ext: str) -> Optional[str]:
-        """Parse file using Azure Mistral Document AI (mistral-document-ai-2505)"""
-        try:
-            from parsers.azure_doc_parser import AzureDocumentParser
-            parser = AzureDocumentParser()
+        """Parse file using Azure Mistral Document AI (mistral-document-ai-2505)
 
-            # Mistral parser expects a file path, so write to temp file
-            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-                tmp.write(file_bytes)
-                tmp_path = tmp.name
+        NOTE: Currently DISABLED - Mistral Document AI returns 404 because the
+        deployment uses wrong API format (chat/completions instead of /v1/ocr).
+        This causes slow sync due to retry delays. Using local parsers instead.
 
-            try:
-                result = parser.parse(tmp_path)
-                if result and result.get("content"):
-                    content = result["content"].replace("\x00", "")
-                    print(f"[Notion] Parsed {filename} with Mistral Document AI: {len(content)} chars")
-                    return content
-            finally:
-                os.unlink(tmp_path)
-
-        except Exception as e:
-            print(f"[Notion] Mistral Document AI not available for {filename}: {e}")
-
+        To re-enable: fix azure_doc_parser.py to use /v1/ocr endpoint.
+        """
+        # TEMPORARILY DISABLED - Mistral 404 errors slow down sync significantly
+        # Each failed attempt adds 2-5 seconds, causing timeouts on large workspaces
+        # TODO: Fix azure_doc_parser.py to use correct /v1/ocr endpoint
         return None
+
+        # Original code (disabled):
+        # try:
+        #     from parsers.azure_doc_parser import AzureDocumentParser
+        #     parser = AzureDocumentParser()
+        #     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        #         tmp.write(file_bytes)
+        #         tmp_path = tmp.name
+        #     try:
+        #         result = parser.parse(tmp_path)
+        #         if result and result.get("content"):
+        #             content = result["content"].replace("\x00", "")
+        #             print(f"[Notion] Parsed {filename} with Mistral Document AI: {len(content)} chars")
+        #             return content
+        #     finally:
+        #         os.unlink(tmp_path)
+        # except Exception as e:
+        #     print(f"[Notion] Mistral Document AI not available for {filename}: {e}")
+        # return None
 
     def _parse_with_local(self, file_bytes: bytes, filename: str, ext: str) -> Optional[str]:
         """Fallback: parse file using local libraries (PyPDF2, python-docx, etc.)"""
