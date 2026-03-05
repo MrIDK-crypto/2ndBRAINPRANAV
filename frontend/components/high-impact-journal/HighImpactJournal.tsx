@@ -220,34 +220,6 @@ export default function HighImpactJournal() {
       fontFamily: font,
       color: theme.textPrimary,
     }}>
-      {/* Header */}
-      <header style={{
-        borderBottom: `1px solid ${theme.border}`,
-        backgroundColor: theme.cardBg,
-        padding: '16px 32px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: `linear-gradient(135deg, ${theme.primary}, ${theme.primaryHover})`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 700, fontSize: 14,
-          }}>J</div>
-          <span style={{ fontFamily: fontDisplay, fontSize: 20, color: theme.textPrimary }}>
-            High-Impact Journal Predictor
-          </span>
-        </div>
-        <a
-          href="/"
-          style={{ color: theme.textMuted, fontSize: 13, textDecoration: 'none' }}
-        >
-          use2ndbrain.com
-        </a>
-      </header>
-
       <main style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
         {error && (
           <div style={{
@@ -265,19 +237,35 @@ export default function HighImpactJournal() {
 
         {/* ── IDLE STATE ─────────────────────────────────────── */}
         {state === 'idle' && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
+          <div style={{ textAlign: 'center', paddingTop: 80 }}>
+            <p style={{
+              fontSize: 13,
+              fontWeight: 600,
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+              color: theme.primary,
+              marginBottom: 16,
+            }}>
+              Manuscript Analysis
+            </p>
             <h1 style={{
               fontFamily: fontDisplay,
-              fontSize: 36,
+              fontSize: 42,
               fontWeight: 400,
-              marginBottom: 12,
+              marginBottom: 16,
               color: theme.textPrimary,
+              lineHeight: 1.15,
             }}>
               Where should you publish?
             </h1>
-            <p style={{ color: theme.textSecondary, fontSize: 16, marginBottom: 40, maxWidth: 520, margin: '0 auto 40px' }}>
-              Upload your manuscript and get instant field detection, quality scoring,
-              journal tier predictions, and actionable improvement recommendations.
+            <p style={{
+              color: theme.textSecondary,
+              fontSize: 17,
+              lineHeight: 1.6,
+              maxWidth: 480,
+              margin: '0 auto 48px',
+            }}>
+              Upload your manuscript for instant field detection, quality scoring, journal tier predictions, and actionable recommendations.
             </p>
 
             {/* Upload Zone */}
@@ -325,30 +313,31 @@ export default function HighImpactJournal() {
               style={{ display: 'none' }}
             />
 
-            {/* Features Grid */}
+            {/* Features Row */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: 16,
-              marginTop: 48,
-              maxWidth: 700,
-              margin: '48px auto 0',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 12,
+              marginTop: 56,
             }}>
               {[
-                { title: 'Field Detection', desc: 'Economics, CS, Biomedical, Political Science' },
-                { title: 'Quality Scoring', desc: 'Field-specific weighted scoring 0-100' },
-                { title: 'Journal Matching', desc: 'Tier 1/2/3 with specific journal targets' },
-                { title: 'Recommendations', desc: 'Actionable improvements to strengthen your paper' },
+                { icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', title: 'Field Detection', desc: '4 academic disciplines' },
+                { icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', title: 'Quality Score', desc: 'Weighted 0-100 scoring' },
+                { icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253', title: 'Journal Match', desc: 'Tier 1 / 2 / 3 targets' },
+                { icon: 'M13 10V3L4 14h7v7l9-11h-7z', title: 'Recommendations', desc: 'Actionable next steps' },
               ].map(f => (
                 <div key={f.title} style={{
                   padding: '20px 16px',
                   borderRadius: 12,
-                  border: `1px solid ${theme.border}`,
                   backgroundColor: theme.cardBg,
-                  textAlign: 'left',
+                  border: `1px solid ${theme.border}`,
+                  textAlign: 'center',
                 }}>
-                  <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{f.title}</p>
-                  <p style={{ color: theme.textMuted, fontSize: 13, lineHeight: 1.4 }}>{f.desc}</p>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 10 }}>
+                    <path d={f.icon}/>
+                  </svg>
+                  <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 3, color: theme.textPrimary }}>{f.title}</p>
+                  <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.4 }}>{f.desc}</p>
                 </div>
               ))}
             </div>
