@@ -60,3 +60,49 @@ def parse_pdf(file_bytes: bytes, filename: str) -> str:
     )
     result_resp.raise_for_status()
     return result_resp.json()["markdown"]
+
+
+def parse_docx(file_bytes: bytes, filename: str) -> str:
+    """Parse DOCX using python-docx. Returns text content as markdown."""
+    from docx import Document
+    import io
+    doc = Document(io.BytesIO(file_bytes))
+    paragraphs = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        if para.style and para.style.name.startswith('Heading'):
+            level_str = para.style.name.replace('Heading ', '').strip()
+            try:
+                level = int(level_str)
+            except ValueError:
+                level = 2
+            paragraphs.append(f"{'#' * level} {text}")
+        else:
+            paragraphs.append(text)
+
+    # Also extract tables
+    for table in doc.tables:
+        rows = []
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            rows.append('| ' + ' | '.join(cells) + ' |')
+        if rows:
+            # Add header separator after first row
+            header_sep = '| ' + ' | '.join(['---'] * len(table.rows[0].cells)) + ' |'
+            rows.insert(1, header_sep)
+            paragraphs.append('\n'.join(rows))
+
+    return '\n\n'.join(paragraphs)
+
+
+def parse_document(file_bytes: bytes, filename: str) -> str:
+    """Parse PDF or DOCX. Returns extracted text as markdown."""
+    ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+    if ext == 'pdf':
+        return parse_pdf(file_bytes, filename)
+    elif ext in ('docx', 'doc'):
+        return parse_docx(file_bytes, filename)
+    else:
+        raise ValueError(f"Unsupported file type: .{ext}. Upload PDF or DOCX.")

@@ -1,8 +1,8 @@
-# backend/co_researcher/tournament.py
 import json
 import random
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from azure_openai_config import get_azure_client, AZURE_CHAT_DEPLOYMENT
@@ -24,7 +24,7 @@ def calculate_elo(winner_elo: float, loser_elo: float, k: int = 32, draw: bool =
 
 
 def generate_matchups(hypothesis_ids: list, rounds_per_hypothesis: int = 4) -> list:
-    """Generate tournament matchups. Each hypothesis faces ~rounds_per_hypothesis opponents."""
+    """Generate tournament matchups (legacy, cross-category)."""
     matchups = []
     n = len(hypothesis_ids)
     if n < 2:
@@ -41,49 +41,76 @@ def generate_matchups(hypothesis_ids: list, rounds_per_hypothesis: int = 4) -> l
     return matchups
 
 
-EVALUATOR_SYSTEM_PROMPT = """You are an expert research evaluator. Your job is to compare two integration hypotheses and determine which one is stronger.
+def generate_category_matchups(hypothesis_ids_by_category: dict) -> list:
+    """Generate round-robin matchups within each category.
 
-Consider these criteria:
-1. SCIENTIFIC RIGOR: Is the evidence from the paper strong? Is the reasoning sound?
-2. FEASIBILITY: Can this actually be implemented in the protocol?
-3. IMPACT: How much would this improve the protocol?
-4. RISK/BENEFIT: Does the benefit outweigh the risk?
-5. SPECIFICITY: Is the hypothesis concrete and actionable?
+    Returns list of (id_a, id_b, category) tuples.
+    Within each category, every hypothesis faces every other (exhaustive).
+    """
+    matchups = []
+    for category, ids in hypothesis_ids_by_category.items():
+        n = len(ids)
+        if n < 2:
+            continue
+        category_pairs = []
+        for i in range(n):
+            for j in range(i + 1, n):
+                category_pairs.append((ids[i], ids[j], category))
+        random.shuffle(category_pairs)
+        matchups.extend(category_pairs)
+    return matchups
 
-You must output a JSON object with:
+
+EVALUATOR_SYSTEM_PROMPT = """You are an expert research evaluator comparing two integration hypotheses within the SAME category.
+
+Both hypotheses propose changes in the same domain. Compare them on:
+
+1. EVIDENCE QUALITY: Is the cited evidence from the paper accurate and relevant? Has it been verified? Does a direct quote from the paper support the claim?
+2. SCIENTIFIC RIGOR: Is the reasoning sound? Are there logical gaps or unsupported leaps?
+3. FEASIBILITY: Can this realistically be implemented in this protocol without derailing the study?
+4. IMPACT: How much would this genuinely improve the protocol's outcomes or methodology?
+5. SPECIFICITY: Is this concrete and actionable, or vague and hand-wavy?
+
+IMPORTANT: A hypothesis with verified evidence (evidence_verified=true, with a supporting quote) should be weighted higher than one with unverified claims. Do NOT favor an idea just because it sounds impressive — groundedness matters more than ambition.
+
+Output ONLY valid JSON:
 - "winner": "a" or "b" or "draw"
 - "score": "decisive" (clear winner) or "narrow" (close) or "draw"
-- "reasoning": A 2-3 sentence explanation of your judgment
-- "criteria_scores": {"a": {"rigor": 1-5, "feasibility": 1-5, "impact": 1-5}, "b": {"rigor": 1-5, "feasibility": 1-5, "impact": 1-5}}
-
-Output ONLY valid JSON."""
+- "reasoning": 2-3 sentence explanation citing specific strengths/weaknesses
+- "criteria_scores": {"a": {"evidence": 1-5, "rigor": 1-5, "feasibility": 1-5, "impact": 1-5, "specificity": 1-5}, "b": {"evidence": 1-5, "rigor": 1-5, "feasibility": 1-5, "impact": 1-5, "specificity": 1-5}}"""
 
 
 def evaluate_matchup(hypothesis_a: dict, hypothesis_b: dict, protocol_summary: str, paper_summary: str) -> dict:
     """Run a head-to-head evaluation of two hypotheses."""
     client = get_azure_client()
 
-    user_prompt = f"""## Context
-Protocol summary: {protocol_summary[:3000]}
-Paper summary: {paper_summary[:3000]}
+    user_prompt = f"""## Protocol Context
+{protocol_summary}
+
+## Paper Context
+{paper_summary}
 
 ## Hypothesis A: "{hypothesis_a['title']}"
-Agent: {hypothesis_a.get('agent_name', '?')} ({hypothesis_a.get('agent_personality', '?')})
 Type: {hypothesis_a.get('integration_type', '?')}
-Evidence: {hypothesis_a.get('evidence', '?')}
+Evidence claimed: {hypothesis_a.get('evidence', '?')}
+Evidence verified: {hypothesis_a.get('evidence_verified', 'unknown')}
+Supporting quote: {hypothesis_a.get('evidence_quote', 'none')[:300]}
 Risk: {hypothesis_a.get('risk_level', '?')}
 Steps: {json.dumps(hypothesis_a.get('implementation_steps', []))}
-Confidence: {hypothesis_a.get('confidence', '?')}
+Critical review: {hypothesis_a.get('critique', 'none')}
+Viability: {hypothesis_a.get('viability_score', '?')}
 
 ## Hypothesis B: "{hypothesis_b['title']}"
-Agent: {hypothesis_b.get('agent_name', '?')} ({hypothesis_b.get('agent_personality', '?')})
 Type: {hypothesis_b.get('integration_type', '?')}
-Evidence: {hypothesis_b.get('evidence', '?')}
+Evidence claimed: {hypothesis_b.get('evidence', '?')}
+Evidence verified: {hypothesis_b.get('evidence_verified', 'unknown')}
+Supporting quote: {hypothesis_b.get('evidence_quote', 'none')[:300]}
 Risk: {hypothesis_b.get('risk_level', '?')}
 Steps: {json.dumps(hypothesis_b.get('implementation_steps', []))}
-Confidence: {hypothesis_b.get('confidence', '?')}
+Critical review: {hypothesis_b.get('critique', 'none')}
+Viability: {hypothesis_b.get('viability_score', '?')}
 
-Compare these two hypotheses. Which is a stronger integration recommendation?"""
+Compare these hypotheses. Which is a stronger, more well-grounded recommendation?"""
 
     response = client.chat.completions.create(
         model=AZURE_CHAT_DEPLOYMENT,
@@ -99,3 +126,48 @@ Compare these two hypotheses. Which is a stronger integration recommendation?"""
     raw = response.choices[0].message.content
     result = json.loads(raw)
     return result
+
+
+def evaluate_matchup_debiased(hypothesis_a: dict, hypothesis_b: dict, protocol_summary: str, paper_summary: str) -> dict:
+    """Run matchup twice with swapped presentation order.
+
+    Evaluates A-vs-B and B-vs-A in parallel.
+    Only counts as decisive if both evaluations agree on the winner.
+    If they disagree, position bias is detected and the result is a draw.
+    """
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_ab = executor.submit(
+            evaluate_matchup, hypothesis_a, hypothesis_b, protocol_summary, paper_summary
+        )
+        future_ba = executor.submit(
+            evaluate_matchup, hypothesis_b, hypothesis_a, protocol_summary, paper_summary
+        )
+        result_ab = future_ab.result()
+        result_ba = future_ba.result()
+
+    winner_ab = result_ab.get("winner")
+    winner_ba = result_ba.get("winner")
+
+    # Translate BA result back to AB frame
+    if winner_ba == "a":
+        winner_ba_translated = "b"
+    elif winner_ba == "b":
+        winner_ba_translated = "a"
+    else:
+        winner_ba_translated = "draw"
+
+    if winner_ab == winner_ba_translated:
+        # Both evaluations agree
+        result_ab["debiased"] = True
+        result_ab["agreement"] = True
+        return result_ab
+    else:
+        # Disagreement = position bias detected, treat as draw
+        return {
+            "winner": "draw",
+            "score": "draw",
+            "reasoning": f"Position bias detected: forward evaluation chose '{winner_ab}', reverse chose '{winner_ba_translated}'. Treating as draw to ensure fairness.",
+            "criteria_scores": result_ab.get("criteria_scores", {}),
+            "debiased": True,
+            "agreement": False,
+        }

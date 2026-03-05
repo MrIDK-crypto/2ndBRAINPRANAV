@@ -1,7 +1,16 @@
+"""
+Research Translator — Flask API + Pipeline Orchestration
+
+Endpoints:
+  POST /api/co-researcher/analyze    — Upload "my research" + "papers I read", starts pipeline
+  GET  /api/co-researcher/stream/<id> — SSE event stream
+  POST /api/co-researcher/chat/<id>   — Interactive refinement chat
+  GET  /api/co-researcher/health      — Health check
+"""
+
 import os
 import uuid
 import json
-import time
 import threading
 from queue import Queue, Empty
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,10 +18,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
-from co_researcher.parser import parse_pdf
-from co_researcher.agents import AGENTS, generate_hypotheses
-from co_researcher.tournament import generate_matchups, evaluate_matchup, calculate_elo
-from co_researcher.report_generator import generate_report, generate_revised_protocol
+from co_researcher.parser import parse_document
+from co_researcher.decomposer import extract_context, decompose_layers
+from co_researcher.translator import translate_insight
+from co_researcher.adversarial import run_adversarial
+from co_researcher.chat import build_chat_context, handle_chat_message
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {
@@ -31,7 +41,7 @@ def emit_event(session_id: str, event_type: str, data: dict):
     if session_id in sessions:
         sessions[session_id]["events"].put({
             "event": event_type,
-            "data": data
+            "data": data,
         })
 
 
@@ -40,186 +50,218 @@ def run_pipeline(session_id: str):
     session = sessions[session_id]
 
     try:
-        # Phase 1: Parse PDFs
-        emit_event(session_id, "parsing_status", {
-            "stage": "protocol", "progress": 10, "message": "Parsing your protocol..."
-        })
-        protocol_text = parse_pdf(session["protocol_bytes"], session["protocol_name"])
-        session["protocol_text"] = protocol_text
+        papers = session["papers"]
+        total_papers = len(papers)
 
+        # ── Phase 1: Parse all documents ──
         emit_event(session_id, "parsing_status", {
-            "stage": "paper", "progress": 50, "message": "Parsing research paper..."
+            "stage": "target", "progress": 5,
+            "message": "Parsing your research document..."
         })
-        paper_text = parse_pdf(session["paper_bytes"], session["paper_name"])
-        session["paper_text"] = paper_text
+        target_text = parse_document(session["target_bytes"], session["target_name"])
+        session["target_text"] = target_text
 
         emit_event(session_id, "parsing_status", {
-            "stage": "complete", "progress": 100, "message": "Parsing complete"
+            "stage": "target", "progress": 20,
+            "message": "Your research parsed. Parsing source papers..."
         })
 
-        # Phase 2: Generate hypotheses (parallel)
-        all_hypotheses = []
+        source_texts = []
+        for i, paper in enumerate(papers):
+            pct = 20 + int((i + 1) / total_papers * 30)
+            emit_event(session_id, "parsing_status", {
+                "stage": "source", "progress": pct,
+                "paper_index": i,
+                "message": f"Parsing paper {i+1}/{total_papers}: {paper['name']}..."
+            })
+            text = parse_document(paper["bytes"], paper["name"])
+            source_texts.append(text)
 
-        for agent in AGENTS:
-            emit_event(session_id, "agent_started", {
-                "agent_id": agent["id"],
-                "name": agent["name"],
-                "domain": agent["domain"],
-                "methodology": agent["methodology"],
-                "personality": agent["personality"],
-                "color": agent["color"],
-                "description": agent["description"],
+        session["source_texts"] = source_texts
+        emit_event(session_id, "parsing_status", {
+            "stage": "complete", "progress": 50,
+            "message": "All documents parsed."
+        })
+
+        # ── Phase 2: Context extraction + decomposition ──
+        emit_event(session_id, "context_extracting", {
+            "message": "Extracting structured context from your research..."
+        })
+        target_context = extract_context(target_text, "target")
+        session["target_context"] = target_context
+
+        emit_event(session_id, "context_extracted", {
+            "role": "target",
+            "context": target_context,
+        })
+
+        source_contexts = []
+        all_decompositions = []
+
+        for i, (paper, text) in enumerate(zip(papers, source_texts)):
+            emit_event(session_id, "context_extracting", {
+                "paper_index": i,
+                "paper_name": paper["name"],
+                "message": f"Extracting context from paper {i+1}: {paper['name']}..."
+            })
+            source_ctx = extract_context(text, "source")
+            source_contexts.append(source_ctx)
+
+            emit_event(session_id, "context_extracted", {
+                "role": "source",
+                "paper_index": i,
+                "paper_name": paper["name"],
+                "context": source_ctx,
             })
 
-        with ThreadPoolExecutor(max_workers=6) as executor:
-            future_to_agent = {
-                executor.submit(generate_hypotheses, agent, protocol_text, paper_text): agent
-                for agent in AGENTS
-            }
+            # Decompose key methods + findings into abstraction layers
+            items_to_decompose = (
+                source_ctx.get("key_methods", [])[:3] +
+                source_ctx.get("key_findings", [])[:2]
+            )
 
-            for future in as_completed(future_to_agent):
-                agent = future_to_agent[future]
-                try:
-                    hypotheses = future.result()
-                    for h in hypotheses:
-                        emit_event(session_id, "hypothesis_generated", {
-                            "agent_id": agent["id"],
-                            "hypothesis": h
-                        })
-                        all_hypotheses.append(h)
+            emit_event(session_id, "decomposition_started", {
+                "paper_index": i,
+                "paper_name": paper["name"],
+                "item_count": len(items_to_decompose),
+            })
 
-                    emit_event(session_id, "agent_complete", {
-                        "agent_id": agent["id"],
-                        "hypothesis_count": len(hypotheses)
-                    })
-                except Exception as e:
-                    emit_event(session_id, "agent_complete", {
-                        "agent_id": agent["id"],
-                        "hypothesis_count": 0,
-                        "error": str(e)
-                    })
+            for j, item in enumerate(items_to_decompose):
+                layers = decompose_layers(source_ctx, item)
+                decomposition = {
+                    "paper_index": i,
+                    "paper_name": paper["name"],
+                    "item": item,
+                    "layers": layers,
+                }
+                all_decompositions.append(decomposition)
 
-        # Store hypotheses in session
-        session["hypotheses"] = {h["hypothesis_id"]: h for h in all_hypotheses}
+                emit_event(session_id, "layer_extracted", {
+                    "paper_index": i,
+                    "paper_name": paper["name"],
+                    "item_index": j,
+                    "item_name": item.get("name", item.get("finding", "Unknown")),
+                    "layers": layers,
+                })
 
-        # Initialize ELO ratings
-        elo_ratings = {h["hypothesis_id"]: 1200 for h in all_hypotheses}
-        win_loss = {h["hypothesis_id"]: {"wins": 0, "losses": 0, "draws": 0} for h in all_hypotheses}
+        session["source_contexts"] = source_contexts
+        session["decompositions"] = all_decompositions
 
-        # Phase 3: Tournament
-        active_ids = [
-            hid for hid in elo_ratings
-            if hid not in session.get("rejected", set())
-        ]
-        matchups = generate_matchups(active_ids, rounds_per_hypothesis=4)
-
-        emit_event(session_id, "tournament_started", {
-            "total_hypotheses": len(active_ids),
-            "total_matchups": len(matchups)
+        emit_event(session_id, "decomposition_complete", {
+            "total_decompositions": len(all_decompositions),
         })
 
-        protocol_summary = protocol_text[:3000]
-        paper_summary = paper_text[:3000]
+        # ── Phase 3: Translation attempts ──
+        emit_event(session_id, "translation_started", {
+            "total": len(all_decompositions),
+            "message": "Translating insights into your research domain..."
+        })
 
-        for round_num, (id_a, id_b) in enumerate(matchups, 1):
-            if id_a in session.get("rejected", set()) or id_b in session.get("rejected", set()):
-                continue
+        translations = []
+        for idx, decomp in enumerate(all_decompositions):
+            paper_idx = decomp["paper_index"]
+            source_ctx = source_contexts[paper_idx]
 
-            h_a = session["hypotheses"][id_a]
-            h_b = session["hypotheses"][id_b]
+            emit_event(session_id, "translating_insight", {
+                "index": idx,
+                "total": len(all_decompositions),
+                "paper_name": decomp["paper_name"],
+                "item_name": decomp["item"].get("name", decomp["item"].get("finding", "Unknown")),
+            })
 
-            try:
-                result = evaluate_matchup(h_a, h_b, protocol_summary, paper_summary)
+            translation = translate_insight(source_ctx, target_context, decomp["layers"])
+            translation["paper_index"] = paper_idx
+            translation["paper_name"] = decomp["paper_name"]
+            translation["translation_index"] = idx
+            translations.append(translation)
 
-                winner_id = None
-                loser_id = None
-                is_draw = result.get("winner") == "draw" or result.get("score") == "draw"
+            emit_event(session_id, "translation_complete", {
+                "index": idx,
+                "translation": translation,
+            })
 
-                if not is_draw:
-                    if result.get("winner") == "a":
-                        winner_id, loser_id = id_a, id_b
-                    else:
-                        winner_id, loser_id = id_b, id_a
+        session["translations"] = translations
 
-                    new_winner, new_loser = calculate_elo(
-                        elo_ratings[winner_id], elo_ratings[loser_id]
-                    )
-                    elo_ratings[winner_id] = new_winner
-                    elo_ratings[loser_id] = new_loser
-                    win_loss[winner_id]["wins"] += 1
-                    win_loss[loser_id]["losses"] += 1
-                else:
-                    new_a, new_b = calculate_elo(
-                        elo_ratings[id_a], elo_ratings[id_b], draw=True
-                    )
-                    elo_ratings[id_a] = new_a
-                    elo_ratings[id_b] = new_b
-                    win_loss[id_a]["draws"] += 1
-                    win_loss[id_b]["draws"] += 1
+        # ── Phase 4: Adversarial stress-test ──
+        emit_event(session_id, "adversarial_started", {
+            "total_translations": len(translations),
+            "message": "Stress-testing each translation..."
+        })
 
-                emit_event(session_id, "matchup_result", {
-                    "round": round_num,
-                    "total_rounds": len(matchups),
-                    "hypothesis_a": {"id": id_a, "title": h_a["title"], "agent_name": h_a.get("agent_name"), "agent_color": h_a.get("agent_color")},
-                    "hypothesis_b": {"id": id_b, "title": h_b["title"], "agent_name": h_b.get("agent_name"), "agent_color": h_b.get("agent_color")},
-                    "winner": result.get("winner"),
-                    "score": result.get("score", "narrow"),
-                    "reasoning": result.get("reasoning", ""),
-                    "criteria_scores": result.get("criteria_scores", {}),
+        adversarial_results = []
+
+        # Run adversarial tests — one translation at a time to avoid rate limits,
+        # but 4 agents in parallel per translation
+        for idx, translation in enumerate(translations):
+            paper_idx = translation["paper_index"]
+            source_ctx = source_contexts[paper_idx]
+
+            emit_event(session_id, "adversarial_testing", {
+                "translation_index": idx,
+                "title": translation.get("title", ""),
+                "message": f"Stress-testing translation {idx+1}/{len(translations)}..."
+            })
+
+            result = run_adversarial(translation, source_ctx, target_context)
+            result["translation_index"] = idx
+            adversarial_results.append(result)
+
+            # Emit each verdict as it completes
+            for verdict in result.get("verdicts", []):
+                emit_event(session_id, "agent_verdict", {
+                    "translation_index": idx,
+                    "translation_title": translation.get("title", ""),
+                    "agent_id": verdict.get("agent_id"),
+                    "agent_name": verdict.get("agent_name"),
+                    "agent_color": verdict.get("agent_color"),
+                    "agent_role": verdict.get("agent_role"),
+                    "verdict": verdict.get("verdict"),
+                    "attack": verdict.get("attack", ""),
                 })
 
-                rankings = sorted(
-                    [
-                        {
-                            "id": hid,
-                            "title": session["hypotheses"][hid]["title"],
-                            "agent_name": session["hypotheses"][hid].get("agent_name"),
-                            "agent_color": session["hypotheses"][hid].get("agent_color"),
-                            "elo": elo_ratings[hid],
-                            "wins": win_loss[hid]["wins"],
-                            "losses": win_loss[hid]["losses"],
-                            "draws": win_loss[hid]["draws"],
-                            "pinned": hid in session.get("pinned", set()),
-                        }
-                        for hid in elo_ratings
-                        if hid not in session.get("rejected", set())
-                    ],
-                    key=lambda x: x["elo"],
-                    reverse=True
-                )
-                emit_event(session_id, "leaderboard_update", {"rankings": rankings})
+            emit_event(session_id, "adversarial_complete", {
+                "translation_index": idx,
+                "title": translation.get("title", ""),
+                "survival_score": result["survival_score"],
+                "has_fatal": result["has_fatal"],
+                "verdicts": result["verdicts"],
+            })
 
-            except Exception as e:
-                emit_event(session_id, "matchup_result", {
-                    "round": round_num,
-                    "total_rounds": len(matchups),
-                    "error": str(e)
-                })
+        session["adversarial_results"] = adversarial_results
 
-        # Store final state
-        for hid in session["hypotheses"]:
-            session["hypotheses"][hid]["elo"] = elo_ratings.get(hid, 1200)
-            session["hypotheses"][hid]["wins"] = win_loss.get(hid, {}).get("wins", 0)
-            session["hypotheses"][hid]["losses"] = win_loss.get(hid, {}).get("losses", 0)
-
-        final_rankings = sorted(
-            [
-                {**session["hypotheses"][hid], "elo": elo_ratings[hid]}
-                for hid in elo_ratings
-                if hid not in session.get("rejected", set())
-            ],
-            key=lambda x: x["elo"],
-            reverse=True
+        # ── Sort by survival score, emit final results ──
+        ranked = sorted(
+            range(len(translations)),
+            key=lambda i: (
+                adversarial_results[i]["survival_score"],
+                -int(adversarial_results[i]["has_fatal"]),
+            ),
+            reverse=True,
         )
 
-        session["final_rankings"] = final_rankings
+        ranked_translations = [translations[i] for i in ranked]
+        ranked_adversarial = [adversarial_results[i] for i in ranked]
 
-        emit_event(session_id, "tournament_complete", {
-            "final_rankings": [
-                {"id": r["hypothesis_id"], "title": r["title"], "elo": r["elo"],
-                 "agent_name": r.get("agent_name"), "wins": r.get("wins", 0), "losses": r.get("losses", 0)}
-                for r in final_rankings[:10]
-            ]
+        session["ranked_translations"] = ranked_translations
+        session["ranked_adversarial"] = ranked_adversarial
+
+        emit_event(session_id, "results_ready", {
+            "translations": ranked_translations,
+            "adversarial": ranked_adversarial,
+            "source_contexts": source_contexts,
+            "target_context": target_context,
+        })
+
+        # Build chat context for interactive refinement
+        chat_ctx = build_chat_context(
+            source_contexts, target_context,
+            ranked_translations, ranked_adversarial,
+        )
+        session["chat_context"] = chat_ctx
+        session["chat_history"] = []
+
+        emit_event(session_id, "chat_ready", {
+            "message": "Interactive refinement available. Share constraints or ask questions."
         })
 
     except Exception as e:
@@ -231,41 +273,55 @@ def run_pipeline(session_id: str):
 
 @app.route('/api/co-researcher/health', methods=['GET'])
 def health():
-    return jsonify({"status": "ok", "service": "co-researcher"})
+    return jsonify({"status": "ok", "service": "research-translator"})
 
 
 @app.route('/api/co-researcher/analyze', methods=['POST'])
 def analyze():
-    if 'protocol' not in request.files or 'paper' not in request.files:
-        return jsonify({"error": "Both 'protocol' and 'paper' PDF files are required"}), 400
+    if 'my_research' not in request.files:
+        return jsonify({"error": "'my_research' file is required (PDF or DOCX)"}), 400
 
-    protocol_file = request.files['protocol']
-    paper_file = request.files['paper']
+    paper_files = request.files.getlist('papers')
+    if not paper_files or len(paper_files) < 1:
+        return jsonify({"error": "At least one source paper is required"}), 400
+    if len(paper_files) > 5:
+        return jsonify({"error": "Maximum 5 source papers allowed"}), 400
 
-    if not protocol_file.filename.lower().endswith('.pdf'):
-        return jsonify({"error": "Protocol must be a PDF file"}), 400
-    if not paper_file.filename.lower().endswith('.pdf'):
-        return jsonify({"error": "Paper must be a PDF file"}), 400
+    target_file = request.files['my_research']
+    allowed_exts = ('.pdf', '.docx', '.doc')
+
+    if not target_file.filename.lower().endswith(allowed_exts):
+        return jsonify({"error": "Your research must be a PDF or DOCX file"}), 400
+
+    papers = []
+    for pf in paper_files:
+        if not pf.filename.lower().endswith(allowed_exts):
+            return jsonify({"error": f"'{pf.filename}' must be PDF or DOCX"}), 400
+        papers.append({"bytes": pf.read(), "name": pf.filename})
 
     session_id = str(uuid.uuid4())
     sessions[session_id] = {
         "events": Queue(),
-        "protocol_bytes": protocol_file.read(),
-        "protocol_name": protocol_file.filename,
-        "paper_bytes": paper_file.read(),
-        "paper_name": paper_file.filename,
-        "hypotheses": {},
-        "pinned": set(),
-        "rejected": set(),
-        "protocol_text": "",
-        "paper_text": "",
-        "final_rankings": [],
+        "target_bytes": target_file.read(),
+        "target_name": target_file.filename,
+        "papers": papers,
+        "target_text": "",
+        "source_texts": [],
+        "target_context": {},
+        "source_contexts": [],
+        "decompositions": [],
+        "translations": [],
+        "adversarial_results": [],
+        "ranked_translations": [],
+        "ranked_adversarial": [],
+        "chat_context": "",
+        "chat_history": [],
     }
 
     thread = threading.Thread(target=run_pipeline, args=(session_id,), daemon=True)
     thread.start()
 
-    return jsonify({"session_id": session_id})
+    return jsonify({"session_id": session_id, "paper_count": len(papers)})
 
 
 @app.route('/api/co-researcher/stream/<session_id>', methods=['GET'])
@@ -295,65 +351,31 @@ def stream(session_id):
     )
 
 
-@app.route('/api/co-researcher/pin/<session_id>', methods=['POST'])
-def pin_hypothesis(session_id):
-    if session_id not in sessions:
-        return jsonify({"error": "Session not found"}), 404
-
-    data = request.get_json()
-    hypothesis_id = data.get("hypothesis_id")
-    if not hypothesis_id:
-        return jsonify({"error": "hypothesis_id required"}), 400
-
-    sessions[session_id]["pinned"].add(hypothesis_id)
-    sessions[session_id]["rejected"].discard(hypothesis_id)
-    return jsonify({"ok": True, "pinned": list(sessions[session_id]["pinned"])})
-
-
-@app.route('/api/co-researcher/reject/<session_id>', methods=['POST'])
-def reject_hypothesis(session_id):
-    if session_id not in sessions:
-        return jsonify({"error": "Session not found"}), 404
-
-    data = request.get_json()
-    hypothesis_id = data.get("hypothesis_id")
-    if not hypothesis_id:
-        return jsonify({"error": "hypothesis_id required"}), 400
-
-    sessions[session_id]["rejected"].add(hypothesis_id)
-    sessions[session_id]["pinned"].discard(hypothesis_id)
-    return jsonify({"ok": True, "rejected": list(sessions[session_id]["rejected"])})
-
-
-@app.route('/api/co-researcher/report/<session_id>', methods=['POST'])
-def generate_report_endpoint(session_id):
+@app.route('/api/co-researcher/chat/<session_id>', methods=['POST'])
+def chat(session_id):
     if session_id not in sessions:
         return jsonify({"error": "Session not found"}), 404
 
     session = sessions[session_id]
-    rankings = session.get("final_rankings", [])
-    pinned_ids = session.get("pinned", set())
+    if not session.get("chat_context"):
+        return jsonify({"error": "Analysis not complete yet"}), 400
 
-    top_5 = rankings[:5]
-    pinned = [session["hypotheses"][hid] for hid in pinned_ids if hid in session["hypotheses"]]
+    data = request.get_json()
+    user_message = data.get("message", "").strip()
+    if not user_message:
+        return jsonify({"error": "Message is required"}), 400
 
-    report = generate_report(
-        top_hypotheses=top_5,
-        pinned_hypotheses=pinned,
-        protocol_text=session.get("protocol_text", ""),
-        paper_text=session.get("paper_text", ""),
-        debate_history=[]
+    result = handle_chat_message(
+        chat_context=session["chat_context"],
+        chat_history=session["chat_history"],
+        user_message=user_message,
     )
 
-    revised = generate_revised_protocol(
-        top_hypotheses=top_5,
-        protocol_text=session.get("protocol_text", "")
-    )
+    # Update chat history
+    session["chat_history"].append({"role": "user", "content": user_message})
+    session["chat_history"].append({"role": "assistant", "content": result["response"]})
 
-    return jsonify({
-        "report": report,
-        "revised_protocol": revised
-    })
+    return jsonify(result)
 
 
 if __name__ == '__main__':
