@@ -169,7 +169,7 @@ class JournalDataService:
                     f"&filter=type:journal"
                     f"&per_page={RESULTS_PER_PAGE}"
                     f"&page={page}"
-                    f"&sort=h_index:desc"
+                    f"&sort=summary_stats.h_index:desc"
                     f"&mailto={OPENALEX_EMAIL}"
                 )
                 try:

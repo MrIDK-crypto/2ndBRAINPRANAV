@@ -51,10 +51,24 @@ def analyze_manuscript():
             yield f"event: error\ndata: {json.dumps({'error': 'File is empty.'})}\n\n"
         return Response(error_gen(), mimetype='text/event-stream')
 
+    # Upload manuscript to S3 for viewing later
+    manuscript_url = None
+    try:
+        import uuid
+        from services.s3_service import S3Service
+        s3 = S3Service()
+        s3_key = f"journal-manuscripts/{uuid.uuid4()}{ext}"
+        content_type = 'application/pdf' if ext == '.pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        uploaded_key, err = s3.upload_bytes(file_bytes, s3_key, content_type=content_type)
+        if uploaded_key:
+            manuscript_url = s3.get_presigned_url(uploaded_key, expiration=86400)  # 24h
+    except Exception as e:
+        print(f"[Journal] S3 upload skipped: {e}")
+
     def generate():
         try:
             service = get_journal_scorer_service()
-            yield from service.analyze_manuscript(file_bytes, filename)
+            yield from service.analyze_manuscript(file_bytes, filename, manuscript_url=manuscript_url)
         except Exception as e:
             print(f"[Journal] Stream error: {e}", flush=True)
             traceback.print_exc()

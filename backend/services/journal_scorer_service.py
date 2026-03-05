@@ -223,9 +223,9 @@ RED_FLAG_CHECKS = [
     {"id": "no_tables", "pattern": r"\btable\s+\d+\b|\btable\s+[ivx]+\b", "check": "missing", "severity": "info", "issue": "No tables detected", "penalty": -3, "fix": "Add summary statistics, regression results, or comparison tables"},
 ]
 
-CHUNK_SIZE = 12000  # chars per chunk for feature extraction
-MAX_CHUNKS = 3      # analyze up to 3 chunks of text
-CONSISTENCY_RUNS = 3  # number of scoring runs for consistency
+MAX_FEATURE_CHARS = 100000  # max chars sent for feature extraction (~25K tokens)
+CONSISTENCY_CHUNK = 12000   # chars sent for each consistency run (cheaper)
+CONSISTENCY_RUNS = 3        # number of scoring runs for consistency
 
 
 def _sse(event: str, data: dict) -> str:
@@ -237,7 +237,7 @@ class JournalScorerService:
         self.openai = get_openai_client()
         self.parser = DocumentParser()
 
-    def analyze_manuscript(self, file_bytes: bytes, filename: str) -> Generator[str, None, None]:
+    def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None) -> Generator[str, None, None]:
         """10-step pipeline — yields SSE events as analysis progresses."""
         start_time = time.time()
 
@@ -280,17 +280,15 @@ class JournalScorerService:
                 "reasoning": field_result["reasoning"],
             })
 
-            # ── Step 3: Extract Features (chunked) ──────────────────────
+            # ── Step 3: Extract Features (full text) ─────────────────────
             yield _sse("progress", {"step": 3, "message": "Evaluating manuscript features...", "percent": 18})
 
-            # Prepare chunks for analysis
-            chunks = self._prepare_chunks(text)
-            chunk_info = f"{len(chunks)} section{'s' if len(chunks) > 1 else ''} ({sum(len(c) for c in chunks):,} chars)"
-            yield _sse("progress", {"step": 3, "message": f"Analyzing {chunk_info}...", "percent": 22})
+            # Send full text (up to MAX_FEATURE_CHARS) for feature extraction
+            analysis_text = text[:MAX_FEATURE_CHARS]
+            char_info = f"{len(analysis_text):,} chars" + (" (full paper)" if len(analysis_text) == len(text) else f" of {len(text):,}")
+            yield _sse("progress", {"step": 3, "message": f"Analyzing {char_info}...", "percent": 22})
 
-            # Run feature extraction on combined chunks
-            combined_text = "\n\n---\n\n".join(chunks)
-            features = self._extract_features(combined_text, field, field_config)
+            features = self._extract_features(analysis_text, field, field_config)
 
             yield _sse("features_extracted", {
                 "features": features,
@@ -303,7 +301,7 @@ class JournalScorerService:
             # ── Step 4: Consistency Check (3× scoring) ──────────────────
             yield _sse("progress", {"step": 4, "message": "Running consistency checks...", "percent": 32})
 
-            consistency_result = self._run_consistency_check(combined_text, field, field_config, features)
+            consistency_result = self._run_consistency_check(analysis_text, field, field_config, features)
 
             yield _sse("consistency", consistency_result)
 
@@ -379,7 +377,10 @@ class JournalScorerService:
 
             # ── Done ────────────────────────────────────────────────────
             elapsed = round(time.time() - start_time, 1)
-            yield _sse("done", {"success": True, "analysis_time_seconds": elapsed})
+            done_data = {"success": True, "analysis_time_seconds": elapsed}
+            if manuscript_url:
+                done_data["manuscript_url"] = manuscript_url
+            yield _sse("done", done_data)
 
         except Exception as e:
             import traceback
@@ -387,28 +388,6 @@ class JournalScorerService:
             yield _sse("error", {"error": str(e)})
 
     # ── Private Methods ─────────────────────────────────────────────────────
-
-    def _prepare_chunks(self, text: str) -> List[str]:
-        """Split text into up to MAX_CHUNKS chunks for analysis."""
-        total_len = len(text)
-        if total_len <= CHUNK_SIZE:
-            return [text]
-
-        chunks = []
-        # First chunk: beginning (abstract, intro, methodology)
-        chunks.append(text[:CHUNK_SIZE])
-
-        if total_len > CHUNK_SIZE * 2:
-            # Middle chunk: results/discussion
-            mid_start = total_len // 3
-            chunks.append(text[mid_start:mid_start + CHUNK_SIZE])
-            # Last chunk: conclusion + references area
-            chunks.append(text[-CHUNK_SIZE:])
-        else:
-            # Just take the rest
-            chunks.append(text[CHUNK_SIZE:CHUNK_SIZE * 2])
-
-        return chunks[:MAX_CHUNKS]
 
     def _detect_field(self, text_excerpt: str) -> dict:
         field_list = "\n".join(f"- {key}" for key in FIELD_CONFIGS.keys())
@@ -507,7 +486,7 @@ class JournalScorerService:
                     f"Score this manuscript on each feature (0-100). "
                     f"Respond ONLY in JSON: {{\"feature_key\": score_number, ...}}\n\n"
                     f"Features:\n{feature_list}\n\n"
-                    f"MANUSCRIPT:\n{text[:CHUNK_SIZE]}"
+                    f"MANUSCRIPT:\n{text[:CONSISTENCY_CHUNK]}"
                 )
                 resp = self.openai.chat_completion(
                     messages=[{"role": "user", "content": prompt}],
