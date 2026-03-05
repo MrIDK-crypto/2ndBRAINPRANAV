@@ -123,6 +123,38 @@ class VideoStatus(PyEnum):
     FAILED = "failed"
 
 
+class ResearchSessionStatus(PyEnum):
+    """Research session status"""
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+
+class HypothesisStatus(PyEnum):
+    """Hypothesis testing status"""
+    DRAFT = "draft"
+    TESTING = "testing"
+    SUPPORTED = "supported"
+    REFUTED = "refuted"
+    INCONCLUSIVE = "inconclusive"
+
+
+class EvidenceType(PyEnum):
+    """Evidence relationship to hypothesis"""
+    SUPPORTING = "supporting"
+    CONTRADICTING = "contradicting"
+    NEUTRAL = "neutral"
+
+
+class EvidenceSource(PyEnum):
+    """Where evidence was found"""
+    INTERNAL = "internal"
+    PUBMED = "pubmed"
+    GRANT = "grant"
+    USER_PROVIDED = "user_provided"
+
+
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
@@ -1420,6 +1452,237 @@ class ChatMessage(Base):
             "sources": self.sources,
             "metadata": self.extra_data,  # Return as 'metadata' for API compatibility
             "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# ============================================================================
+# CO-RESEARCHER MODELS
+# ============================================================================
+
+class ResearchSession(Base):
+    """
+    A co-researcher research session. Stores the conversation, plan, and brief.
+    Each session belongs to a tenant and user.
+    """
+    __tablename__ = "research_sessions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    # Session info
+    title = Column(String(500))
+    research_question = Column(Text)
+    context_summary = Column(Text)  # Auto-generated context summary
+    status = Column(Enum(ResearchSessionStatus), default=ResearchSessionStatus.ACTIVE)
+
+    # Research plan (JSON array of phases)
+    research_plan = Column(JSON, default=list)
+
+    # Research brief (JSON: {heading, description, keyPoints})
+    research_brief = Column(JSON, default=dict)
+
+    # Tags
+    tags = Column(JSON, default=list)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    last_activity_at = Column(DateTime(timezone=True), default=utc_now)
+
+    # Relationships
+    messages = relationship("ResearchMessage", back_populates="session", cascade="all, delete-orphan", order_by="ResearchMessage.created_at")
+    hypotheses = relationship("Hypothesis", back_populates="session", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('ix_research_session_tenant_user', 'tenant_id', 'user_id'),
+        Index('ix_research_session_status', 'tenant_id', 'status'),
+    )
+
+    def __repr__(self):
+        return f"<ResearchSession {self.id[:8]}:{self.title or 'untitled'}>"
+
+    def to_dict(self, include_messages=False, include_hypotheses=False) -> Dict[str, Any]:
+        result = {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "user_id": self.user_id,
+            "title": self.title,
+            "research_question": self.research_question,
+            "context_summary": self.context_summary,
+            "status": self.status.value if self.status else None,
+            "research_plan": self.research_plan or [],
+            "research_brief": self.research_brief or {},
+            "tags": self.tags or [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_activity_at": self.last_activity_at.isoformat() if self.last_activity_at else None,
+            "message_count": len(self.messages) if self.messages else 0,
+            "hypothesis_count": len(self.hypotheses) if self.hypotheses else 0,
+        }
+        if include_messages and self.messages:
+            result["messages"] = [m.to_dict() for m in self.messages]
+        if include_hypotheses and self.hypotheses:
+            result["hypotheses"] = [h.to_dict() for h in self.hypotheses]
+        return result
+
+
+class ResearchMessage(Base):
+    """Individual message within a co-researcher session."""
+    __tablename__ = "research_messages"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    session_id = Column(String(36), ForeignKey("research_sessions.id"), nullable=False, index=True)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Message content
+    role = Column(String(20), nullable=False)  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)
+
+    # Actions taken (JSON array: [{icon, text}])
+    actions = Column(JSON, default=list)
+
+    # Sources referenced (JSON array)
+    sources = Column(JSON, default=list)
+
+    # Extra metadata
+    extra_data = Column(JSON, default=dict)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    session = relationship("ResearchSession", back_populates="messages")
+
+    __table_args__ = (
+        Index('ix_research_msg_session_created', 'session_id', 'created_at'),
+    )
+
+    def __repr__(self):
+        return f"<ResearchMessage {self.role}:{self.id[:8]}>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "role": self.role,
+            "content": self.content,
+            "actions": self.actions or [],
+            "sources": self.sources or [],
+            "extra_data": self.extra_data or {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Hypothesis(Base):
+    """A hypothesis being tested within a research session."""
+    __tablename__ = "hypotheses"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    session_id = Column(String(36), ForeignKey("research_sessions.id"), nullable=False, index=True)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Hypothesis content
+    statement = Column(Text, nullable=False)
+    null_hypothesis = Column(Text)
+    rationale = Column(Text)
+
+    # Testing status
+    status = Column(Enum(HypothesisStatus), default=HypothesisStatus.DRAFT)
+    confidence_score = Column(Float, default=0.0)
+
+    # AI assessment
+    assessment = Column(Text)
+    assessment_at = Column(DateTime(timezone=True))
+
+    # Evidence counts (denormalized)
+    supporting_count = Column(Integer, default=0)
+    contradicting_count = Column(Integer, default=0)
+    neutral_count = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    session = relationship("ResearchSession", back_populates="hypotheses")
+    evidence = relationship("Evidence", back_populates="hypothesis", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('ix_hypothesis_tenant_session', 'tenant_id', 'session_id'),
+    )
+
+    def __repr__(self):
+        return f"<Hypothesis {self.id[:8]}:{self.status}>"
+
+    def to_dict(self, include_evidence=False) -> Dict[str, Any]:
+        result = {
+            "id": self.id,
+            "session_id": self.session_id,
+            "statement": self.statement,
+            "null_hypothesis": self.null_hypothesis,
+            "rationale": self.rationale,
+            "status": self.status.value if self.status else None,
+            "confidence_score": self.confidence_score,
+            "assessment": self.assessment,
+            "assessment_at": self.assessment_at.isoformat() if self.assessment_at else None,
+            "supporting_count": self.supporting_count,
+            "contradicting_count": self.contradicting_count,
+            "neutral_count": self.neutral_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+        if include_evidence and self.evidence:
+            result["evidence"] = [e.to_dict() for e in self.evidence]
+        return result
+
+
+class Evidence(Base):
+    """A piece of evidence for/against a hypothesis."""
+    __tablename__ = "evidence"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    hypothesis_id = Column(String(36), ForeignKey("hypotheses.id"), nullable=False, index=True)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Evidence content
+    title = Column(String(500))
+    content = Column(Text, nullable=False)
+    source_type = Column(Enum(EvidenceSource), nullable=False)
+    evidence_type = Column(Enum(EvidenceType), nullable=False)
+
+    # Source reference
+    source_id = Column(String(500))
+    source_url = Column(String(1000))
+    source_metadata = Column(JSON, default=dict)
+
+    # AI assessment
+    relevance_score = Column(Float, default=0.0)
+    explanation = Column(Text)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    hypothesis = relationship("Hypothesis", back_populates="evidence")
+
+    def __repr__(self):
+        return f"<Evidence {self.id[:8]}:{self.evidence_type}>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "hypothesis_id": self.hypothesis_id,
+            "title": self.title,
+            "content": self.content,
+            "source_type": self.source_type.value if self.source_type else None,
+            "evidence_type": self.evidence_type.value if self.evidence_type else None,
+            "source_id": self.source_id,
+            "source_url": self.source_url,
+            "source_metadata": self.source_metadata or {},
+            "relevance_score": self.relevance_score,
+            "explanation": self.explanation,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

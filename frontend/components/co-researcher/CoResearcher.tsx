@@ -4,223 +4,61 @@ import React, { useState, useRef, useEffect } from 'react'
 import TopNav from '../shared/TopNav'
 import Image from 'next/image'
 import { useAuth } from '@/contexts/AuthContext'
-
-// Wellspring Warm Design System
-const theme = {
-  primary: '#C9A598',
-  primaryHover: '#B8948A',
-  primaryLight: '#FBF4F1',
-  pageBg: '#FAF9F7',
-  cardBg: '#FFFFFF',
-  textPrimary: '#2D2D2D',
-  textSecondary: '#6B6B6B',
-  textMuted: '#9A9A9A',
-  border: '#F0EEEC',
-  borderDark: '#E8E5E2',
-  success: '#9CB896',
-  amber: '#E2A336',
-  amberLight: '#FEF7E8',
-}
-
-const font = "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
-
-// Status colors for plan items
-const statusColors = {
-  done: { dot: '#9CB896', bg: '#F0F7EE', text: '#5A7D54' },
-  active: { dot: '#E2A336', bg: '#FEF7E8', text: '#9A7520' },
-  pending: { dot: '#D4D4D4', bg: 'transparent', text: '#9A9A9A' },
-}
-
-interface ActionDetail {
-  icon: string
-  text: string
-}
-
-interface ChatMessage {
-  id: string
-  text: string
-  isUser: boolean
-  timestamp: Date
-  actions?: ActionDetail[]
-}
-
-interface PlanItem {
-  text: string
-  status: 'done' | 'active' | 'pending'
-}
-
-interface PlanPhase {
-  id: string
-  title: string
-  items: PlanItem[]
-}
+import { useCoResearcher } from './useCoResearcher'
+import { theme, font, statusColors } from './theme'
+import type { ActionDetail, PlanPhase, ContextData, Hypothesis } from './types'
 
 export default function CoResearcher() {
   const { user } = useAuth()
+  const {
+    sessions, activeSession, messages, hypotheses, plan, brief, context,
+    isStreaming, streamingText, streamingActions,
+    listSessions, createSession, loadSession, closeSession, deleteSession,
+    sendMessage,
+  } = useCoResearcher()
+
   const [expandedActions, setExpandedActions] = useState<Record<string, boolean>>({})
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      text: "Hi! I'm your co-researcher. I can help you explore topics, build research plans, and synthesize findings from your knowledge base. What would you like to research?",
-      isUser: false,
-      timestamp: new Date(),
-    },
-    {
-      id: '2',
-      text: "I obtained the following proteins from my analysis: ABP, Chek2, Wnt, BMP, Serpine, and MAPK. Which of these would be good candidates for further study?",
-      isUser: true,
-      timestamp: new Date(),
-    },
-    {
-      id: '3',
-      text: "Let me cross-reference these proteins against your lab's knowledge base and prior research to give you an informed recommendation.",
-      isUser: false,
-      timestamp: new Date(),
-      actions: [
-        { icon: 'search', text: 'Searched knowledge base for "ABP, Chek2, Wnt, BMP, Serpine, MAPK"' },
-        { icon: 'doc', text: 'Found 23 relevant documents across lab notebooks, Slack, and Drive' },
-        { icon: 'search', text: 'Cross-referenced with published signaling pathway databases' },
-        { icon: 'doc', text: 'Retrieved 4 prior Serpine experiment records (2023-2024)' },
-        { icon: 'plan', text: 'Updated research plan with protein evaluation findings' },
-      ],
-    },
-    {
-      id: '4',
-      text: "ABP, Chek2, Wnt, BMP, and MAPK appear to be strong candidates for further investigation due to their relevance in signaling and regulatory pathways.\n\nHowever, Serpine may not be an ideal protein to prioritize for follow-up studies. Previous research efforts within your lab have already examined Serpine extensively, and those studies did not lead to productive outcomes. Based on this prior experience, it would be more effective to focus downstream analysis on the remaining proteins that offer greater potential for novel insight.",
-      isUser: false,
-      timestamp: new Date(),
-      actions: [
-        { icon: 'doc', text: 'Reviewed 4 Serpine experiments from Dr. Patel\'s 2023 lab notes — inconclusive results' },
-        { icon: 'search', text: 'Confirmed ABP/Chek2/Wnt/BMP/MAPK pathway relevance via PubMed cross-reference' },
-        { icon: 'plan', text: 'Generated final protein candidate recommendation' },
-      ],
-    },
-  ])
   const [inputValue, setInputValue] = useState('')
-
-  // Plan phases with status-colored items
-  const [planPhases, setPlanPhases] = useState<PlanPhase[]>([
-    {
-      id: 'phase1',
-      title: 'Initial context gathering',
-      items: [
-        { text: 'Review submitted protein list (6 candidates)', status: 'done' },
-        { text: 'Search lab knowledge base for prior work', status: 'done' },
-        { text: 'Cross-reference with published pathway data', status: 'done' },
-        { text: 'Check for previous lab experiments on each protein', status: 'done' },
-      ],
-    },
-    {
-      id: 'phase2',
-      title: 'Deep analysis',
-      items: [
-        { text: 'Evaluate signaling pathway relevance per protein', status: 'done' },
-        { text: 'Assess novelty and research potential', status: 'done' },
-        { text: 'Review past Serpine research outcomes (2023-2024)', status: 'done' },
-        { text: 'Generate protein candidate recommendation', status: 'done' },
-      ],
-    },
-    {
-      id: 'phase3',
-      title: 'Follow-up',
-      items: [
-        { text: 'Identify downstream analysis steps for top 5', status: 'active' },
-        { text: 'Suggest experimental validation approach', status: 'pending' },
-        { text: 'Draft research summary with citations', status: 'pending' },
-      ],
-    },
-  ])
-
-  // Product overview / research brief content
-  const [overviewContent, setOverviewContent] = useState({
-    heading: 'Protein Candidate Evaluation',
-    description: 'Evaluating six proteins from recent proteomics analysis for downstream study candidacy. Cross-referencing against lab\'s historical experiments, published signaling pathway databases, and internal knowledge base.',
-    keyPoints: [
-      '6 proteins submitted: ABP, Chek2, Wnt, BMP, Serpine, MAPK',
-      '5 strong candidates identified for further study',
-      'Serpine deprioritized — prior lab work (2023-2024) inconclusive',
-      '23 relevant documents found across lab notebooks and Slack',
-      'Signaling & regulatory pathway overlap confirmed for top 5',
-    ],
-  })
-
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // Load sessions on mount
+  useEffect(() => {
+    listSessions()
+  }, [listSessions])
+
+  // Auto-scroll on new messages or streaming text
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, streamingText])
 
   const toggleActions = (msgId: string) => {
     setExpandedActions(prev => ({ ...prev, [msgId]: !prev[msgId] }))
   }
 
-  const sendMessage = () => {
-    if (!inputValue.trim()) return
-
-    const userMsg: ChatMessage = {
-      id: Date.now().toString(),
-      text: inputValue,
-      isUser: true,
-      timestamp: new Date(),
-    }
-
-    setMessages(prev => [...prev, userMsg])
-    const sentText = inputValue
+  const handleSend = async () => {
+    if (!inputValue.trim() || isStreaming) return
+    const text = inputValue
     setInputValue('')
 
-    // Simulate AI response with actions
-    setTimeout(() => {
-      const aiMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        text: "I'm asking these questions because to properly assess your research topic, I need to understand the scope and what existing knowledge we have. Let me search your connected sources.",
-        isUser: false,
-        timestamp: new Date(),
-        actions: [
-          { icon: 'search', text: `Searched knowledge base for "${sentText.slice(0, 30)}..."` },
-          { icon: 'doc', text: 'Found 14 relevant documents across Gmail, Slack, Drive' },
-          { icon: 'plan', text: 'Updated research plan with initial findings' },
-        ],
+    if (!activeSession) {
+      // Create a new session with this as the first message
+      const session = await createSession(text)
+      if (session) {
+        // Stream the AI response — pass session ID directly to avoid stale closure
+        // skipUserMsg because createSession already saved it
+        await sendMessage(text, { sessionId: session.id, skipUserMsg: true })
       }
-      setMessages(prev => [...prev, aiMsg])
-
-      // Update plan to show progress
-      setPlanPhases(prev => prev.map(phase => {
-        if (phase.id === 'phase1') {
-          return {
-            ...phase,
-            items: phase.items.map((item, i) =>
-              i === 1 ? { ...item, status: 'done' as const } :
-              i === 2 ? { ...item, status: 'active' as const } : item
-            ),
-          }
-        }
-        return phase
-      }))
-
-      // Update overview
-      setOverviewContent({
-        heading: 'What we\'re researching',
-        description: `Research topic: "${sentText}". Searching across connected knowledge sources to build a comprehensive understanding.`,
-        keyPoints: ['14 documents found', '3 sources analyzed', 'Initial context established'],
-      })
-    }, 1200)
+    } else {
+      await sendMessage(text)
+    }
   }
 
-  const togglePlanItem = (phaseId: string, itemIndex: number) => {
-    setPlanPhases(prev => prev.map(phase => {
-      if (phase.id !== phaseId) return phase
-      const newItems = [...phase.items]
-      const current = newItems[itemIndex].status
-      newItems[itemIndex] = {
-        ...newItems[itemIndex],
-        status: current === 'done' ? 'pending' : 'done',
-      }
-      return { ...phase, items: newItems }
-    }))
-  }
+  // =========================================================================
+  // SUB-COMPONENTS (same visual design as original)
+  // =========================================================================
 
   const ActionIcon = ({ type }: { type: string }) => {
-    if (type === 'search') return (
+    if (type === 'search' || type === 'searching_kb' || type === 'searching_pubmed' || type === 'pubmed_done') return (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round">
         <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
       </svg>
@@ -251,6 +89,18 @@ export default function CoResearcher() {
     )
   }
 
+  // Welcome message when no session is active
+  const welcomeMsg = {
+    id: 'welcome',
+    role: 'assistant' as const,
+    content: "Hi! I'm your co-researcher. I can help you explore topics, build research plans, test hypotheses, and synthesize findings from your knowledge base and PubMed. What would you like to research?",
+  }
+
+  // All messages to display
+  const displayMessages = activeSession
+    ? messages
+    : [{ ...welcomeMsg, session_id: '', actions: [], sources: [], extra_data: {}, created_at: new Date().toISOString() }]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: theme.pageBg }}>
       <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
@@ -265,11 +115,73 @@ export default function CoResearcher() {
           flexDirection: 'column',
           backgroundColor: theme.cardBg,
         }}>
+          {/* Session header */}
+          {activeSession && (
+            <div style={{
+              padding: '12px 24px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <button
+                onClick={() => { closeSession(); listSessions() }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  border: 'none', background: 'none', cursor: 'pointer',
+                  fontSize: '13px', color: theme.textSecondary, fontFamily: font,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+                Sessions
+              </button>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, fontFamily: font }}>
+                {activeSession.title || 'Research Session'}
+              </span>
+              <div style={{ width: '60px' }} />
+            </div>
+          )}
+
+          {/* Session list (when no active session) */}
+          {!activeSession && sessions.length > 0 && (
+            <div style={{ padding: '12px 24px', borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, fontFamily: font, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Recent Sessions
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '120px', overflowY: 'auto' }}>
+                {sessions.slice(0, 5).map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => loadSession(s.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px', borderRadius: '8px',
+                      border: `1px solid ${theme.border}`, background: 'none', cursor: 'pointer',
+                      fontSize: '13px', color: theme.textPrimary, fontFamily: font,
+                      transition: 'background-color 0.1s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = theme.primaryLight }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                  >
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.title || 'Untitled'}
+                    </span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, flexShrink: 0, marginLeft: '8px' }}>
+                      {s.message_count} msgs
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Chat messages */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-            {messages.map((msg) => (
+            {displayMessages.map((msg) => (
               <div key={msg.id} style={{ marginBottom: '20px' }}>
-                {msg.isUser ? (
+                {msg.role === 'user' ? (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                     <div style={{
                       maxWidth: '80%',
@@ -281,7 +193,7 @@ export default function CoResearcher() {
                       color: theme.textPrimary,
                       fontFamily: font,
                     }}>
-                      {msg.text}
+                      {msg.content}
                     </div>
                     <div style={{
                       width: '30px',
@@ -315,7 +227,7 @@ export default function CoResearcher() {
                           fontFamily: font,
                           whiteSpace: 'pre-wrap',
                         }}>
-                          {msg.text}
+                          {msg.content}
                         </div>
                       </div>
                     </div>
@@ -356,7 +268,6 @@ export default function CoResearcher() {
                           </svg>
                         </button>
 
-                        {/* Expanded action details */}
                         {expandedActions[msg.id] && (
                           <div style={{
                             marginTop: '8px',
@@ -368,7 +279,7 @@ export default function CoResearcher() {
                             flexDirection: 'column',
                             gap: '8px',
                           }}>
-                            {msg.actions.map((action, idx) => (
+                            {msg.actions.map((action: ActionDetail, idx: number) => (
                               <div key={idx} style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -389,6 +300,56 @@ export default function CoResearcher() {
                 )}
               </div>
             ))}
+
+            {/* Streaming indicator */}
+            {isStreaming && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '30px', height: '30px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}>
+                    <Image src="/owl.png" alt="AI" width={30} height={30} style={{ objectFit: 'contain' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    {/* Live actions */}
+                    {streamingActions.length > 0 && !streamingText && (
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px',
+                      }}>
+                        {streamingActions.map((action, idx) => (
+                          <div key={idx} style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            fontSize: '12px', color: theme.textSecondary, fontFamily: font,
+                          }}>
+                            <div style={{
+                              width: '6px', height: '6px', borderRadius: '50%',
+                              backgroundColor: idx === streamingActions.length - 1 ? theme.amber : theme.success,
+                              animation: idx === streamingActions.length - 1 ? 'pulse 1s infinite' : 'none',
+                            }} />
+                            <span>{action.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Streaming text */}
+                    {streamingText && (
+                      <div style={{
+                        fontSize: '14px', lineHeight: '1.6', color: theme.textPrimary,
+                        fontFamily: font, whiteSpace: 'pre-wrap',
+                      }}>
+                        {streamingText}
+                        <span style={{ display: 'inline-block', width: '6px', height: '14px', backgroundColor: theme.primary, marginLeft: '2px', animation: 'blink 1s step-end infinite' }} />
+                      </div>
+                    )}
+                    {/* Loading dots when no content yet */}
+                    {!streamingText && streamingActions.length === 0 && (
+                      <div style={{ fontSize: '14px', color: theme.textMuted, fontFamily: font }}>
+                        Thinking...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div ref={messagesEndRef} />
           </div>
 
@@ -406,7 +367,6 @@ export default function CoResearcher() {
               padding: '10px 16px',
               border: `1px solid ${theme.border}`,
             }}>
-              {/* Attachment icon */}
               <button style={{
                 width: '28px', height: '28px', borderRadius: '50%', border: 'none',
                 backgroundColor: 'transparent', cursor: 'pointer', display: 'flex',
@@ -417,27 +377,29 @@ export default function CoResearcher() {
                 </svg>
               </button>
               <input
-                placeholder="Reply..."
+                placeholder={activeSession ? "Reply..." : "What would you like to research?"}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    sendMessage()
+                    handleSend()
                   }
                 }}
+                disabled={isStreaming}
                 style={{
                   flex: 1, border: 'none', outline: 'none', fontSize: '14px',
                   fontFamily: font, color: theme.textPrimary, backgroundColor: 'transparent',
+                  opacity: isStreaming ? 0.5 : 1,
                 }}
               />
               <button
-                onClick={sendMessage}
-                disabled={!inputValue.trim()}
+                onClick={handleSend}
+                disabled={!inputValue.trim() || isStreaming}
                 style={{
                   width: '30px', height: '30px', borderRadius: '50%', border: 'none',
-                  backgroundColor: inputValue.trim() ? theme.primary : theme.border,
-                  cursor: inputValue.trim() ? 'pointer' : 'not-allowed',
+                  backgroundColor: inputValue.trim() && !isStreaming ? theme.primary : theme.border,
+                  cursor: inputValue.trim() && !isStreaming ? 'pointer' : 'not-allowed',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'background-color 0.15s',
                 }}
@@ -450,13 +412,14 @@ export default function CoResearcher() {
           </div>
         </div>
 
-        {/* Right Panel: Side-by-side cards like Granola */}
+        {/* Right Panel */}
         <div style={{
           flex: 1,
           overflowY: 'auto',
           padding: '20px',
           backgroundColor: theme.pageBg,
         }}>
+          {/* 2-column grid: Plan + Brief */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
@@ -470,7 +433,6 @@ export default function CoResearcher() {
               border: `1px solid ${theme.border}`,
               overflow: 'hidden',
             }}>
-              {/* Card header with icon */}
               <div style={{
                 padding: '14px 18px',
                 display: 'flex',
@@ -488,72 +450,34 @@ export default function CoResearcher() {
                     fontFamily: font, margin: 0,
                   }}>Plan</h3>
                 </div>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  <button style={{
-                    width: '22px', height: '22px', borderRadius: '4px', border: 'none',
-                    backgroundColor: 'transparent', cursor: 'pointer', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="2">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                </div>
               </div>
 
-              {/* Phase sections */}
               <div style={{ padding: '14px 18px' }}>
-                {planPhases.map((phase) => (
+                {plan.length > 0 ? plan.map((phase: PlanPhase) => (
                   <div key={phase.id} style={{ marginBottom: '16px' }}>
-                    {/* Phase header */}
                     <div style={{
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: theme.textPrimary,
-                      fontFamily: font,
-                      marginBottom: '10px',
+                      fontSize: '13px', fontWeight: 600, color: theme.textPrimary,
+                      fontFamily: font, marginBottom: '10px',
                     }}>
                       {phase.title}
                     </div>
-
-                    {/* Items with status dots + connecting line */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', position: 'relative' }}>
                       {phase.items.map((item, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => togglePlanItem(phase.id, idx)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: '10px',
-                            padding: '6px 8px',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            transition: 'background-color 0.1s',
-                            position: 'relative',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F7F5F3' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
-                        >
-                          {/* Status dot with vertical connector line */}
+                        <div key={idx} style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '10px',
+                          padding: '6px 8px', borderRadius: '6px', position: 'relative',
+                        }}>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <StatusDot status={item.status} />
                             {idx < phase.items.length - 1 && (
-                              <div style={{
-                                width: '1px',
-                                height: '18px',
-                                backgroundColor: theme.border,
-                                marginTop: '2px',
-                              }} />
+                              <div style={{ width: '1px', height: '18px', backgroundColor: theme.border, marginTop: '2px' }} />
                             )}
                           </div>
                           <span style={{
-                            fontSize: '12.5px',
-                            fontFamily: font,
+                            fontSize: '12.5px', fontFamily: font, lineHeight: '1.4',
                             color: item.status === 'done' ? statusColors.done.text :
                                    item.status === 'active' ? theme.textPrimary : theme.textMuted,
                             textDecoration: item.status === 'done' ? 'line-through' : 'none',
-                            lineHeight: '1.4',
                           }}>
                             {item.text}
                           </span>
@@ -561,18 +485,21 @@ export default function CoResearcher() {
                       ))}
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div style={{ fontSize: '12.5px', color: theme.textMuted, fontFamily: font, fontStyle: 'italic' }}>
+                    Start a research question to generate a plan...
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Product Overview / Research Brief Card */}
+            {/* Research Brief Card */}
             <div style={{
               backgroundColor: theme.cardBg,
               borderRadius: '12px',
               border: `1px solid ${theme.border}`,
               overflow: 'hidden',
             }}>
-              {/* Card header */}
               <div style={{
                 padding: '14px 18px',
                 display: 'flex',
@@ -589,61 +516,247 @@ export default function CoResearcher() {
                     fontFamily: font, margin: 0,
                   }}>Research brief</h3>
                 </div>
-                <button style={{
-                  width: '22px', height: '22px', borderRadius: '4px', border: 'none',
-                  backgroundColor: 'transparent', cursor: 'pointer', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="2">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
               </div>
 
               <div style={{ padding: '14px 18px' }}>
-                <div style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: theme.textPrimary,
-                  fontFamily: font,
-                  marginBottom: '8px',
-                }}>
-                  {overviewContent.heading}
-                </div>
-                <p style={{
-                  fontSize: '12.5px',
-                  lineHeight: '1.6',
-                  color: theme.textSecondary,
-                  fontFamily: font,
-                  margin: 0,
-                }}>
-                  {overviewContent.description}
-                </p>
-
-                {/* Key points */}
-                {overviewContent.keyPoints.length > 0 && (
-                  <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {overviewContent.keyPoints.map((point, idx) => (
-                      <div key={idx} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontSize: '12px',
-                        color: theme.textSecondary,
-                        fontFamily: font,
-                      }}>
-                        <div style={{
-                          width: '5px', height: '5px', borderRadius: '50%',
-                          backgroundColor: theme.primary, flexShrink: 0,
-                        }} />
-                        {point}
+                {brief.heading ? (
+                  <>
+                    <div style={{
+                      fontSize: '13px', fontWeight: 600, color: theme.textPrimary,
+                      fontFamily: font, marginBottom: '8px',
+                    }}>
+                      {brief.heading}
+                    </div>
+                    <p style={{
+                      fontSize: '12.5px', lineHeight: '1.6', color: theme.textSecondary,
+                      fontFamily: font, margin: 0,
+                    }}>
+                      {brief.description}
+                    </p>
+                    {brief.keyPoints && brief.keyPoints.length > 0 && (
+                      <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {brief.keyPoints.map((point, idx) => (
+                          <div key={idx} style={{
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            fontSize: '12px', color: theme.textSecondary, fontFamily: font,
+                          }}>
+                            <div style={{
+                              width: '5px', height: '5px', borderRadius: '50%',
+                              backgroundColor: theme.primary, flexShrink: 0,
+                            }} />
+                            {point}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                  </>
+                ) : (
+                  <div style={{ fontSize: '12.5px', color: theme.textMuted, fontFamily: font, fontStyle: 'italic' }}>
+                    Research findings will appear here...
                   </div>
                 )}
               </div>
             </div>
           </div>
+
+          {/* Context Card (NEW — full width below the grid) */}
+          {(context.documents.length > 0 || context.pubmed_papers.length > 0) && (
+            <div style={{
+              marginTop: '16px',
+              backgroundColor: theme.cardBg,
+              borderRadius: '12px',
+              border: `1px solid ${theme.border}`,
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                padding: '14px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                borderBottom: `1px solid ${theme.border}`,
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.textSecondary} strokeWidth="2" strokeLinecap="round">
+                  <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                </svg>
+                <h3 style={{
+                  fontSize: '15px', fontWeight: 600, color: theme.textPrimary,
+                  fontFamily: font, margin: 0,
+                }}>Context</h3>
+                <span style={{ fontSize: '12px', color: theme.textMuted, fontFamily: font, marginLeft: 'auto' }}>
+                  {context.documents.length + context.pubmed_papers.length} sources
+                </span>
+              </div>
+
+              <div style={{ padding: '14px 18px' }}>
+                {/* Internal documents */}
+                {context.documents.length > 0 && (
+                  <div style={{ marginBottom: context.pubmed_papers.length > 0 ? '16px' : 0 }}>
+                    <div style={{
+                      fontSize: '11px', fontWeight: 600, color: theme.textMuted,
+                      fontFamily: font, marginBottom: '8px', textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}>
+                      Knowledge Base
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {context.documents.slice(0, 6).map((doc, idx) => (
+                        <div key={idx} style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '8px',
+                          padding: '8px 10px', borderRadius: '8px',
+                          border: `1px solid ${theme.border}`, backgroundColor: '#FAFAF8',
+                        }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.success} strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: '2px' }}>
+                            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: '12.5px', fontWeight: 500, color: theme.textPrimary,
+                              fontFamily: font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {doc.title}
+                            </div>
+                            {doc.preview && (
+                              <div style={{
+                                fontSize: '11.5px', color: theme.textMuted, fontFamily: font,
+                                marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {doc.preview}
+                              </div>
+                            )}
+                          </div>
+                          {doc.score !== undefined && doc.score > 0 && (
+                            <span style={{
+                              fontSize: '10px', color: theme.success, fontFamily: font, fontWeight: 600,
+                              flexShrink: 0, padding: '2px 6px', borderRadius: '4px',
+                              backgroundColor: statusColors.done.bg,
+                            }}>
+                              {(doc.score * 100).toFixed(0)}%
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* PubMed papers */}
+                {context.pubmed_papers.length > 0 && (
+                  <div>
+                    <div style={{
+                      fontSize: '11px', fontWeight: 600, color: theme.textMuted,
+                      fontFamily: font, marginBottom: '8px', textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}>
+                      PubMed
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {context.pubmed_papers.slice(0, 6).map((paper, idx) => (
+                        <div key={idx} style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '8px',
+                          padding: '8px 10px', borderRadius: '8px',
+                          border: `1px solid ${theme.border}`, backgroundColor: '#FAFAF8',
+                        }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: '2px' }}>
+                            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+                          </svg>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: '12.5px', fontWeight: 500, color: theme.textPrimary,
+                              fontFamily: font, overflow: 'hidden', textOverflow: 'ellipsis',
+                              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any,
+                            }}>
+                              {paper.url ? (
+                                <a href={paper.url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+                                  {paper.title}
+                                </a>
+                              ) : paper.title}
+                            </div>
+                            <div style={{ fontSize: '11px', color: theme.textMuted, fontFamily: font, marginTop: '2px' }}>
+                              {paper.authors?.slice(0, 3).join(', ')}{paper.authors && paper.authors.length > 3 ? ' et al.' : ''} {paper.year ? `(${paper.year})` : ''}
+                              {paper.journal ? ` — ${paper.journal}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Hypothesis Cards (full width, below context) */}
+          {hypotheses.length > 0 && (
+            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {hypotheses.map((hyp: Hypothesis) => (
+                <div key={hyp.id} style={{
+                  backgroundColor: theme.cardBg,
+                  borderRadius: '12px',
+                  border: `1px solid ${theme.border}`,
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    padding: '14px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    borderBottom: `1px solid ${theme.border}`,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={
+                      hyp.status === 'supported' ? theme.success :
+                      hyp.status === 'refuted' ? '#D97373' :
+                      theme.amber
+                    } strokeWidth="2" strokeLinecap="round">
+                      <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary, fontFamily: font, margin: 0, flex: 1 }}>
+                      Hypothesis
+                    </h3>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 600, fontFamily: font,
+                      padding: '3px 10px', borderRadius: '12px',
+                      backgroundColor: hyp.status === 'supported' ? '#F0F7EE' :
+                                       hyp.status === 'refuted' ? '#FEF0F0' :
+                                       hyp.status === 'testing' ? theme.amberLight : '#F5F5F5',
+                      color: hyp.status === 'supported' ? '#5A7D54' :
+                             hyp.status === 'refuted' ? '#C44' :
+                             hyp.status === 'testing' ? '#9A7520' : theme.textMuted,
+                    }}>
+                      {hyp.status} ({(hyp.confidence_score * 100).toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div style={{ padding: '14px 18px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary, fontFamily: font, marginBottom: '8px' }}>
+                      {hyp.statement}
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+                      <span style={{ fontSize: '12px', fontFamily: font, color: theme.success }}>
+                        {hyp.supporting_count} supporting
+                      </span>
+                      <span style={{ fontSize: '12px', fontFamily: font, color: '#D97373' }}>
+                        {hyp.contradicting_count} contradicting
+                      </span>
+                      <span style={{ fontSize: '12px', fontFamily: font, color: theme.textMuted }}>
+                        {hyp.neutral_count} neutral
+                      </span>
+                    </div>
+                    {hyp.assessment && (
+                      <div style={{
+                        marginTop: '12px', padding: '10px 12px', borderRadius: '8px',
+                        backgroundColor: '#FAFAF8', border: `1px solid ${theme.border}`,
+                        fontSize: '12.5px', lineHeight: '1.6', color: theme.textSecondary, fontFamily: font,
+                        whiteSpace: 'pre-wrap', maxHeight: '200px', overflowY: 'auto',
+                      }}>
+                        {hyp.assessment}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -678,6 +791,17 @@ export default function CoResearcher() {
           </button>
         ))}
       </div>
+
+      {/* CSS animations for streaming */}
+      <style jsx global>{`
+        @keyframes blink {
+          50% { opacity: 0; }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   )
 }
