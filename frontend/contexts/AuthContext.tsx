@@ -47,7 +47,7 @@ interface AuthContextType {
 }
 
 // Public routes that don't require authentication
-const PUBLIC_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/verification-pending', '/terms', '/privacy', '/landing', '/product', '/high-impact-journal']
+const PUBLIC_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/verify-email', '/verification-pending', '/terms', '/privacy', '/landing', '/product', '/high-impact-journal', '/co-researcher']
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
