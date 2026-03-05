@@ -410,29 +410,34 @@ export default function HighImpactJournal() {
             {/* Top summary row */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: '280px 1fr',
               gap: 20,
               marginBottom: 24,
+              alignItems: 'stretch',
             }}>
               {/* Score Gauge */}
               <div style={{
-                padding: 24,
+                padding: '28px 24px',
                 borderRadius: 16,
                 backgroundColor: theme.cardBg,
                 border: `1px solid ${theme.border}`,
-                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}>
                 <ScoreGauge score={scoreInfo.overall_score} tier={scoreInfo.tier} />
                 <p style={{
-                  marginTop: 12,
+                  marginTop: 14,
                   fontWeight: 600,
-                  fontSize: 14,
+                  fontSize: 15,
                   color: tierColors[scoreInfo.tier as keyof typeof tierColors]?.text || theme.textPrimary,
+                  textAlign: 'center',
                 }}>
                   {scoreInfo.tier_label}
                 </p>
                 {scoreInfo.penalty_applied && (
-                  <p style={{ fontSize: 12, color: theme.error, marginTop: 4 }}>
+                  <p style={{ fontSize: 12, color: theme.error, marginTop: 6, textAlign: 'center' }}>
                     {scoreInfo.penalty_applied} penalty applied (original: {scoreInfo.original_score})
                   </p>
                 )}
@@ -440,15 +445,18 @@ export default function HighImpactJournal() {
 
               {/* Field & Meta */}
               <div style={{
-                padding: 24,
+                padding: '24px 28px',
                 borderRadius: 16,
                 backgroundColor: theme.cardBg,
                 border: `1px solid ${theme.border}`,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
               }}>
                 {fieldInfo && (
                   <>
                     <FieldBadge field={fieldInfo.field} label={fieldInfo.field_label} subfield={fieldInfo.subfield} confidence={fieldInfo.confidence} />
-                    <p style={{ color: theme.textSecondary, fontSize: 13, marginTop: 12, lineHeight: 1.5 }}>
+                    <p style={{ color: theme.textSecondary, fontSize: 13, marginTop: 12, lineHeight: 1.6 }}>
                       {fieldInfo.reasoning}
                     </p>
                   </>
@@ -456,7 +464,7 @@ export default function HighImpactJournal() {
                 {featuresInfo && (
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
                     gap: 8,
                     marginTop: 16,
                     fontSize: 13,
@@ -479,7 +487,7 @@ export default function HighImpactJournal() {
                 border: `1px solid ${theme.border}`,
                 marginBottom: 24,
               }}>
-                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Feature Breakdown</h3>
+                <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 20, color: theme.textPrimary }}>Feature Breakdown</h3>
                 {scoreInfo.score_breakdown.map(b => {
                   const featureKey = Object.keys(featuresInfo.features).find(
                     k => featuresInfo.features[k].label === b.feature
@@ -570,18 +578,26 @@ export default function HighImpactJournal() {
             )}
 
             {/* Journal Matches */}
-            {journalsInfo && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 16,
-                marginBottom: 24,
-              }}>
-                <JournalColumn title="Target Journals" journals={journalsInfo.primary_matches} accent={tierColors[scoreInfo.tier as keyof typeof tierColors]?.border || theme.primary} />
-                <JournalColumn title="Stretch Goals" journals={journalsInfo.stretch_matches} accent={theme.amber} />
-                <JournalColumn title="Safe Options" journals={journalsInfo.safe_matches} accent={theme.success} />
-              </div>
-            )}
+            {journalsInfo && (() => {
+              const columns = [
+                { title: 'Target Journals', journals: journalsInfo.primary_matches, accent: tierColors[scoreInfo.tier as keyof typeof tierColors]?.border || theme.primary },
+                { title: 'Stretch Goals', journals: journalsInfo.stretch_matches, accent: theme.amber },
+                { title: 'Safe Options', journals: journalsInfo.safe_matches, accent: theme.success },
+              ].filter(c => c.journals && c.journals.length > 0)
+
+              return (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
+                  gap: 16,
+                  marginBottom: 24,
+                }}>
+                  {columns.map(c => (
+                    <JournalColumn key={c.title} title={c.title} journals={c.journals} accent={c.accent} />
+                  ))}
+                </div>
+              )
+            })()}
 
             {/* Red Flags */}
             {redFlags && redFlags.flags.length > 0 && (
@@ -645,12 +661,13 @@ export default function HighImpactJournal() {
                 border: `1px solid ${theme.border}`,
                 marginBottom: 24,
               }}>
-                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Recommendations</h3>
+                <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16, color: theme.textPrimary }}>Recommendations</h3>
                 <div
                   style={{
                     fontSize: 14,
                     lineHeight: 1.7,
                     color: theme.textSecondary,
+                    overflowX: 'auto',
                   }}
                   dangerouslySetInnerHTML={{ __html: markdownToHtml(recommendations) }}
                 />
@@ -722,36 +739,36 @@ function MetaStat({ label, value, warn }: { label: string; value: string; warn?:
 
 function ScoreGauge({ score, tier }: { score: number; tier: number }) {
   const tc = tierColors[tier as keyof typeof tierColors] || tierColors[3]
-  const radius = 60
+  const radius = 70
   const circumference = Math.PI * radius
   const offset = circumference - (score / 100) * circumference
 
   return (
-    <svg width="160" height="100" viewBox="0 0 160 100">
+    <svg width="200" height="120" viewBox="0 0 200 120">
       {/* Background arc */}
       <path
-        d="M 20 90 A 60 60 0 0 1 140 90"
+        d="M 25 105 A 70 70 0 0 1 175 105"
         fill="none"
         stroke={theme.border}
-        strokeWidth="10"
+        strokeWidth="12"
         strokeLinecap="round"
       />
       {/* Score arc */}
       <path
-        d="M 20 90 A 60 60 0 0 1 140 90"
+        d="M 25 105 A 70 70 0 0 1 175 105"
         fill="none"
         stroke={tc.border}
-        strokeWidth="10"
+        strokeWidth="12"
         strokeLinecap="round"
         strokeDasharray={`${circumference}`}
         strokeDashoffset={`${offset}`}
         style={{ transition: 'stroke-dashoffset 1s ease' }}
       />
       {/* Score text */}
-      <text x="80" y="75" textAnchor="middle" fontFamily={fontMono} fontSize="28" fontWeight="700" fill={tc.text}>
+      <text x="100" y="85" textAnchor="middle" fontFamily={fontMono} fontSize="36" fontWeight="700" fill={tc.text}>
         {score}
       </text>
-      <text x="80" y="92" textAnchor="middle" fontFamily={font} fontSize="11" fill={theme.textMuted}>
+      <text x="100" y="108" textAnchor="middle" fontFamily={font} fontSize="13" fill={theme.textMuted}>
         out of 100
       </text>
     </svg>
@@ -769,22 +786,29 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
       borderTop: `3px solid ${accent}`,
     }}>
       <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{title}</h4>
-      {journals.map(j => (
+      {journals.map((j, i) => (
         <a
           key={j.name}
           href={j.url}
           target="_blank"
           rel="noopener noreferrer"
           style={{
-            display: 'block',
-            padding: '8px 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 0',
             fontSize: 13,
-            color: theme.textSecondary,
+            color: '#4338CA',
             textDecoration: 'none',
-            borderBottom: `1px solid ${theme.border}`,
+            borderBottom: i < journals.length - 1 ? `1px solid ${theme.border}` : 'none',
           }}
         >
-          {j.name}
+          <span>{j.name}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4338CA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: 8, opacity: 0.5 }}>
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
         </a>
       ))}
     </div>
@@ -794,20 +818,70 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function markdownToHtml(md: string): string {
-  return md
+  // First, extract and convert markdown tables before escaping HTML
+  let result = md
+
+  // Convert markdown tables to HTML tables
+  const tableRegex = /(?:^|\n)((?:\|.+\|\n)+)/g
+  result = result.replace(tableRegex, (match, tableBlock: string) => {
+    const rows = tableBlock.trim().split('\n').filter((r: string) => r.trim())
+    if (rows.length < 2) return match
+
+    // Check if second row is separator (|---|---|)
+    const isSeparator = /^\|[\s\-:]+\|/.test(rows[1])
+    if (!isSeparator) return match
+
+    const parseRow = (row: string) =>
+      row.split('|').slice(1, -1).map((c: string) => c.trim())
+
+    const headers = parseRow(rows[0])
+    const dataRows = rows.slice(2).map(parseRow)
+
+    const headerHtml = headers.map((h: string) =>
+      `<th style="padding:8px 12px;text-align:left;font-weight:600;font-size:13px;border-bottom:2px solid #E5E2DC;color:#2D2D2D">${h}</th>`
+    ).join('')
+    const bodyHtml = dataRows.map((cols: string[]) =>
+      '<tr>' + cols.map((c: string) =>
+        `<td style="padding:8px 12px;font-size:13px;border-bottom:1px solid #F0EDE8;color:#5C5C5C">${c}</td>`
+      ).join('') + '</tr>'
+    ).join('')
+
+    return `\n<table style="width:100%;border-collapse:collapse;margin:12px 0;border:1px solid #E5E2DC;border-radius:8px;overflow:hidden"><thead><tr style="background:#FAF9F7">${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>\n`
+  })
+
+  // Now escape HTML entities (but preserve table HTML we just created)
+  const tablePlaceholders: string[] = []
+  result = result.replace(/<table[\s\S]*?<\/table>/g, (m) => {
+    tablePlaceholders.push(m)
+    return `__TABLE_${tablePlaceholders.length - 1}__`
+  })
+
+  result = result
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    // Markdown links: [text](url) → clickable <a> tags
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+
+  // Restore tables
+  tablePlaceholders.forEach((t, i) => {
+    result = result.replace(`__TABLE_${i}__`, t)
+  })
+
+  result = result
+    // Horizontal rules: --- or *** on their own line
+    .replace(/^-{3,}$/gm, '<hr style="border:none;border-top:1px solid #E5E2DC;margin:20px 0"/>')
+    .replace(/^\*{3,}$/gm, '<hr style="border:none;border-top:1px solid #E5E2DC;margin:20px 0"/>')
+    // Markdown links with parentheses in URLs: [text](url) — handle nested parens for DOI links
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s]*?(?:\([^\s)]*\)[^\s]*?)*[^\s)]*)\)/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#4338CA;text-decoration:underline">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^### (.+)$/gm, '<h4 style="margin-top:16px;margin-bottom:8px;font-size:15px;font-weight:600;color:#2D2D2D">$1</h4>')
-    .replace(/^## (.+)$/gm, '<h3 style="margin-top:20px;margin-bottom:10px;font-size:16px;font-weight:600;color:#2D2D2D">$1</h3>')
-    .replace(/^# (.+)$/gm, '<h2 style="margin-top:24px;margin-bottom:12px;font-size:18px;font-weight:600;color:#2D2D2D">$1</h2>')
-    .replace(/^- (.+)$/gm, '<li style="margin-left:16px;margin-bottom:4px">$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li style="margin-left:16px;margin-bottom:4px">$2</li>')
+    .replace(/^### (.+)$/gm, '<h4 style="margin-top:20px;margin-bottom:8px;font-size:15px;font-weight:600;color:#2D2D2D">$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 style="margin-top:24px;margin-bottom:10px;font-size:17px;font-weight:600;color:#2D2D2D">$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2 style="margin-top:28px;margin-bottom:12px;font-size:18px;font-weight:600;color:#2D2D2D">$1</h2>')
+    .replace(/^- (.+)$/gm, '<li style="margin-left:16px;margin-bottom:6px;line-height:1.6">$1</li>')
+    .replace(/^(\d+)\. (.+)$/gm, '<li style="margin-left:16px;margin-bottom:6px;line-height:1.6">$2</li>')
     .replace(/\n\n/g, '<br/><br/>')
     .replace(/\n/g, '<br/>')
+
+  return result
 }
