@@ -270,12 +270,12 @@ export default function GlobalSyncIndicator() {
                     {isActive && (
                       <div style={{
                         width: 16, height: 16, borderRadius: '50%',
-                        border: '2px solid #E5E7EB', borderTopColor: '#2563EB',
+                        border: '2px solid #E5E7EB', borderTopColor: '#C9A598',
                         animation: 'spin 0.8s linear infinite'
                       }} />
                     )}
                     {isAwaitingSelection && <span style={{ color: '#C9A598', fontSize: 16 }}>&#9998;</span>}
-                    {isComplete && <span style={{ color: '#3B82F6', fontSize: 16 }}>&#10003;</span>}
+                    {isComplete && <span style={{ color: '#9CB896', fontSize: 16 }}>&#10003;</span>}
                     {isError && <span style={{ color: '#64748B', fontSize: 16 }}>&#10005;</span>}
                     <span style={{ fontSize: 13, color: '#374151' }}>
                       {isAwaitingSelection ? 'Select documents to import' : sync.stage}
@@ -322,7 +322,7 @@ export default function GlobalSyncIndicator() {
                       <div style={{
                         height: '100%',
                         width: sync.totalItems > 0 ? `${sync.percentComplete}%` : '30%',
-                        background: '#2563EB',
+                        background: '#C9A598',
                         borderRadius: 3,
                         transition: 'width 0.3s',
                         animation: sync.totalItems === 0 ? 'pulse 1.5s ease-in-out infinite' : 'none'
@@ -387,7 +387,7 @@ export default function GlobalSyncIndicator() {
                 }
               }}
               style={{
-                background: isComplete ? '#3B82F6' : isError ? '#64748B' : isAwaitingSelection ? '#C9A598' : '#fff',
+                background: isComplete ? '#9CB896' : isError ? '#64748B' : isAwaitingSelection ? '#C9A598' : '#fff',
                 color: isComplete || isError || isAwaitingSelection ? '#fff' : '#111827',
                 padding: '10px 16px',
                 borderRadius: 10,
@@ -404,7 +404,7 @@ export default function GlobalSyncIndicator() {
               {isActive && (
                 <div style={{
                   width: 14, height: 14, borderRadius: '50%',
-                  border: '2px solid #E5E7EB', borderTopColor: '#2563EB',
+                  border: '2px solid #E5E7EB', borderTopColor: '#C9A598',
                   animation: 'spin 1s linear infinite'
                 }} />
               )}

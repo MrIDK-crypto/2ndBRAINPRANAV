@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import axios from 'axios'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006')
@@ -44,8 +44,8 @@ export default function DocumentsSimple() {
   }
 
   return (
-    <div className="flex h-screen bg-primary overflow-hidden">
-      <Sidebar />
+    <div className="flex flex-col h-screen bg-primary overflow-hidden">
+      <TopNav />
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
@@ -68,7 +68,7 @@ export default function DocumentsSimple() {
               lineHeight: '24px',
               marginTop: '6px'
             }}>
-              Fetched emails from beatatucla@gmail.com · {emails.length} total · Auto-refreshes every 10s
+              Fetched emails from pranav@use2ndbrain.com · {emails.length} total · Auto-refreshes every 10s
             </p>
           </div>
           <button
@@ -103,7 +103,7 @@ export default function DocumentsSimple() {
               <div className="text-center max-w-md">
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">No emails yet</h3>
                 <p className="text-gray-600 mb-4">
-                  Forward emails to <code className="bg-gray-100 px-2 py-1 rounded">beatatucla@gmail.com</code> and
+                  Forward emails to <code className="bg-gray-100 px-2 py-1 rounded">pranav@use2ndbrain.com</code> and
                   click "Fetch Emails" in the <a href="/integrations" className="text-blue-600 hover:underline">Integrations page</a>
                 </p>
               </div>

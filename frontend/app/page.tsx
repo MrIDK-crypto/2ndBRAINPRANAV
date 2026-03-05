@@ -1,5 +1,1 @@
-import ChatInterface from '@/components/chat/ChatInterface'
-
-export default function Home() {
-  return <ChatInterface />
-}
+export { default } from './landing/page'

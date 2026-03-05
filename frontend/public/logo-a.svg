@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <!-- Option A: "Neural Flower" — 8 overlapping circles forming a geometric rosette -->
+  <circle cx="60" cy="38" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="60" cy="82" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="38" cy="60" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="82" cy="60" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="44.4" cy="44.4" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="75.6" cy="44.4" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="44.4" cy="75.6" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <circle cx="75.6" cy="75.6" r="18" stroke="#1A1A1A" stroke-width="2" fill="none"/>
+  <!-- Center dot -->
+  <circle cx="60" cy="60" r="3.5" fill="#1A1A1A"/>
+</svg>

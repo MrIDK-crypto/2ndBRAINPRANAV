@@ -149,6 +149,7 @@ class Gap:
     source_pattern: str  # Which detection pattern found this
     quality_score: float = 0.0  # NEW: Quality score 0-1
     fingerprint: str = ""  # NEW: For deduplication
+    source_doc_ids: List[str] = field(default_factory=list)  # Document IDs that triggered this gap
 
 
 @dataclass
@@ -463,6 +464,24 @@ MISSING_PATTERNS = {
         r"on hold until",
     ]
 }
+
+# =============================================================================
+# PROTOCOL-SPECIFIC PATTERNS (auto-merged from protocol training pipeline)
+# =============================================================================
+try:
+    from services.protocol_patterns import (
+        PROTOCOL_FRAME_TEMPLATES,
+        PROTOCOL_MISSING_PATTERNS,
+        PROTOCOL_QUESTION_TEMPLATES,
+    )
+    FRAME_TEMPLATES.update(PROTOCOL_FRAME_TEMPLATES)
+    MISSING_PATTERNS.update(PROTOCOL_MISSING_PATTERNS)
+    _PROTOCOL_PATTERNS_LOADED = True
+    logger.info("[IntelligentGap] Protocol patterns loaded successfully")
+except ImportError:
+    _PROTOCOL_PATTERNS_LOADED = False
+    PROTOCOL_QUESTION_TEMPLATES = {}
+    logger.debug("[IntelligentGap] Protocol patterns not available (run pattern miner first)")
 
 # Negation patterns
 NEGATION_PATTERNS = [
@@ -1626,9 +1645,13 @@ class GroundedQuestionGenerator:
                     self.seen_fingerprints.add(fingerprint)
                     quality_score = self._calculate_quality(frame, questions)
 
+                    # Evidence-grounded description
+                    desc = f"The {frame.frame_type.lower()} \"{frame.trigger}\" is missing its {missing_slot}. "
+                    desc += f"Source evidence: \"{frame.source_sentence[:200]}\""
+
                     gap = Gap(
                         gap_type=f"MISSING_{missing_slot.upper()}",
-                        description=f"Missing {missing_slot} for {frame.frame_type}: {frame.trigger}",
+                        description=desc,
                         evidence=[frame.source_sentence],
                         related_entities=[frame.trigger],
                         confidence=0.9,
@@ -1637,7 +1660,8 @@ class GroundedQuestionGenerator:
                         category=self._frame_to_category(frame.frame_type),
                         source_pattern="FRAME_EXTRACTION",
                         quality_score=quality_score,
-                        fingerprint=fingerprint
+                        fingerprint=fingerprint,
+                        source_doc_ids=[frame.source_doc_id] if frame.source_doc_id else []
                     )
                     gaps.append(gap)
 
@@ -1779,8 +1803,10 @@ class GroundedQuestionGenerator:
             score += 0.1
 
         # Boost for high-value frame types
-        if frame.frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP"]:
+        if frame.frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP", "SAFETY_PRECAUTION"]:
             score += 0.2
+        elif frame.frame_type in ["PROTOCOL_STEP", "REAGENT_USAGE", "EQUIPMENT_SETUP"]:
+            score += 0.15
 
         # Penalize short/generic
         if len(frame.source_sentence) < 30:
@@ -1789,36 +1815,55 @@ class GroundedQuestionGenerator:
         return min(max(score, 0.0), 1.0)
 
     def _frame_slot_questions(self, frame: Frame, missing_slot: str) -> List[str]:
-        """Generate questions for missing frame slots"""
-        context = frame.source_sentence[:100]
+        """Generate evidence-grounded questions for missing frame slots"""
+        trigger = frame.trigger
+        context = frame.source_sentence[:150]
+        doc_ref = f" (from doc {frame.source_doc_id})" if frame.source_doc_id else ""
+
+        # Extract named entities from source sentence for specificity
+        entities = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', frame.source_sentence)
+        entity_ref = f" involving {', '.join(entities[:3])}" if entities else ""
 
         questions = {
             "DECISION": {
-                "what": [f"What exactly was decided? Context: '{context}'"],
-                "who_decided": [f"Who made this decision? Context: '{context}'"],
-                "why": [f"Why was this decided? Context: '{context}'"],
-                "alternatives": [f"What alternatives were considered? Context: '{context}'"],
-                "when": [f"When was this decided? Context: '{context}'"],
-                "impact": [f"What was the impact? Context: '{context}'"]
+                "what": [f"The document mentions \"{trigger}\" but doesn't specify the exact decision{entity_ref} — what was actually decided and what changed as a result?{doc_ref}"],
+                "who_decided": [f"Who approved or made the call on \"{trigger}\"? The document says: \"{context}\" but doesn't name the decision-maker{doc_ref}"],
+                "why": [f"The decision to \"{trigger}\" is documented, but the rationale is missing — what problem was this solving, and what constraints led to this choice?{doc_ref}"],
+                "alternatives": [f"When \"{trigger}\" was decided, what other options were on the table? The document doesn't record what was rejected or why{doc_ref}"],
+                "when": [f"When exactly was \"{trigger}\" decided? The document references it without a date{doc_ref}"],
+                "impact": [f"What was the measurable impact of \"{trigger}\"? The outcome isn't documented{doc_ref}"]
             },
             "PROCESS": {
-                "what": [f"What process? Context: '{context}'"],
-                "steps": [f"What are the steps? Context: '{context}'"],
-                "owner": [f"Who owns this process? Context: '{context}'"],
+                "what": [f"The document references \"{trigger}\" as a process but doesn't describe what it involves{entity_ref}{doc_ref}"],
+                "steps": [f"What are the exact steps for \"{trigger}\"? The document mentions it but doesn't list the procedure — what happens first, and what could go wrong at each step?{doc_ref}"],
+                "owner": [f"Who is responsible for running \"{trigger}\"? The document describes it without naming an owner or backup{doc_ref}"],
             },
             "OWNERSHIP": {
-                "what": [f"What is owned? Context: '{context}'"],
-                "who": [f"Who owns this? Context: '{context}'"],
+                "what": [f"The document mentions ownership by{entity_ref} but doesn't specify what exactly they own or manage — what systems/processes are included?{doc_ref}"],
+                "who": [f"\"{trigger}\" doesn't have a documented owner — who maintains this, and who is the backup if they're unavailable?{doc_ref}"],
             },
             "PROBLEM": {
-                "what": [f"What is the problem? Context: '{context}'"],
-                "impact": [f"What is the impact? Context: '{context}'"],
-                "solution": [f"What is the solution? Context: '{context}'"],
+                "what": [f"The document references a problem around \"{trigger}\" — what exactly is the issue, and when did it first appear?{doc_ref}"],
+                "impact": [f"What is the business impact of the \"{trigger}\" problem? The document mentions it without quantifying the effect{doc_ref}"],
+                "solution": [f"Has \"{trigger}\" been resolved? The document describes the problem but not the resolution or workaround{doc_ref}"],
             }
         }
 
+        # Protocol-specific question templates
+        if frame.frame_type in PROTOCOL_QUESTION_TEMPLATES:
+            templates = PROTOCOL_QUESTION_TEMPLATES[frame.frame_type]
+            proto_questions = []
+            for template in templates:
+                q = template.replace("{action}", trigger).replace("{parameters}", missing_slot)
+                q = q.replace("{reagent_name}", trigger).replace("{equipment}", trigger)
+                q = q.replace("{hazard}", trigger).replace("{observation}", trigger)
+                q = q.replace("{criteria}", missing_slot)
+                proto_questions.append(f"{q} Context: \"{context}\"{doc_ref}")
+            if proto_questions:
+                return proto_questions[:2]
+
         frame_questions = questions.get(frame.frame_type, {})
-        return frame_questions.get(missing_slot, [f"What is the {missing_slot}? Context: '{context}'"])
+        return frame_questions.get(missing_slot, [f"The document mentions \"{trigger}\" but doesn't explain the {missing_slot} — can you provide this detail?{doc_ref}"])
 
     def _calculate_priority(self, frame_type: str, missing_slot: str) -> int:
         """Calculate priority"""
@@ -1828,13 +1873,16 @@ class GroundedQuestionGenerator:
             ("PROCESS", "owner"),
             ("CONSTRAINT", "why"),
             ("OWNERSHIP", "who"),
+            ("SAFETY_PRECAUTION", "precaution"),
+            ("SAFETY_PRECAUTION", "hazard"),
+            ("REAGENT_USAGE", "concentration"),
         ]
 
         if (frame_type, missing_slot) in high_priority:
             return 5
-        elif frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP"]:
+        elif frame_type in ["DECISION", "CONSTRAINT", "OWNERSHIP", "SAFETY_PRECAUTION"]:
             return 4
-        elif frame_type in ["PROCESS", "PROBLEM"]:
+        elif frame_type in ["PROCESS", "PROBLEM", "PROTOCOL_STEP", "REAGENT_USAGE"]:
             return 3
         else:
             return 2
@@ -1850,6 +1898,12 @@ class GroundedQuestionGenerator:
             "METRIC": "outcome",
             "PROBLEM": "technical",
             "OWNERSHIP": "relationship",
+            # Protocol-specific frame types
+            "PROTOCOL_STEP": "process",
+            "REAGENT_USAGE": "technical",
+            "EQUIPMENT_SETUP": "technical",
+            "SAFETY_PRECAUTION": "safety",
+            "EXPECTED_RESULT": "outcome",
         }
         return mapping.get(frame_type, "context")
 
@@ -1883,12 +1937,26 @@ class IntelligentGapDetector:
         self.all_frames: List[Frame] = []
         self.all_missing_roles: List[Dict] = []
         self.all_discourse_units: List[DiscourseUnit] = []
+        self.has_protocol_content: bool = False
+        self.protocol_doc_ids: List[str] = []
 
     def add_document(self, doc_id: str, title: str, content: str):
         """Process document through all layers"""
         logger.info(f"[IntelligentGap] Processing: {title}")
 
         content = content[:100000]
+
+        # Auto-detect protocol content
+        if _PROTOCOL_PATTERNS_LOADED:
+            try:
+                from services.protocol_classifier import is_protocol_content
+                is_protocol, confidence = is_protocol_content(content)
+                if is_protocol:
+                    self.has_protocol_content = True
+                    self.protocol_doc_ids.append(doc_id)
+                    logger.info(f"  - Protocol content detected (confidence: {confidence:.2f})")
+            except ImportError:
+                pass
 
         # Layer 1: Frame Extraction
         frames = self.frame_extractor.extract_frames(content, doc_id)
@@ -1926,19 +1994,83 @@ class IntelligentGapDetector:
         contradictions = self.verifier.find_contradictions()
         single_source = self.verifier.find_single_source_knowledge()
 
+        # Sort each signal type by quality/confidence before slicing
+        # (ensures highest-signal gaps surface consistently regardless of document order)
+        sorted_missing_roles = sorted(
+            self.all_missing_roles,
+            key=lambda r: len(r.get('roles_missing', [])),
+            reverse=True
+        )[:50]
+
+        sorted_claims = sorted(
+            unsupported_claims,
+            key=lambda c: len(c.get('claim', '')),
+            reverse=True
+        )[:20]
+
+        sorted_relations = sorted(
+            missing_relations,
+            key=lambda r: len(r.get('shared_documents', [])),
+            reverse=True
+        )[:20]
+
+        sorted_contradictions = sorted(
+            contradictions,
+            key=lambda c: len(c.get('claim1', '')) + len(c.get('claim2', '')),
+            reverse=True
+        )[:10]
+
         gaps = self.question_generator.generate_questions(
             frames=frames_with_gaps,
-            missing_roles=self.all_missing_roles[:50],
-            unsupported_claims=unsupported_claims[:20],
-            missing_relations=missing_relations[:20],
+            missing_roles=sorted_missing_roles,
+            unsupported_claims=sorted_claims,
+            missing_relations=sorted_relations,
             bus_factor_risks=bus_factor_risks,
-            contradictions=contradictions[:10]
+            contradictions=sorted_contradictions
         )
 
-        logger.info(f"[IntelligentGap] Complete: {len(gaps)} gaps")
+        # Protocol-specific: reference corpus comparison
+        protocol_ref_gaps = []
+        if self.has_protocol_content and _PROTOCOL_PATTERNS_LOADED:
+            try:
+                from services.protocol_reference_store import get_store
+                store = get_store()
+                if store.protocols:
+                    for doc_id in self.protocol_doc_ids[:10]:
+                        # Find frames from this doc that look like protocol steps
+                        doc_steps = [
+                            f.source_sentence for f in self.all_frames
+                            if f.source_doc_id == doc_id and f.frame_type == "PROTOCOL_STEP"
+                        ]
+                        if doc_steps:
+                            missing = store.find_missing_steps(doc_steps)
+                            for m in missing[:5]:
+                                gap = Gap(
+                                    gap_type="MISSING_PROTOCOL_STEP",
+                                    description=f"Common step \"{m['verb']}\" found in {m['frequency']} similar reference protocols but missing from this document.",
+                                    evidence=[f"Similar protocols: {', '.join(m.get('similar_protocols', [])[:3])}"],
+                                    related_entities=[m['verb']],
+                                    confidence=0.7,
+                                    grounded_questions=[m['message']],
+                                    priority=3,
+                                    category="reproducibility",
+                                    source_pattern="REFERENCE_COMPARISON",
+                                    quality_score=0.65,
+                                    fingerprint=hashlib.md5(f"ref:{m['verb']}:{doc_id}".encode()).hexdigest()[:16],
+                                    source_doc_ids=[doc_id]
+                                )
+                                protocol_ref_gaps.append(gap)
+            except Exception as e:
+                logger.debug(f"[IntelligentGap] Reference comparison skipped: {e}")
+
+        all_gaps = gaps + protocol_ref_gaps
+        all_gaps.sort(key=lambda g: (-g.priority, -g.quality_score))
+
+        logger.info(f"[IntelligentGap] Complete: {len(all_gaps)} gaps"
+                     f"{f' ({len(protocol_ref_gaps)} from protocol reference)' if protocol_ref_gaps else ''}")
 
         return {
-            "gaps": gaps,
+            "gaps": all_gaps,
             "stats": {
                 "total_frames": len(self.all_frames),
                 "frames_with_gaps": len(frames_with_gaps),
@@ -1950,7 +2082,9 @@ class IntelligentGapDetector:
                 "bus_factor_risks": len(bus_factor_risks),
                 "contradictions": len(contradictions),
                 "single_source_topics": len(single_source),
-                "total_gaps": len(gaps)
+                "protocol_content_detected": self.has_protocol_content,
+                "protocol_reference_gaps": len(protocol_ref_gaps),
+                "total_gaps": len(all_gaps)
             },
             "bus_factor_risks": bus_factor_risks,
             "contradictions": contradictions,
@@ -1958,16 +2092,18 @@ class IntelligentGapDetector:
         }
 
     def to_knowledge_gaps(self, result: Dict[str, Any], project_id: Optional[str] = None) -> List[Dict]:
-        """Convert to database format"""
+        """Convert to database format with evidence grounding"""
         knowledge_gaps = []
 
         for gap in result.get("gaps", []):
             knowledge_gaps.append({
                 "title": gap.description[:200],
-                "description": f"Pattern: {gap.source_pattern}. Evidence: {'; '.join(gap.evidence[:2])}",
+                "description": f"[{gap.source_pattern}] {gap.description}. Evidence: \"{'; '.join(gap.evidence[:2])}\"",
                 "category": gap.category,
                 "priority": gap.priority,
                 "questions": [{"text": q, "answered": False} for q in gap.grounded_questions],
+                "evidence": gap.evidence[:5],
+                "source_docs": gap.source_doc_ids[:10],
                 "context": {
                     "gap_type": gap.gap_type,
                     "source_pattern": gap.source_pattern,
@@ -1975,7 +2111,8 @@ class IntelligentGapDetector:
                     "quality_score": gap.quality_score,
                     "fingerprint": gap.fingerprint,
                     "related_entities": gap.related_entities[:5],
-                    "evidence": gap.evidence[:3]
+                    "evidence": gap.evidence[:5],
+                    "source_docs": gap.source_doc_ids[:10]
                 }
             })
 

@@ -16,7 +16,7 @@ export default function GapStats({ total, answered, pending }: GapStatsProps) {
         <span className="text-sm font-medium text-gray-700" style={{ fontFamily: '"Work Sans", sans-serif' }}>
           Knowledge Transfer Progress
         </span>
-        <span className="text-sm font-semibold" style={{ fontFamily: '"Work Sans", sans-serif', color: '#3B82F6' }}>
+        <span className="text-sm font-semibold" style={{ fontFamily: '"Work Sans", sans-serif', color: '#C9A598' }}>
           {percentComplete}% Complete
         </span>
       </div>
@@ -24,7 +24,7 @@ export default function GapStats({ total, answered, pending }: GapStatsProps) {
       <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden mb-4">
         <div
           className="h-full transition-all duration-500 rounded-full"
-          style={{ width: `${percentComplete}%`, background: 'linear-gradient(to right, #60A5FA, #2563EB)' }}
+          style={{ width: `${percentComplete}%`, background: 'linear-gradient(to right, #D4B5AA, #B8948A)' }}
         />
       </div>
 
@@ -40,7 +40,7 @@ export default function GapStats({ total, answered, pending }: GapStatsProps) {
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-          <div className="text-2xl font-bold mb-1" style={{ fontFamily: '"Work Sans", sans-serif', color: '#3B82F6' }}>
+          <div className="text-2xl font-bold mb-1" style={{ fontFamily: '"Work Sans", sans-serif', color: '#C9A598' }}>
             {answered}
           </div>
           <div className="text-xs text-gray-600" style={{ fontFamily: '"Work Sans", sans-serif' }}>
@@ -49,7 +49,7 @@ export default function GapStats({ total, answered, pending }: GapStatsProps) {
         </div>
 
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
-          <div className="text-2xl font-bold mb-1" style={{ fontFamily: '"Work Sans", sans-serif', color: '#64748B' }}>
+          <div className="text-2xl font-bold mb-1" style={{ fontFamily: '"Work Sans", sans-serif', color: '#9A9A9A' }}>
             {pending}
           </div>
           <div className="text-xs text-gray-600" style={{ fontFamily: '"Work Sans", sans-serif' }}>

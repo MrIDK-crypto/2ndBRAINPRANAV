@@ -1,6 +1,6 @@
 """
 Email Forwarding Service
-Receives forwarded emails via IMAP from beatatucla@gmail.com
+Receives forwarded emails via IMAP from pranav@use2ndbrain.com
 Parses emails and adds them as documents to the database
 Also parses email attachments (PDF, DOCX, XLSX, PPTX, etc.)
 """
@@ -42,7 +42,7 @@ class EmailForwardingService:
         self.parser = DocumentParser(config=config)
 
         # Email credentials from environment
-        self.email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "beatatucla@gmail.com")
+        self.email_address = os.getenv("FORWARD_EMAIL_ADDRESS", "pranav@use2ndbrain.com")
         self.email_password = os.getenv("FORWARD_EMAIL_PASSWORD")
 
         if not self.email_password:
@@ -53,7 +53,7 @@ class EmailForwardingService:
         """
         Generate tenant-specific email address using Gmail plus addressing.
 
-        Example: beatatucla@gmail.com + tenant123 -> beatatucla+tenant123@gmail.com
+        Example: pranav@use2ndbrain.com + tenant123 -> pranav+tenant123@use2ndbrain.com
 
         This allows each tenant to have a unique forwarding address while
         all emails still arrive at the same Gmail inbox.

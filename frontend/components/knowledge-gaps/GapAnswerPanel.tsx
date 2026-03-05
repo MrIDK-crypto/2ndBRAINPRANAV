@@ -74,7 +74,7 @@ export default function GapAnswerPanel({
         {/* Why This Gap? */}
         {gap.evidence && (
           <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded">
-            <h4 className="text-sm font-semibold mb-2" style={{ color: '#1E40AF' }}>
+            <h4 className="text-sm font-semibold mb-2" style={{ color: '#A68379' }}>
               💡 Why This Gap?
             </h4>
             <p className="text-sm text-gray-700 leading-relaxed">

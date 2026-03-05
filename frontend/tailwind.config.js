@@ -8,20 +8,21 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: '#F8FAFC',
+        primary: '#FAF9F7',
         secondary: '#FFFFFF',
-        accent: '#2563EB',
+        accent: '#C9A598',
         neutral: {
-          800: '#111827',
-          600: '#4B5563',
-          500: '#6B7280',
-          400: '#9CA3AF',
+          800: '#2D2D2D',
+          600: '#6B6B6B',
+          500: '#9A9A9A',
+          400: '#9A9A9A',
         },
-        border: '#E5E7EB',
+        border: '#F0EEEC',
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-        work: ['Work Sans', 'sans-serif'],
+        sans: ['Avenir', 'Avenir Next', 'DM Sans', 'system-ui', 'sans-serif'],
+        display: ['Instrument Serif', 'Georgia', 'serif'],
+        mono: ['JetBrains Mono', 'SF Mono', 'monospace'],
       },
     },
   },

@@ -35,9 +35,9 @@ from bs4 import BeautifulSoup
 # Constants
 # ---------------------------------------------------------------------------
 
-CTSI_BASE_URL = "https://ctsi.ucla.edu"
-LISTING_URL = (
-    "https://ctsi.ucla.edu/pages/search"
+CTSI_BASE_URL = os.getenv("CTSI_BASE_URL", "https://ctsi.ucla.edu")
+LISTING_URL_TEMPLATE = (
+    "{base_url}/pages/search"
     "?f[0]=page_category:1436"
     "&f[1]=page_tag:1381"
     "&f[2]=page_tag:1386"
@@ -45,6 +45,7 @@ LISTING_URL = (
     "&f[4]=page_tag:1776"
     "&keywords="
 )
+LISTING_URL = LISTING_URL_TEMPLATE.format(base_url=CTSI_BASE_URL)
 
 # Output directory (relative to backend/)
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -703,20 +704,135 @@ def fallback_scrape_external_sites(
 
 
 # ---------------------------------------------------------------------------
+# Free BS4 Crawler (no Firecrawl needed)
+# ---------------------------------------------------------------------------
+
+def crawl_external_site_bs4(url: str, max_pages: int = 10) -> List[Dict[str, Any]]:
+    """
+    Crawl an external website using requests + BeautifulSoup (free).
+    Simple BFS crawl limited to same domain.
+    """
+    session = get_session()
+    parsed_base = urlparse(url)
+    base_domain = parsed_base.netloc
+    visited = set()
+    to_visit = [url]
+    pages = []
+
+    while to_visit and len(pages) < max_pages:
+        current_url = to_visit.pop(0)
+        if current_url in visited:
+            continue
+        visited.add(current_url)
+
+        try:
+            resp = session.get(current_url, timeout=30)
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"[BS4 Crawl] Error fetching {current_url}: {e}")
+            continue
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Remove non-content elements
+        for tag in soup.find_all(["nav", "header", "footer", "script", "style", "aside"]):
+            tag.decompose()
+
+        title = ""
+        title_tag = soup.find("title")
+        if title_tag:
+            title = title_tag.get_text(strip=True)
+
+        main = soup.find("main") or soup.find("article") or soup.find("div", class_=re.compile(r"content|main"))
+        content = (main or soup).get_text(separator="\n", strip=True)
+
+        if len(content.strip()) >= 50:
+            pages.append({
+                "url": current_url,
+                "title": title,
+                "content": content[:10000],
+                "doc_type": "webpage",
+                "metadata": {
+                    "url": current_url,
+                    "word_count": len(content.split()),
+                    "crawl_engine": "bs4",
+                    "scraped_at": datetime.now(timezone.utc).isoformat(),
+                },
+            })
+
+        # Extract same-domain links
+        for a in soup.find_all("a", href=True):
+            href = urljoin(current_url, a["href"])
+            parsed_href = urlparse(href)
+            if parsed_href.netloc == base_domain and href not in visited:
+                clean_href = f"{parsed_href.scheme}://{parsed_href.netloc}{parsed_href.path}"
+                if parsed_href.query:
+                    clean_href += f"?{parsed_href.query}"
+                if clean_href not in visited and not clean_href.endswith(('.pdf', '.zip', '.doc', '.xlsx')):
+                    to_visit.append(clean_href)
+
+        time.sleep(REQUEST_DELAY)
+
+    print(f"[BS4 Crawl] Crawled {len(pages)} pages from {url}")
+    return pages
+
+
+def crawl_all_external_sites_bs4(
+    facilities: List[Dict[str, Any]],
+    progress: Dict[str, Any],
+    max_pages: int = 10,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Crawl all external sites using free BS4 crawler."""
+    all_crawled: Dict[str, List[Dict[str, Any]]] = {}
+    crawled_key = "external_crawled_bs4"
+    if crawled_key not in progress:
+        progress[crawled_key] = {}
+
+    external_urls = []
+    for f in facilities:
+        url = f.get("primary_external_url")
+        if url and url not in progress.get(crawled_key, {}):
+            external_urls.append(url)
+
+    print(f"[BS4 Crawl] {len(external_urls)} external sites to crawl")
+
+    for i, url in enumerate(external_urls, 1):
+        print(f"\n[BS4 Crawl] ({i}/{len(external_urls)}) {url}")
+        try:
+            pages = crawl_external_site_bs4(url, max_pages=max_pages)
+            all_crawled[url] = pages
+            progress[crawled_key][url] = len(pages)
+            save_progress(progress)
+        except Exception as e:
+            print(f"[BS4 Crawl] Error crawling {url}: {e}")
+
+    return all_crawled
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
 def run_scrape(
     skip_firecrawl: bool = False,
+    use_firecrawl: bool = False,
     max_firecrawl_pages: int = DEFAULT_MAX_FIRECRAWL_PAGES,
+    ctsi_url: Optional[str] = None,
 ) -> None:
     """
     Run the full scrape pipeline: Level 1 -> Level 2 -> Level 3.
 
     Saves combined output to _all_facilities.json.
     """
+    global CTSI_BASE_URL, LISTING_URL
     from dotenv import load_dotenv
     load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+
+    # Override CTSI URL if provided
+    if ctsi_url:
+        CTSI_BASE_URL = ctsi_url
+        LISTING_URL = LISTING_URL_TEMPLATE.format(base_url=CTSI_BASE_URL)
+        print(f"[Config] Using custom CTSI URL: {CTSI_BASE_URL}")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     session = get_session()
@@ -743,20 +859,26 @@ def run_scrape(
 
     # ---- Level 3: External site crawling ----
     external_data: Dict[str, List[Dict[str, Any]]] = {}
-    if skip_firecrawl:
-        print("\n[Level 3] Skipping Firecrawl crawling (--skip-firecrawl)")
-    else:
+    if skip_firecrawl and not use_firecrawl:
+        print("\n[Level 3] Skipping external site crawling (--skip-firecrawl)")
+    elif use_firecrawl and os.getenv("FIRECRAWL_API_KEY"):
         print("\n" + "=" * 60)
-        print("LEVEL 3: Crawling external websites via Firecrawl")
+        print("LEVEL 3: Crawling external websites via Firecrawl (paid)")
         print("=" * 60)
         external_data = crawl_all_external_sites(
             facility_data, progress, max_pages=max_firecrawl_pages
         )
-
-    # ---- Level 3b: Fallback single-page scrape for 0-page sites ----
-    if not skip_firecrawl:
+        # Fallback for 0-page sites
         fallback_data = fallback_scrape_external_sites(facility_data)
         external_data.update(fallback_data)
+    else:
+        # Default: free BS4 crawler
+        print("\n" + "=" * 60)
+        print("LEVEL 3: Crawling external websites via BS4 (free)")
+        print("=" * 60)
+        external_data = crawl_all_external_sites_bs4(
+            facility_data, progress, max_pages=10
+        )
 
     # ---- Save combined output ----
     print("\n" + "=" * 60)
@@ -1163,7 +1285,18 @@ Examples:
     parser.add_argument(
         "--skip-firecrawl",
         action="store_true",
-        help="Skip Level 3 Firecrawl crawling of external sites",
+        help="Skip Level 3 external site crawling entirely",
+    )
+    parser.add_argument(
+        "--use-firecrawl",
+        action="store_true",
+        help="Use Firecrawl (paid) for Level 3 instead of free BS4 crawler",
+    )
+    parser.add_argument(
+        "--ctsi-url",
+        type=str,
+        default=None,
+        help="Base URL for CTSI site (default: https://ctsi.ucla.edu or CTSI_BASE_URL env var)",
     )
     parser.add_argument(
         "--tenant-id",
@@ -1188,7 +1321,9 @@ Examples:
     if args.command == "scrape":
         run_scrape(
             skip_firecrawl=args.skip_firecrawl,
+            use_firecrawl=args.use_firecrawl,
             max_firecrawl_pages=args.max_firecrawl_pages,
+            ctsi_url=args.ctsi_url,
         )
 
     elif args.command == "ingest":
@@ -1197,7 +1332,9 @@ Examples:
     elif args.command == "scrape+ingest":
         run_scrape(
             skip_firecrawl=args.skip_firecrawl,
+            use_firecrawl=args.use_firecrawl,
             max_firecrawl_pages=args.max_firecrawl_pages,
+            ctsi_url=args.ctsi_url,
         )
         run_ingest(tenant_id=args.tenant_id, user_id=args.user_id)
 

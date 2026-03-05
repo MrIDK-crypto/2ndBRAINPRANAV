@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import axios from 'axios'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -247,8 +247,8 @@ export default function Projects() {
   const totalDocuments = projects.reduce((sum, p) => sum + p.document_count, 0)
 
   return (
-    <div className="flex h-screen bg-primary overflow-hidden">
-      <Sidebar activeItem={activeItem} onItemClick={setActiveItem} userName={user?.full_name?.split(' ')[0] || 'User'} />
+    <div className="flex flex-col h-screen bg-primary overflow-hidden">
+      <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}

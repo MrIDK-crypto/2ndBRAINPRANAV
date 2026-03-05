@@ -170,7 +170,7 @@ def analyze_gaps():
         project_id = data.get('project_id')
         force = data.get('force', False)
         include_pending = data.get('include_pending', True)
-        mode = data.get('mode', 'simple')  # Default to simple for faster results
+        mode = data.get('mode', 'intelligent')  # Default to intelligent for best quality (NLP-based, zero GPT cost)
         max_documents = min(data.get('max_documents', 100), 500)  # Cap at 500
 
         # Run synchronously for local testing (no Celery/Redis needed)
@@ -184,7 +184,7 @@ def analyze_gaps():
             # Run the appropriate analysis mode
             if mode == 'code':
                 # Code-aware gap detection for GitHub repositories
-                from services.code_gap_detector import analyze_code_gaps
+                from services.code_gap_detector import analyze_code_gaps_with_llm
 
                 # Get GitHub documents
                 documents = db.query(Document).filter(
@@ -228,7 +228,7 @@ def analyze_gaps():
                 doc_id_set = set(str(doc.id) for doc in documents)
 
                 print(f"[GapAnalysis] Analyzing {len(doc_dicts)} GitHub documents")
-                code_result = analyze_code_gaps(doc_dicts, max_gaps_per_category=5)
+                code_result = analyze_code_gaps_with_llm(doc_dicts, max_gaps_per_category=8, use_llm=True)
 
                 # Save gaps to database
                 gaps_created = 0
@@ -585,6 +585,12 @@ def get_gap_context(gap_id: str):
             category = gap_dict.get('category', '')
             evidence = gap_dict.get('evidence', '')
             raw_context = gap_dict.get('context', '')
+            if isinstance(raw_context, str):
+                try:
+                    raw_context = json.loads(raw_context)
+                except (json.JSONDecodeError, TypeError):
+                    raw_context = {}
+            raw_context = raw_context or {}
 
             # Build question text
             question_text = description
@@ -594,27 +600,51 @@ def get_gap_context(gap_id: str):
                 else:
                     question_text = questions[0]
 
-            # Build prompt for LLM
-            prompt = f"""Given a knowledge gap question from a knowledge management system, generate a brief 2-3 sentence context that explains:
-1. What topic/area this question relates to
-2. Why this information might be important
+            # Extract evidence from context fields
+            evidence_quote = raw_context.get('evidence_quote', '') if isinstance(raw_context, dict) else ''
+            suggested_respondent = raw_context.get('suggested_respondent', '') if isinstance(raw_context, dict) else ''
+            business_risk = raw_context.get('business_risk', '') if isinstance(raw_context, dict) else ''
 
-Question: {question_text}
+            # Fetch actual source document excerpts for evidence grounding
+            source_doc_ids = raw_context.get('analyzed_documents', []) if isinstance(raw_context, dict) else []
+            source_doc_ids = source_doc_ids or raw_context.get('source_docs', []) if isinstance(raw_context, dict) else []
+            source_excerpts = ""
+            if source_doc_ids:
+                source_docs = db.query(Document).filter(
+                    Document.id.in_(source_doc_ids[:5])
+                ).all()
+                for sdoc in source_docs:
+                    content_snippet = (sdoc.content or '')[:500]
+                    if content_snippet:
+                        source_excerpts += f"\n- [{sdoc.title or 'Untitled'}]: \"{content_snippet}...\""
+
+            # Build evidence-based prompt
+            prompt = f"""Given a knowledge gap and its source evidence, write 2-3 sentences of EVIDENCE-BASED context.
+Do NOT invent information. Only use facts from the evidence provided below.
+
+Knowledge Gap: {question_text}
 Category: {category or 'General'}
-{f'Evidence/Background: {evidence[:500]}' if evidence else ''}
-{f'Raw context: {str(raw_context)[:500]}' if raw_context else ''}
+Gap Description: {description[:300]}
+{f'Evidence Quote: "{evidence_quote}"' if evidence_quote else ''}
+{f'Suggested Respondent: {suggested_respondent}' if suggested_respondent else ''}
+{f'Business Risk: {business_risk}' if business_risk else ''}
+{f'Source Document Excerpts:{source_excerpts}' if source_excerpts else ''}
 
-Write 2-3 sentences of helpful context. Be specific and informative. Do not repeat the question."""
+RULES:
+- Only state facts found in the evidence above
+- If the evidence mentions specific people, systems, or dates, include them
+- Explain WHY this gap matters based on the evidence, not speculation
+- If there isn't enough evidence, say what IS known and what needs clarification"""
 
             # Call LLM
             client = get_openai_client()
             response = client.chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that provides brief, informative context for knowledge gap questions. Be concise and specific."},
+                    {"role": "system", "content": "You are a knowledge management analyst. Provide factual, evidence-based context summaries. Never invent information — only reference what's in the provided evidence."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                max_tokens=150
+                temperature=0.2,
+                max_tokens=200
             )
 
             context_summary = response.choices[0].message.content.strip()
@@ -1350,3 +1380,79 @@ def get_gap_stats():
             "success": False,
             "error": str(e)
         }), 500
+
+
+# =============================================================================
+# PROTOCOL TRAINING ENDPOINTS
+# =============================================================================
+
+@knowledge_bp.route('/protocol-training/ingest', methods=['POST'])
+@require_auth
+def trigger_protocol_ingestion():
+    """Trigger protocol corpus ingestion (admin only)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        sources = data.get('sources', None)
+        max_protocols = data.get('max_protocols', 5000)
+
+        from tasks.protocol_training_tasks import ingest_protocol_corpus
+        task = ingest_protocol_corpus.delay(sources=sources, max_protocols=max_protocols)
+
+        return jsonify({
+            "success": True,
+            "task_id": task.id,
+            "message": f"Protocol corpus ingestion started (sources: {sources or 'all'})"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/train', methods=['POST'])
+@require_auth
+def trigger_protocol_training():
+    """Trigger ML model training (admin only)."""
+    try:
+        from tasks.protocol_training_tasks import train_protocol_models
+        task = train_protocol_models.delay()
+
+        return jsonify({
+            "success": True,
+            "task_id": task.id,
+            "message": "Protocol model training started"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/stats', methods=['GET'])
+@require_auth
+def get_protocol_training_stats():
+    """Get protocol corpus and training statistics."""
+    import os
+    try:
+        corpus_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'protocol_corpus')
+        models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'protocol_models')
+
+        stats = {
+            "corpus_available": False,
+            "models_available": False,
+            "corpus_stats": {},
+            "models": {},
+        }
+
+        stats_file = os.path.join(corpus_dir, 'corpus_stats.json')
+        if os.path.exists(stats_file):
+            with open(stats_file, 'r') as f:
+                stats['corpus_stats'] = json.load(f)
+            stats['corpus_available'] = True
+
+        for model_name in ['content_classifier.joblib', 'missing_step_detector.joblib', 'completeness_scorer.joblib']:
+            model_path = os.path.join(models_dir, model_name)
+            stats['models'][model_name] = os.path.exists(model_path)
+
+        stats['models_available'] = any(stats['models'].values())
+
+        return jsonify({"success": True, "data": stats})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500

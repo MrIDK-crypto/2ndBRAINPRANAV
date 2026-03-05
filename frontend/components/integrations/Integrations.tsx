@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import Image from 'next/image'
 import axios from 'axios'
 // SyncProgressModal removed - using GlobalSyncIndicator only
@@ -16,13 +16,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : 'http://localhost:5006/api'
 
-// Wellspring-Inspired Warm Design System
+// Wellspring Warm Design System
 const warmTheme = {
   primary: '#C9A598',
   primaryHover: '#B8948A',
   primaryLight: '#FBF4F1',
   pageBg: '#FAF9F7',
-  cardBg: '#F7F5F3',
+  cardBg: '#FAF9F7',
   textPrimary: '#2D2D2D',
   textSecondary: '#6B6B6B',
   textMuted: '#9A9A9A',
@@ -127,11 +127,11 @@ const ChannelSelectionModal = ({
         onClick={e => e.stopPropagation()}
       >
         <h2 style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
           fontSize: '24px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#1A1A1A'
+          color: '#0F172A'
         }}>
           Select Slack Channels
         </h2>
@@ -629,8 +629,8 @@ const PollingProgressModal = ({
               transition: 'all 0.2s'
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.backgroundColor = '#F5F3F1'
-              e.currentTarget.style.color = '#7A7A7A'
+              e.currentTarget.style.backgroundColor = '#E2E8F0'
+              e.currentTarget.style.color = '#64748B'
             }}
             onMouseLeave={e => {
               e.currentTarget.style.backgroundColor = 'transparent'
@@ -657,7 +657,7 @@ const PollingProgressModal = ({
               alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 16px',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+              boxShadow: '0 4px 12px rgba(201, 165, 152, 0.3)'
             }}
           >
             {progress.status === 'completed' ? (
@@ -737,7 +737,7 @@ const PollingProgressModal = ({
               <div style={{
                 width: '100%',
                 height: '6px',
-                backgroundColor: '#ECEAE8',
+                backgroundColor: '#E2E8F0',
                 borderRadius: '3px',
                 overflow: 'hidden'
               }}>
@@ -758,14 +758,14 @@ const PollingProgressModal = ({
               display: 'flex',
               justifyContent: 'space-around',
               padding: '16px 0',
-              borderTop: '1px solid #F5F3F1',
-              borderBottom: '1px solid #F5F3F1',
+              borderTop: '1px solid #E2E8F0',
+              borderBottom: '1px solid #E2E8F0',
               marginBottom: '16px'
             }}>
               <AnimatedCounter value={progress.documentsFound} label="Found" />
-              <div style={{ width: '1px', backgroundColor: '#F5F3F1' }} />
+              <div style={{ width: '1px', backgroundColor: '#E2E8F0' }} />
               <AnimatedCounter value={progress.documentsParsed} label="Processed" />
-              <div style={{ width: '1px', backgroundColor: '#F5F3F1' }} />
+              <div style={{ width: '1px', backgroundColor: '#E2E8F0' }} />
               <AnimatedCounter value={progress.documentsEmbedded} label="Indexed" />
             </div>
 
@@ -777,7 +777,7 @@ const PollingProgressModal = ({
               padding: '12px 14px',
               backgroundColor: '#F0FDF4',
               borderRadius: '10px',
-              border: '1px solid #BFDBFE',
+              border: '1px solid #E8D5CE',
               marginBottom: '12px'
             }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -787,7 +787,7 @@ const PollingProgressModal = ({
               <span style={{
                 fontFamily: '"Work Sans", sans-serif',
                 fontSize: '12px',
-                color: '#1E40AF',
+                color: '#8B6F63',
                 lineHeight: '1.4'
               }}>
                 You can close this window. Sync continues in the background.
@@ -800,9 +800,9 @@ const PollingProgressModal = ({
               alignItems: 'center',
               gap: '10px',
               padding: '12px 14px',
-              backgroundColor: emailWhenComplete ? '#FDF8F6' : '#FAF9F7',
+              backgroundColor: emailWhenComplete ? '#FBF4F1' : '#F8FAFC',
               borderRadius: '10px',
-              border: emailWhenComplete ? '1px solid #C9A598' : '1px solid #ECEAE8',
+              border: emailWhenComplete ? '1px solid #C9A598' : '1px solid #E2E8F0',
               marginBottom: '12px',
               cursor: 'pointer',
               transition: 'all 0.2s'
@@ -819,11 +819,11 @@ const PollingProgressModal = ({
                 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Mail size={16} color={emailWhenComplete ? '#C9A598' : '#7A7A7A'} />
+                <Mail size={16} color={emailWhenComplete ? '#C9A598' : '#64748B'} />
                 <span style={{
                   fontFamily: '"Work Sans", sans-serif',
                   fontSize: '13px',
-                  color: emailWhenComplete ? '#1D4ED8' : '#374151',
+                  color: emailWhenComplete ? '#A07D6F' : '#374151',
                   fontWeight: 500
                 }}>
                   Email me when complete
@@ -851,7 +851,7 @@ const PollingProgressModal = ({
                 transition: 'all 0.2s'
               }}
               onMouseEnter={e => {
-                e.currentTarget.style.backgroundColor = '#F5F3F1'
+                e.currentTarget.style.backgroundColor = '#E2E8F0'
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.backgroundColor = '#FEFEFE'
@@ -883,7 +883,7 @@ const PollingProgressModal = ({
                 <div style={{
                   fontFamily: '"Work Sans", sans-serif',
                   fontSize: '12px',
-                  color: '#7A7A7A'
+                  color: '#64748B'
                 }}>
                   documents synced
                 </div>
@@ -938,7 +938,7 @@ const PollingProgressModal = ({
                 padding: '12px',
                 borderRadius: '10px',
                 border: 'none',
-                backgroundColor: '#7A7A7A',
+                backgroundColor: '#64748B',
                 color: '#fff',
                 fontFamily: '"Work Sans", sans-serif',
                 fontSize: '14px',
@@ -947,7 +947,7 @@ const PollingProgressModal = ({
                 transition: 'all 0.2s'
               }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = '#4B5563'}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#7A7A7A'}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#64748B'}
             >
               Close
             </button>
@@ -1010,11 +1010,11 @@ const SlackTokenModal = ({
         onClick={e => e.stopPropagation()}
       >
         <h2 style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
           fontSize: '20px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#1A1A1A'
+          color: '#0F172A'
         }}>
           Connect Slack
         </h2>
@@ -1166,11 +1166,11 @@ const PubMedConfigModal = ({
         onClick={e => e.stopPropagation()}
       >
         <h2 style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
           fontSize: '20px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#1A1A1A'
+          color: '#0F172A'
         }}>
           Configure PubMed Search
         </h2>
@@ -1324,14 +1324,14 @@ const PubMedConfigModal = ({
         {/* Info Box */}
         <div style={{
           padding: '12px',
-          backgroundColor: '#DBEAFE',
+          backgroundColor: '#F5E6E0',
           borderRadius: '8px',
           marginBottom: '20px'
         }}>
           <p style={{
             fontFamily: 'Inter, sans-serif',
             fontSize: '13px',
-            color: '#1E40AF',
+            color: '#8B6F63',
             margin: 0
           }}>
             <strong>Note:</strong> Only papers with abstracts will be synced. Full-text articles require institutional access.
@@ -1460,11 +1460,11 @@ const QuartzyConfigModal = ({
         onClick={e => e.stopPropagation()}
       >
         <h2 style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
           fontSize: '20px',
           fontWeight: 600,
           marginBottom: '8px',
-          color: '#1A1A1A'
+          color: '#0F172A'
         }}>
           Connect Quartzy
         </h2>
@@ -1558,14 +1558,14 @@ const QuartzyConfigModal = ({
 
             <div style={{
               padding: '12px',
-              backgroundColor: '#DBEAFE',
+              backgroundColor: '#F5E6E0',
               borderRadius: '8px',
               marginBottom: '20px'
             }}>
               <p style={{
                 fontFamily: 'Inter, sans-serif',
                 fontSize: '13px',
-                color: '#1E40AF',
+                color: '#8B6F63',
                 margin: 0
               }}>
                 <strong>How it works:</strong> We&apos;ll fetch your inventory items and order requests from the Quartzy API and index them for AI-powered search.
@@ -1587,7 +1587,7 @@ const QuartzyConfigModal = ({
                 padding: '40px 20px',
                 textAlign: 'center',
                 marginBottom: '20px',
-                backgroundColor: dragOver ? '#FDF2F0' : '#FAFAFA',
+                backgroundColor: dragOver ? '#FBF4F1' : '#FAFAFA',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
@@ -1810,10 +1810,10 @@ const WebScraperConfigModal = ({
       onClick={onClose}
     >
       <div
-        style={{ backgroundColor: '#F7F5F3', borderRadius: '16px', padding: '28px', maxWidth: '420px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
+        style={{ backgroundColor: '#F8FAFC', borderRadius: '16px', padding: '28px', maxWidth: '420px', width: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontSize: '20px', fontWeight: 600, marginBottom: '20px', color: '#1A1A1A' }}>
+        <h2 style={{ fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif', fontSize: '20px', fontWeight: 600, marginBottom: '20px', color: '#0F172A' }}>
           Crawl Website
         </h2>
 
@@ -2281,8 +2281,8 @@ const IntegrationDetailsModal = ({
                 style={{
                   padding: '4px 10px',
                   borderRadius: '100px',
-                  backgroundColor: integration.connected ? '#D1FAE5' : '#F5F3F1',
-                  color: integration.connected ? '#059669' : '#7A7A7A',
+                  backgroundColor: integration.connected ? '#D1FAE5' : '#E2E8F0',
+                  color: integration.connected ? '#059669' : '#64748B',
                   fontFamily: 'Inter, sans-serif',
                   fontSize: '12px',
                   fontWeight: 500
@@ -2294,8 +2294,8 @@ const IntegrationDetailsModal = ({
                 style={{
                   padding: '4px 10px',
                   borderRadius: '100px',
-                  backgroundColor: '#F5F3F1',
-                  color: '#7A7A7A',
+                  backgroundColor: '#E2E8F0',
+                  color: '#64748B',
                   fontFamily: 'Inter, sans-serif',
                   fontSize: '12px',
                   fontWeight: 500
@@ -2312,14 +2312,14 @@ const IntegrationDetailsModal = ({
               height: '36px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: '#F5F3F1',
+              backgroundColor: '#E2E8F0',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7A7A7A" strokeWidth="2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -2365,7 +2365,7 @@ const IntegrationDetailsModal = ({
                   key={idx}
                   style={{
                     padding: '12px 16px',
-                    borderBottom: idx < details.features.length - 1 ? '1px solid #F5F3F1' : 'none',
+                    borderBottom: idx < details.features.length - 1 ? '1px solid #E2E8F0' : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px'
@@ -2606,7 +2606,7 @@ const integrations: Integration[] = [
     id: 'email-forwarding',
     name: 'Email Forwarding',
     logo: '/email-forward.png',
-    description: 'Forward emails to beatatucla@gmail.com to import them into your knowledge base.',
+    description: 'Forward emails to pranav@use2ndbrain.com to import them into your knowledge base.',
     category: 'Conversations',
     connected: false,
     isOAuth: false
@@ -2615,7 +2615,7 @@ const integrations: Integration[] = [
     id: 'slack',
     name: 'Slack',
     logo: '/slack.png',
-    description: 'Sync messages from all your Slack channels into your knowledge base.',
+    description: 'Sync messages and threads from all your Slack channels and DMs into your knowledge base.',
     category: 'Conversations',
     connected: false,
     isOAuth: true
@@ -2624,7 +2624,7 @@ const integrations: Integration[] = [
     id: 'box',
     name: 'Box',
     logo: '/box.png',
-    description: 'Connect Box to import documents, files, and folders into your knowledge base.',
+    description: 'Connect Box to import documents, files, and shared folders directly into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: true
@@ -2651,7 +2651,7 @@ const integrations: Integration[] = [
     id: 'excel',
     name: 'Excel',
     logo: '/excel.png',
-    description: 'Import Excel spreadsheets and workbooks into your knowledge base.',
+    description: 'Import Excel spreadsheets, workbooks, and data tables directly into your knowledge base for analysis.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: false
@@ -2660,7 +2660,7 @@ const integrations: Integration[] = [
     id: 'powerpoint',
     name: 'PowerPoint',
     logo: '/powerpoint.png',
-    description: 'Import PowerPoint presentations into your knowledge base.',
+    description: 'Import PowerPoint presentations and slide decks into your knowledge base for easy reference.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: false
@@ -2669,7 +2669,7 @@ const integrations: Integration[] = [
     id: 'notion',
     name: 'Notion',
     logo: '/notion.png',
-    description: 'Connect Notion to import pages and databases into your knowledge base.',
+    description: 'Connect Notion to import pages, databases, and wiki content into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: true
@@ -2678,7 +2678,7 @@ const integrations: Integration[] = [
     id: 'gdrive',
     name: 'Google Drive',
     logo: '/gdrive.png',
-    description: 'Connect Google Drive to import all your files and folders into your knowledge base.',
+    description: 'Connect Google Drive to import all your files, folders, and shared drives into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: true
@@ -2687,7 +2687,7 @@ const integrations: Integration[] = [
     id: 'gdocs',
     name: 'Google Docs',
     logo: '/gdocs.png',
-    description: 'Connect Google Docs to import documents into your knowledge base.',
+    description: 'Connect Google Docs to import documents and collaborative files into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: true
@@ -2696,7 +2696,7 @@ const integrations: Integration[] = [
     id: 'gsheets',
     name: 'Google Sheets',
     logo: '/gsheets.png',
-    description: 'Connect Google Sheets to import spreadsheets into your knowledge base.',
+    description: 'Connect Google Sheets to import spreadsheets and data tables into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: true
@@ -2705,7 +2705,7 @@ const integrations: Integration[] = [
     id: 'gslides',
     name: 'Google Slides',
     logo: '/gslides.png',
-    description: 'Connect Google Slides to import presentations into your knowledge base.',
+    description: 'Connect Google Slides to import presentations and slide decks into your knowledge base.',
     category: 'Documents & Recordings',
     connected: false,
     isOAuth: true
@@ -2714,7 +2714,7 @@ const integrations: Integration[] = [
     id: 'pubmed',
     name: 'PubMed',
     logo: '/pubmed.png',
-    description: 'Access millions of biomedical literature citations and abstracts from MEDLINE.',
+    description: 'Access millions of biomedical literature citations and research abstracts from the MEDLINE database.',
     category: 'Research',
     connected: false
   },
@@ -2739,7 +2739,7 @@ const integrations: Integration[] = [
     id: 'website_builder',
     name: 'Website Builder',
     logo: '/website-builder.svg',
-    description: 'Generate a professional research lab website from your knowledge base documents.',
+    description: 'Generate a professional research lab website automatically from your knowledge base documents.',
     category: 'Research',
     connected: false
   }
@@ -2772,7 +2772,8 @@ const IntegrationCard = ({
         boxSizing: 'border-box',
         backgroundColor: integration.connected ? warmTheme.primaryLight : warmTheme.cardBg,
         borderRadius: '16px',
-        border: `1px solid ${warmTheme.border}`,
+        border: `1px solid ${warmTheme.borderDark}`,
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
         transition: 'all 0.15s ease'
       }}
     >
@@ -2791,7 +2792,7 @@ const IntegrationCard = ({
       <h3
         style={{
           color: warmTheme.textPrimary,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
           fontSize: '18px',
           fontWeight: 500,
           marginTop: '8px'
@@ -2800,19 +2801,17 @@ const IntegrationCard = ({
         {integration.name}
       </h3>
 
-      {/* Description - 2 lines */}
+      {/* Description — fixed 2-line height, no truncation */}
       <p
         style={{
-          width: '264px',
+          width: '100%',
           color: warmTheme.textSecondary,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
           fontSize: '14px',
           fontWeight: 400,
           lineHeight: '20px',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden'
+          height: '40px',
+          overflow: 'hidden',
         }}
       >
         {integration.description}
@@ -4156,9 +4155,9 @@ export default function Integrations() {
   const filteredIntegrations = getFilteredIntegrations()
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: warmTheme.pageBg }}>
-      {/* Sidebar */}
-      <Sidebar userName={user?.full_name?.split(' ')[0] || 'User'} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: warmTheme.pageBg }}>
+      {/* Top Navigation */}
+      <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
 
       {/* Main Content */}
       <div style={{ flex: 1, padding: '32px 48px' }}>
@@ -4168,7 +4167,7 @@ export default function Integrations() {
             <h1
               style={{
                 color: warmTheme.textPrimary,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
                 fontSize: '32px',
                 fontWeight: 700,
                 lineHeight: '40px',
@@ -4180,7 +4179,7 @@ export default function Integrations() {
             <p
               style={{
                 color: warmTheme.textSecondary,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
                 fontSize: '16px',
                 fontWeight: 400,
                 lineHeight: '24px'
@@ -4216,7 +4215,7 @@ export default function Integrations() {
                 backgroundColor: 'transparent',
                 fontSize: '14px',
                 color: warmTheme.textPrimary,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
               }}
             />
             {searchQuery && (
@@ -4253,7 +4252,7 @@ export default function Integrations() {
                   border: activeTab === category ? `2px solid ${warmTheme.primary}` : `1px solid ${warmTheme.border}`,
                   backgroundColor: activeTab === category ? warmTheme.primaryLight : warmTheme.cardBg,
                   color: activeTab === category ? warmTheme.primary : warmTheme.textSecondary,
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
                   fontSize: '14px',
                   fontWeight: activeTab === category ? 600 : 500,
                   cursor: 'pointer',
@@ -4264,24 +4263,25 @@ export default function Integrations() {
                 }}
               >
                 {category}
-                {category === 'All Integrations' && (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '12px',
-                      backgroundColor: activeTab === category ? warmTheme.primary : warmTheme.border,
-                      color: activeTab === category ? '#FFFFFF' : warmTheme.textSecondary,
-                      fontSize: '12px',
-                      fontWeight: 600
-                    }}
-                  >
-                    {integrationsState.length}
-                  </span>
-                )}
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: '24px',
+                    height: '24px',
+                    borderRadius: '12px',
+                    padding: '0 6px',
+                    backgroundColor: activeTab === category ? warmTheme.primary : warmTheme.border,
+                    color: activeTab === category ? '#FFFFFF' : warmTheme.textSecondary,
+                    fontSize: '12px',
+                    fontWeight: 600
+                  }}
+                >
+                  {category === 'All Integrations'
+                    ? integrationsState.length
+                    : integrationsState.filter(i => i.category === category).length}
+                </span>
               </button>
             ))}
 
@@ -4366,7 +4366,7 @@ export default function Integrations() {
               rel="noopener noreferrer"
               style={{
                 color: warmTheme.textMuted,
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
                 fontSize: '14px',
                 textDecoration: 'none'
               }}
@@ -4439,7 +4439,7 @@ export default function Integrations() {
         >
           <div
             style={{
-              backgroundColor: '#F7F5F3',
+              backgroundColor: '#F8FAFC',
               borderRadius: '16px',
               padding: '32px',
               maxWidth: '600px',
@@ -4451,7 +4451,7 @@ export default function Integrations() {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#1A1A1A' }}>Email Forwarding</h2>
+              <h2 style={{ fontSize: '24px', fontWeight: '600', color: '#0F172A' }}>Email Forwarding</h2>
               <button
                 onClick={() => setShowEmailForwardingModal(false)}
                 style={{
@@ -4489,19 +4489,19 @@ export default function Integrations() {
           zIndex: 9999
         }}>
           <div style={{
-            background: '#F7F5F3', borderRadius: 16,
+            background: '#F8FAFC', borderRadius: 16,
             width: 500, maxWidth: '90vw', maxHeight: '80vh',
             boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
             overflow: 'hidden', display: 'flex', flexDirection: 'column'
           }}>
             {/* Header */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #ECEAE8' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <img src="/github.png" alt="GitHub" style={{ width: 32, height: 32 }} />
                   <div>
                     <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Select Repositories</h2>
-                    <p style={{ margin: '2px 0 0', fontSize: 13, color: '#7A7A7A' }}>
+                    <p style={{ margin: '2px 0 0', fontSize: 13, color: '#64748B' }}>
                       Choose which repositories to sync
                     </p>
                   </div>
@@ -4510,8 +4510,8 @@ export default function Integrations() {
                   onClick={() => setShowGitHubRepoModal(false)}
                   style={{
                     width: 32, height: 32, borderRadius: 8,
-                    border: '1px solid #ECEAE8', background: '#fff',
-                    cursor: 'pointer', fontSize: 16, color: '#7A7A7A'
+                    border: '1px solid #E2E8F0', background: '#fff',
+                    cursor: 'pointer', fontSize: 16, color: '#64748B'
                   }}
                 >
                   ×
@@ -4522,11 +4522,11 @@ export default function Integrations() {
             {/* Repository List */}
             <div style={{ padding: '16px 24px', overflowY: 'auto', flex: 1 }}>
               {loadingRepos ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#7A7A7A' }}>
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748B' }}>
                   Loading repositories...
                 </div>
               ) : githubRepos.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 40, color: '#7A7A7A' }}>
+                <div style={{ textAlign: 'center', padding: 40, color: '#64748B' }}>
                   No repositories found
                 </div>
               ) : (
@@ -4534,8 +4534,8 @@ export default function Integrations() {
                   {/* Select All */}
                   <label style={{
                     display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-                    background: '#FAF9F7', borderRadius: 8, cursor: 'pointer',
-                    border: '1px solid #ECEAE8'
+                    background: '#F8FAFC', borderRadius: 8, cursor: 'pointer',
+                    border: '1px solid #E2E8F0'
                   }}>
                     <input
                       type="checkbox"
@@ -4560,9 +4560,9 @@ export default function Integrations() {
                       key={repo.full_name}
                       style={{
                         display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px',
-                        background: selectedRepos.includes(repo.full_name) ? '#FDF8F6' : '#fff',
+                        background: selectedRepos.includes(repo.full_name) ? '#FBF4F1' : '#fff',
                         borderRadius: 8, cursor: 'pointer',
-                        border: selectedRepos.includes(repo.full_name) ? '1px solid #BFDBFE' : '1px solid #ECEAE8',
+                        border: selectedRepos.includes(repo.full_name) ? '1px solid #E8D5CE' : '1px solid #E2E8F0',
                         transition: 'all 0.15s'
                       }}
                     >
@@ -4580,7 +4580,7 @@ export default function Integrations() {
                       />
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontWeight: 600, fontSize: 14, color: '#1A1A1A' }}>
+                          <span style={{ fontWeight: 600, fontSize: 14, color: '#0F172A' }}>
                             {repo.full_name}
                           </span>
                           {repo.private && (
@@ -4593,7 +4593,7 @@ export default function Integrations() {
                           )}
                         </div>
                         {repo.description && (
-                          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#7A7A7A' }}>
+                          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748B' }}>
                             {repo.description}
                           </p>
                         )}
@@ -4609,10 +4609,10 @@ export default function Integrations() {
 
             {/* Footer */}
             <div style={{
-              padding: '16px 24px', borderTop: '1px solid #ECEAE8',
+              padding: '16px 24px', borderTop: '1px solid #E2E8F0',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
-              <span style={{ fontSize: 13, color: '#7A7A7A' }}>
+              <span style={{ fontSize: 13, color: '#64748B' }}>
                 {selectedRepos.length} selected
               </span>
               <div style={{ display: 'flex', gap: 12 }}>
@@ -4624,7 +4624,7 @@ export default function Integrations() {
                   }}
                   style={{
                     padding: '10px 20px', borderRadius: 8,
-                    border: '1px solid #ECEAE8', background: '#fff',
+                    border: '1px solid #E2E8F0', background: '#fff',
                     cursor: 'pointer', fontSize: 14, fontWeight: 500
                   }}
                 >
@@ -4670,7 +4670,7 @@ export default function Integrations() {
           zIndex: 10000
         }}>
           <div style={{
-            background: '#F7F5F3', borderRadius: 16,
+            background: '#F8FAFC', borderRadius: 16,
             width: 440, maxWidth: '90vw',
             boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
             overflow: 'hidden'
@@ -4709,7 +4709,7 @@ export default function Integrations() {
               </p>
 
               <div style={{
-                background: '#FAF9F7',
+                background: '#F8FAFC',
                 borderRadius: 8,
                 padding: 16,
                 marginBottom: 16
@@ -4729,7 +4729,7 @@ export default function Integrations() {
                 )}
               </div>
 
-              <p style={{ margin: 0, fontSize: 13, color: '#7A7A7A' }}>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
                 You can reconnect this integration later, but you will need to sync all data again.
               </p>
             </div>
@@ -4737,7 +4737,7 @@ export default function Integrations() {
             {/* Footer */}
             <div style={{
               padding: '16px 24px',
-              borderTop: '1px solid #ECEAE8',
+              borderTop: '1px solid #E2E8F0',
               display: 'flex', justifyContent: 'flex-end', gap: 12
             }}>
               <button

@@ -21,6 +21,11 @@ except ImportError:
 class AzureDocumentParser:
     """Parse documents using Azure Mistral Document AI"""
 
+    # Class-level circuit breaker — shared across all instances
+    _consecutive_failures = 0
+    _circuit_open = False
+    _FAILURE_THRESHOLD = 3
+
     def __init__(self, config=None):
         """
         Initialize Azure Document Parser
@@ -81,6 +86,10 @@ class AzureDocumentParser:
         ext = Path(file_path).suffix.lower()
         if ext not in self.supported_formats:
             print(f"  ⚠ Unsupported file format: {ext}")
+            return None
+
+        # Circuit breaker: skip Azure if it's been failing consistently
+        if AzureDocumentParser._circuit_open:
             return None
 
         try:
@@ -154,6 +163,8 @@ Return clean, well-structured text that preserves the document's organization.""
                 print(f"  ⚠ No meaningful content extracted from {file_name}")
                 return None
 
+            # Success — reset circuit breaker
+            AzureDocumentParser._consecutive_failures = 0
             return {
                 'content': parsed_content,
                 'raw_content': parsed_content,
@@ -168,9 +179,12 @@ Return clean, well-structured text that preserves the document's organization.""
             }
 
         except Exception as e:
-            print(f"  ✗ Error parsing {Path(file_path).name} with Azure Document AI: {e}")
-            import traceback
-            traceback.print_exc()
+            AzureDocumentParser._consecutive_failures += 1
+            if AzureDocumentParser._consecutive_failures >= AzureDocumentParser._FAILURE_THRESHOLD:
+                AzureDocumentParser._circuit_open = True
+                print(f"  ✗ Azure Document AI failed {AzureDocumentParser._consecutive_failures}x consecutively — disabling for this session. Error: {e}")
+            else:
+                print(f"  ✗ Error parsing {Path(file_path).name} with Azure Document AI: {e}")
             return None
 
     def parse_batch(self, file_paths: list) -> Dict[str, Optional[Dict]]:

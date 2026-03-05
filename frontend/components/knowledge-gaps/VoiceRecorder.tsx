@@ -158,8 +158,8 @@ export default function VoiceRecorder({ onTranscriptionComplete, authHeaders }: 
             disabled={isTranscribing}
             className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors"
             style={{
-              backgroundColor: isRecording ? '#F1F5F9' : '#F3F4F6',
-              color: isRecording ? '#64748B' : '#081028',
+              backgroundColor: isRecording ? '#F7F5F3' : '#F3F4F6',
+              color: isRecording ? '#9A9A9A' : '#081028',
               fontFamily: '"Work Sans", sans-serif',
               cursor: isTranscribing ? 'wait' : 'pointer'
             }}
@@ -195,7 +195,7 @@ export default function VoiceRecorder({ onTranscriptionComplete, authHeaders }: 
                     className="w-1 rounded-full transition-all"
                     style={{
                       height: audioLevel > (i * 10) ? '16px' : '4px',
-                      backgroundColor: audioLevel > (i * 10) ? '#3B82F6' : '#E5E7EB'
+                      backgroundColor: audioLevel > (i * 10) ? '#C9A598' : '#E5E7EB'
                     }}
                   />
                 ))}

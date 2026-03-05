@@ -482,7 +482,7 @@ export default function Inventory() {
     tabs: { display: 'flex', gap: '8px', marginBottom: '24px' },
     tab: (active: boolean) => ({
       padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-      backgroundColor: active ? '#C9A598' : '#F7F5F3', color: active ? '#FFFFFF' : '#5C5C5C',
+      backgroundColor: active ? '#C9A598' : '#F7F5F3', color: active ? '#FFFFFF' : '#6B6B6B',
       fontWeight: 500, fontSize: '14px', transition: 'all 0.15s'
     }),
     toolbar: {
@@ -490,23 +490,23 @@ export default function Inventory() {
       marginBottom: '20px', gap: '16px', flexWrap: 'wrap' as const
     },
     searchInput: {
-      padding: '10px 14px', borderRadius: '8px', border: '1px solid #E8E5E2',
+      padding: '10px 14px', borderRadius: '8px', border: '1px solid #F0EEEC',
       fontSize: '14px', width: '280px', outline: 'none'
     },
     select: {
-      padding: '10px 14px', borderRadius: '8px', border: '1px solid #E8E5E2',
+      padding: '10px 14px', borderRadius: '8px', border: '1px solid #F0EEEC',
       fontSize: '14px', backgroundColor: '#FFFFFF', outline: 'none', cursor: 'pointer'
     },
     button: (primary = false) => ({
       padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-      backgroundColor: primary ? '#C9A598' : '#F7F5F3', color: primary ? '#FFFFFF' : '#5C5C5C',
+      backgroundColor: primary ? '#C9A598' : '#F7F5F3', color: primary ? '#FFFFFF' : '#6B6B6B',
       fontWeight: 500, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px'
     }),
     table: { width: '100%', borderCollapse: 'collapse' as const },
     th: {
       textAlign: 'left' as const, padding: '12px 16px', backgroundColor: '#F7F5F3',
       fontSize: '12px', fontWeight: 600, color: '#6B6B6B', textTransform: 'uppercase' as const,
-      borderBottom: '1px solid #E8E5E2'
+      borderBottom: '1px solid #F0EEEC'
     },
     td: {
       padding: '16px', borderBottom: '1px solid #F0EEEC', fontSize: '14px', color: '#2D2D2D'
@@ -515,9 +515,9 @@ export default function Inventory() {
       // Warm taupe color scheme badges
       const colors = {
         warning: { bg: '#F5E6D3', text: '#8B6914' },      // Warm amber
-        danger: { bg: '#F2DCD6', text: '#9B4F3A' },       // Warm terracotta
-        success: { bg: '#E8E3DF', text: '#6B5D54' },      // Muted taupe (OK status)
-        default: { bg: '#F7F5F3', text: '#6B5D54' }       // Light cream
+        danger: { bg: '#FEE2E2', text: '#D97B7B' },       // Warm terracotta
+        success: { bg: '#F0FDF4', text: '#6B6B6B' },      // Muted taupe (OK status)
+        default: { bg: '#F7F5F3', text: '#6B6B6B' }       // Light cream
       }
       return {
         padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 500,
@@ -537,7 +537,7 @@ export default function Inventory() {
     formGroup: { marginBottom: '20px' },
     formLabel: { display: 'block', fontSize: '13px', fontWeight: 500, color: '#4B5563', marginBottom: '6px' },
     formInput: {
-      width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #E8E5E2',
+      width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #F0EEEC',
       fontSize: '14px', outline: 'none', boxSizing: 'border-box' as const
     },
     formRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
@@ -583,7 +583,7 @@ export default function Inventory() {
             <div style={styles.statLabel}>Total Value</div>
           </div>
           <div style={styles.statCard}>
-            <div style={{ ...styles.statValue, color: stats.low_stock_count > 0 ? '#9B4F3A' : '#2D2D2D' }}>
+            <div style={{ ...styles.statValue, color: stats.low_stock_count > 0 ? '#D97B7B' : '#2D2D2D' }}>
               {stats.low_stock_count}
             </div>
             <div style={styles.statLabel}>Low Stock Items</div>
@@ -598,12 +598,12 @@ export default function Inventory() {
       {/* Alerts */}
       {alerts && alerts.counts.total_alerts > 0 && (
         <div style={styles.alertBanner}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9B4F3A" strokeWidth="2">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97B7B" strokeWidth="2">
             <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" />
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
-          <span style={{ color: '#9B4F3A', fontWeight: 500 }}>
+          <span style={{ color: '#D97B7B', fontWeight: 500 }}>
             {alerts.counts.total_alerts} alert{alerts.counts.total_alerts > 1 ? 's' : ''}: {' '}
             {alerts.low_stock.length > 0 && `${alerts.low_stock.length} low stock`}
             {alerts.low_stock.length > 0 && alerts.expiring_warranty.length > 0 && ', '}
@@ -649,7 +649,7 @@ export default function Inventory() {
                 <option value="">All Locations</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', color: '#5C5C5C', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px', color: '#6B6B6B', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={showLowStockOnly}
@@ -685,7 +685,7 @@ export default function Inventory() {
               </button>
               {/* Clear All Button */}
               {items.length > 0 && (
-                <button style={{ ...styles.button(false), color: '#9B4F3A' }} onClick={handleClearAll}>
+                <button style={{ ...styles.button(false), color: '#D97B7B' }} onClick={handleClearAll}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="3,6 5,6 21,6" />
                     <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
@@ -738,7 +738,7 @@ export default function Inventory() {
                       </td>
                       <td style={styles.td}>
                         {item.category ? (
-                          <span style={{ ...styles.badge('default'), backgroundColor: '#F5EBE6', color: '#8B6F5C', border: '1px solid #E5D5CC' }}>
+                          <span style={{ ...styles.badge('default'), backgroundColor: '#FBF4F1', color: '#6B6B6B', border: '1px solid #F0EEEC' }}>
                             {item.category.name}
                           </span>
                         ) : '-'}
@@ -748,12 +748,12 @@ export default function Inventory() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <button
                             onClick={() => handleAdjustQuantity(item.id, -1)}
-                            style={{ padding: '4px 8px', border: '1px solid #E5D5CC', borderRadius: '4px', backgroundColor: '#FAF9F7', cursor: 'pointer', color: '#6B5D54' }}
+                            style={{ padding: '4px 8px', border: '1px solid #F0EEEC', borderRadius: '4px', backgroundColor: '#FAF9F7', cursor: 'pointer', color: '#6B6B6B' }}
                           >-</button>
                           <span style={{ fontWeight: 500 }}>{item.quantity} {item.unit}</span>
                           <button
                             onClick={() => handleAdjustQuantity(item.id, 1)}
-                            style={{ padding: '4px 8px', border: '1px solid #E5D5CC', borderRadius: '4px', backgroundColor: '#FAF9F7', cursor: 'pointer', color: '#6B5D54' }}
+                            style={{ padding: '4px 8px', border: '1px solid #F0EEEC', borderRadius: '4px', backgroundColor: '#FAF9F7', cursor: 'pointer', color: '#6B6B6B' }}
                           >+</button>
                         </div>
                       </td>
@@ -779,7 +779,7 @@ export default function Inventory() {
                           </button>
                           <button
                             onClick={() => handleDeleteItem(item.id)}
-                            style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
+                            style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#D97B7B' }}
                             title="Delete"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -814,7 +814,7 @@ export default function Inventory() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
             {categories.map((cat, index) => {
               // Taupe color variations for categories
-              const taupeColors = ['#C9A598', '#B8968A', '#A8877C', '#D4B5A9', '#C4A295'];
+              const taupeColors = ['#C9A598', '#B8948A', '#A68379', '#D4B5AA', '#E2CCC4'];
               const dotColor = taupeColors[index % taupeColors.length];
               return (
               <div key={cat.id} style={styles.card}>
@@ -829,7 +829,7 @@ export default function Inventory() {
                   </div>
                   <button
                     onClick={() => handleDeleteCategory(cat.id)}
-                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
+                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#D97B7B' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3,6 5,6 21,6" />
@@ -876,7 +876,7 @@ export default function Inventory() {
                   </div>
                   <button
                     onClick={() => handleDeleteLocation(loc.id)}
-                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
+                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#D97B7B' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3,6 5,6 21,6" />
@@ -921,7 +921,7 @@ export default function Inventory() {
                   </div>
                   <button
                     onClick={() => handleDeleteVendor(v.id)}
-                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#9B4F3A' }}
+                    style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#D97B7B' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3,6 5,6 21,6" />
@@ -945,7 +945,7 @@ export default function Inventory() {
         <>
           <div style={{ ...styles.toolbar, marginBottom: '20px' }}>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <button style={{ ...styles.button(false), backgroundColor: '#F5EBE6', color: '#8B6F5C' }} onClick={() => setShowBarcodeScanner(true)}>
+              <button style={{ ...styles.button(false), backgroundColor: '#FBF4F1', color: '#6B6B6B' }} onClick={() => setShowBarcodeScanner(true)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M3 5h2v14H3V5zm4 0h1v14H7V5zm3 0h2v14h-2V5zm4 0h3v14h-3V5zm5 0h2v14h-2V5z" />
                 </svg>
@@ -1002,7 +1002,7 @@ export default function Inventory() {
                         {t.quantity_change !== undefined && t.quantity_change !== null ? (
                           <span>
                             Qty: {t.quantity_before} → {t.quantity_after}{' '}
-                            <span style={{ color: t.quantity_change > 0 ? '#4A7C59' : '#9B4F3A' }}>
+                            <span style={{ color: t.quantity_change > 0 ? '#9CB896' : '#D97B7B' }}>
                               ({t.quantity_change > 0 ? '+' : ''}{t.quantity_change})
                             </span>
                           </span>

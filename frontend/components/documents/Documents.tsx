@@ -4,9 +4,9 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Image from 'next/image'
 import axios from 'axios'
 import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import DocumentViewer from './DocumentViewer'
-import Sidebar from '../shared/Sidebar'
+import TopNav from '../shared/TopNav'
 import {
   colors, shadows, Z_INDEX,
   CATEGORIES, MOVE_CATEGORIES, CATEGORY_TO_CLASSIFICATION,
@@ -95,7 +95,7 @@ const getStatusInfo = (classification?: string, sourceType?: string) => {
 }
 
 // Professional file type icons - warm consistent color
-const iconColor = '#7A7A7A'
+const iconColor = '#64748B'
 
 const getFileTypeInfo = (filename: string, type?: string) => {
   const ext = filename.split('.').pop()?.toLowerCase() || ''
@@ -105,7 +105,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (ext === 'pdf' || fileType.includes('pdf')) {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -120,7 +120,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['doc', 'docx'].includes(ext) || fileType.includes('word') || fileType.includes('document')) {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -135,7 +135,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['xls', 'xlsx', 'csv'].includes(ext) || fileType.includes('excel') || fileType.includes('spreadsheet')) {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -150,7 +150,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['ppt', 'pptx'].includes(ext) || fileType.includes('powerpoint') || fileType.includes('presentation')) {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -165,7 +165,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp'].includes(ext) || fileType.includes('image')) {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -180,7 +180,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (CODE_EXTENSIONS.has(ext) || fileType.includes('code')) {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -195,7 +195,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (fileType.includes('email') || fileType.includes('mail') || ext === 'eml') {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <rect x="2" y="4" width="20" height="16" rx="2"/>
@@ -209,7 +209,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   if (['txt', 'rtf'].includes(ext) || fileType.includes('text')) {
     return {
       color: iconColor,
-      bgColor: '#F0EEEC',
+      bgColor: '#EEEBE8',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -223,7 +223,7 @@ const getFileTypeInfo = (filename: string, type?: string) => {
   // Default
   return {
     color: iconColor,
-    bgColor: '#F0EEEC',
+    bgColor: '#EEEBE8',
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -290,6 +290,7 @@ export default function Documents() {
   const authHeaders = useAuthHeaders()
   const { token, user, logout } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const gapsMenuRef = useRef<HTMLDivElement>(null)
@@ -308,6 +309,16 @@ export default function Documents() {
       loadSmartFolders()
     }
   }, [token])
+
+  // Auto-open a specific document when navigated from Knowledge Gaps
+  const highlightHandledRef = useRef(false)
+  useEffect(() => {
+    const highlightId = searchParams.get('highlight')
+    if (highlightId && hasLoadedRef.current && authHeaders?.Authorization && !highlightHandledRef.current) {
+      highlightHandledRef.current = true
+      viewDocument(highlightId)
+    }
+  }, [searchParams, authHeaders, documents])
 
   // Load smart folders from backend
   const loadSmartFolders = async () => {
@@ -1060,7 +1071,7 @@ export default function Documents() {
     onClick: () => void
     iconType: 'all' | 'work' | 'code' | 'web' | 'personal'
   }) => {
-    const iconColor = active ? colors.primaryHover : '#7A7A7A'
+    const iconColor = active ? colors.primaryHover : '#64748B'
     const bgColor = active ? colors.primaryLight : '#F7F5F3'
 
     const icons = {
@@ -1176,7 +1187,7 @@ export default function Documents() {
         transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
         minWidth: '180px',
         flexShrink: 0,
-        boxShadow: active ? `0 4px 12px rgba(37, 99, 235, 0.2)` : shadows.sm,
+        boxShadow: active ? `0 4px 12px rgba(201, 165, 152, 0.2)` : shadows.sm,
         transform: active ? 'scale(1.02)' : 'scale(1)',
       }}
       onMouseEnter={(e) => {
@@ -1504,9 +1515,9 @@ export default function Documents() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: colors.pageBg }}>
-      {/* Sidebar */}
-      <Sidebar userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} />
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: colors.pageBg }}>
+      {/* Top Navigation */}
+      <TopNav userName={user?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'User'} />
 
       {/* Main Content */}
       <main style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
@@ -2009,19 +2020,19 @@ export default function Documents() {
                 transition: 'all 0.2s ease',
                 minWidth: '240px',
                 flexShrink: 0,
-                boxShadow: !activeIntegration ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                boxShadow: !activeIntegration ? '0 4px 12px rgba(201, 165, 152, 0.15)' : shadows.sm,
               }}
             >
               <div style={{
                 width: '44px',
                 height: '44px',
-                backgroundColor: !activeIntegration ? colors.primaryLight : '#F0EEEC',
+                backgroundColor: !activeIntegration ? colors.primaryLight : '#EEEBE8',
                 borderRadius: '10px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={!activeIntegration ? colors.primary : '#7A7A7A'} strokeWidth="1.5">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={!activeIntegration ? colors.primary : '#64748B'} strokeWidth="1.5">
                   <rect x="3" y="3" width="7" height="7" rx="1.5"/>
                   <rect x="14" y="3" width="7" height="7" rx="1.5"/>
                   <rect x="3" y="14" width="7" height="7" rx="1.5"/>
@@ -2065,7 +2076,7 @@ export default function Documents() {
                     transition: 'all 0.2s ease',
                     minWidth: '240px',
                     flexShrink: 0,
-                    boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                    boxShadow: isActive ? '0 4px 12px rgba(201, 165, 152, 0.15)' : shadows.sm,
                     position: 'relative',
                   }}
                 >
@@ -2104,7 +2115,7 @@ export default function Documents() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: '#E8E0DB',
+                      backgroundColor: '#EEEBE8',
                       border: 'none',
                       borderRadius: '6px',
                       cursor: 'pointer',
@@ -2112,7 +2123,7 @@ export default function Documents() {
                       opacity: 0,
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#D4C4BE' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#E8E0DB' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#EEEBE8' }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2.5">
                       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
@@ -2125,7 +2136,7 @@ export default function Documents() {
             {/* Integration-based Folder Cards */}
             {integrationsWithDocs.map((integration) => {
               const isActive = activeIntegration === integration.id
-              const iconColor = isActive ? colors.primary : '#7A7A7A'
+              const iconColor = isActive ? colors.primary : '#64748B'
 
               // Clean, modern icons for each integration type
               const getIcon = () => {
@@ -2268,14 +2279,14 @@ export default function Documents() {
                     transition: 'all 0.2s ease',
                     minWidth: '240px',
                     flexShrink: 0,
-                    boxShadow: isActive ? '0 4px 12px rgba(37, 99, 235, 0.15)' : shadows.sm,
+                    boxShadow: isActive ? '0 4px 12px rgba(201, 165, 152, 0.15)' : shadows.sm,
                     position: 'relative',
                   }}
                 >
                   <div style={{
                     width: '44px',
                     height: '44px',
-                    backgroundColor: isActive ? colors.primaryLight : '#F0EEEC',
+                    backgroundColor: isActive ? colors.primaryLight : '#EEEBE8',
                     borderRadius: '10px',
                     display: 'flex',
                     alignItems: 'center',
@@ -2305,7 +2316,7 @@ export default function Documents() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      backgroundColor: '#E8E0DB',
+                      backgroundColor: '#EEEBE8',
                       border: 'none',
                       borderRadius: '6px',
                       cursor: 'pointer',
@@ -2313,7 +2324,7 @@ export default function Documents() {
                       opacity: 0,
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#D4C4BE' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#E8E0DB' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#EEEBE8' }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="2.5">
                       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/>
@@ -3203,7 +3214,7 @@ export default function Documents() {
                     Color
                   </label>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    {['#B8A394', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#14B8A6'].map((color) => (
+                    {['#B8A394', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#C9A598', '#EF4444', '#14B8A6'].map((color) => (
                       <button
                         key={color}
                         onClick={() => setNewFolderColor(color)}

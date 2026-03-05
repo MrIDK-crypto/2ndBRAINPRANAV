@@ -159,10 +159,10 @@ export default function DocumentSelectionModal({
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
           <Image src={logo} alt={displayName} width={32} height={32} style={{ borderRadius: '6px' }} />
           <h2 style={{
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: 'Avenir, \'Avenir Next\', \'DM Sans\', system-ui, sans-serif',
             fontSize: '22px',
             fontWeight: 600,
-            color: '#1A1A1A',
+            color: '#0F172A',
             margin: 0
           }}>
             Select Documents from {displayName}
@@ -262,7 +262,7 @@ export default function DocumentSelectionModal({
                   display: 'flex',
                   alignItems: 'center',
                   padding: '10px 14px',
-                  borderBottom: idx < filteredDocs.length - 1 ? '1px solid #F0EEEC' : 'none',
+                  borderBottom: idx < filteredDocs.length - 1 ? '1px solid #E2E8F0' : 'none',
                   cursor: 'pointer',
                   backgroundColor: selectedDocs.has(doc.id) ? '#FBF4F1' : 'transparent',
                   transition: 'background-color 0.15s ease'
@@ -302,7 +302,7 @@ export default function DocumentSelectionModal({
                     marginTop: '2px'
                   }}>
                     <span style={{
-                      backgroundColor: '#F0EEEC',
+                      backgroundColor: '#E2E8F0',
                       padding: '1px 6px',
                       borderRadius: '4px',
                       fontSize: '11px',

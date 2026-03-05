@@ -21,7 +21,7 @@ interface GapCardProps {
 const getCategoryColor = (category?: string) => {
   switch (category?.toLowerCase()) {
     case 'decision':
-      return { bg: '#DBEAFE', text: '#1E40AF' }
+      return { bg: '#FBF4F1', text: '#A68379' }
     case 'technical':
       return { bg: '#F3E8FF', text: '#6B21A8' }
     case 'process':
@@ -36,7 +36,7 @@ const getCategoryColor = (category?: string) => {
 const getPriorityColor = (priority?: string) => {
   switch (priority?.toLowerCase()) {
     case 'high':
-      return { bg: '#FEE2E2', text: '#991B1B', icon: '🔴' }
+      return { bg: '#FBE8E8', text: '#991B1B', icon: '🔴' }
     case 'medium':
       return { bg: '#FEF3C7', text: '#92400E', icon: '🟡' }
     case 'low':
@@ -66,7 +66,7 @@ export default function GapCard({ gap, index, isSelected, onClick }: GapCardProp
         <span
           className="font-work font-semibold min-w-[24px]"
           style={{
-            color: gap.answered ? '#3B82F6' : '#7E89AC',
+            color: gap.answered ? '#C9A598' : '#7E89AC',
             fontSize: '13px'
           }}
         >

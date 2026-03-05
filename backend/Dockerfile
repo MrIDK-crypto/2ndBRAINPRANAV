@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     ffmpeg \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for caching)
@@ -31,8 +32,8 @@ RUN curl -L --retry 5 --retry-delay 3 -o /tmp/en_core_web_sm-3.7.0-py3-none-any.
 # Copy application code
 COPY . .
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data directories
+RUN mkdir -p /app/data /app/data/protocol_corpus /app/data/protocol_corpus/repos /app/data/protocol_models
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

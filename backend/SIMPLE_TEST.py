@@ -34,7 +34,7 @@ def main():
     # Read environment
     env = read_env_file()
 
-    email_address = env.get('FORWARD_EMAIL_ADDRESS', 'beatatucla@gmail.com')
+    email_address = env.get('FORWARD_EMAIL_ADDRESS', 'pranav@use2ndbrain.com')
     email_password = env.get('FORWARD_EMAIL_PASSWORD')
 
     print(f"Email: {email_address}")
@@ -44,7 +44,7 @@ def main():
         print()
         print("To fix:")
         print("1. Go to: https://myaccount.google.com/apppasswords")
-        print("2. Create app password for beatatucla@gmail.com")
+        print("2. Create app password for pranav@use2ndbrain.com")
         print("3. Add to .env:")
         print("   echo 'FORWARD_EMAIL_PASSWORD=your_app_password' >> .env")
         sys.exit(1)
@@ -83,7 +83,7 @@ def main():
         print()
         print("Next steps:")
         print("1. Start backend: python app_v2.py")
-        print("2. Forward a test email to: beatatucla@gmail.com")
+        print("2. Forward a test email to: pranav@use2ndbrain.com")
         print("3. Use API: POST /api/email-forwarding/fetch")
         print()
 
@@ -92,7 +92,7 @@ def main():
         print()
         print("Common issues:")
         print("- Wrong app password")
-        print("- 2FA not enabled on beatatucla@gmail.com")
+        print("- 2FA not enabled on pranav@use2ndbrain.com")
         print("- IMAP not enabled in Gmail settings")
         sys.exit(1)
     except Exception as e:
