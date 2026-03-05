@@ -474,6 +474,8 @@ class JournalScorerService:
             temperature=0.4,
             max_tokens=1500,
         ):
+            if not chunk.choices:
+                continue
             delta = chunk.choices[0].delta
             if delta and delta.content:
                 yield delta.content
