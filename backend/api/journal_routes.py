@@ -4,9 +4,10 @@ No authentication required.
 """
 
 import json
+import threading
 import traceback
 
-from flask import Blueprint, Response, request, stream_with_context
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 from services.journal_scorer_service import get_journal_scorer_service
 
@@ -81,3 +82,29 @@ def analyze_manuscript():
     )
     response.implicit_sequence_conversion = False
     return response
+
+
+@journal_bp.route('/populate', methods=['POST'])
+def populate_journals():
+    """Populate journal database from OpenAlex. Runs in background thread."""
+    field = request.args.get('field')  # optional: populate single field
+
+    from services.journal_data_service import get_journal_data_service
+    svc = get_journal_data_service()
+
+    # Check if already fresh
+    if svc.check_freshness() and not field:
+        return jsonify({"status": "skipped", "message": "Journal data is fresh (<30 days old)"})
+
+    def run_populate():
+        try:
+            svc.populate_journals(field=field)
+            print(f"[Journal] Population complete for {'all fields' if not field else field}")
+        except Exception as e:
+            print(f"[Journal] Population error: {e}")
+            traceback.print_exc()
+
+    thread = threading.Thread(target=run_populate, daemon=True)
+    thread.start()
+
+    return jsonify({"status": "started", "message": f"Populating {'all fields' if not field else field} in background"})
