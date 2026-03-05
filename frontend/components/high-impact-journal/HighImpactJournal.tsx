@@ -331,13 +331,17 @@ export default function HighImpactJournal() {
                   borderRadius: 12,
                   backgroundColor: theme.cardBg,
                   border: `1px solid ${theme.border}`,
-                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
                 }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 10 }}>
-                    <path d={f.icon}/>
-                  </svg>
-                  <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 3, color: theme.textPrimary }}>{f.title}</p>
-                  <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.4 }}>{f.desc}</p>
+                  <div style={{ width: 20, height: 20, marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d={f.icon}/>
+                    </svg>
+                  </div>
+                  <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 3, color: theme.textPrimary, textAlign: 'center' }}>{f.title}</p>
+                  <p style={{ color: theme.textMuted, fontSize: 12, lineHeight: 1.4, textAlign: 'center' }}>{f.desc}</p>
                 </div>
               ))}
             </div>
