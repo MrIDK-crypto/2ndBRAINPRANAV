@@ -33,8 +33,9 @@ def analyze_manuscript():
     if '.' in filename:
         ext = '.' + filename.rsplit('.', 1)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
+        err_ext = ext or 'unknown'
         def error_gen():
-            yield f"event: error\ndata: {json.dumps({'error': f'Unsupported file type: {ext or \"unknown\"}. Please upload a PDF or DOCX file.'})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'error': 'Unsupported file type: ' + err_ext + '. Please upload a PDF or DOCX file.'})}\n\n"
         return Response(error_gen(), mimetype='text/event-stream')
 
     # Read file bytes
