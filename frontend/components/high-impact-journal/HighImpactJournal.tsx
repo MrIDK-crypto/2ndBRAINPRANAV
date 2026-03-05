@@ -256,7 +256,7 @@ export default function HighImpactJournal() {
               color: theme.textPrimary,
               lineHeight: 1.15,
             }}>
-              Where should you publish?
+              Where can you publish?
             </h1>
             <p style={{
               color: theme.textSecondary,
