@@ -1,18 +1,20 @@
 """
-High-Impact Journal Predictor — Core Analysis Pipeline
-Stateless service that analyzes manuscripts and predicts journal tier placement.
+High-Impact Journal Predictor — Core Analysis Pipeline V2
+10-step pipeline with 18 fields, 3× consistency scoring, real journal data,
+landscape positioning, and CrossRef DOI verification.
 """
 
 import json
 import re
 import time
-from typing import Generator
+import statistics
+from typing import Generator, Dict, List, Optional
 
 from parsers.document_parser import DocumentParser
 from services.openai_client import get_openai_client
 
 
-# ── Field-Specific Scoring Configurations ──────────────────────────────────
+# ── 18 Field Configurations with Scoring Weights ────────────────────────────
 
 FIELD_CONFIGS = {
     "economics": {
@@ -25,26 +27,6 @@ FIELD_CONFIGS = {
             "writing": {"label": "Writing Quality", "weight": 0.10},
             "data_quality": {"label": "Data / Impact Quality", "weight": 0.10},
         },
-        "journals": {
-            1: [
-                {"name": "American Economic Review (AER)", "url": "https://www.aeaweb.org/journals/aer"},
-                {"name": "Quarterly Journal of Economics (QJE)", "url": "https://academic.oup.com/qje"},
-                {"name": "Econometrica", "url": "https://www.econometricsociety.org/econometrica"},
-                {"name": "Journal of Political Economy (JPE)", "url": "https://www.journals.uchicago.edu/toc/jpe/current"},
-                {"name": "Review of Economic Studies (RES)", "url": "https://academic.oup.com/restud"},
-            ],
-            2: [
-                {"name": "Journal of Development Economics", "url": "https://www.sciencedirect.com/journal/journal-of-development-economics"},
-                {"name": "Journal of Public Economics", "url": "https://www.sciencedirect.com/journal/journal-of-public-economics"},
-                {"name": "Journal of Labor Economics", "url": "https://www.journals.uchicago.edu/toc/jole/current"},
-                {"name": "Review of Economics and Statistics", "url": "https://direct.mit.edu/rest"},
-            ],
-            3: [
-                {"name": "Economics Letters", "url": "https://www.sciencedirect.com/journal/economics-letters"},
-                {"name": "Applied Economics", "url": "https://www.tandfonline.com/toc/raec20/current"},
-                {"name": "Journal of Economic Behavior & Organization", "url": "https://www.sciencedirect.com/journal/journal-of-economic-behavior-and-organization"},
-            ],
-        },
     },
     "cs_data_science": {
         "label": "Computer Science / Data Science",
@@ -55,26 +37,6 @@ FIELD_CONFIGS = {
             "literature": {"label": "Literature Coverage", "weight": 0.15},
             "writing": {"label": "Writing Quality", "weight": 0.10},
             "data_quality": {"label": "Data / Impact Quality", "weight": 0.10},
-        },
-        "journals": {
-            1: [
-                {"name": "NeurIPS", "url": "https://neurips.cc/"},
-                {"name": "ICML", "url": "https://icml.cc/"},
-                {"name": "ICLR", "url": "https://iclr.cc/"},
-                {"name": "JMLR", "url": "https://jmlr.org/"},
-                {"name": "IEEE TPAMI", "url": "https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=34"},
-            ],
-            2: [
-                {"name": "AAAI", "url": "https://aaai.org/"},
-                {"name": "KDD", "url": "https://kdd.org/"},
-                {"name": "EMNLP", "url": "https://aclanthology.org/venues/emnlp/"},
-                {"name": "Neural Networks", "url": "https://www.sciencedirect.com/journal/neural-networks"},
-            ],
-            3: [
-                {"name": "IEEE Access", "url": "https://ieeeaccess.ieee.org/"},
-                {"name": "Applied Intelligence", "url": "https://www.springer.com/journal/10489"},
-                {"name": "Information Sciences", "url": "https://www.sciencedirect.com/journal/information-sciences"},
-            ],
         },
     },
     "biomedical": {
@@ -87,25 +49,6 @@ FIELD_CONFIGS = {
             "writing": {"label": "Writing Quality", "weight": 0.10},
             "data_quality": {"label": "Data / Impact Quality", "weight": 0.10},
         },
-        "journals": {
-            1: [
-                {"name": "New England Journal of Medicine (NEJM)", "url": "https://www.nejm.org/"},
-                {"name": "The Lancet", "url": "https://www.thelancet.com/"},
-                {"name": "JAMA", "url": "https://jamanetwork.com/journals/jama"},
-                {"name": "Nature Medicine", "url": "https://www.nature.com/nm/"},
-            ],
-            2: [
-                {"name": "BMJ", "url": "https://www.bmj.com/"},
-                {"name": "PLOS Medicine", "url": "https://journals.plos.org/plosmedicine/"},
-                {"name": "Circulation", "url": "https://www.ahajournals.org/journal/circ"},
-                {"name": "The Lancet Global Health", "url": "https://www.thelancet.com/journals/langlo/home"},
-            ],
-            3: [
-                {"name": "PLOS ONE", "url": "https://journals.plos.org/plosone/"},
-                {"name": "BMC Medicine", "url": "https://bmcmedicine.biomedcentral.com/"},
-                {"name": "Scientific Reports", "url": "https://www.nature.com/srep/"},
-            ],
-        },
     },
     "political_science": {
         "label": "Political Science",
@@ -117,23 +60,155 @@ FIELD_CONFIGS = {
             "writing": {"label": "Writing Quality", "weight": 0.10},
             "data_quality": {"label": "Data / Impact Quality", "weight": 0.10},
         },
-        "journals": {
-            1: [
-                {"name": "American Political Science Review (APSR)", "url": "https://www.cambridge.org/core/journals/american-political-science-review"},
-                {"name": "American Journal of Political Science (AJPS)", "url": "https://ajps.org/"},
-                {"name": "Journal of Politics (JOP)", "url": "https://www.journals.uchicago.edu/toc/jop/current"},
-                {"name": "International Organization (IO)", "url": "https://www.cambridge.org/core/journals/international-organization"},
-            ],
-            2: [
-                {"name": "Comparative Political Studies", "url": "https://journals.sagepub.com/home/cps"},
-                {"name": "World Politics", "url": "https://www.cambridge.org/core/journals/world-politics"},
-                {"name": "British Journal of Political Science", "url": "https://www.cambridge.org/core/journals/british-journal-of-political-science"},
-            ],
-            3: [
-                {"name": "Political Research Quarterly", "url": "https://journals.sagepub.com/home/prq"},
-                {"name": "Democratization", "url": "https://www.tandfonline.com/toc/fdem20/current"},
-                {"name": "Journal of Elections, Public Opinion and Parties", "url": "https://www.tandfonline.com/toc/fbep20/current"},
-            ],
+    },
+    "physics": {
+        "label": "Physics",
+        "features": {
+            "theoretical_rigor": {"label": "Theoretical Rigor", "weight": 0.25},
+            "experimental_design": {"label": "Experimental Design", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.20},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "data_quality": {"label": "Data Quality", "weight": 0.05},
+        },
+    },
+    "chemistry": {
+        "label": "Chemistry",
+        "features": {
+            "experimental_methodology": {"label": "Experimental Methodology", "weight": 0.25},
+            "analytical_rigor": {"label": "Analytical Rigor", "weight": 0.20},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.20},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "data_quality": {"label": "Data / Reproducibility", "weight": 0.10},
+        },
+    },
+    "biology": {
+        "label": "Biology",
+        "features": {
+            "experimental_design": {"label": "Experimental Design", "weight": 0.25},
+            "statistical_rigor": {"label": "Statistical Rigor", "weight": 0.20},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.20},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "data_quality": {"label": "Data Quality", "weight": 0.10},
+        },
+    },
+    "psychology": {
+        "label": "Psychology",
+        "features": {
+            "study_design": {"label": "Study Design", "weight": 0.25},
+            "statistical_rigor": {"label": "Statistical Rigor", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.15},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "data_quality": {"label": "Data / Reproducibility", "weight": 0.10},
+        },
+    },
+    "sociology": {
+        "label": "Sociology",
+        "features": {
+            "theoretical_framework": {"label": "Theoretical Framework", "weight": 0.25},
+            "methodology_evidence": {"label": "Methodology & Evidence", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.15},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "data_quality": {"label": "Data Quality", "weight": 0.10},
+        },
+    },
+    "engineering": {
+        "label": "Engineering",
+        "features": {
+            "technical_novelty": {"label": "Technical Novelty", "weight": 0.25},
+            "experimental_validation": {"label": "Experimental Validation", "weight": 0.25},
+            "practical_impact": {"label": "Practical Impact", "weight": 0.15},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "data_quality": {"label": "Data Quality", "weight": 0.10},
+        },
+    },
+    "mathematics": {
+        "label": "Mathematics",
+        "features": {
+            "theoretical_depth": {"label": "Theoretical Depth", "weight": 0.30},
+            "proof_rigor": {"label": "Proof Rigor", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.20},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+        },
+    },
+    "environmental_science": {
+        "label": "Environmental Science",
+        "features": {
+            "methodology": {"label": "Methodology", "weight": 0.25},
+            "data_analysis": {"label": "Data Analysis", "weight": 0.20},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.20},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "policy_relevance": {"label": "Policy Relevance", "weight": 0.10},
+        },
+    },
+    "law": {
+        "label": "Law",
+        "features": {
+            "legal_analysis": {"label": "Legal Analysis", "weight": 0.30},
+            "argumentation": {"label": "Argumentation Quality", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.15},
+            "literature": {"label": "Literature / Case Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.15},
+        },
+    },
+    "education": {
+        "label": "Education",
+        "features": {
+            "research_design": {"label": "Research Design", "weight": 0.25},
+            "methodology": {"label": "Methodology & Analysis", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.15},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "practical_implications": {"label": "Practical Implications", "weight": 0.10},
+        },
+    },
+    "business_management": {
+        "label": "Business & Management",
+        "features": {
+            "theoretical_framework": {"label": "Theoretical Framework", "weight": 0.20},
+            "methodology": {"label": "Methodology", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.20},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "practical_relevance": {"label": "Practical Relevance", "weight": 0.10},
+        },
+    },
+    "history": {
+        "label": "History",
+        "features": {
+            "primary_sources": {"label": "Primary Source Analysis", "weight": 0.30},
+            "argumentation": {"label": "Argumentation & Interpretation", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.15},
+            "historiography": {"label": "Historiographical Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.15},
+        },
+    },
+    "philosophy": {
+        "label": "Philosophy",
+        "features": {
+            "argumentation": {"label": "Argumentation Quality", "weight": 0.30},
+            "conceptual_clarity": {"label": "Conceptual Clarity", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.15},
+            "literature": {"label": "Literature Engagement", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.15},
+        },
+    },
+    "linguistics": {
+        "label": "Linguistics",
+        "features": {
+            "theoretical_framework": {"label": "Theoretical Framework", "weight": 0.25},
+            "methodology": {"label": "Methodology & Analysis", "weight": 0.25},
+            "novelty": {"label": "Novelty & Contribution", "weight": 0.20},
+            "literature": {"label": "Literature Coverage", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "data_quality": {"label": "Data Quality", "weight": 0.05},
         },
     },
 }
@@ -148,6 +223,10 @@ RED_FLAG_CHECKS = [
     {"id": "no_tables", "pattern": r"\btable\s+\d+\b|\btable\s+[ivx]+\b", "check": "missing", "severity": "info", "issue": "No tables detected", "penalty": -3, "fix": "Add summary statistics, regression results, or comparison tables"},
 ]
 
+CHUNK_SIZE = 12000  # chars per chunk for feature extraction
+MAX_CHUNKS = 3      # analyze up to 3 chunks of text
+CONSISTENCY_RUNS = 3  # number of scoring runs for consistency
+
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
@@ -159,7 +238,7 @@ class JournalScorerService:
         self.parser = DocumentParser()
 
     def analyze_manuscript(self, file_bytes: bytes, filename: str) -> Generator[str, None, None]:
-        """Main pipeline — yields SSE events as analysis progresses."""
+        """10-step pipeline — yields SSE events as analysis progresses."""
         start_time = time.time()
 
         try:
@@ -177,18 +256,21 @@ class JournalScorerService:
             has_abstract = bool(re.search(r'\babstract\b', text[:3000], re.IGNORECASE))
             has_tables = bool(re.search(r'\btable\s+\d+\b|\btable\s+[ivx]+\b', text, re.IGNORECASE))
 
-            yield _sse("progress", {"step": 1, "message": f"Parsed {word_count:,} words", "percent": 15})
+            yield _sse("progress", {"step": 1, "message": f"Parsed {word_count:,} words", "percent": 10})
 
             # ── Step 2: Detect Field ────────────────────────────────────
-            yield _sse("progress", {"step": 2, "message": "Detecting academic field...", "percent": 20})
+            yield _sse("progress", {"step": 2, "message": "Detecting academic field...", "percent": 12})
 
-            field_result = self._detect_field(text[:6000])
+            field_result = self._detect_field(text[:8000])
             field = field_result["field"]
             field_config = FIELD_CONFIGS.get(field)
 
             if not field_config:
-                yield _sse("error", {"error": f"Unsupported field detected: {field}. Supported fields: Economics, CS/Data Science, Biomedical, Political Science."})
-                return
+                # Fallback to closest match
+                field = "economics"
+                field_config = FIELD_CONFIGS["economics"]
+                field_result["field"] = field
+                field_result["reasoning"] = f"Field '{field_result.get('field', 'unknown')}' not recognized — defaulting to Economics"
 
             yield _sse("field_detected", {
                 "field": field,
@@ -198,12 +280,17 @@ class JournalScorerService:
                 "reasoning": field_result["reasoning"],
             })
 
-            # ── Step 3: Extract Features ────────────────────────────────
-            yield _sse("progress", {"step": 3, "message": "Evaluating manuscript features...", "percent": 35})
+            # ── Step 3: Extract Features (chunked) ──────────────────────
+            yield _sse("progress", {"step": 3, "message": "Evaluating manuscript features...", "percent": 18})
 
-            # Send up to ~12K chars for feature extraction (balance detail vs cost)
-            excerpt = text[:12000]
-            features = self._extract_features(excerpt, field, field_config)
+            # Prepare chunks for analysis
+            chunks = self._prepare_chunks(text)
+            chunk_info = f"{len(chunks)} section{'s' if len(chunks) > 1 else ''} ({sum(len(c) for c in chunks):,} chars)"
+            yield _sse("progress", {"step": 3, "message": f"Analyzing {chunk_info}...", "percent": 22})
+
+            # Run feature extraction on combined chunks
+            combined_text = "\n\n---\n\n".join(chunks)
+            features = self._extract_features(combined_text, field, field_config)
 
             yield _sse("features_extracted", {
                 "features": features,
@@ -213,8 +300,18 @@ class JournalScorerService:
                 "has_tables": has_tables,
             })
 
-            # ── Step 4: Calculate Score ─────────────────────────────────
-            yield _sse("progress", {"step": 4, "message": "Calculating overall score...", "percent": 55})
+            # ── Step 4: Consistency Check (3× scoring) ──────────────────
+            yield _sse("progress", {"step": 4, "message": "Running consistency checks...", "percent": 32})
+
+            consistency_result = self._run_consistency_check(combined_text, field, field_config, features)
+
+            yield _sse("consistency", consistency_result)
+
+            # Use averaged scores from consistency check
+            features = consistency_result["averaged_features"]
+
+            # ── Step 5: Calculate Score ──────────────────────────────────
+            yield _sse("progress", {"step": 5, "message": "Calculating overall score...", "percent": 50})
 
             score_result = self._calculate_score(features, field_config)
             overall_score = score_result["overall_score"]
@@ -228,14 +325,20 @@ class JournalScorerService:
                 "score_breakdown": score_result["breakdown"],
             })
 
-            # ── Step 5: Match Journals ──────────────────────────────────
-            yield _sse("progress", {"step": 5, "message": "Matching to journals...", "percent": 65})
+            # ── Step 6: Match Journals (from DB) ────────────────────────
+            yield _sse("progress", {"step": 6, "message": "Matching to journals...", "percent": 58})
 
-            journals = self._match_journals(field_config, tier)
+            journals = self._match_journals_from_db(field, tier)
             yield _sse("journals", journals)
 
-            # ── Step 6: Detect Red Flags ────────────────────────────────
-            yield _sse("progress", {"step": 6, "message": "Checking for red flags...", "percent": 75})
+            # ── Step 7: Landscape Position ──────────────────────────────
+            yield _sse("progress", {"step": 7, "message": "Calculating landscape position...", "percent": 63})
+
+            landscape = self._get_landscape_position(field, overall_score)
+            yield _sse("landscape", landscape)
+
+            # ── Step 8: Detect Red Flags ────────────────────────────────
+            yield _sse("progress", {"step": 8, "message": "Checking for red flags...", "percent": 68})
 
             flags_result = self._detect_red_flags(text, word_count, ref_count)
             yield _sse("red_flags", flags_result)
@@ -252,13 +355,22 @@ class JournalScorerService:
                     "penalty_applied": flags_result["total_penalty"],
                     "original_score": overall_score,
                 })
+                overall_score = adjusted_score
+                tier = adjusted_tier
 
-            # ── Step 7: Generate Recommendations ────────────────────────
-            yield _sse("progress", {"step": 7, "message": "Generating recommendations...", "percent": 85})
+            # ── Step 9: Verify Citations (CrossRef) ─────────────────────
+            yield _sse("progress", {"step": 9, "message": "Verifying citations...", "percent": 75})
+
+            citation_result = self._verify_citations(text)
+            yield _sse("citation_verification", citation_result)
+
+            # ── Step 10: Generate Recommendations ───────────────────────
+            yield _sse("progress", {"step": 10, "message": "Generating recommendations...", "percent": 82})
 
             rec_buffer = ""
             for chunk in self._generate_recommendations_stream(
-                field_config["label"], overall_score, tier, features, flags_result["flags"], journals
+                field_config["label"], overall_score, tier, features,
+                flags_result["flags"], journals, landscape, citation_result
             ):
                 rec_buffer += chunk
                 yield _sse("recommendations", {"content": chunk})
@@ -276,14 +388,34 @@ class JournalScorerService:
 
     # ── Private Methods ─────────────────────────────────────────────────────
 
+    def _prepare_chunks(self, text: str) -> List[str]:
+        """Split text into up to MAX_CHUNKS chunks for analysis."""
+        total_len = len(text)
+        if total_len <= CHUNK_SIZE:
+            return [text]
+
+        chunks = []
+        # First chunk: beginning (abstract, intro, methodology)
+        chunks.append(text[:CHUNK_SIZE])
+
+        if total_len > CHUNK_SIZE * 2:
+            # Middle chunk: results/discussion
+            mid_start = total_len // 3
+            chunks.append(text[mid_start:mid_start + CHUNK_SIZE])
+            # Last chunk: conclusion + references area
+            chunks.append(text[-CHUNK_SIZE:])
+        else:
+            # Just take the rest
+            chunks.append(text[CHUNK_SIZE:CHUNK_SIZE * 2])
+
+        return chunks[:MAX_CHUNKS]
+
     def _detect_field(self, text_excerpt: str) -> dict:
+        field_list = "\n".join(f"- {key}" for key in FIELD_CONFIGS.keys())
+
         prompt = (
             "You are an academic field classifier. Classify this manuscript excerpt into exactly one field.\n\n"
-            "FIELDS:\n"
-            "- economics\n"
-            "- cs_data_science\n"
-            "- biomedical\n"
-            "- political_science\n\n"
+            f"FIELDS:\n{field_list}\n\n"
             "Respond ONLY in valid JSON:\n"
             '{"field": "...", "confidence": 0.0-1.0, "subfield": "specific subfield", "reasoning": "one sentence"}\n\n'
             f"MANUSCRIPT EXCERPT:\n{text_excerpt}"
@@ -295,10 +427,14 @@ class JournalScorerService:
             max_tokens=200,
         )
         raw = resp.choices[0].message.content.strip()
-        # Extract JSON from potential markdown code blocks
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
         if json_match:
-            return json.loads(json_match.group())
+            result = json.loads(json_match.group())
+            # Validate the field is in our config
+            if result.get("field") not in FIELD_CONFIGS:
+                result["field"] = "economics"
+                result["confidence"] = 0.5
+            return result
         return {"field": "economics", "confidence": 0.5, "subfield": "General", "reasoning": "Could not classify — defaulting to Economics"}
 
     def _extract_features(self, text_excerpt: str, field: str, field_config: dict) -> dict:
@@ -316,15 +452,13 @@ class JournalScorerService:
             "- In 'citations', quote specific passages from the manuscript that support your score.\n"
             "- In 'suggested_references', list 1-2 key papers the authors should cite or benchmark against. Include DOI URLs (https://doi.org/...) when possible.\n"
             "- If the manuscript already cites important works, mention that positively in 'details'.\n\n"
-            "Example format:\n"
-            '{"methodology": {"score": 72, "details": "Uses diff-in-diff with state-level variation, but lacks robustness checks like placebo tests or synthetic control comparison.", "citations": [{"text": "We exploit the staggered adoption of minimum wage laws across states", "section": "Methodology"}], "suggested_references": [{"title": "Difference-in-Differences with Variation in Treatment Timing", "authors": "Goodman-Bacon, A.", "year": "2021", "url": "https://doi.org/10.1016/j.jeconom.2021.03.014", "relevance": "Standard reference for staggered DiD designs"}]}}\n\n'
-            f"MANUSCRIPT EXCERPT:\n{text_excerpt}"
+            f"MANUSCRIPT TEXT:\n{text_excerpt}"
         )
 
         resp = self.openai.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
-            max_tokens=2000,
+            max_tokens=3000,
         )
         raw = resp.choices[0].message.content.strip()
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -333,7 +467,6 @@ class JournalScorerService:
         else:
             parsed = {}
 
-        # Ensure all features present with defaults
         result = {}
         for key, info in field_config["features"].items():
             if key in parsed and isinstance(parsed[key], dict):
@@ -355,6 +488,81 @@ class JournalScorerService:
                     "suggested_references": [],
                 }
         return result
+
+    def _run_consistency_check(self, text: str, field: str, field_config: dict, initial_features: dict) -> dict:
+        """Run 2 additional scoring rounds and average with the initial to get consistent scores."""
+        all_runs = [
+            {k: v["score"] for k, v in initial_features.items()}
+        ]
+
+        # Run 2 more scoring rounds with slightly different temperature
+        for run_idx in range(CONSISTENCY_RUNS - 1):
+            try:
+                feature_list = "\n".join(
+                    f"- {key}: {info['label']}"
+                    for key, info in field_config["features"].items()
+                )
+                prompt = (
+                    f"You are a peer reviewer in {field_config['label']}. "
+                    f"Score this manuscript on each feature (0-100). "
+                    f"Respond ONLY in JSON: {{\"feature_key\": score_number, ...}}\n\n"
+                    f"Features:\n{feature_list}\n\n"
+                    f"MANUSCRIPT:\n{text[:CHUNK_SIZE]}"
+                )
+                resp = self.openai.chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3 + (run_idx * 0.1),
+                    max_tokens=500,
+                )
+                raw = resp.choices[0].message.content.strip()
+                json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+                if json_match:
+                    scores = json.loads(json_match.group())
+                    run = {}
+                    for key in field_config["features"]:
+                        val = scores.get(key, 50)
+                        if isinstance(val, dict):
+                            val = val.get("score", 50)
+                        run[key] = min(100, max(0, int(val)))
+                    all_runs.append(run)
+            except Exception as e:
+                print(f"[Journal] Consistency run {run_idx + 1} failed: {e}")
+
+        # Average scores across runs
+        averaged_features = {}
+        high_variance_features = []
+
+        for key in field_config["features"]:
+            scores_for_key = [run.get(key, 50) for run in all_runs]
+            avg = round(statistics.mean(scores_for_key))
+            std = round(statistics.stdev(scores_for_key), 1) if len(scores_for_key) > 1 else 0
+
+            # Copy from initial features but update score
+            averaged_features[key] = dict(initial_features.get(key, {
+                "score": avg,
+                "weight": field_config["features"][key]["weight"],
+                "label": field_config["features"][key]["label"],
+                "details": "",
+                "citations": [],
+                "suggested_references": [],
+            }))
+            averaged_features[key]["score"] = avg
+
+            if std > 15:
+                high_variance_features.append({
+                    "feature": key,
+                    "label": field_config["features"][key]["label"],
+                    "std": std,
+                    "scores": scores_for_key,
+                })
+
+        return {
+            "scores_by_run": all_runs,
+            "averaged_scores": {k: v["score"] for k, v in averaged_features.items()},
+            "high_variance_features": high_variance_features,
+            "num_runs": len(all_runs),
+            "averaged_features": averaged_features,
+        }
 
     def _calculate_score(self, features: dict, field_config: dict) -> dict:
         breakdown = []
@@ -387,17 +595,65 @@ class JournalScorerService:
         else:
             return 3, "Tier 3 — Solid Journal"
 
-    def _match_journals(self, field_config: dict, tier: int) -> dict:
-        journals = field_config["journals"]
-        primary = journals.get(tier, [])
-        stretch = journals.get(max(1, tier - 1), []) if tier > 1 else []
-        safe = journals.get(min(3, tier + 1), []) if tier < 3 else []
+    def _match_journals_from_db(self, field: str, tier: int) -> dict:
+        """Match journals from the database with real metrics."""
+        try:
+            from services.journal_data_service import get_journal_data_service
+            svc = get_journal_data_service()
+
+            primary = svc.get_journals_for_field(field, tier=tier)
+            stretch = svc.get_journals_for_field(field, tier=max(1, tier - 1)) if tier > 1 else []
+            safe = svc.get_journals_for_field(field, tier=min(3, tier + 1)) if tier < 3 else []
+
+            # Limit to top journals per category
+            return {
+                "primary_matches": primary[:8],
+                "stretch_matches": stretch[:5],
+                "safe_matches": safe[:5],
+            }
+        except Exception as e:
+            print(f"[Journal] DB journal matching failed, using fallback: {e}")
+            return self._match_journals_fallback(field, tier)
+
+    def _match_journals_fallback(self, field: str, tier: int) -> dict:
+        """Fallback journal matching when DB is not populated."""
+        # Minimal hardcoded fallback for when OpenAlex data isn't loaded
+        fallbacks = {
+            "economics": {1: ["American Economic Review", "Quarterly Journal of Economics", "Econometrica"], 2: ["Journal of Development Economics", "Review of Economics and Statistics"], 3: ["Economics Letters", "Applied Economics"]},
+            "cs_data_science": {1: ["NeurIPS", "ICML", "ICLR", "JMLR"], 2: ["AAAI", "KDD", "EMNLP"], 3: ["IEEE Access", "Applied Intelligence"]},
+            "biomedical": {1: ["NEJM", "The Lancet", "JAMA", "Nature Medicine"], 2: ["BMJ", "PLOS Medicine", "Circulation"], 3: ["PLOS ONE", "BMC Medicine"]},
+            "political_science": {1: ["APSR", "AJPS", "Journal of Politics"], 2: ["Comparative Political Studies", "World Politics"], 3: ["Political Research Quarterly"]},
+        }
+        field_journals = fallbacks.get(field, fallbacks.get("economics", {}))
+
+        def to_list(names):
+            return [{"name": n, "h_index": 0, "impact_factor": 0, "sjr_quartile": None, "composite_score": 0} for n in names]
 
         return {
-            "primary_matches": primary,
-            "stretch_matches": stretch,
-            "safe_matches": safe,
+            "primary_matches": to_list(field_journals.get(tier, [])),
+            "stretch_matches": to_list(field_journals.get(max(1, tier - 1), [])) if tier > 1 else [],
+            "safe_matches": to_list(field_journals.get(min(3, tier + 1), [])) if tier < 3 else [],
         }
+
+    def _get_landscape_position(self, field: str, score: float) -> dict:
+        """Get the manuscript's position in the journal landscape."""
+        try:
+            from services.journal_data_service import get_journal_data_service
+            svc = get_journal_data_service()
+            landscape = svc.get_journal_landscape(field)
+            percentile = svc.get_percentile_for_score(field, score)
+            landscape["percentile"] = percentile
+            return landscape
+        except Exception as e:
+            print(f"[Journal] Landscape position failed: {e}")
+            return {
+                "field": field,
+                "total_journals": 0,
+                "percentile": 50.0,
+                "median_composite": 50,
+                "tier1_threshold": 85,
+                "tier2_threshold": 65,
+            }
 
     def _detect_red_flags(self, text: str, word_count: int, ref_count: int) -> dict:
         flags = []
@@ -427,35 +683,90 @@ class JournalScorerService:
 
         return {"flags": flags, "total_penalty": total_penalty}
 
-    def _extract_references_section(self, text: str) -> str | None:
+    def _verify_citations(self, text: str) -> dict:
+        """Extract DOIs from text and verify them via CrossRef."""
+        try:
+            from services.crossref_service import get_crossref_service
+            crossref = get_crossref_service()
+            dois = crossref.extract_dois_from_text(text)
+
+            if not dois:
+                return {"verified": [], "unverified": [], "verification_rate": 0, "total_dois_found": 0}
+
+            results = crossref.verify_dois(dois)
+
+            verified = []
+            unverified = []
+            for doi, info in results.items():
+                entry = {"doi": doi, **info}
+                if info.get("valid"):
+                    verified.append(entry)
+                else:
+                    unverified.append(entry)
+
+            rate = round(len(verified) / len(results) * 100, 1) if results else 0
+
+            return {
+                "verified": verified,
+                "unverified": unverified,
+                "verification_rate": rate,
+                "total_dois_found": len(dois),
+            }
+        except Exception as e:
+            print(f"[Journal] Citation verification failed: {e}")
+            return {"verified": [], "unverified": [], "verification_rate": 0, "total_dois_found": 0, "error": str(e)}
+
+    def _extract_references_section(self, text: str) -> Optional[str]:
         match = re.search(r'\b(references|bibliography)\b', text, re.IGNORECASE)
         if match:
             return text[match.start():]
         return None
 
     def _count_references(self, ref_text: str) -> int:
-        # Count numbered references like [1], [2] or 1. Author...
         numbered = re.findall(r'^\s*\[?\d+[\].]', ref_text, re.MULTILINE)
         if len(numbered) >= 3:
             return len(numbered)
-        # Count lines that look like references (Author, Year pattern)
         author_lines = re.findall(r'^\s*[A-Z][a-z]+.*\(\d{4}\)', ref_text, re.MULTILINE)
         return max(len(author_lines), len(numbered))
 
-    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals):
+    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations):
         feature_summary = "\n".join(
             f"- {f['label']}: {f['score']}/100 — {f.get('details', '')}"
             for f in features.values()
         )
         flag_summary = "\n".join(f"- [{f['severity']}] {f['issue']}" for f in flags) if flags else "None detected"
-        journal_names = ", ".join(j["name"] for j in journals.get("primary_matches", []))
+
+        # Get journal names from primary matches
+        primary = journals.get("primary_matches", [])
+        if primary and isinstance(primary[0], dict):
+            journal_names = ", ".join(j.get("name", str(j)) for j in primary[:5])
+        else:
+            journal_names = "Various journals in the field"
+
+        # Landscape context
+        landscape_info = ""
+        if landscape.get("total_journals", 0) > 0:
+            landscape_info = (
+                f"\n- Landscape: Your score places you at the {landscape.get('percentile', 50)}th percentile "
+                f"among {landscape.get('total_journals', 0)} journals in {field_label}. "
+                f"Tier 1 threshold: {landscape.get('tier1_threshold', 85)} composite score."
+            )
+
+        # Citation context
+        citation_info = ""
+        if citations.get("total_dois_found", 0) > 0:
+            citation_info = (
+                f"\n- Citations verified: {len(citations.get('verified', []))}/{citations.get('total_dois_found', 0)} DOIs confirmed valid."
+            )
 
         prompt = (
             f"You are a journal submission advisor in {field_label}. Given the manuscript analysis:\n"
             f"- Score: {score}/100 (Tier {tier})\n"
             f"- Feature breakdown:\n{feature_summary}\n"
             f"- Red flags:\n{flag_summary}\n"
-            f"- Target journals: {journal_names}\n\n"
+            f"- Target journals: {journal_names}"
+            f"{landscape_info}"
+            f"{citation_info}\n\n"
             "Provide 2-3 actionable recommendations per category:\n"
             "1. **Methodological Upgrades** — what experiments/analyses to add\n"
             "2. **Literature Gaps** — specific missing citations or bodies of work\n"
@@ -472,7 +783,7 @@ class JournalScorerService:
         for chunk in self.openai.chat_completion_stream(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
-            max_tokens=1500,
+            max_tokens=2000,
         ):
             if not chunk.choices:
                 continue

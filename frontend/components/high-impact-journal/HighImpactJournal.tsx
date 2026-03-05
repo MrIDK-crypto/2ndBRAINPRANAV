@@ -48,7 +48,15 @@ interface ScoreInfo {
 
 interface JournalMatch {
   name: string
-  url: string
+  url?: string
+  homepage_url?: string
+  h_index?: number
+  impact_factor?: number
+  sjr_score?: number
+  sjr_quartile?: string
+  composite_score?: number
+  citedness_2yr?: number
+  publisher?: string
 }
 
 interface JournalsInfo {
@@ -77,6 +85,46 @@ interface FeaturesInfo {
   has_tables: boolean
 }
 
+interface ConsistencyInfo {
+  scores_by_run: Record<string, number>[]
+  averaged_scores: Record<string, number>
+  high_variance_features: { feature: string; label: string; std: number; scores: number[] }[]
+  num_runs: number
+}
+
+interface LandscapeInfo {
+  field: string
+  total_journals: number
+  percentile: number
+  tier1_count?: number
+  tier2_count?: number
+  tier3_count?: number
+  tier1_threshold: number
+  tier2_threshold?: number
+  median_composite: number
+  median_h_index?: number
+  median_impact_factor?: number
+  max_h_index?: number
+  max_impact_factor?: number
+}
+
+interface VerifiedCitation {
+  doi: string
+  valid: boolean
+  title?: string
+  year?: number
+  citations?: number
+  journal?: string
+  error?: string
+}
+
+interface CitationVerificationInfo {
+  verified: VerifiedCitation[]
+  unverified: VerifiedCitation[]
+  verification_rate: number
+  total_dois_found: number
+}
+
 type AppState = 'idle' | 'analyzing' | 'results'
 
 // ── Main Component ─────────────────────────────────────────────────────────
@@ -91,6 +139,9 @@ export default function HighImpactJournal() {
   const [journalsInfo, setJournalsInfo] = useState<JournalsInfo | null>(null)
   const [redFlags, setRedFlags] = useState<RedFlagsInfo | null>(null)
   const [recommendations, setRecommendations] = useState('')
+  const [consistencyInfo, setConsistencyInfo] = useState<ConsistencyInfo | null>(null)
+  const [landscapeInfo, setLandscapeInfo] = useState<LandscapeInfo | null>(null)
+  const [citationInfo, setCitationInfo] = useState<CitationVerificationInfo | null>(null)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -103,6 +154,9 @@ export default function HighImpactJournal() {
     setJournalsInfo(null)
     setRedFlags(null)
     setRecommendations('')
+    setConsistencyInfo(null)
+    setLandscapeInfo(null)
+    setCitationInfo(null)
     setError('')
   }, [])
 
@@ -173,6 +227,15 @@ export default function HighImpactJournal() {
                   break
                 case 'red_flags':
                   setRedFlags(data)
+                  break
+                case 'consistency':
+                  setConsistencyInfo(data)
+                  break
+                case 'landscape':
+                  setLandscapeInfo(data)
+                  break
+                case 'citation_verification':
+                  setCitationInfo(data)
                   break
                 case 'recommendations':
                   setRecommendations(prev => prev + data.content)
@@ -321,7 +384,7 @@ export default function HighImpactJournal() {
               marginTop: 56,
             }}>
               {[
-                { icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', title: 'Field Detection', desc: '4 academic disciplines' },
+                { icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', title: 'Field Detection', desc: '18 academic disciplines' },
                 { icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', title: 'Quality Score', desc: 'Weighted 0-100 scoring' },
                 { icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253', title: 'Journal Match', desc: 'Tier 1 / 2 / 3 targets' },
                 { icon: 'M13 10V3L4 14h7v7l9-11h-7z', title: 'Recommendations', desc: 'Actionable next steps' },
@@ -373,7 +436,7 @@ export default function HighImpactJournal() {
               }} />
             </div>
             <p style={{ color: theme.textSecondary, fontSize: 14 }}>
-              Step {progress.step}/7 — {progress.message}
+              Step {progress.step}/10 — {progress.message}
             </p>
 
             {/* Pulse indicator */}
@@ -487,17 +550,41 @@ export default function HighImpactJournal() {
                 border: `1px solid ${theme.border}`,
                 marginBottom: 24,
               }}>
-                <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 20, color: theme.textPrimary }}>Feature Breakdown</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary }}>Feature Breakdown</h3>
+                  {consistencyInfo && (
+                    <span style={{ fontSize: 11, color: theme.textMuted, fontFamily: fontMono }}>
+                      Averaged over {consistencyInfo.num_runs} runs
+                    </span>
+                  )}
+                </div>
                 {scoreInfo.score_breakdown.map(b => {
                   const featureKey = Object.keys(featuresInfo.features).find(
                     k => featuresInfo.features[k].label === b.feature
                   )
                   const feat = featureKey ? featuresInfo.features[featureKey] : null
+                  const varianceItem = consistencyInfo?.high_variance_features?.find(
+                    v => v.label === b.feature
+                  )
 
                   return (
                     <div key={b.feature} style={{ marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${theme.border}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600 }}>{b.feature}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4, alignItems: 'center' }}>
+                        <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {b.feature}
+                          {varianceItem && (
+                            <span style={{
+                              fontSize: 10,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              backgroundColor: '#FEF7E8',
+                              color: '#8B6914',
+                              fontWeight: 500,
+                            }} title={`Scores varied: ${varianceItem.scores.join(', ')}`}>
+                              ±{varianceItem.std}
+                            </span>
+                          )}
+                        </span>
                         <span style={{ fontFamily: fontMono, color: theme.textSecondary }}>
                           {b.score}/100 <span style={{ color: theme.textMuted }}>({(b.weight * 100).toFixed(0)}%)</span>
                         </span>
@@ -598,6 +685,146 @@ export default function HighImpactJournal() {
                 </div>
               )
             })()}
+
+            {/* Landscape Position */}
+            {landscapeInfo && landscapeInfo.total_journals > 0 && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                backgroundColor: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                marginBottom: 24,
+              }}>
+                <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16, color: theme.textPrimary }}>Journal Landscape Position</h3>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                    <span style={{ color: theme.textSecondary }}>Your percentile rank</span>
+                    <span style={{ fontFamily: fontMono, fontWeight: 600, color: theme.textPrimary }}>
+                      {landscapeInfo.percentile}th percentile
+                    </span>
+                  </div>
+                  <div style={{ height: 10, borderRadius: 5, backgroundColor: theme.border, position: 'relative' }}>
+                    <div style={{
+                      height: '100%',
+                      borderRadius: 5,
+                      width: `${landscapeInfo.percentile}%`,
+                      backgroundColor: landscapeInfo.percentile >= 85 ? theme.success : landscapeInfo.percentile >= 50 ? theme.amber : theme.error,
+                      transition: 'width 0.8s ease',
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      top: -4,
+                      left: `${landscapeInfo.percentile}%`,
+                      transform: 'translateX(-50%)',
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      backgroundColor: '#fff',
+                      border: `2px solid ${theme.primary}`,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                    }} />
+                  </div>
+                </div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: 8,
+                  marginTop: 16,
+                }}>
+                  <MetaStat label="Total Journals" value={String(landscapeInfo.total_journals)} />
+                  <MetaStat label="Tier 1 Threshold" value={String(Math.round(landscapeInfo.tier1_threshold))} />
+                  <MetaStat label="Median Score" value={String(Math.round(landscapeInfo.median_composite))} />
+                  {landscapeInfo.median_h_index ? (
+                    <MetaStat label="Median h-index" value={String(landscapeInfo.median_h_index)} />
+                  ) : (
+                    <MetaStat label="Tier 1 Count" value={String(landscapeInfo.tier1_count || 0)} />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Citation Verification */}
+            {citationInfo && citationInfo.total_dois_found > 0 && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                backgroundColor: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary }}>Citation Verification</h3>
+                  <span style={{
+                    padding: '4px 10px',
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: fontMono,
+                    backgroundColor: citationInfo.verification_rate >= 80 ? '#F0F7EE' : citationInfo.verification_rate >= 50 ? '#FEF7E8' : '#FDF2F2',
+                    color: citationInfo.verification_rate >= 80 ? '#3D6B35' : citationInfo.verification_rate >= 50 ? '#8B6914' : '#9B4D4D',
+                  }}>
+                    {citationInfo.verification_rate}% verified
+                  </span>
+                </div>
+                <p style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 12 }}>
+                  {citationInfo.verified.length} of {citationInfo.total_dois_found} DOIs confirmed via CrossRef
+                </p>
+                {citationInfo.verified.length > 0 && (
+                  <div style={{ marginBottom: citationInfo.unverified.length > 0 ? 16 : 0 }}>
+                    {citationInfo.verified.map((c, i) => (
+                      <div key={i} style={{
+                        padding: '8px 12px',
+                        borderRadius: 6,
+                        backgroundColor: '#F0F7EE',
+                        borderLeft: '3px solid #9CB896',
+                        marginBottom: 4,
+                        fontSize: 12,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: 8,
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <a
+                            href={`https://doi.org/${c.doi}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#4338CA', textDecoration: 'none', fontWeight: 500 }}
+                          >
+                            {c.title || c.doi}
+                          </a>
+                          {c.journal && <span style={{ color: theme.textMuted, marginLeft: 6 }}>— {c.journal}</span>}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexShrink: 0, fontFamily: fontMono, color: theme.textMuted }}>
+                          {c.year && <span>{c.year}</span>}
+                          {c.citations !== undefined && <span>{c.citations} cites</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {citationInfo.unverified.length > 0 && (
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Unverified DOIs
+                    </span>
+                    {citationInfo.unverified.map((c, i) => (
+                      <div key={i} style={{
+                        padding: '6px 12px',
+                        borderRadius: 6,
+                        backgroundColor: '#FEF7E8',
+                        borderLeft: '3px solid #E2A336',
+                        marginTop: 4,
+                        fontSize: 12,
+                        color: theme.textSecondary,
+                      }}>
+                        {c.doi} {c.error && <span style={{ color: theme.textMuted }}>— {c.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Red Flags */}
             {redFlags && redFlags.flags.length > 0 && (
@@ -777,6 +1004,7 @@ function ScoreGauge({ score, tier }: { score: number; tier: number }) {
 
 function JournalColumn({ title, journals, accent }: { title: string; journals: JournalMatch[]; accent: string }) {
   if (!journals || journals.length === 0) return null
+  const hasMetrics = journals.some(j => j.h_index || j.impact_factor || j.sjr_quartile)
   return (
     <div style={{
       padding: 20,
@@ -786,32 +1014,68 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
       borderTop: `3px solid ${accent}`,
     }}>
       <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{title}</h4>
-      {journals.map((j, i) => (
-        <a
-          key={j.name}
-          href={j.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+      {journals.map((j, i) => {
+        const url = j.homepage_url || j.url
+        const content = (
+          <div style={{
             padding: '10px 0',
-            fontSize: 13,
-            color: '#4338CA',
-            textDecoration: 'none',
             borderBottom: i < journals.length - 1 ? `1px solid ${theme.border}` : 'none',
-          }}
-        >
-          <span>{j.name}</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4338CA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: 8, opacity: 0.5 }}>
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/>
-            <line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-        </a>
-      ))}
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontSize: 13, color: url ? '#4338CA' : theme.textPrimary, fontWeight: 500 }}>{j.name}</span>
+              {url && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4338CA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.5 }}>
+                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              )}
+            </div>
+            {hasMetrics && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                {j.h_index !== undefined && j.h_index > 0 && (
+                  <MetricPill label="h-index" value={String(j.h_index)} />
+                )}
+                {j.impact_factor !== undefined && j.impact_factor > 0 && (
+                  <MetricPill label="IF" value={j.impact_factor.toFixed(1)} />
+                )}
+                {j.sjr_quartile && (
+                  <MetricPill label="" value={j.sjr_quartile} color={
+                    j.sjr_quartile === 'Q1' ? '#3D6B35' : j.sjr_quartile === 'Q2' ? '#8B6914' : '#9B4D4D'
+                  } />
+                )}
+              </div>
+            )}
+          </div>
+        )
+        return url ? (
+          <a key={j.name} href={url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'block' }}>
+            {content}
+          </a>
+        ) : (
+          <div key={j.name}>{content}</div>
+        )
+      })}
     </div>
+  )
+}
+
+function MetricPill({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 3,
+      padding: '2px 7px',
+      borderRadius: 6,
+      backgroundColor: theme.pageBg,
+      fontSize: 11,
+      fontFamily: fontMono,
+      color: color || theme.textMuted,
+    }}>
+      {label && <span style={{ fontWeight: 400 }}>{label}</span>}
+      <span style={{ fontWeight: 600 }}>{value}</span>
+    </span>
   )
 }
 

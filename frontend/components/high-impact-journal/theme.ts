@@ -32,6 +32,20 @@ export const fieldColors: Record<string, { bg: string; text: string; dot: string
   cs_data_science: { bg: '#ECFDF5', text: '#065F46', dot: '#10B981' },
   biomedical: { bg: '#FDF2F8', text: '#9D174D', dot: '#EC4899' },
   political_science: { bg: '#FFF7ED', text: '#9A3412', dot: '#F97316' },
+  physics: { bg: '#EFF6FF', text: '#1E40AF', dot: '#3B82F6' },
+  chemistry: { bg: '#FFFBEB', text: '#92400E', dot: '#F59E0B' },
+  biology: { bg: '#F0FDF4', text: '#166534', dot: '#22C55E' },
+  psychology: { bg: '#FAF5FF', text: '#6B21A8', dot: '#A855F7' },
+  sociology: { bg: '#FFF1F2', text: '#9F1239', dot: '#FB7185' },
+  engineering: { bg: '#F0F9FF', text: '#0C4A6E', dot: '#0EA5E9' },
+  mathematics: { bg: '#F5F3FF', text: '#5B21B6', dot: '#8B5CF6' },
+  environmental_science: { bg: '#F0FDFA', text: '#115E59', dot: '#14B8A6' },
+  law: { bg: '#FEF2F2', text: '#991B1B', dot: '#EF4444' },
+  education: { bg: '#FFFBEB', text: '#78350F', dot: '#D97706' },
+  business_management: { bg: '#F8FAFC', text: '#334155', dot: '#64748B' },
+  history: { bg: '#FDF4FF', text: '#86198F', dot: '#D946EF' },
+  philosophy: { bg: '#F1F5F9', text: '#475569', dot: '#94A3B8' },
+  linguistics: { bg: '#ECFEFF', text: '#155E75', dot: '#06B6D4' },
 }
 
 export const severityColors = {

@@ -2321,6 +2321,56 @@ class InventoryAlert(Base):
         }
 
 
+class JournalProfile(Base):
+    """Academic journal profiles with prestige metrics from OpenAlex + SJR."""
+    __tablename__ = 'journal_profiles'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    openalex_id = Column(String(100), nullable=True, index=True)
+    issn = Column(String(20), nullable=True, index=True)
+    issn_l = Column(String(20), nullable=True)
+    name = Column(String(500), nullable=False)
+    h_index = Column(Integer, default=0)
+    citedness_2yr = Column(Float, default=0.0)
+    works_count = Column(Integer, default=0)
+    sjr_score = Column(Float, nullable=True)
+    sjr_quartile = Column(String(2), nullable=True)
+    impact_factor = Column(Float, nullable=True)
+    primary_field = Column(String(100), nullable=False, index=True)
+    primary_subfield = Column(String(200), nullable=True)
+    composite_score = Column(Float, default=0.0)
+    computed_tier = Column(Integer, default=3)
+    publisher = Column(String(300), nullable=True)
+    homepage_url = Column(String(500), nullable=True)
+    data_source = Column(String(20), default='openalex')
+    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index('ix_journal_field_tier', 'primary_field', 'computed_tier'),
+        Index('ix_journal_composite', 'primary_field', 'composite_score'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "openalex_id": self.openalex_id,
+            "issn": self.issn,
+            "name": self.name,
+            "h_index": self.h_index,
+            "citedness_2yr": round(self.citedness_2yr, 2) if self.citedness_2yr else 0,
+            "sjr_score": round(self.sjr_score, 3) if self.sjr_score else None,
+            "sjr_quartile": self.sjr_quartile,
+            "impact_factor": round(self.impact_factor, 3) if self.impact_factor else None,
+            "primary_field": self.primary_field,
+            "primary_subfield": self.primary_subfield,
+            "composite_score": round(self.composite_score, 1),
+            "computed_tier": self.computed_tier,
+            "publisher": self.publisher,
+            "homepage_url": self.homepage_url,
+            "data_source": self.data_source,
+        }
+
+
 def _migrate_enum_values():
     """Add any missing enum values to PostgreSQL enum types.
 

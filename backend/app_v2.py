@@ -233,6 +233,17 @@ app.register_blueprint(journal_bp)
 
 print("✓ API blueprints registered")
 
+# Check journal data freshness
+try:
+    from services.journal_data_service import get_journal_data_service
+    _jds = get_journal_data_service()
+    if not _jds.check_freshness():
+        print("⚠ Journal data stale or missing — run: python -m scripts.populate_journals")
+    else:
+        print("✓ Journal data is fresh")
+except Exception as _e:
+    print(f"⚠ Journal data check skipped: {_e}")
+
 # Ensure configured admin users have admin role
 ensure_admins()
 
