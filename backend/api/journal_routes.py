@@ -1,5 +1,5 @@
 """
-High-Impact Journal Predictor — Public API endpoint.
+High-Impact Journal Predictor — Public API endpoints.
 No authentication required.
 """
 
@@ -98,17 +98,19 @@ def analyze_manuscript():
     return response
 
 
+# ── Data Management Endpoints ────────────────────────────────────────────────
+
 @journal_bp.route('/populate', methods=['POST'])
 def populate_journals():
     """Populate journal database from OpenAlex. Runs in background thread."""
-    field = request.args.get('field')  # optional: populate single field
+    field = request.args.get('field')
+    force = request.args.get('force', 'false').lower() == 'true'
 
     from services.journal_data_service import get_journal_data_service
     svc = get_journal_data_service()
 
-    # Check if already fresh
-    if svc.check_freshness() and not field:
-        return jsonify({"status": "skipped", "message": "Journal data is fresh (<30 days old)"})
+    if svc.check_freshness() and not field and not force:
+        return jsonify({"status": "skipped", "message": "Journal data is fresh (<30 days old). Use ?force=true to override."})
 
     def run_populate():
         try:
@@ -122,3 +124,60 @@ def populate_journals():
     thread.start()
 
     return jsonify({"status": "started", "message": f"Populating {'all fields' if not field else field} in background"})
+
+
+@journal_bp.route('/enrich-sjr', methods=['POST'])
+def enrich_sjr():
+    """Enrich existing journal data with SJR scores via Firecrawl scraping. Runs in background."""
+    field = request.args.get('field')
+
+    from services.journal_data_service import get_journal_data_service
+    svc = get_journal_data_service()
+
+    def run_enrich():
+        try:
+            svc.enrich_with_sjr(field=field)
+            svc._recompute_tiers_with_sjr(field=field)
+            print(f"[Journal] SJR enrichment complete for {'all fields' if not field else field}")
+        except Exception as e:
+            print(f"[Journal] SJR enrichment error: {e}")
+            traceback.print_exc()
+
+    thread = threading.Thread(target=run_enrich, daemon=True)
+    thread.start()
+
+    return jsonify({"status": "started", "message": f"Enriching SJR data for {'all fields' if not field else field}"})
+
+
+@journal_bp.route('/full-refresh', methods=['POST'])
+def full_refresh():
+    """Full pipeline: OpenAlex + SJR + recompute tiers. Runs in background.
+    Call this monthly to keep data fresh."""
+    field = request.args.get('field')
+    force = request.args.get('force', 'false').lower() == 'true'
+
+    from services.journal_data_service import get_journal_data_service
+    svc = get_journal_data_service()
+
+    if svc.check_freshness() and not force:
+        return jsonify({"status": "skipped", "message": "Journal data is fresh (<30 days old). Use ?force=true to override."})
+
+    def run_refresh():
+        try:
+            svc.full_refresh(field=field)
+        except Exception as e:
+            print(f"[Journal] Full refresh error: {e}")
+            traceback.print_exc()
+
+    thread = threading.Thread(target=run_refresh, daemon=True)
+    thread.start()
+
+    return jsonify({"status": "started", "message": f"Full refresh for {'all fields' if not field else field}"})
+
+
+@journal_bp.route('/data-summary', methods=['GET'])
+def data_summary():
+    """Get summary of all stored journal data — counts per field and tier."""
+    from services.journal_data_service import get_journal_data_service
+    svc = get_journal_data_service()
+    return jsonify(svc.get_data_summary())

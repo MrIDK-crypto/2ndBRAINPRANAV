@@ -1,6 +1,13 @@
 """
-Populate journal profiles from OpenAlex.
-Run: python -m scripts.populate_journals [--field economics]
+Populate journal profiles from OpenAlex + SCImago SJR.
+
+Usage:
+  python -m scripts.populate_journals                    # full refresh (OpenAlex + SJR)
+  python -m scripts.populate_journals --field economics  # single field
+  python -m scripts.populate_journals --openalex-only    # skip SJR scraping
+  python -m scripts.populate_journals --sjr-only         # only enrich SJR (assumes OpenAlex data exists)
+  python -m scripts.populate_journals --list-fields      # list available fields
+  python -m scripts.populate_journals --summary          # show current DB state
 """
 
 import argparse
@@ -14,10 +21,44 @@ from database.models import init_database
 from services.journal_data_service import get_journal_data_service, FIELD_SEARCH_TERMS
 
 
+def print_summary():
+    """Print current journal database summary."""
+    service = get_journal_data_service()
+    summary = service.get_data_summary()
+
+    print("\n╔══════════════════════════════════════════════════════════════╗")
+    print("║              Journal Database Summary                       ║")
+    print("╠══════════════════════════════════════════════════════════════╣")
+
+    if not summary.get("fields"):
+        print("║  No journal data found. Run populate first.                ║")
+        print("╚══════════════════════════════════════════════════════════════╝")
+        return
+
+    header = f"{'Field':<25} {'Total':>6} {'T1':>4} {'T2':>4} {'T3':>4} {'SJR':>5}"
+    print(f"║  {header}  ║")
+    print("╠══════════════════════════════════════════════════════════════╣")
+
+    for field in sorted(summary["fields"].keys()):
+        data = summary["fields"][field]
+        row = f"{field:<25} {data['total']:>6} {data['tier1']:>4} {data['tier2']:>4} {data['tier3']:>4} {data['has_sjr']:>5}"
+        print(f"║  {row}  ║")
+
+    print("╠══════════════════════════════════════════════════════════════╣")
+    total_line = f"Total: {summary['total_journals']} journals across {summary['total_fields']} fields"
+    updated_line = f"Last updated: {summary.get('last_updated', 'never')}"
+    print(f"║  {total_line:<58}║")
+    print(f"║  {updated_line:<58}║")
+    print("╚══════════════════════════════════════════════════════════════╝")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Populate journal profiles from OpenAlex")
+    parser = argparse.ArgumentParser(description="Populate journal profiles from OpenAlex + SCImago SJR")
     parser.add_argument("--field", type=str, help="Single field to populate (default: all)")
     parser.add_argument("--list-fields", action="store_true", help="List available fields")
+    parser.add_argument("--summary", action="store_true", help="Show current database summary")
+    parser.add_argument("--openalex-only", action="store_true", help="Only fetch from OpenAlex (skip SJR)")
+    parser.add_argument("--sjr-only", action="store_true", help="Only enrich with SJR data (assumes OpenAlex data exists)")
     args = parser.parse_args()
 
     if args.list_fields:
@@ -29,49 +70,29 @@ def main():
     # Ensure tables exist
     init_database()
 
+    if args.summary:
+        print_summary()
+        return
+
     service = get_journal_data_service()
 
-    if args.field:
-        if args.field not in FIELD_SEARCH_TERMS:
-            print(f"Unknown field: {args.field}")
-            print(f"Available: {', '.join(sorted(FIELD_SEARCH_TERMS.keys()))}")
-            sys.exit(1)
-        print(f"Populating journals for: {args.field}")
+    if args.field and args.field not in FIELD_SEARCH_TERMS:
+        print(f"Unknown field: {args.field}")
+        print(f"Available: {', '.join(sorted(FIELD_SEARCH_TERMS.keys()))}")
+        sys.exit(1)
+
+    if args.sjr_only:
+        print(f"Enriching SJR data for {'all fields' if not args.field else args.field}...")
+        service.enrich_with_sjr(field=args.field)
+        service._recompute_tiers_with_sjr(field=args.field)
+    elif args.openalex_only:
+        print(f"Populating from OpenAlex for {'all fields' if not args.field else args.field}...")
+        service.populate_journals(field=args.field)
     else:
-        print(f"Populating journals for all {len(FIELD_SEARCH_TERMS)} fields...")
+        print(f"Full refresh for {'all fields' if not args.field else args.field}...")
+        service.full_refresh(field=args.field)
 
-    service.populate_journals(field=args.field)
-
-    # Print summary
-    from database.models import SessionLocal, JournalProfile
-    from sqlalchemy import func as sa_func
-    db = SessionLocal()
-    try:
-        counts = db.query(
-            JournalProfile.primary_field,
-            JournalProfile.computed_tier,
-            sa_func.count(JournalProfile.id)
-        ).group_by(
-            JournalProfile.primary_field,
-            JournalProfile.computed_tier
-        ).all()
-
-        print("\n=== Journal Database Summary ===")
-        field_totals = {}
-        for field, tier, count in counts:
-            if field not in field_totals:
-                field_totals[field] = {1: 0, 2: 0, 3: 0}
-            field_totals[field][tier] = count
-
-        for field in sorted(field_totals.keys()):
-            tiers = field_totals[field]
-            total = sum(tiers.values())
-            print(f"  {field}: {total} total (T1={tiers[1]}, T2={tiers[2]}, T3={tiers[3]})")
-
-        grand_total = sum(sum(t.values()) for t in field_totals.values())
-        print(f"\nGrand total: {grand_total} journals")
-    finally:
-        db.close()
+    print_summary()
 
 
 if __name__ == "__main__":

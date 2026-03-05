@@ -183,6 +183,39 @@ try:
 except Exception as e:
     print(f"⚠ Column migration failed (non-fatal): {e}")
 
+# Widen journal_profiles varchar columns to text (fix truncation errors)
+def migrate_journal_columns():
+    """Alter journal_profiles varchar columns to text to prevent truncation."""
+    alterations = [
+        ("journal_profiles", "name", "ALTER TABLE journal_profiles ALTER COLUMN name TYPE TEXT"),
+        ("journal_profiles", "primary_subfield", "ALTER TABLE journal_profiles ALTER COLUMN primary_subfield TYPE TEXT"),
+        ("journal_profiles", "publisher", "ALTER TABLE journal_profiles ALTER COLUMN publisher TYPE TEXT"),
+        ("journal_profiles", "homepage_url", "ALTER TABLE journal_profiles ALTER COLUMN homepage_url TYPE TEXT"),
+        ("journal_profiles", "sjr_quartile", "ALTER TABLE journal_profiles ALTER COLUMN sjr_quartile TYPE VARCHAR(4)"),
+        ("journal_profiles", "data_source", "ALTER TABLE journal_profiles ALTER COLUMN data_source TYPE VARCHAR(50)"),
+    ]
+    try:
+        with engine.connect() as conn:
+            # Check if table exists first
+            result = conn.execute(text(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = 'journal_profiles'"
+            ))
+            if not result.fetchone():
+                return
+            for table, column, sql in alterations:
+                try:
+                    conn.execute(text(sql))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+    except Exception as e:
+        print(f"⚠ Journal column migration (non-fatal): {e}")
+
+try:
+    migrate_journal_columns()
+except Exception as e:
+    print(f"⚠ Journal migration failed (non-fatal): {e}")
+
 # ============================================================================
 # REGISTER API BLUEPRINTS
 # ============================================================================
@@ -233,16 +266,48 @@ app.register_blueprint(journal_bp)
 
 print("✓ API blueprints registered")
 
-# Check journal data freshness
+# Check journal data freshness and schedule monthly auto-refresh
 try:
     from services.journal_data_service import get_journal_data_service
     _jds = get_journal_data_service()
     if not _jds.check_freshness():
-        print("⚠ Journal data stale or missing — run: python -m scripts.populate_journals")
+        print("⚠ Journal data stale or missing — auto-populating in background...")
+        import threading
+        def _auto_populate():
+            try:
+                _jds.populate_journals()
+                print("✓ Journal auto-population complete")
+            except Exception as _pe:
+                print(f"⚠ Journal auto-population failed: {_pe}")
+        threading.Thread(target=_auto_populate, daemon=True).start()
     else:
         print("✓ Journal data is fresh")
 except Exception as _e:
     print(f"⚠ Journal data check skipped: {_e}")
+
+# Monthly journal data refresh — runs a background check every 24h
+def _start_journal_refresh_scheduler():
+    """Background thread that checks data freshness daily and refreshes if stale (>30 days)."""
+    import time as _time
+    def _scheduler_loop():
+        while True:
+            _time.sleep(86400)  # check every 24 hours
+            try:
+                svc = get_journal_data_service()
+                if not svc.check_freshness():
+                    print("[JournalRefresh] Data is stale — starting monthly refresh...")
+                    svc.populate_journals()
+                    print("[JournalRefresh] Monthly refresh complete")
+            except Exception as e:
+                print(f"[JournalRefresh] Error: {e}")
+    t = threading.Thread(target=_scheduler_loop, daemon=True, name="journal-refresh")
+    t.start()
+    print("✓ Journal monthly refresh scheduler started")
+
+try:
+    _start_journal_refresh_scheduler()
+except Exception as _e:
+    print(f"⚠ Journal scheduler skipped: {_e}")
 
 # Ensure configured admin users have admin role
 ensure_admins()
