@@ -136,38 +136,142 @@ def clear_seeded(db):
     print(f"  Cleared {deleted} experiments and {deleted_comments} comments")
 
 
+# Realistic comments from researchers
+SAMPLE_COMMENTS = [
+    # General replication comments
+    "We tried replicating this in our lab last semester and got similar null results. The effect size was basically zero even with n=400.",
+    "This matches what we found. I think the original study had serious demand characteristics that inflated the effect.",
+    "Ran this as part of a methods class - students were shocked when it didn't replicate. Great teaching moment about publication bias.",
+    "The statistical power in the original was way too low. Not surprising this didn't hold up.",
+    "We need more null results like this published. The file drawer problem is real.",
+
+    # Methodological critiques
+    "Looking at the original methods, the manipulation check was weak. No wonder it doesn't replicate.",
+    "I wonder if this is a WEIRD sample problem - the original was all undergrads from one university.",
+    "The effect might be real but much smaller than originally claimed. Classic winner's curse.",
+    "Has anyone tried this with a pre-registered design? Would love to see a definitive test.",
+    "The original p-value was .048 - classic p-hacking territory.",
+
+    # Personal experiences
+    "Spent 6 months on my thesis trying to replicate a version of this. Wish I'd seen this earlier.",
+    "My advisor still cites the original. Sending them this link...",
+    "This is why I switched to computational methods. At least the code either works or it doesn't.",
+    "Failed to replicate this three times before finding this archive. Thank you for saving others the trouble.",
+    "We actually found the opposite effect in our sample. Publication bias works both ways I guess.",
+
+    # Constructive suggestions
+    "Maybe worth trying with a more sensitive measure? The DV in most replications seems noisy.",
+    "I think the boundary conditions are narrower than originally thought. Works in some contexts but not others.",
+    "Would be interesting to see a meta-analysis of all these failed replications.",
+    "The theory might still be salvageable even if this specific operationalization doesn't work.",
+    "Has anyone contacted the original authors? Would be good to get their perspective.",
+
+    # Humor/frustration
+    "Another day, another failed replication. At least we're documenting it now.",
+    "Psychology's greatest hits: things that don't replicate, volume 47.",
+    "My PhD in three words: 'did not replicate'",
+    "Plot twist: the replication crisis was the friends we made along the way.",
+    "At this point I'm more surprised when something DOES replicate.",
+
+    # Specific technical comments
+    "The effect disappears completely when you control for participant attention.",
+    "Tried online vs. in-lab - no difference, still null.",
+    "Even with double the sample size, confidence interval still includes zero.",
+    "Bayesian analysis strongly favors the null hypothesis here.",
+    "Multi-site replication across 5 universities, all null. It's not a fluke.",
+]
+
+import random
+
+def seed_comments(db):
+    """Add realistic sample comments to some experiments"""
+    experiments = db.query(FailedExperiment).filter(
+        FailedExperiment.status == 'published'
+    ).all()
+
+    if not experiments:
+        print("  No experiments to add comments to")
+        return
+
+    # Add comments to ~30% of experiments (random selection)
+    num_to_comment = max(1, len(experiments) // 3)
+    selected = random.sample(experiments, min(num_to_comment, len(experiments)))
+
+    total_comments = 0
+    for exp in selected:
+        # Add 1-4 comments per experiment
+        num_comments = random.randint(1, 4)
+        chosen_comments = random.sample(SAMPLE_COMMENTS, min(num_comments, len(SAMPLE_COMMENTS)))
+
+        for content in chosen_comments:
+            db.add(ExperimentComment(
+                id=generate_uuid(),
+                experiment_id=exp.id,
+                anonymous_id=f'anon_{random.randint(1000, 9999)}',
+                content=content,
+                upvotes=random.randint(0, 15),
+                status='published'
+            ))
+            total_comments += 1
+
+    db.commit()
+    print(f"  Added {total_comments} comments to {len(selected)} experiments")
+
+
 if __name__ == '__main__':
     import argparse
+    import traceback
+
     parser = argparse.ArgumentParser(description='Seed Reproducibility Archive')
     parser.add_argument('--clear', action='store_true', help='Clear seeded experiments first')
     args = parser.parse_args()
 
-    print("\n" + "=" * 60)
-    print("  Reproducibility Archive - Database Seeder")
-    print("=" * 60)
+    print("\n" + "=" * 60, flush=True)
+    print("  Reproducibility Archive - Database Seeder", flush=True)
+    print("=" * 60, flush=True)
 
-    init_database()
-
-    db = SessionLocal()
     try:
-        if args.clear:
-            clear_seeded(db)
+        print("  Initializing database...", flush=True)
+        init_database()
+        print("  Database initialized.", flush=True)
 
-        seed_categories(db)
-        seed_experiments(db)
+        db = SessionLocal()
+        try:
+            if args.clear:
+                print("  Clearing existing data...", flush=True)
+                clear_seeded(db)
 
-        total = db.query(FailedExperiment).filter(
-            FailedExperiment.status == 'published'
-        ).count()
-        print(f"\n  Total experiments: {total}")
+            print("  Seeding categories...", flush=True)
+            seed_categories(db)
 
-        # Category breakdown
-        categories = db.query(ExperimentCategory).all()
-        for cat in categories:
-            if cat.experiment_count > 0:
-                print(f"    {cat.name}: {cat.experiment_count}")
+            print("  Seeding experiments...", flush=True)
+            seed_experiments(db)
 
-    finally:
-        db.close()
+            total = db.query(FailedExperiment).filter(
+                FailedExperiment.status == 'published'
+            ).count()
+            print(f"\n  Total experiments: {total}", flush=True)
 
-    print("=" * 60 + "\n")
+            # Verify source_url values
+            with_url = db.query(FailedExperiment).filter(
+                FailedExperiment.source_url.isnot(None),
+                FailedExperiment.source_url != ''
+            ).count()
+            print(f"  With source_url: {with_url}", flush=True)
+
+            # Category breakdown
+            categories = db.query(ExperimentCategory).all()
+            for cat in categories:
+                if cat.experiment_count > 0:
+                    print(f"    {cat.name}: {cat.experiment_count}", flush=True)
+
+        finally:
+            db.close()
+
+        print("=" * 60 + "\n", flush=True)
+        print("  SEEDING COMPLETED SUCCESSFULLY", flush=True)
+
+    except Exception as e:
+        print(f"\n  ERROR: {e}", flush=True)
+        traceback.print_exc()
+        raise
