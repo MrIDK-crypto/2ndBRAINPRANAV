@@ -592,102 +592,69 @@ class JournalScorerService:
         else:
             return 3, "Tier 3 — Solid Journal"
 
+    # Mega-journals that publish everything — never recommend as Target/Stretch
+    MEGA_JOURNALS = {
+        "plos one", "scientific reports", "frontiers in medicine",
+        "biomed research international", "medicine", "cureus",
+        "heliyon", "ieee access", "sage open", "peerj",
+    }
+
     def _match_journals_by_keywords(self, keywords: list, field: str, tier: int) -> dict:
-        """Find journals by searching OpenAlex for PAPERS matching the keywords,
-        then extracting which journals published those papers. This finds journals
-        like Cancer Research for 'proteomics iron oncology' even though the keyword
-        isn't in the journal name. Falls back to DB matching if OpenAlex fails."""
+        """Two-stage journal discovery:
+        1) Broad search → top 5 prestigious journals (sorted by citedness, not h-index)
+        2) Niche search with most specific keywords → top 5 specialty journals
+        Mega-journals (PLoS ONE, Sci Reports) demoted to Safe Options only."""
         import requests as req
 
         OPENALEX_BASE = "https://api.openalex.org"
         OPENALEX_EMAIL = "prmogathala@gmail.com"
 
-        try:
-            journal_paper_counts = {}  # source_id -> {name, h_index, ..., count}
+        def _search_works_for_journals(query: str, per_page: int = 50) -> dict:
+            """Search OpenAlex works, return {source_id: {name, paper_count}}."""
+            url = (
+                f"{OPENALEX_BASE}/works"
+                f"?search={req.utils.quote(query)}"
+                f"&filter=type:article,primary_location.source.type:journal"
+                f"&group_by=primary_location.source.id"
+                f"&per_page={per_page}"
+                f"&mailto={OPENALEX_EMAIL}"
+            )
+            results = {}
+            try:
+                resp = req.get(url, timeout=15)
+                if resp.status_code == 200:
+                    for g in resp.json().get("group_by", []):
+                        sid = g.get("key", "")
+                        name = g.get("key_display_name", "")
+                        if sid and name:
+                            results[sid] = {"source_id": sid, "name": name, "paper_count": g.get("count", 0)}
+            except Exception as e:
+                print(f"[Journal] OpenAlex works query failed for '{query}': {e}")
+            return results
 
-            # Search for papers matching keyword combinations
-            search_queries = []
-            if len(keywords) >= 2:
-                search_queries.append(" ".join(keywords[:5]))  # combined search
-            if len(keywords) >= 3:
-                search_queries.append(" ".join(keywords[:3]))  # narrower combo
-            # Also individual keywords for broader coverage
-            for kw in keywords[:4]:
-                search_queries.append(kw)
-
-            for query in search_queries:
-                # Search works (papers), get the journals they're published in
-                url = (
-                    f"{OPENALEX_BASE}/works"
-                    f"?search={req.utils.quote(query)}"
-                    f"&filter=type:article,primary_location.source.type:journal"
-                    f"&group_by=primary_location.source.id"
-                    f"&per_page=50"
-                    f"&mailto={OPENALEX_EMAIL}"
-                )
-                try:
-                    resp = req.get(url, timeout=15)
-                    if resp.status_code != 200:
-                        continue
-                    groups = resp.json().get("group_by", [])
-                    for group in groups:
-                        source_id = group.get("key", "")
-                        paper_count = group.get("count", 0)
-                        display_name = group.get("key_display_name", "")
-
-                        if not source_id or not display_name:
-                            continue
-
-                        if source_id in journal_paper_counts:
-                            journal_paper_counts[source_id]["paper_count"] += paper_count
-                        else:
-                            journal_paper_counts[source_id] = {
-                                "source_id": source_id,
-                                "name": display_name,
-                                "paper_count": paper_count,
-                            }
-                except Exception as e:
-                    print(f"[Journal] OpenAlex works query failed for '{query}': {e}")
-                    continue
-
-            if not journal_paper_counts:
-                print(f"[Journal] No works-based matches from OpenAlex, falling back to DB")
-                return self._match_journals_from_db(field, tier)
-
-            # Now fetch full metadata for the top journals (by paper count)
-            top_sources = sorted(
-                journal_paper_counts.values(),
-                key=lambda j: j["paper_count"],
-                reverse=True
-            )[:30]  # top 30 most-publishing journals for these keywords
-
-            # Batch fetch source metadata
-            source_ids = [s["source_id"] for s in top_sources]
-            pipe_filter = "|".join(source_ids)
-            meta_url = (
+        def _enrich_sources(source_ids: list) -> list:
+            """Fetch full metadata (h-index, citedness, works_count) for source IDs."""
+            if not source_ids:
+                return []
+            pipe_filter = "|".join(source_ids[:30])
+            url = (
                 f"{OPENALEX_BASE}/sources"
                 f"?filter=ids.openalex:{pipe_filter}"
                 f"&per_page=30"
                 f"&mailto={OPENALEX_EMAIL}"
             )
-            enriched_journals = []
+            enriched = []
             try:
-                meta_resp = req.get(meta_url, timeout=15)
-                if meta_resp.status_code == 200:
-                    for src in meta_resp.json().get("results", []):
-                        oa_id = src.get("id", "")
+                resp = req.get(url, timeout=15)
+                if resp.status_code == 200:
+                    for src in resp.json().get("results", []):
                         summary = src.get("summary_stats", {})
                         h_index = summary.get("h_index", 0) or 0
                         citedness = summary.get("2yr_mean_citedness", 0.0) or 0.0
                         works = src.get("works_count", 0) or 0
-
-                        # Skip very small journals
-                        if works < 200 or h_index < 5:
+                        if works < 100 or h_index < 5:
                             continue
-
-                        paper_count = journal_paper_counts.get(oa_id, {}).get("paper_count", 0)
-
-                        enriched_journals.append({
+                        enriched.append({
                             "name": src.get("display_name", "Unknown"),
                             "h_index": h_index,
                             "citedness_2yr": round(citedness, 2),
@@ -697,35 +664,95 @@ class JournalScorerService:
                             "composite_score": 0,
                             "homepage_url": src.get("homepage_url") or "",
                             "publisher": src.get("host_organization_name") or "",
-                            "keyword_papers": paper_count,
+                            "openalex_id": src.get("id", ""),
                         })
             except Exception as e:
                 print(f"[Journal] OpenAlex source metadata fetch failed: {e}")
+            return enriched
 
-            if not enriched_journals:
-                print(f"[Journal] No enriched journals, falling back to DB")
-                return self._match_journals_from_db(field, tier)
+        def _is_mega_journal(name: str) -> bool:
+            return name.lower().strip() in self.MEGA_JOURNALS
 
-            # Sort by h-index to determine tiers
-            ranked = sorted(enriched_journals, key=lambda j: j["h_index"], reverse=True)
-            total = len(ranked)
+        try:
+            # ── Stage 1: Broad search for prestigious journals ──────────
+            broad_query = " ".join(keywords[:5])
+            broad_journals = _search_works_for_journals(broad_query, per_page=50)
 
-            tier1_cutoff = max(1, int(total * 0.15))
-            tier2_cutoff = max(tier1_cutoff + 1, int(total * 0.50))
+            # Also search with top 3 keywords for variety
+            if len(keywords) >= 3:
+                extra = _search_works_for_journals(" ".join(keywords[:3]), per_page=30)
+                for sid, info in extra.items():
+                    if sid not in broad_journals:
+                        broad_journals[sid] = info
 
-            stretch_journals = ranked[:tier1_cutoff]
-            target_journals = ranked[tier1_cutoff:tier2_cutoff]
-            safe_journals = ranked[tier2_cutoff:]
+            # Get top 25 by paper count, fetch metadata
+            top_broad = sorted(broad_journals.values(), key=lambda j: j["paper_count"], reverse=True)[:25]
+            broad_enriched = _enrich_sources([s["source_id"] for s in top_broad])
 
-            if tier == 1:
-                target_journals = stretch_journals
-                stretch_journals = []
-                safe_journals = ranked[tier1_cutoff:]
+            # Sort by citedness (quality) not h-index (size), exclude mega-journals
+            prestigious = [j for j in broad_enriched if not _is_mega_journal(j["name"])]
+            prestigious.sort(key=lambda j: j["citedness_2yr"], reverse=True)
+            top_5 = prestigious[:5]
+
+            # ── Stage 2: Niche search for specialty journals ────────────
+            # Use the 2-3 most specific keywords to find niche journals
+            niche_queries = []
+            if len(keywords) >= 2:
+                niche_queries.append(" ".join(keywords[:2]))
+            if len(keywords) >= 4:
+                niche_queries.append(" ".join(keywords[2:4]))
+
+            niche_journals = {}
+            for q in niche_queries:
+                results = _search_works_for_journals(q, per_page=30)
+                for sid, info in results.items():
+                    if sid not in niche_journals:
+                        niche_journals[sid] = info
+                    else:
+                        niche_journals[sid]["paper_count"] += info["paper_count"]
+
+            # Fetch metadata for niche candidates
+            niche_top = sorted(niche_journals.values(), key=lambda j: j["paper_count"], reverse=True)[:20]
+            niche_enriched = _enrich_sources([s["source_id"] for s in niche_top])
+
+            # Filter: exclude mega-journals AND journals already in top 5
+            top_5_names = {j["name"] for j in top_5}
+            niche_filtered = [
+                j for j in niche_enriched
+                if not _is_mega_journal(j["name"]) and j["name"] not in top_5_names
+            ]
+            # Sort niche by citedness too
+            niche_filtered.sort(key=lambda j: j["citedness_2yr"], reverse=True)
+            niche_5 = niche_filtered[:5]
+
+            # ── Collect mega-journals for Safe Options ──────────────────
+            mega = [j for j in broad_enriched if _is_mega_journal(j["name"])]
+            mega.sort(key=lambda j: j["citedness_2yr"], reverse=True)
+
+            # ── Build final result ──────────────────────────────────────
+            # Target = top 5 prestigious + top 5 niche (10 total)
+            target = top_5 + niche_5
+
+            # Stretch = next best journals not already in target
+            target_names = {j["name"] for j in target}
+            stretch_candidates = [
+                j for j in prestigious[5:]
+                if j["name"] not in target_names
+            ]
+            stretch_candidates.sort(key=lambda j: j["citedness_2yr"], reverse=True)
+
+            # Safe = mega-journals + lower-ranked journals
+            safe_candidates = mega[:3]
+            remaining = [
+                j for j in niche_filtered[5:]
+                if j["name"] not in target_names
+            ]
+            safe_candidates.extend(remaining[:2])
 
             return {
-                "primary_matches": target_journals[:8],
-                "stretch_matches": stretch_journals[:5],
-                "safe_matches": safe_journals[:5],
+                "primary_matches": target[:10],
+                "stretch_matches": stretch_candidates[:5],
+                "safe_matches": safe_candidates[:5],
             }
         except Exception as e:
             print(f"[Journal] Keyword-based journal matching failed: {e}")

@@ -1086,7 +1086,7 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
                   <MetricPill label="h-index" value={String(j.h_index)} />
                 )}
                 {j.impact_factor !== undefined && j.impact_factor > 0 && (
-                  <MetricPill label="IF" value={j.impact_factor.toFixed(1)} />
+                  <MetricPill label="Citedness" value={j.impact_factor.toFixed(1)} />
                 )}
                 {j.sjr_quartile && (
                   <MetricPill label="" value={j.sjr_quartile} color={
