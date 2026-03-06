@@ -12,6 +12,7 @@ interface FieldInfo {
   field_label: string
   confidence: number
   subfield: string
+  keywords?: string[]
   reasoning: string
 }
 
