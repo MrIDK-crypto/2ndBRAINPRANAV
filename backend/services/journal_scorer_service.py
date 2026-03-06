@@ -402,23 +402,24 @@ class JournalScorerService:
             f"FIELDS:\n{field_list}\n\n"
             "Respond ONLY in valid JSON:\n"
             '{"field": "...", "confidence": 0.0-1.0, "subfield": "specific subfield", '
-            '"keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6"], '
+            '"keywords": ["kw1", "kw2", "kw3", "...", "kw20"], '
             '"reasoning": "one sentence"}\n\n'
             "KEYWORD RULES:\n"
-            "- Extract 5-8 specific research keywords/phrases from the manuscript\n"
-            "- Include: specific techniques (e.g. 'mass spectrometry', 'CRISPR'), "
-            "biological targets (e.g. 'iron metabolism', 'p53'), "
-            "disease areas (e.g. 'pancreatic cancer', 'ferroptosis'), "
-            "and methodologies (e.g. 'proteomics', 'single-cell RNA-seq')\n"
-            "- Do NOT use generic terms like 'biology' or 'research' — be specific\n"
-            "- These keywords will be used to find the most relevant journals for this exact paper\n\n"
+            "- Extract exactly 20 specific research keywords/phrases from the manuscript\n"
+            "- Include a mix of: specific techniques (e.g. 'LC-MS/MS', 'CRISPR-Cas9', 'Western blot'), "
+            "biological targets/pathways (e.g. 'iron metabolism', 'p53', 'mTOR signaling'), "
+            "disease areas (e.g. 'pancreatic cancer', 'ferroptosis', 'glioblastoma'), "
+            "methodologies (e.g. 'proteomics', 'single-cell RNA-seq', 'xenograft model'), "
+            "and key molecules/genes/proteins studied in the paper\n"
+            "- Do NOT use generic terms like 'biology', 'research', 'analysis' — be specific\n"
+            "- These keywords will be used to find top professors and their publishing venues\n\n"
             f"MANUSCRIPT EXCERPT:\n{text_excerpt}"
         )
 
         resp = self.openai.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=350,
+            max_tokens=600,
         )
         raw = resp.choices[0].message.content.strip()
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -428,7 +429,7 @@ class JournalScorerService:
             if result.get("field") not in FIELD_CONFIGS:
                 result["field"] = "economics"
                 result["confidence"] = 0.5
-            # Ensure keywords exist
+            # Ensure keywords exist and have enough
             if not result.get("keywords") or not isinstance(result["keywords"], list):
                 result["keywords"] = [result.get("subfield", "general")]
             return result
@@ -592,7 +593,7 @@ class JournalScorerService:
         else:
             return 3, "Tier 3 — Solid Journal"
 
-    # Mega-journals that publish everything — never recommend as Target/Stretch
+    # Mega-journals that publish everything — demote to Safe Options only
     MEGA_JOURNALS = {
         "plos one", "scientific reports", "frontiers in medicine",
         "biomed research international", "medicine", "cureus",
@@ -600,54 +601,151 @@ class JournalScorerService:
     }
 
     def _match_journals_by_keywords(self, keywords: list, field: str, tier: int) -> dict:
-        """Two-stage journal discovery:
-        1) Broad search → top 5 prestigious journals (sorted by citedness, not h-index)
-        2) Niche search with most specific keywords → top 5 specialty journals
-        Mega-journals (PLoS ONE, Sci Reports) demoted to Safe Options only."""
+        """Professor-based journal discovery pipeline:
+        1) Extract 20 keywords from paper (done upstream)
+        2) Find top-cited papers matching keywords → extract top 100 authors
+        3) Find where those top authors publish (recent 3 years)
+        4) Rank journals by citedness, split into Target (5 top + 5 niche) / Stretch / Safe
+        """
         import requests as req
+        from collections import Counter
 
         OPENALEX_BASE = "https://api.openalex.org"
         OPENALEX_EMAIL = "prmogathala@gmail.com"
+        HEADERS = {"User-Agent": f"2ndBrain/1.0 (mailto:{OPENALEX_EMAIL})", "Accept": "application/json"}
 
-        def _search_works_for_journals(query: str, per_page: int = 50) -> dict:
-            """Search OpenAlex works, return {source_id: {name, paper_count}}."""
-            url = (
-                f"{OPENALEX_BASE}/works"
-                f"?search={req.utils.quote(query)}"
-                f"&filter=type:article,primary_location.source.type:journal"
-                f"&group_by=primary_location.source.id"
-                f"&per_page={per_page}"
-                f"&mailto={OPENALEX_EMAIL}"
-            )
-            results = {}
-            try:
-                resp = req.get(url, timeout=15)
-                if resp.status_code == 200:
-                    for g in resp.json().get("group_by", []):
-                        sid = g.get("key", "")
-                        name = g.get("key_display_name", "")
-                        if sid and name:
-                            results[sid] = {"source_id": sid, "name": name, "paper_count": g.get("count", 0)}
-            except Exception as e:
-                print(f"[Journal] OpenAlex works query failed for '{query}': {e}")
-            return results
+        def _api_get(url: str, timeout: int = 15):
+            resp = req.get(url, headers=HEADERS, timeout=timeout)
+            return resp.json() if resp.status_code == 200 else None
 
-        def _enrich_sources(source_ids: list) -> list:
-            """Fetch full metadata (h-index, citedness, works_count) for source IDs."""
-            if not source_ids:
-                return []
-            pipe_filter = "|".join(source_ids[:30])
-            url = (
+        def _is_mega(name: str) -> bool:
+            return name.lower().strip() in self.MEGA_JOURNALS
+
+        try:
+            # ── Step 1: Find top-cited papers matching keywords ─────────
+            # Use multiple keyword combinations for broad coverage
+            all_author_ids = Counter()  # author_id -> total citations across matches
+
+            search_queries = [
+                " ".join(keywords[:8]),   # broad combined
+                " ".join(keywords[:4]),   # tighter combo
+                " ".join(keywords[4:10]), # middle keywords
+            ]
+            # Add 2-3 individual specific keywords
+            for kw in keywords[:3]:
+                search_queries.append(kw)
+
+            for query in search_queries:
+                url = (
+                    f"{OPENALEX_BASE}/works"
+                    f"?search={req.utils.quote(query)}"
+                    f"&filter=type:article,publication_year:2020-2026"
+                    f"&sort=cited_by_count:desc"
+                    f"&per_page=50"
+                    f"&select=id,authorships,cited_by_count"
+                    f"&mailto={OPENALEX_EMAIL}"
+                )
+                data = _api_get(url)
+                if not data:
+                    continue
+                for work in data.get("results", []):
+                    cited = work.get("cited_by_count", 0)
+                    for authorship in work.get("authorships", [])[:5]:  # top 5 authors per paper
+                        author = authorship.get("author", {})
+                        aid = author.get("id", "")
+                        if aid:
+                            all_author_ids[aid] += cited
+
+            if not all_author_ids:
+                print(f"[Journal] No authors found from keyword search, falling back")
+                return self._match_journals_from_db(field, tier)
+
+            # ── Step 2: Take top 100 authors by citation weight ─────────
+            top_authors = [aid for aid, _ in all_author_ids.most_common(100)]
+            print(f"[Journal] Found {len(all_author_ids)} unique authors, using top {len(top_authors)}")
+
+            # ── Step 3: Find where these authors publish ────────────────
+            # OpenAlex pipe filter supports ~50 IDs per call, so split into 2 batches
+            journal_counts = Counter()  # source_id -> paper count
+            journal_names = {}          # source_id -> display_name
+
+            for batch_start in range(0, len(top_authors), 50):
+                batch = top_authors[batch_start:batch_start + 50]
+                author_filter = "|".join(batch)
+                url = (
+                    f"{OPENALEX_BASE}/works"
+                    f"?filter=authorships.author.id:{author_filter},"
+                    f"type:article,"
+                    f"primary_location.source.type:journal,"
+                    f"publication_year:2022-2026"
+                    f"&group_by=primary_location.source.id"
+                    f"&per_page=50"
+                    f"&mailto={OPENALEX_EMAIL}"
+                )
+                data = _api_get(url)
+                if not data:
+                    continue
+                for g in data.get("group_by", []):
+                    sid = g.get("key", "")
+                    name = g.get("key_display_name", "")
+                    count = g.get("count", 0)
+                    if sid and name:
+                        journal_counts[sid] += count
+                        journal_names[sid] = name
+
+            if not journal_counts:
+                print(f"[Journal] No journals found from author publications, falling back")
+                return self._match_journals_from_db(field, tier)
+
+            print(f"[Journal] Top authors publish in {len(journal_counts)} journals")
+
+            # ── Step 4: Enrich top 40 journals with metadata ────────────
+            top_journal_ids = [sid for sid, _ in journal_counts.most_common(40)]
+            pipe_filter = "|".join(top_journal_ids[:30])
+            meta_url = (
                 f"{OPENALEX_BASE}/sources"
                 f"?filter=ids.openalex:{pipe_filter}"
                 f"&per_page=30"
                 f"&mailto={OPENALEX_EMAIL}"
             )
+
             enriched = []
-            try:
-                resp = req.get(url, timeout=15)
-                if resp.status_code == 200:
-                    for src in resp.json().get("results", []):
+            data = _api_get(meta_url)
+            if data:
+                for src in data.get("results", []):
+                    oa_id = src.get("id", "")
+                    summary = src.get("summary_stats", {})
+                    h_index = summary.get("h_index", 0) or 0
+                    citedness = summary.get("2yr_mean_citedness", 0.0) or 0.0
+                    works = src.get("works_count", 0) or 0
+                    if works < 100 or h_index < 5:
+                        continue
+                    enriched.append({
+                        "name": src.get("display_name", "Unknown"),
+                        "h_index": h_index,
+                        "citedness_2yr": round(citedness, 2),
+                        "works_count": works,
+                        "impact_factor": round(citedness, 1),
+                        "sjr_quartile": None,
+                        "composite_score": 0,
+                        "homepage_url": src.get("homepage_url") or "",
+                        "publisher": src.get("host_organization_name") or "",
+                        "prof_papers": journal_counts.get(oa_id, 0),
+                    })
+
+            # Also enrich IDs 30-40 if we have them
+            if len(top_journal_ids) > 30:
+                pipe_filter2 = "|".join(top_journal_ids[30:40])
+                meta_url2 = (
+                    f"{OPENALEX_BASE}/sources"
+                    f"?filter=ids.openalex:{pipe_filter2}"
+                    f"&per_page=10"
+                    f"&mailto={OPENALEX_EMAIL}"
+                )
+                data2 = _api_get(meta_url2)
+                if data2:
+                    for src in data2.get("results", []):
+                        oa_id = src.get("id", "")
                         summary = src.get("summary_stats", {})
                         h_index = summary.get("h_index", 0) or 0
                         citedness = summary.get("2yr_mean_citedness", 0.0) or 0.0
@@ -664,98 +762,38 @@ class JournalScorerService:
                             "composite_score": 0,
                             "homepage_url": src.get("homepage_url") or "",
                             "publisher": src.get("host_organization_name") or "",
-                            "openalex_id": src.get("id", ""),
+                            "prof_papers": journal_counts.get(oa_id, 0),
                         })
-            except Exception as e:
-                print(f"[Journal] OpenAlex source metadata fetch failed: {e}")
-            return enriched
 
-        def _is_mega_journal(name: str) -> bool:
-            return name.lower().strip() in self.MEGA_JOURNALS
+            if not enriched:
+                print(f"[Journal] No enriched journals, falling back")
+                return self._match_journals_from_db(field, tier)
 
-        try:
-            # ── Stage 1: Broad search for prestigious journals ──────────
-            broad_query = " ".join(keywords[:5])
-            broad_journals = _search_works_for_journals(broad_query, per_page=50)
+            # ── Step 5: Split into Target / Stretch / Safe ──────────────
+            # Separate mega-journals
+            quality = [j for j in enriched if not _is_mega(j["name"])]
+            megas = [j for j in enriched if _is_mega(j["name"])]
 
-            # Also search with top 3 keywords for variety
-            if len(keywords) >= 3:
-                extra = _search_works_for_journals(" ".join(keywords[:3]), per_page=30)
-                for sid, info in extra.items():
-                    if sid not in broad_journals:
-                        broad_journals[sid] = info
+            # Sort quality journals by citedness (quality indicator)
+            quality.sort(key=lambda j: j["citedness_2yr"], reverse=True)
 
-            # Get top 25 by paper count, fetch metadata
-            top_broad = sorted(broad_journals.values(), key=lambda j: j["paper_count"], reverse=True)[:25]
-            broad_enriched = _enrich_sources([s["source_id"] for s in top_broad])
+            # Target = top 5 high-citedness + next 5 (niche/specialty)
+            target = quality[:10]
 
-            # Sort by citedness (quality) not h-index (size), exclude mega-journals
-            prestigious = [j for j in broad_enriched if not _is_mega_journal(j["name"])]
-            prestigious.sort(key=lambda j: j["citedness_2yr"], reverse=True)
-            top_5 = prestigious[:5]
+            # Stretch = next best after target
+            stretch = quality[10:15]
 
-            # ── Stage 2: Niche search for specialty journals ────────────
-            # Use the 2-3 most specific keywords to find niche journals
-            niche_queries = []
-            if len(keywords) >= 2:
-                niche_queries.append(" ".join(keywords[:2]))
-            if len(keywords) >= 4:
-                niche_queries.append(" ".join(keywords[2:4]))
-
-            niche_journals = {}
-            for q in niche_queries:
-                results = _search_works_for_journals(q, per_page=30)
-                for sid, info in results.items():
-                    if sid not in niche_journals:
-                        niche_journals[sid] = info
-                    else:
-                        niche_journals[sid]["paper_count"] += info["paper_count"]
-
-            # Fetch metadata for niche candidates
-            niche_top = sorted(niche_journals.values(), key=lambda j: j["paper_count"], reverse=True)[:20]
-            niche_enriched = _enrich_sources([s["source_id"] for s in niche_top])
-
-            # Filter: exclude mega-journals AND journals already in top 5
-            top_5_names = {j["name"] for j in top_5}
-            niche_filtered = [
-                j for j in niche_enriched
-                if not _is_mega_journal(j["name"]) and j["name"] not in top_5_names
-            ]
-            # Sort niche by citedness too
-            niche_filtered.sort(key=lambda j: j["citedness_2yr"], reverse=True)
-            niche_5 = niche_filtered[:5]
-
-            # ── Collect mega-journals for Safe Options ──────────────────
-            mega = [j for j in broad_enriched if _is_mega_journal(j["name"])]
-            mega.sort(key=lambda j: j["citedness_2yr"], reverse=True)
-
-            # ── Build final result ──────────────────────────────────────
-            # Target = top 5 prestigious + top 5 niche (10 total)
-            target = top_5 + niche_5
-
-            # Stretch = next best journals not already in target
-            target_names = {j["name"] for j in target}
-            stretch_candidates = [
-                j for j in prestigious[5:]
-                if j["name"] not in target_names
-            ]
-            stretch_candidates.sort(key=lambda j: j["citedness_2yr"], reverse=True)
-
-            # Safe = mega-journals + lower-ranked journals
-            safe_candidates = mega[:3]
-            remaining = [
-                j for j in niche_filtered[5:]
-                if j["name"] not in target_names
-            ]
-            safe_candidates.extend(remaining[:2])
+            # Safe = mega-journals + lower-ranked quality
+            safe = megas[:3]
+            safe.extend(quality[15:17])
 
             return {
-                "primary_matches": target[:10],
-                "stretch_matches": stretch_candidates[:5],
-                "safe_matches": safe_candidates[:5],
+                "primary_matches": target,
+                "stretch_matches": stretch,
+                "safe_matches": safe[:5],
             }
         except Exception as e:
-            print(f"[Journal] Keyword-based journal matching failed: {e}")
+            print(f"[Journal] Professor-based journal matching failed: {e}")
             return self._match_journals_from_db(field, tier)
 
     def _match_journals_from_db(self, field: str, tier: int) -> dict:
