@@ -238,6 +238,7 @@ from api.website_routes import website_bp
 from api.project_routes import project_bp
 from api.inventory_routes import inventory_bp
 from api.co_researcher_routes import co_researcher_bp
+from api.research_translator_routes import research_translator_bp
 from api.journal_routes import journal_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
@@ -261,6 +262,7 @@ app.register_blueprint(website_bp)
 app.register_blueprint(project_bp)
 app.register_blueprint(inventory_bp)
 app.register_blueprint(co_researcher_bp)
+app.register_blueprint(research_translator_bp)
 app.register_blueprint(journal_bp)
 # share_bp removed - invitation system lives in auth_bp
 

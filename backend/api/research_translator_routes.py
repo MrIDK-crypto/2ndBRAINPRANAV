@@ -1,22 +1,17 @@
 """
-Research Translator — Flask API + Pipeline Orchestration
-
-Endpoints:
-  POST /api/co-researcher/analyze    — Upload "my research" + "papers I read", starts pipeline
-  GET  /api/co-researcher/stream/<id> — SSE event stream
-  POST /api/co-researcher/chat/<id>   — Interactive refinement chat
-  GET  /api/co-researcher/health      — Health check
+Research Translator — Blueprint for app_v2.py
+Endpoints under /api/co-researcher:
+  POST /analyze    — Upload "my research" + "papers I read", starts pipeline
+  GET  /stream/<id> — SSE event stream
+  POST /chat/<id>   — Interactive refinement chat
 """
 
-import os
 import uuid
 import json
 import threading
 from queue import Queue, Empty
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
+from flask import Blueprint, request, jsonify, Response
 
 from co_researcher.parser import parse_document
 from co_researcher.decomposer import extract_context, decompose_layers
@@ -24,44 +19,38 @@ from co_researcher.translator import translate_insight
 from co_researcher.adversarial import run_adversarial
 from co_researcher.chat import build_chat_context, handle_chat_message
 
-app = Flask(__name__)
-CORS(app, resources={r"/api/*": {
-    "origins": ["http://localhost:3000", "http://localhost:3006", "http://localhost:3009"],
-    "methods": ["GET", "POST", "OPTIONS"],
-    "allow_headers": ["Content-Type"]
-}})
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+research_translator_bp = Blueprint(
+    'research_translator', __name__, url_prefix='/api/co-researcher'
+)
 
-# In-memory session store
-sessions = {}
+# In-memory session store for translation pipelines
+_rt_sessions = {}
 
 
-def emit_event(session_id: str, event_type: str, data: dict):
-    """Push an SSE event to the session's queue."""
-    if session_id in sessions:
-        sessions[session_id]["events"].put({
+def _emit_event(session_id: str, event_type: str, data: dict):
+    if session_id in _rt_sessions:
+        _rt_sessions[session_id]["events"].put({
             "event": event_type,
             "data": data,
         })
 
 
-def run_pipeline(session_id: str):
-    """Main analysis pipeline. Runs in background thread."""
-    session = sessions[session_id]
+def _run_pipeline(session_id: str):
+    session = _rt_sessions[session_id]
 
     try:
         papers = session["papers"]
         total_papers = len(papers)
 
-        # ── Phase 1: Parse all documents ──
-        emit_event(session_id, "parsing_status", {
+        # Phase 1: Parse
+        _emit_event(session_id, "parsing_status", {
             "stage": "target", "progress": 5,
             "message": "Parsing your research document..."
         })
         target_text = parse_document(session["target_bytes"], session["target_name"])
         session["target_text"] = target_text
 
-        emit_event(session_id, "parsing_status", {
+        _emit_event(session_id, "parsing_status", {
             "stage": "target", "progress": 20,
             "message": "Your research parsed. Parsing source papers..."
         })
@@ -69,7 +58,7 @@ def run_pipeline(session_id: str):
         source_texts = []
         for i, paper in enumerate(papers):
             pct = 20 + int((i + 1) / total_papers * 30)
-            emit_event(session_id, "parsing_status", {
+            _emit_event(session_id, "parsing_status", {
                 "stage": "source", "progress": pct,
                 "paper_index": i,
                 "message": f"Parsing paper {i+1}/{total_papers}: {paper['name']}..."
@@ -78,19 +67,19 @@ def run_pipeline(session_id: str):
             source_texts.append(text)
 
         session["source_texts"] = source_texts
-        emit_event(session_id, "parsing_status", {
+        _emit_event(session_id, "parsing_status", {
             "stage": "complete", "progress": 50,
             "message": "All documents parsed."
         })
 
-        # ── Phase 2: Context extraction + decomposition ──
-        emit_event(session_id, "context_extracting", {
+        # Phase 2: Context extraction + decomposition
+        _emit_event(session_id, "context_extracting", {
             "message": "Extracting structured context from your research..."
         })
         target_context = extract_context(target_text, "target")
         session["target_context"] = target_context
 
-        emit_event(session_id, "context_extracted", {
+        _emit_event(session_id, "context_extracted", {
             "role": "target",
             "context": target_context,
         })
@@ -99,7 +88,7 @@ def run_pipeline(session_id: str):
         all_decompositions = []
 
         for i, (paper, text) in enumerate(zip(papers, source_texts)):
-            emit_event(session_id, "context_extracting", {
+            _emit_event(session_id, "context_extracting", {
                 "paper_index": i,
                 "paper_name": paper["name"],
                 "message": f"Extracting context from paper {i+1}: {paper['name']}..."
@@ -107,20 +96,19 @@ def run_pipeline(session_id: str):
             source_ctx = extract_context(text, "source")
             source_contexts.append(source_ctx)
 
-            emit_event(session_id, "context_extracted", {
+            _emit_event(session_id, "context_extracted", {
                 "role": "source",
                 "paper_index": i,
                 "paper_name": paper["name"],
                 "context": source_ctx,
             })
 
-            # Decompose key methods + findings into abstraction layers
             items_to_decompose = (
                 source_ctx.get("key_methods", [])[:3] +
                 source_ctx.get("key_findings", [])[:2]
             )
 
-            emit_event(session_id, "decomposition_started", {
+            _emit_event(session_id, "decomposition_started", {
                 "paper_index": i,
                 "paper_name": paper["name"],
                 "item_count": len(items_to_decompose),
@@ -136,7 +124,7 @@ def run_pipeline(session_id: str):
                 }
                 all_decompositions.append(decomposition)
 
-                emit_event(session_id, "layer_extracted", {
+                _emit_event(session_id, "layer_extracted", {
                     "paper_index": i,
                     "paper_name": paper["name"],
                     "item_index": j,
@@ -147,12 +135,12 @@ def run_pipeline(session_id: str):
         session["source_contexts"] = source_contexts
         session["decompositions"] = all_decompositions
 
-        emit_event(session_id, "decomposition_complete", {
+        _emit_event(session_id, "decomposition_complete", {
             "total_decompositions": len(all_decompositions),
         })
 
-        # ── Phase 3: Translation attempts ──
-        emit_event(session_id, "translation_started", {
+        # Phase 3: Translation
+        _emit_event(session_id, "translation_started", {
             "total": len(all_decompositions),
             "message": "Translating insights into your research domain..."
         })
@@ -162,7 +150,7 @@ def run_pipeline(session_id: str):
             paper_idx = decomp["paper_index"]
             source_ctx = source_contexts[paper_idx]
 
-            emit_event(session_id, "translating_insight", {
+            _emit_event(session_id, "translating_insight", {
                 "index": idx,
                 "total": len(all_decompositions),
                 "paper_name": decomp["paper_name"],
@@ -175,28 +163,26 @@ def run_pipeline(session_id: str):
             translation["translation_index"] = idx
             translations.append(translation)
 
-            emit_event(session_id, "translation_complete", {
+            _emit_event(session_id, "translation_complete", {
                 "index": idx,
                 "translation": translation,
             })
 
         session["translations"] = translations
 
-        # ── Phase 4: Adversarial stress-test ──
-        emit_event(session_id, "adversarial_started", {
+        # Phase 4: Adversarial stress-test
+        _emit_event(session_id, "adversarial_started", {
             "total_translations": len(translations),
             "message": "Stress-testing each translation..."
         })
 
         adversarial_results = []
 
-        # Run adversarial tests — one translation at a time to avoid rate limits,
-        # but 4 agents in parallel per translation
         for idx, translation in enumerate(translations):
             paper_idx = translation["paper_index"]
             source_ctx = source_contexts[paper_idx]
 
-            emit_event(session_id, "adversarial_testing", {
+            _emit_event(session_id, "adversarial_testing", {
                 "translation_index": idx,
                 "title": translation.get("title", ""),
                 "message": f"Stress-testing translation {idx+1}/{len(translations)}..."
@@ -206,9 +192,8 @@ def run_pipeline(session_id: str):
             result["translation_index"] = idx
             adversarial_results.append(result)
 
-            # Emit each verdict as it completes
             for verdict in result.get("verdicts", []):
-                emit_event(session_id, "agent_verdict", {
+                _emit_event(session_id, "agent_verdict", {
                     "translation_index": idx,
                     "translation_title": translation.get("title", ""),
                     "agent_id": verdict.get("agent_id"),
@@ -219,7 +204,7 @@ def run_pipeline(session_id: str):
                     "attack": verdict.get("attack", ""),
                 })
 
-            emit_event(session_id, "adversarial_complete", {
+            _emit_event(session_id, "adversarial_complete", {
                 "translation_index": idx,
                 "title": translation.get("title", ""),
                 "survival_score": result["survival_score"],
@@ -229,7 +214,7 @@ def run_pipeline(session_id: str):
 
         session["adversarial_results"] = adversarial_results
 
-        # ── Sort by survival score, emit final results ──
+        # Sort by survival score
         ranked = sorted(
             range(len(translations)),
             key=lambda i: (
@@ -245,14 +230,13 @@ def run_pipeline(session_id: str):
         session["ranked_translations"] = ranked_translations
         session["ranked_adversarial"] = ranked_adversarial
 
-        emit_event(session_id, "results_ready", {
+        _emit_event(session_id, "results_ready", {
             "translations": ranked_translations,
             "adversarial": ranked_adversarial,
             "source_contexts": source_contexts,
             "target_context": target_context,
         })
 
-        # Build chat context for interactive refinement
         chat_ctx = build_chat_context(
             source_contexts, target_context,
             ranked_translations, ranked_adversarial,
@@ -260,24 +244,19 @@ def run_pipeline(session_id: str):
         session["chat_context"] = chat_ctx
         session["chat_history"] = []
 
-        emit_event(session_id, "chat_ready", {
+        _emit_event(session_id, "chat_ready", {
             "message": "Interactive refinement available. Share constraints or ask questions."
         })
 
     except Exception as e:
-        emit_event(session_id, "error", {"message": str(e)})
+        _emit_event(session_id, "error", {"message": str(e)})
 
     finally:
-        emit_event(session_id, "pipeline_complete", {})
+        _emit_event(session_id, "pipeline_complete", {})
 
 
-@app.route('/api/co-researcher/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok", "service": "research-translator"})
-
-
-@app.route('/api/co-researcher/analyze', methods=['POST'])
-def analyze():
+@research_translator_bp.route('/analyze', methods=['POST'])
+def rt_analyze():
     if 'my_research' not in request.files:
         return jsonify({"error": "'my_research' file is required (PDF or DOCX)"}), 400
 
@@ -300,7 +279,7 @@ def analyze():
         papers.append({"bytes": pf.read(), "name": pf.filename})
 
     session_id = str(uuid.uuid4())
-    sessions[session_id] = {
+    _rt_sessions[session_id] = {
         "events": Queue(),
         "target_bytes": target_file.read(),
         "target_name": target_file.filename,
@@ -318,21 +297,21 @@ def analyze():
         "chat_history": [],
     }
 
-    thread = threading.Thread(target=run_pipeline, args=(session_id,), daemon=True)
+    thread = threading.Thread(target=_run_pipeline, args=(session_id,), daemon=True)
     thread.start()
 
     return jsonify({"session_id": session_id, "paper_count": len(papers)})
 
 
-@app.route('/api/co-researcher/stream/<session_id>', methods=['GET'])
-def stream(session_id):
-    if session_id not in sessions:
+@research_translator_bp.route('/stream/<session_id>', methods=['GET'])
+def rt_stream(session_id):
+    if session_id not in _rt_sessions:
         return jsonify({"error": "Session not found"}), 404
 
     def event_stream():
         while True:
             try:
-                event = sessions[session_id]["events"].get(timeout=120)
+                event = _rt_sessions[session_id]["events"].get(timeout=120)
                 yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
 
                 if event["event"] == "pipeline_complete":
@@ -351,12 +330,12 @@ def stream(session_id):
     )
 
 
-@app.route('/api/co-researcher/chat/<session_id>', methods=['POST'])
-def chat(session_id):
-    if session_id not in sessions:
+@research_translator_bp.route('/chat/<session_id>', methods=['POST'])
+def rt_chat(session_id):
+    if session_id not in _rt_sessions:
         return jsonify({"error": "Session not found"}), 404
 
-    session = sessions[session_id]
+    session = _rt_sessions[session_id]
     if not session.get("chat_context"):
         return jsonify({"error": "Analysis not complete yet"}), 400
 
@@ -371,12 +350,7 @@ def chat(session_id):
         user_message=user_message,
     )
 
-    # Update chat history
     session["chat_history"].append({"role": "user", "content": user_message})
     session["chat_history"].append({"role": "assistant", "content": result["response"]})
 
     return jsonify(result)
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5010, debug=True, threaded=True)

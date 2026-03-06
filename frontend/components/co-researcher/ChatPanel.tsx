@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-const API_BASE = 'http://localhost:5010/api/co-researcher'
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5010') + '/api/co-researcher'
 
 const t = {
   bg: '#f5f3f0', surface: '#fafaf9', border: '#e7e5e4',
