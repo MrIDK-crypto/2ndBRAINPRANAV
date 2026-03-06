@@ -213,12 +213,35 @@ def add_comment(experiment_id):
 
 # ============ Categories ============
 
+CATEGORY_DESCRIPTIONS = {
+    'Social Psychology': 'Interpersonal behavior, attitudes, social cognition',
+    'Cognitive Psychology': 'Memory, attention, perception, decision-making',
+    'Developmental Psychology': 'Human development across the lifespan',
+    'Clinical Psychology': 'Mental health, psychopathology, treatment',
+    'Personality Psychology': 'Individual differences, traits, assessment',
+    'Neuroscience': 'Brain-behavior relationships',
+    'Educational Psychology': 'Learning, instruction, academic achievement',
+    'Industrial-Organizational': 'Workplace behavior, management, HR',
+    'Health Psychology': 'Health behaviors, illness, medical settings',
+    'Other': "Experiments that don't fit other categories",
+}
+
+
 @reproducibility_bp.route('/categories', methods=['GET'])
 def list_categories():
     """List categories with experiment counts"""
     db = SessionLocal()
     try:
         categories = db.query(ExperimentCategory).all()
+
+        # Auto-seed categories if table is empty
+        if not categories:
+            for name, desc in CATEGORY_DESCRIPTIONS.items():
+                db.add(ExperimentCategory(
+                    id=generate_uuid(), name=name, description=desc, experiment_count=0
+                ))
+            db.commit()
+            categories = db.query(ExperimentCategory).all()
 
         for cat in categories:
             count = db.query(FailedExperiment).filter(
