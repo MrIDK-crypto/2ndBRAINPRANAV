@@ -1,0 +1,71 @@
+name: Seed Reproducibility Archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      clear_existing:
+        description: 'Clear existing seeded experiments first'
+        required: true
+        default: 'true'
+        type: boolean
+
+env:
+  AWS_REGION: us-east-2
+  ECS_CLUSTER: secondbrain-cluster
+
+jobs:
+  seed-database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get network configuration from existing service
+        id: network
+        run: |
+          CONFIG=$(aws ecs describe-services --cluster $ECS_CLUSTER --services secondbrain-backend --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json)
+          SUBNETS=$(echo $CONFIG | jq -r '.subnets | join(",")')
+          SECURITY_GROUPS=$(echo $CONFIG | jq -r '.securityGroups | join(",")')
+          echo "subnets=$SUBNETS" >> $GITHUB_OUTPUT
+          echo "security_groups=$SECURITY_GROUPS" >> $GITHUB_OUTPUT
+
+      - name: Run seed script
+        env:
+          CLEAR_INPUT: ${{ inputs.clear_existing }}
+          NETWORK_SUBNETS: ${{ steps.network.outputs.subnets }}
+          NETWORK_SG: ${{ steps.network.outputs.security_groups }}
+        run: |
+          CLEAR_FLAG=""
+          if [ "$CLEAR_INPUT" = "true" ]; then
+            CLEAR_FLAG=',"--clear"'
+          fi
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster $ECS_CLUSTER \
+            --task-definition secondbrain-backend \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$NETWORK_SUBNETS],securityGroups=[$NETWORK_SG],assignPublicIp=ENABLED}" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"secondbrain-backend\",\"command\":[\"python\",\"-m\",\"scripts.seed_reproducibility\"$CLEAR_FLAG]}]}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Seed task started: $TASK_ARN"
+          echo "Waiting for task to complete..."
+
+          aws ecs wait tasks-stopped --cluster $ECS_CLUSTER --tasks $TASK_ARN
+
+          # Check exit code
+          EXIT_CODE=$(aws ecs describe-tasks --cluster $ECS_CLUSTER --tasks $TASK_ARN --query 'tasks[0].containers[0].exitCode' --output text)
+
+          if [ "$EXIT_CODE" = "0" ]; then
+            echo "Reproducibility Archive seeded successfully!"
+          else
+            echo "Seed task failed with exit code: $EXIT_CODE"
+            exit 1
+          fi
