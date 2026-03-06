@@ -25,8 +25,7 @@ except ImportError:
     GSLIDES_AVAILABLE = False
 
 GSLIDES_SCOPES = [
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/drive.metadata.readonly'
+    'https://www.googleapis.com/auth/drive.file',
 ]
 
 GSLIDES_MIME = 'application/vnd.google-apps.presentation'

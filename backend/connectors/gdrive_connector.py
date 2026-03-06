@@ -30,8 +30,7 @@ except ImportError:
 
 # Google Drive scopes
 GDRIVE_SCOPES = [
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/drive.metadata.readonly'
+    'https://www.googleapis.com/auth/drive.file',
 ]
 
 # Supported MIME types (regular files only - Google Workspace types handled by dedicated connectors)

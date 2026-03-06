@@ -25,8 +25,7 @@ except ImportError:
     GSHEETS_AVAILABLE = False
 
 GSHEETS_SCOPES = [
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/drive.metadata.readonly'
+    'https://www.googleapis.com/auth/drive.file',
 ]
 
 GSHEETS_MIME = 'application/vnd.google-apps.spreadsheet'
