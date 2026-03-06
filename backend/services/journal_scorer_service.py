@@ -769,7 +769,7 @@ class JournalScorerService:
                 print(f"[Journal] No enriched journals, falling back")
                 return self._match_journals_from_db(field, tier)
 
-            # ── Step 5: Split into Target / Stretch / Safe ──────────────
+            # ── Step 5: Split into Stretch / Target / Safe ─────────────
             # Separate mega-journals
             quality = [j for j in enriched if not _is_mega(j["name"])]
             megas = [j for j in enriched if _is_mega(j["name"])]
@@ -777,13 +777,13 @@ class JournalScorerService:
             # Sort quality journals by citedness (quality indicator)
             quality.sort(key=lambda j: j["citedness_2yr"], reverse=True)
 
-            # Target = top 5 high-citedness + next 5 (niche/specialty)
-            target = quality[:10]
+            # Stretch = top 5 most prestigious (aspirational — Nature, Cell, etc.)
+            stretch = quality[:5]
 
-            # Stretch = next best after target
-            stretch = quality[10:15]
+            # Target = next 10 mid-range journals (realistic for the paper)
+            target = quality[5:15]
 
-            # Safe = mega-journals + lower-ranked quality
+            # Safe = mega-journals + lower-ranked quality (fallback options)
             safe = megas[:3]
             safe.extend(quality[15:17])
 
