@@ -127,12 +127,13 @@ def seed_experiments(db):
 
 
 def clear_seeded(db):
-    """Clear only seeded experiments"""
-    deleted = db.query(FailedExperiment).filter(
-        FailedExperiment.is_seeded == True
-    ).delete()
+    """Clear ALL experiments to allow fresh re-seeding with updated data"""
+    # Clear comments first (foreign key)
+    deleted_comments = db.query(ExperimentComment).delete()
+    # Clear all experiments (not just is_seeded=True)
+    deleted = db.query(FailedExperiment).delete()
     db.commit()
-    print(f"  Cleared {deleted} seeded experiments")
+    print(f"  Cleared {deleted} experiments and {deleted_comments} comments")
 
 
 if __name__ == '__main__':
