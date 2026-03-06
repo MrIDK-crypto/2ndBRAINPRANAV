@@ -6,9 +6,12 @@ echo "Timestamp: $(date)"
 echo "DATABASE_URL set: ${DATABASE_URL:+yes}"
 echo "JWT_SECRET_KEY set: ${JWT_SECRET_KEY:+yes}"
 
-# Seed Reproducibility Archive (handles deduplication internally)
-echo "=== Seeding Reproducibility Archive ==="
-if python -m scripts.seed_reproducibility --clear 2>&1; then
+# Seed Reproducibility Archive
+# NOTE: Removed --clear flag to preserve user-submitted experiments
+# Deduplication handles skipping existing experiments
+# Use /api/reproducibility/admin/seed endpoint to force a full re-seed if needed
+echo "=== Ensuring Reproducibility Archive categories ==="
+if python -m scripts.seed_reproducibility 2>&1; then
     echo "=== Seeding completed successfully ==="
 else
     echo "=== Seeding FAILED with exit code $? ==="
