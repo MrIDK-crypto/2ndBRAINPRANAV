@@ -35,6 +35,9 @@ COPY . .
 # Create data directories
 RUN mkdir -p /app/data /app/data/protocol_corpus /app/data/protocol_corpus/repos /app/data/protocol_models
 
+# Make entrypoint executable
+RUN chmod +x /app/entrypoint.sh
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_ENV=production
@@ -47,7 +50,5 @@ EXPOSE 5002
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5002/api/health || exit 1
 
-# Run the application with gunicorn for production
-# Using gevent for async non-blocking I/O - best for API/database operations
-# --worker-connections for concurrent connections, --keep-alive for SSE
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 4 --worker-class gevent --worker-connections 1000 --timeout 300 --graceful-timeout 30 --keep-alive 65 app_v2:app
+# Run the application with entrypoint (seeds DB then starts gunicorn)
+CMD ["/app/entrypoint.sh"]
