@@ -285,3 +285,119 @@ def get_stats():
         })
     finally:
         db.close()
+
+
+# ============ Admin/Debug ============
+
+@reproducibility_bp.route('/admin/seed', methods=['POST'])
+def trigger_seed():
+    """Manually trigger database seeding (for debugging deployment issues)"""
+    import sys
+    import os
+    from io import StringIO
+
+    # Capture output
+    output = StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = output
+
+    try:
+        # Import and run seed functions
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from scripts.seed_reproducibility import (
+            clear_seeded, seed_categories, seed_experiments
+        )
+        from database.models import SessionLocal, FailedExperiment
+
+        db = SessionLocal()
+        try:
+            # Clear existing data
+            print("Clearing existing data...")
+            clear_seeded(db)
+
+            # Seed categories and experiments
+            print("Seeding categories...")
+            seed_categories(db)
+
+            print("Seeding experiments...")
+            seed_experiments(db)
+
+            # Verify
+            total = db.query(FailedExperiment).count()
+            with_url = db.query(FailedExperiment).filter(
+                FailedExperiment.source_url.isnot(None),
+                FailedExperiment.source_url != ''
+            ).count()
+            is_seeded_count = db.query(FailedExperiment).filter(
+                FailedExperiment.is_seeded == True
+            ).count()
+
+            print(f"Total experiments: {total}")
+            print(f"With source_url: {with_url}")
+            print(f"With is_seeded=True: {is_seeded_count}")
+
+        finally:
+            db.close()
+
+        sys.stdout = old_stdout
+        return jsonify({
+            'success': True,
+            'output': output.getvalue()
+        })
+
+    except Exception as e:
+        sys.stdout = old_stdout
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+            'output': output.getvalue()
+        }), 500
+
+
+@reproducibility_bp.route('/admin/db-status', methods=['GET'])
+def db_status():
+    """Check database status for debugging"""
+    db = SessionLocal()
+    try:
+        total = db.query(FailedExperiment).count()
+        published = db.query(FailedExperiment).filter(
+            FailedExperiment.status == 'published'
+        ).count()
+        is_seeded_true = db.query(FailedExperiment).filter(
+            FailedExperiment.is_seeded == True
+        ).count()
+        is_seeded_false = db.query(FailedExperiment).filter(
+            FailedExperiment.is_seeded == False
+        ).count()
+        with_source_url = db.query(FailedExperiment).filter(
+            FailedExperiment.source_url.isnot(None),
+            FailedExperiment.source_url != ''
+        ).count()
+
+        # Get a sample experiment
+        sample = db.query(FailedExperiment).first()
+        sample_data = None
+        if sample:
+            sample_data = {
+                'id': sample.id,
+                'title': sample.title[:50] if sample.title else None,
+                'is_seeded': sample.is_seeded,
+                'source_url': sample.source_url,
+                'created_at': str(sample.created_at) if sample.created_at else None
+            }
+
+        return jsonify({
+            'success': True,
+            'db_status': {
+                'total_experiments': total,
+                'published': published,
+                'is_seeded_true': is_seeded_true,
+                'is_seeded_false': is_seeded_false,
+                'with_source_url': with_source_url,
+                'sample_experiment': sample_data
+            }
+        })
+    finally:
+        db.close()
