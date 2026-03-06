@@ -53,6 +53,35 @@ export default function LandingPage() {
           <a href="#integrations" onClick={(e) => smoothScroll(e, 'integrations')}>integrations</a>
           <Link href="/product">product</Link>
           <a href="#pricing" onClick={(e) => smoothScroll(e, 'pricing')}>pricing</a>
+          <div className="nav-dropdown">
+            <button className="nav-dropdown-trigger">
+              other domains
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div className="nav-dropdown-menu">
+              <Link href="/high-impact-journal" className="nav-dropdown-item">
+                <span className="nav-dropdown-icon">📊</span>
+                <div>
+                  <span className="nav-dropdown-label">High Impact Journals</span>
+                  <span className="nav-dropdown-desc">AI-powered manuscript scoring & journal matching</span>
+                </div>
+              </Link>
+              <Link href="/reproducibility-archive" className="nav-dropdown-item">
+                <span className="nav-dropdown-icon">🔬</span>
+                <div>
+                  <span className="nav-dropdown-label">Reproducibility Archive</span>
+                  <span className="nav-dropdown-desc">Track and verify experimental reproducibility</span>
+                </div>
+              </Link>
+              <Link href="/reproducibility-archive/submit" className="nav-dropdown-item">
+                <span className="nav-dropdown-icon">🧪</span>
+                <div>
+                  <span className="nav-dropdown-label">Anonymous Failed Experiments</span>
+                  <span className="nav-dropdown-desc">Share negative results anonymously to advance science</span>
+                </div>
+              </Link>
+            </div>
+          </div>
         </div>
         <div className="nav-cta">
           <Link href="/login" className="btn-ghost">log in</Link>
