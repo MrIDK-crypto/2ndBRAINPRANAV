@@ -272,11 +272,14 @@ class JournalScorerService:
                 field_result["field"] = field
                 field_result["reasoning"] = f"Field '{field_result.get('field', 'unknown')}' not recognized — defaulting to Economics"
 
+            keywords = field_result.get("keywords", [])
+
             yield _sse("field_detected", {
                 "field": field,
                 "field_label": field_config["label"],
                 "confidence": field_result["confidence"],
                 "subfield": field_result["subfield"],
+                "keywords": keywords,
                 "reasoning": field_result["reasoning"],
             })
 
@@ -323,10 +326,10 @@ class JournalScorerService:
                 "score_breakdown": score_result["breakdown"],
             })
 
-            # ── Step 6: Match Journals (from DB) ────────────────────────
-            yield _sse("progress", {"step": 6, "message": "Matching to journals...", "percent": 58})
+            # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
+            yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
 
-            journals = self._match_journals_from_db(field, tier)
+            journals = self._match_journals_by_keywords(keywords, field, tier)
             yield _sse("journals", journals)
 
             # ── Step 7: Landscape Position ──────────────────────────────
@@ -368,7 +371,8 @@ class JournalScorerService:
             rec_buffer = ""
             for chunk in self._generate_recommendations_stream(
                 field_config["label"], overall_score, tier, features,
-                flags_result["flags"], journals, landscape, citation_result
+                flags_result["flags"], journals, landscape, citation_result,
+                keywords=keywords, subfield=field_result.get("subfield", "")
             ):
                 rec_buffer += chunk
                 yield _sse("recommendations", {"content": chunk})
@@ -393,17 +397,28 @@ class JournalScorerService:
         field_list = "\n".join(f"- {key}" for key in FIELD_CONFIGS.keys())
 
         prompt = (
-            "You are an academic field classifier. Classify this manuscript excerpt into exactly one field.\n\n"
+            "You are an academic field classifier and keyword extractor. "
+            "Classify this manuscript excerpt into exactly one field AND extract specific research keywords.\n\n"
             f"FIELDS:\n{field_list}\n\n"
             "Respond ONLY in valid JSON:\n"
-            '{"field": "...", "confidence": 0.0-1.0, "subfield": "specific subfield", "reasoning": "one sentence"}\n\n'
+            '{"field": "...", "confidence": 0.0-1.0, "subfield": "specific subfield", '
+            '"keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6"], '
+            '"reasoning": "one sentence"}\n\n'
+            "KEYWORD RULES:\n"
+            "- Extract 5-8 specific research keywords/phrases from the manuscript\n"
+            "- Include: specific techniques (e.g. 'mass spectrometry', 'CRISPR'), "
+            "biological targets (e.g. 'iron metabolism', 'p53'), "
+            "disease areas (e.g. 'pancreatic cancer', 'ferroptosis'), "
+            "and methodologies (e.g. 'proteomics', 'single-cell RNA-seq')\n"
+            "- Do NOT use generic terms like 'biology' or 'research' — be specific\n"
+            "- These keywords will be used to find the most relevant journals for this exact paper\n\n"
             f"MANUSCRIPT EXCERPT:\n{text_excerpt}"
         )
 
         resp = self.openai.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=200,
+            max_tokens=350,
         )
         raw = resp.choices[0].message.content.strip()
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -413,8 +428,11 @@ class JournalScorerService:
             if result.get("field") not in FIELD_CONFIGS:
                 result["field"] = "economics"
                 result["confidence"] = 0.5
+            # Ensure keywords exist
+            if not result.get("keywords") or not isinstance(result["keywords"], list):
+                result["keywords"] = [result.get("subfield", "general")]
             return result
-        return {"field": "economics", "confidence": 0.5, "subfield": "General", "reasoning": "Could not classify — defaulting to Economics"}
+        return {"field": "economics", "confidence": 0.5, "subfield": "General", "keywords": ["general"], "reasoning": "Could not classify — defaulting to Economics"}
 
     def _extract_features(self, text_excerpt: str, field: str, field_config: dict) -> dict:
         feature_list = "\n".join(
@@ -574,8 +592,100 @@ class JournalScorerService:
         else:
             return 3, "Tier 3 — Solid Journal"
 
+    def _match_journals_by_keywords(self, keywords: list, field: str, tier: int) -> dict:
+        """Match journals by querying OpenAlex live with paper-specific keywords.
+        Falls back to DB field-based matching if OpenAlex fails."""
+        import requests as req
+
+        OPENALEX_BASE = "https://api.openalex.org"
+        OPENALEX_EMAIL = "prmogathala@gmail.com"
+
+        try:
+            all_journals = {}  # dedup by openalex_id
+
+            # Query OpenAlex with each keyword and combined query
+            search_queries = []
+            if len(keywords) >= 2:
+                # Combined query with top keywords for best relevance
+                search_queries.append(" ".join(keywords[:4]))
+            # Also search individual keywords for broader coverage
+            for kw in keywords[:6]:
+                search_queries.append(kw)
+
+            for query in search_queries:
+                url = (
+                    f"{OPENALEX_BASE}/sources"
+                    f"?search={req.utils.quote(query)}"
+                    f"&filter=type:journal"
+                    f"&per_page=50"
+                    f"&sort=summary_stats.h_index:desc"
+                    f"&mailto={OPENALEX_EMAIL}"
+                )
+                try:
+                    resp = req.get(url, timeout=15)
+                    if resp.status_code != 200:
+                        continue
+                    results = resp.json().get("results", [])
+                    for src in results:
+                        oa_id = src.get("id", "")
+                        if oa_id and oa_id not in all_journals:
+                            summary = src.get("summary_stats", {})
+                            h_index = summary.get("h_index", 0) or 0
+                            citedness = summary.get("2yr_mean_citedness", 0.0) or 0.0
+                            works = src.get("works_count", 0) or 0
+
+                            # Skip journals with very low activity
+                            if works < 100 or h_index < 5:
+                                continue
+
+                            all_journals[oa_id] = {
+                                "name": src.get("display_name", "Unknown"),
+                                "h_index": h_index,
+                                "citedness_2yr": round(citedness, 2),
+                                "works_count": works,
+                                "impact_factor": round(citedness, 1),  # approx IF
+                                "sjr_quartile": None,
+                                "composite_score": 0,
+                                "homepage_url": src.get("homepage_url") or "",
+                                "publisher": src.get("host_organization_name") or "",
+                            }
+                except Exception as e:
+                    print(f"[Journal] OpenAlex keyword query failed for '{query}': {e}")
+                    continue
+
+            if not all_journals:
+                print(f"[Journal] No keyword matches from OpenAlex, falling back to DB")
+                return self._match_journals_from_db(field, tier)
+
+            # Rank by h-index and split into tiers based on percentiles
+            ranked = sorted(all_journals.values(), key=lambda j: j["h_index"], reverse=True)
+            total = len(ranked)
+
+            # Compute percentile-based tiers within these results
+            tier1_cutoff = max(1, int(total * 0.15))
+            tier2_cutoff = max(tier1_cutoff + 1, int(total * 0.50))
+
+            stretch_journals = ranked[:tier1_cutoff]              # Top 15% = Stretch Goals
+            target_journals = ranked[tier1_cutoff:tier2_cutoff]   # Next 35% = Target Journals
+            safe_journals = ranked[tier2_cutoff:]                 # Bottom 50% = Safe Options
+
+            # If paper is Tier 1, shift categories up
+            if tier == 1:
+                target_journals = stretch_journals
+                stretch_journals = []  # already at the top
+                safe_journals = ranked[tier1_cutoff:]
+
+            return {
+                "primary_matches": target_journals[:8],
+                "stretch_matches": stretch_journals[:5],
+                "safe_matches": safe_journals[:5],
+            }
+        except Exception as e:
+            print(f"[Journal] Keyword-based journal matching failed: {e}")
+            return self._match_journals_from_db(field, tier)
+
     def _match_journals_from_db(self, field: str, tier: int) -> dict:
-        """Match journals from the database with real metrics."""
+        """Fallback: match journals from the pre-populated database by field."""
         try:
             from services.journal_data_service import get_journal_data_service
             svc = get_journal_data_service()
@@ -584,35 +694,14 @@ class JournalScorerService:
             stretch = svc.get_journals_for_field(field, tier=max(1, tier - 1)) if tier > 1 else []
             safe = svc.get_journals_for_field(field, tier=min(3, tier + 1)) if tier < 3 else []
 
-            # Limit to top journals per category
             return {
                 "primary_matches": primary[:8],
                 "stretch_matches": stretch[:5],
                 "safe_matches": safe[:5],
             }
         except Exception as e:
-            print(f"[Journal] DB journal matching failed, using fallback: {e}")
-            return self._match_journals_fallback(field, tier)
-
-    def _match_journals_fallback(self, field: str, tier: int) -> dict:
-        """Fallback journal matching when DB is not populated."""
-        # Minimal hardcoded fallback for when OpenAlex data isn't loaded
-        fallbacks = {
-            "economics": {1: ["American Economic Review", "Quarterly Journal of Economics", "Econometrica"], 2: ["Journal of Development Economics", "Review of Economics and Statistics"], 3: ["Economics Letters", "Applied Economics"]},
-            "cs_data_science": {1: ["NeurIPS", "ICML", "ICLR", "JMLR"], 2: ["AAAI", "KDD", "EMNLP"], 3: ["IEEE Access", "Applied Intelligence"]},
-            "biomedical": {1: ["NEJM", "The Lancet", "JAMA", "Nature Medicine"], 2: ["BMJ", "PLOS Medicine", "Circulation"], 3: ["PLOS ONE", "BMC Medicine"]},
-            "political_science": {1: ["APSR", "AJPS", "Journal of Politics"], 2: ["Comparative Political Studies", "World Politics"], 3: ["Political Research Quarterly"]},
-        }
-        field_journals = fallbacks.get(field, fallbacks.get("economics", {}))
-
-        def to_list(names):
-            return [{"name": n, "h_index": 0, "impact_factor": 0, "sjr_quartile": None, "composite_score": 0} for n in names]
-
-        return {
-            "primary_matches": to_list(field_journals.get(tier, [])),
-            "stretch_matches": to_list(field_journals.get(max(1, tier - 1), [])) if tier > 1 else [],
-            "safe_matches": to_list(field_journals.get(min(3, tier + 1), [])) if tier < 3 else [],
-        }
+            print(f"[Journal] DB journal matching also failed: {e}")
+            return {"primary_matches": [], "stretch_matches": [], "safe_matches": []}
 
     def _get_landscape_position(self, field: str, score: float) -> dict:
         """Get the manuscript's position in the journal landscape."""
@@ -652,15 +741,24 @@ class JournalScorerService:
                     triggered = True
 
             if triggered:
+                issue_text = check["issue"]
+                fix_text = check["fix"]
+                # Include actual counts in the message for clarity
+                if check["id"] == "low_references":
+                    issue_text = f"Only {ref_count} references detected (fewer than 15)"
+                    fix_text = f"Expand your literature review — you have {ref_count} references, top journals expect 30-60"
+                elif check["id"] == "too_short":
+                    issue_text = f"Manuscript is {word_count:,} words (under 3,000)"
+
                 flags.append({
                     "severity": check["severity"],
-                    "issue": check["issue"],
+                    "issue": issue_text,
                     "penalty": check["penalty"],
-                    "fix": check["fix"],
+                    "fix": fix_text,
                 })
                 total_penalty += check["penalty"]
 
-        return {"flags": flags, "total_penalty": total_penalty}
+        return {"flags": flags, "total_penalty": total_penalty, "reference_count": ref_count}
 
     def _verify_citations(self, text: str) -> dict:
         """Extract DOIs from text and verify them via CrossRef."""
@@ -696,19 +794,68 @@ class JournalScorerService:
             return {"verified": [], "unverified": [], "verification_rate": 0, "total_dois_found": 0, "error": str(e)}
 
     def _extract_references_section(self, text: str) -> Optional[str]:
-        match = re.search(r'\b(references|bibliography)\b', text, re.IGNORECASE)
-        if match:
-            return text[match.start():]
+        """Extract references section — find the LAST occurrence of 'References'/'Bibliography'
+        as a section header (not inline mentions like 'see references')."""
+        # Look for References/Bibliography as a standalone heading (last occurrence)
+        matches = list(re.finditer(
+            r'(?:^|\n)\s*(?:#{1,3}\s*)?(?:REFERENCES|References|BIBLIOGRAPHY|Bibliography|WORKS\s+CITED|Works\s+Cited|LITERATURE\s+CITED)\s*\n',
+            text
+        ))
+        if matches:
+            return text[matches[-1].start():]
+
+        # Fallback: last occurrence of the word as a heading-like line
+        matches = list(re.finditer(
+            r'(?:^|\n)\s*(?:references|bibliography)\s*$',
+            text,
+            re.IGNORECASE | re.MULTILINE
+        ))
+        if matches:
+            return text[matches[-1].start():]
+
         return None
 
     def _count_references(self, ref_text: str) -> int:
-        numbered = re.findall(r'^\s*\[?\d+[\].]', ref_text, re.MULTILINE)
-        if len(numbered) >= 3:
-            return len(numbered)
-        author_lines = re.findall(r'^\s*[A-Z][a-z]+.*\(\d{4}\)', ref_text, re.MULTILINE)
-        return max(len(author_lines), len(numbered))
+        """Count references using multiple format detection strategies."""
+        counts = []
 
-    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations):
+        # Strategy 1: Numbered format [1], [2], ... or (1), (2), ...
+        bracketed = re.findall(r'^\s*\[\d+\]', ref_text, re.MULTILINE)
+        counts.append(len(bracketed))
+
+        # Strategy 2: Numbered format 1. Author or 1 Author (Vancouver style)
+        numbered_dot = re.findall(r'^\s*\d{1,3}[.\)]\s+[A-Z]', ref_text, re.MULTILINE)
+        counts.append(len(numbered_dot))
+
+        # Strategy 3: APA-style — Author, A. B. (2024) or Author et al. (2024)
+        apa_style = re.findall(
+            r'^\s*[A-Z][a-zà-ž\-]+[\s,].*?\(\d{4}[a-z]?\)',
+            ref_text,
+            re.MULTILINE
+        )
+        counts.append(len(apa_style))
+
+        # Strategy 4: DOI-based — count unique DOIs in the references section
+        dois = re.findall(r'10\.\d{4,9}/[^\s\]>]+', ref_text)
+        counts.append(len(set(dois)))
+
+        # Strategy 5: Blank-line-separated entries (each ref is a paragraph)
+        # Split by blank lines and count entries that look like citations
+        paragraphs = re.split(r'\n\s*\n', ref_text)
+        citation_paras = [
+            p for p in paragraphs
+            if p.strip() and (
+                re.search(r'\d{4}', p) and  # has a year
+                len(p.strip()) > 30         # long enough to be a real citation
+            )
+        ]
+        if len(citation_paras) >= 3:
+            counts.append(len(citation_paras))
+
+        best = max(counts) if counts else 0
+        return best
+
+    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield=""):
         feature_summary = "\n".join(
             f"- {f['label']}: {f['score']}/100 — {f.get('details', '')}"
             for f in features.values()
@@ -738,31 +885,60 @@ class JournalScorerService:
                 f"\n- Citations verified: {len(citations.get('verified', []))}/{citations.get('total_dois_found', 0)} DOIs confirmed valid."
             )
 
+        # Keywords context
+        keywords_info = ""
+        if keywords:
+            keywords_info = f"\n- Paper keywords: {', '.join(keywords)}"
+        if subfield:
+            keywords_info += f"\n- Specific subfield: {subfield}"
+
         prompt = (
-            f"You are a journal submission advisor in {field_label}. Given the manuscript analysis:\n"
+            f"You are a senior research advisor specializing in {field_label}"
+            f"{(' / ' + subfield) if subfield else ''}. "
+            f"Given this manuscript analysis:\n"
             f"- Score: {score}/100 (Tier {tier})\n"
             f"- Feature breakdown:\n{feature_summary}\n"
             f"- Red flags:\n{flag_summary}\n"
             f"- Target journals: {journal_names}"
+            f"{keywords_info}"
             f"{landscape_info}"
             f"{citation_info}\n\n"
-            "Provide 2-3 actionable recommendations per category:\n"
-            "1. **Methodological Upgrades** — what experiments/analyses to add\n"
-            "2. **Literature Gaps** — specific missing citations or bodies of work\n"
-            "3. **Structural & Formatting** — what to restructure\n\n"
-            "IMPORTANT FORMATTING RULES:\n"
-            "- Be specific, reference actual manuscript content.\n"
-            "- For every recommended paper/reference, include a clickable markdown link with the DOI URL.\n"
-            "  Format: [Author et al. (Year) - Paper Title](https://doi.org/10.xxxx/xxxxx)\n"
-            "- For methodology suggestions, link to the seminal paper describing the method.\n"
-            "- Include at least 2-3 specific paper citations with DOI links per category.\n"
-            "- Use markdown formatting throughout.\n"
+
+            "## SECTION 1: Specific Experiments to Strengthen This Paper\n\n"
+            "List exactly 3-5 specific experiments as a numbered list. For EACH experiment, you MUST include ALL of:\n"
+            "- **Experiment name** — a clear, specific title\n"
+            "- **Model system** — exact cell lines (e.g., 'HCT116 and SW480 colorectal cancer cells'), "
+            "animal models (e.g., 'C57BL/6 xenograft mice'), databases (e.g., 'TCGA-COAD cohort'), "
+            "or clinical datasets to use\n"
+            "- **Technique/Protocol** — exact method (e.g., 'LC-MS/MS with TMT 16-plex labeling', "
+            "'Western blot for cleaved caspase-3', 'ChIP-seq for H3K27ac')\n"
+            "- **Controls** — what positive/negative controls to include\n"
+            "- **Expected outcome** — what result would strengthen the paper and why\n"
+            "- **Reference** — cite the seminal paper that established this method with DOI link\n\n"
+            "CRITICAL: These must be experiments that are directly relevant to THIS paper's specific topic "
+            f"({', '.join(keywords[:4]) if keywords else field_label}). "
+            "Do NOT give generic advice like 'do dose-response studies'. "
+            "Give the exact experiment a PI would assign to a grad student.\n\n"
+
+            "## SECTION 2: Missing Key References\n\n"
+            "List 5-8 specific papers that MUST be cited in this manuscript. For each:\n"
+            "- Full citation: [Author et al. (Year) - Paper Title](https://doi.org/10.xxxx/xxxxx)\n"
+            "- One sentence on why this specific paper is essential for this manuscript\n"
+            "- Where in the manuscript it should be cited (Introduction, Methods, Discussion)\n\n"
+
+            "## SECTION 3: Structural Improvements\n\n"
+            "2-3 specific structural changes to improve acceptance chances.\n\n"
+
+            "FORMATTING RULES:\n"
+            "- Use markdown with numbered lists for experiments\n"
+            "- Every paper citation MUST include a DOI link: [Author et al. (Year)](https://doi.org/...)\n"
+            "- Be extremely specific — no vague advice\n"
         )
 
         for chunk in self.openai.chat_completion_stream(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
-            max_tokens=2000,
+            max_tokens=3000,
         ):
             if not chunk.choices:
                 continue

@@ -556,6 +556,20 @@ export default function HighImpactJournal() {
                     <p style={{ color: theme.textSecondary, fontSize: 13, marginTop: 12, lineHeight: 1.6 }}>
                       {fieldInfo.reasoning}
                     </p>
+                    {fieldInfo.keywords && fieldInfo.keywords.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                        {fieldInfo.keywords.map((kw: string, i: number) => (
+                          <span key={i} style={{
+                            padding: '3px 10px',
+                            borderRadius: 12,
+                            backgroundColor: `${theme.primary}15`,
+                            color: theme.primary,
+                            fontSize: 11,
+                            fontWeight: 500,
+                          }}>{kw}</span>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
                 {featuresInfo && (
