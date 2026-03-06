@@ -787,6 +787,43 @@ class JournalScorerService:
             safe = megas[:3]
             safe.extend(quality[15:17])
 
+            # Add reasoning to each journal
+            def _add_reason(j: dict, category: str) -> dict:
+                pp = j.get("prof_papers", 0)
+                cite = j.get("citedness_2yr", 0)
+                pub = j.get("publisher", "")
+                if category == "stretch":
+                    j["reason"] = (
+                        f"Top-cited researchers in your field publish here. "
+                        f"{pp} recent papers by leading authors in this area. "
+                        f"High citedness ({cite}) makes this aspirational."
+                    )
+                elif category == "target":
+                    j["reason"] = (
+                        f"Frequently chosen by experts working on your topic — "
+                        f"{pp} recent papers by top authors. "
+                        f"Citedness of {cite} suggests a realistic, well-regarded venue."
+                    )
+                elif category == "safe":
+                    if _is_mega(j["name"]):
+                        j["reason"] = (
+                            f"High-volume journal that publishes broadly across fields. "
+                            f"Good fallback with {pp} papers from authors in your area."
+                        )
+                    else:
+                        j["reason"] = (
+                            f"Accessible venue where researchers in your area also publish. "
+                            f"{pp} recent papers from top authors, citedness {cite}."
+                        )
+                return j
+
+            for j in stretch:
+                _add_reason(j, "stretch")
+            for j in target:
+                _add_reason(j, "target")
+            for j in safe:
+                _add_reason(j, "safe")
+
             return {
                 "primary_matches": target,
                 "stretch_matches": stretch,

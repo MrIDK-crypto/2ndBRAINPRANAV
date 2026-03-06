@@ -58,6 +58,7 @@ interface JournalMatch {
   composite_score?: number
   citedness_2yr?: number
   publisher?: string
+  reason?: string
 }
 
 interface JournalsInfo {
@@ -1051,6 +1052,43 @@ function ScoreGauge({ score, tier }: { score: number; tier: number }) {
   )
 }
 
+function InfoTooltip({ text }: { text: string }) {
+  const [show, setShow] = React.useState(false)
+  return (
+    <div
+      style={{ position: 'relative', display: 'inline-flex', cursor: 'pointer' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
+      </svg>
+      {show && (
+        <div style={{
+          position: 'absolute',
+          bottom: '100%',
+          right: 0,
+          marginBottom: 6,
+          padding: '8px 12px',
+          borderRadius: 8,
+          backgroundColor: '#1a1a2e',
+          color: '#e0e0e0',
+          fontSize: 11,
+          lineHeight: 1.5,
+          width: 240,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+          zIndex: 50,
+          pointerEvents: 'none',
+        }}>
+          {text}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function JournalColumn({ title, journals, accent }: { title: string; journals: JournalMatch[]; accent: string }) {
   if (!journals || journals.length === 0) return null
   const hasMetrics = journals.some(j => j.h_index || j.impact_factor || j.sjr_quartile)
@@ -1072,13 +1110,16 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ fontSize: 13, color: url ? '#4338CA' : theme.textPrimary, fontWeight: 500 }}>{j.name}</span>
-              {url && (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4338CA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.5 }}>
-                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-                  <polyline points="15 3 21 3 21 9"/>
-                  <line x1="10" y1="14" x2="21" y2="3"/>
-                </svg>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                {j.reason && <InfoTooltip text={j.reason} />}
+                {url && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4338CA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+                    <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/>
+                    <line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                )}
+              </div>
             </div>
             {hasMetrics && (
               <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
