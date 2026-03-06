@@ -2398,6 +2398,125 @@ def _migrate_enum_values():
         print(f"✗ Enum migration failed: {e}")
 
 
+# ============================================================================
+# REPRODUCIBILITY ARCHIVE MODELS (public, no auth required)
+# ============================================================================
+
+class FailedExperiment(Base):
+    """Anonymous failed experiment submissions for psychology research"""
+    __tablename__ = 'failed_experiments'
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    anonymous_id = Column(String(64), nullable=True)
+
+    # Classification
+    field = Column(String(100), default='psychology', index=True)
+    category = Column(String(100), nullable=True, index=True)
+
+    # Core content
+    title = Column(String(500), nullable=False)
+    hypothesis = Column(Text, nullable=True)
+
+    # Methodology
+    sample_size = Column(Integer, nullable=True)
+    design_type = Column(String(200), nullable=True)
+    methodology = Column(Text, nullable=True)
+    materials = Column(Text, nullable=True)
+
+    # The failure
+    what_failed = Column(Text, nullable=False)
+    why_failed = Column(Text, nullable=True)
+    lessons_learned = Column(Text, nullable=True)
+
+    # References
+    original_study_doi = Column(String(200), nullable=True)
+    original_study_citation = Column(Text, nullable=True)
+    source_url = Column(String(500), nullable=True)
+
+    # Engagement
+    upvotes = Column(Integer, default=0)
+    view_count = Column(Integer, default=0)
+
+    # Metadata
+    is_seeded = Column(Boolean, default=False)
+    status = Column(String(50), default='published', index=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    experiment_comments = relationship("ExperimentComment", back_populates="experiment", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'field': self.field,
+            'category': self.category,
+            'title': self.title,
+            'hypothesis': self.hypothesis,
+            'sample_size': self.sample_size,
+            'design_type': self.design_type,
+            'methodology': self.methodology,
+            'materials': self.materials,
+            'what_failed': self.what_failed,
+            'why_failed': self.why_failed,
+            'lessons_learned': self.lessons_learned,
+            'original_study_doi': self.original_study_doi,
+            'original_study_citation': self.original_study_citation,
+            'source_url': self.source_url,
+            'upvotes': self.upvotes,
+            'view_count': self.view_count,
+            'is_seeded': self.is_seeded,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'comment_count': len(self.experiment_comments) if self.experiment_comments else 0
+        }
+
+
+class ExperimentComment(Base):
+    """Anonymous comments on failed experiments"""
+    __tablename__ = 'experiment_comments'
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    experiment_id = Column(String(36), ForeignKey('failed_experiments.id'), nullable=False)
+    anonymous_id = Column(String(64), nullable=True)
+
+    content = Column(Text, nullable=False)
+    upvotes = Column(Integer, default=0)
+
+    status = Column(String(50), default='published')
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+    experiment = relationship("FailedExperiment", back_populates="experiment_comments")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'experiment_id': self.experiment_id,
+            'content': self.content,
+            'upvotes': self.upvotes,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class ExperimentCategory(Base):
+    """Psychology subfields/categories for reproducibility archive"""
+    __tablename__ = 'experiment_categories'
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    experiment_count = Column(Integer, default=0)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'experiment_count': self.experiment_count
+        }
+
+
 def init_database():
     """Initialize database (create tables)"""
     _migrate_enum_values()
