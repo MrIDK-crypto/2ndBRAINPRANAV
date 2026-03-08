@@ -1860,12 +1860,12 @@ CURRENT QUESTION: {query}
             # Build messages array with conversation history
             messages = [{"role": "system", "content": system_prompt}]
 
-            # Add last 4 messages from history for better context (not too many to avoid token limits)
+            # Add last 8 messages from history for better multi-turn context
             if conversation_history and len(conversation_history) > 0:
-                for msg in conversation_history[-4:]:
+                for msg in conversation_history[-8:]:
                     messages.append({
                         "role": msg.get('role', 'user'),
-                        "content": msg.get('content', '')[:500]  # Limit each to 500 chars
+                        "content": msg.get('content', '')[:800]  # Limit each to 800 chars
                     })
 
             # Add current query with sources
@@ -2105,10 +2105,10 @@ CURRENT QUESTION: {query}
             messages = [{"role": "system", "content": system_prompt}]
 
             if conversation_history and len(conversation_history) > 0:
-                for msg in conversation_history[-4:]:
+                for msg in conversation_history[-8:]:
                     messages.append({
                         "role": msg.get('role', 'user'),
-                        "content": msg.get('content', '')[:500]
+                        "content": msg.get('content', '')[:800]
                     })
 
             messages.append({"role": "user", "content": user_prompt})
