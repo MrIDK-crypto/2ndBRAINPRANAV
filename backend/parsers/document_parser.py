@@ -1,7 +1,8 @@
 """
 Document Parser for Office Files
-Uses Azure Mistral Document AI (mistral-document-ai-2505) for all document parsing
-Falls back to traditional parsers if Azure Document AI is unavailable
+Primary: Azure GPT-4o for intelligent document parsing
+Fallback: Docling (local, free, no API keys)
+Last resort: Traditional parsers (PyPDF2, python-docx, openpyxl, python-pptx)
 """
 
 import os
@@ -13,12 +14,19 @@ from typing import Dict, List, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
-# Try to import Azure Document AI parser
+# Try to import Azure GPT-4o parser (primary)
 try:
     from parsers.azure_doc_parser import AzureDocumentParser
     HAS_AZURE_DOC_AI = True
 except ImportError:
     HAS_AZURE_DOC_AI = False
+
+# Try to import Docling parser (fallback)
+try:
+    from parsers.docling_parser import DoclingParser
+    HAS_DOCLING = True
+except ImportError:
+    HAS_DOCLING = False
 
 # PDF parsing (fallback)
 try:
@@ -58,35 +66,51 @@ class DocumentParser:
 
         Args:
             config: Configuration object (optional, will use env vars if not provided)
-            use_azure_doc_ai: Whether to use Azure Document AI (default: True)
+            use_azure_doc_ai: Whether to use Azure GPT-4o (default: True)
         """
         self.config = config
         self.use_azure_doc_ai = use_azure_doc_ai and HAS_AZURE_DOC_AI
         self.azure_doc_parser = None
+        self.docling_parser = None
 
-        # Initialize Azure Document AI if available and requested
+        # Initialize Azure GPT-4o parser (primary)
         if self.use_azure_doc_ai:
             try:
                 self.azure_doc_parser = AzureDocumentParser(config)
-                print("✓ Using Azure Mistral Document AI for document parsing")
+                print("✓ Using Azure GPT-4o for document parsing (primary)")
             except Exception as e:
-                print(f"⚠ Failed to initialize Azure Document AI: {e}")
-                print("  Falling back to traditional parsers")
+                print(f"⚠ Failed to initialize Azure GPT-4o parser: {e}")
                 self.use_azure_doc_ai = False
+
+        # Initialize Docling parser (fallback)
+        if HAS_DOCLING:
+            try:
+                self.docling_parser = DoclingParser()
+                print("✓ Using Docling for document parsing (fallback)")
+            except Exception as e:
+                print(f"⚠ Failed to initialize Docling parser: {e}")
 
         # Set up supported formats
         self.supported_formats = []
         if self.use_azure_doc_ai and self.azure_doc_parser:
-            self.supported_formats = self.azure_doc_parser.supported_formats
-        else:
-            if HAS_PDF:
-                self.supported_formats.append('.pdf')
-            if HAS_PPTX:
-                self.supported_formats.append('.pptx')
-            if HAS_XLSX:
-                self.supported_formats.extend(['.xlsx', '.xls', '.xlsm', '.xlsb'])
-            if HAS_DOCX:
-                self.supported_formats.append('.docx')
+            self.supported_formats = list(self.azure_doc_parser.supported_formats)
+        if self.docling_parser:
+            for fmt in self.docling_parser.supported_formats:
+                if fmt not in self.supported_formats:
+                    self.supported_formats.append(fmt)
+        # Always add traditional parser formats
+        traditional_formats = []
+        if HAS_PDF:
+            traditional_formats.append('.pdf')
+        if HAS_PPTX:
+            traditional_formats.append('.pptx')
+        if HAS_XLSX:
+            traditional_formats.extend(['.xlsx', '.xls', '.xlsm', '.xlsb'])
+        if HAS_DOCX:
+            traditional_formats.append('.docx')
+        for fmt in traditional_formats:
+            if fmt not in self.supported_formats:
+                self.supported_formats.append(fmt)
 
     def can_parse(self, file_path: str) -> bool:
         """Check if file format is supported"""
@@ -106,22 +130,34 @@ class DocumentParser:
 
         ext = Path(file_path).suffix.lower()
 
-        # Spreadsheet formats: always use traditional parsers (Azure Doc AI doesn't handle tables well)
+        # Spreadsheet formats: always use traditional parsers (best for tabular data)
         spreadsheet_exts = ('.xlsx', '.xls', '.xlsm', '.xlsb', '.csv', '.tsv', '.ods')
 
-        # Try Azure Document AI first for non-spreadsheet files
+        # Layer 1: Try Azure GPT-4o first for non-spreadsheet files
         if self.use_azure_doc_ai and self.azure_doc_parser and ext not in spreadsheet_exts:
             try:
                 result = self.azure_doc_parser.parse(file_path)
-                # Only return if we got meaningful content
                 if result and result.get('content') and len(result['content'].strip()) > 10:
                     return result
-                print(f"  ⚠ Azure Document AI returned insufficient content for {Path(file_path).name}")
+                print(f"  ⚠ GPT-4o returned insufficient content for {Path(file_path).name}")
             except Exception as e:
-                print(f"  ⚠ Azure Document AI failed: {e}")
+                print(f"  ⚠ GPT-4o parser failed: {e}")
+
+        # Layer 2: Try Docling (local, free) for non-spreadsheet files
+        if self.docling_parser and ext not in spreadsheet_exts:
+            try:
+                result = self.docling_parser.parse(file_path)
+                if result and result.get('content') and len(result['content'].strip()) > 10:
+                    print(f"  ✓ Docling parsed {Path(file_path).name} successfully")
+                    return result
+                print(f"  ⚠ Docling returned insufficient content for {Path(file_path).name}")
+            except Exception as e:
+                print(f"  ⚠ Docling parser failed: {e}")
+
+        if ext not in spreadsheet_exts:
             print(f"  Falling back to traditional parser for {Path(file_path).name}")
 
-        # Traditional parsers
+        # Layer 3: Traditional parsers
         try:
             result = None
             if ext == '.pdf' and HAS_PDF:
