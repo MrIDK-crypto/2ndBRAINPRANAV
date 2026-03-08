@@ -1645,8 +1645,14 @@ End with "Sources Used: [list numbers]"."""
                     parts.append(f"- They belong to organization: {user_context['organization']}")
                 if user_context.get('data_summary'):
                     parts.append(f"- Their knowledge base contains: {user_context['data_summary']}")
+                if user_context.get('total_documents'):
+                    parts.append(f"- Total documents in their knowledge base: {user_context['total_documents']}")
+                if user_context.get('recent_doc_titles'):
+                    titles = user_context['recent_doc_titles'][:15]
+                    parts.append(f"- Recent documents (by title): {'; '.join(titles)}")
                 if parts:
-                    user_context_section = "\nUSER CONTEXT:\n" + "\n".join(parts) + "\nUse this context to understand references like 'my files', 'our lab', 'my data', etc.\n"
+                    user_context_section = "\nUSER CONTEXT:\n" + "\n".join(parts) + "\nUse this context to understand references like 'my files', 'our lab', 'my data', etc."
+                    user_context_section += "\nWhen the user asks about 'my knowledge base', 'my files', 'what do I have', etc., answer with specifics from this USER CONTEXT section. Distinguish between their personal documents and shared/institutional data.\n"
 
             system_prompt = f"""You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
 {user_context_section}

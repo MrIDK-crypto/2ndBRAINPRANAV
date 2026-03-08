@@ -17,12 +17,21 @@ const COLORS = {
 }
 const FONT = "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
 
-// Source type badge colors
+// Source type badge colors — keyed by source_origin and display labels
 const SOURCE_BADGE_COLORS: Record<string, string> = {
-  'Knowledge Base': '#C9A598',
+  'Your KB': '#9CB896',
+  'CTSI Research': '#7BA7C9',
   'PubMed': '#93C5FD',
   'Journal DB': '#A5B4FC',
+  'Repro Archive': '#FFB74D',
+  'Knowledge Base': '#C9A598',
   'Reproducibility': '#FCA5A5',
+  // Also keyed by source_origin codes
+  'user_kb': '#9CB896',
+  'ctsi': '#7BA7C9',
+  'pubmed': '#93C5FD',
+  'journal': '#A5B4FC',
+  'reproducibility': '#FFB74D',
 }
 
 // ── Types ──
@@ -72,18 +81,31 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
   }, [thinkingSteps])
 
   // Combine all sources from ContextData into a flat list
+  // Use source_origin_label from each item (set by backend) with fallback to array-based type
   const allSources: { item: any; type: string }[] = []
   if (sources?.documents) {
-    sources.documents.forEach(d => allSources.push({ item: d, type: 'Knowledge Base' }))
+    sources.documents.forEach(d => allSources.push({
+      item: d,
+      type: d.source_origin_label || (d.is_shared ? 'CTSI Research' : 'Your KB'),
+    }))
   }
   if (sources?.pubmed_papers) {
-    sources.pubmed_papers.forEach(d => allSources.push({ item: d, type: 'PubMed' }))
+    sources.pubmed_papers.forEach(d => allSources.push({
+      item: d,
+      type: d.source_origin_label || 'PubMed',
+    }))
   }
   if (sources?.journals) {
-    sources.journals.forEach(d => allSources.push({ item: d, type: 'Journal DB' }))
+    sources.journals.forEach(d => allSources.push({
+      item: d,
+      type: d.source_origin_label || 'Journal DB',
+    }))
   }
   if (sources?.experiments) {
-    sources.experiments.forEach(d => allSources.push({ item: d, type: 'Reproducibility' }))
+    sources.experiments.forEach(d => allSources.push({
+      item: d,
+      type: d.source_origin_label || 'Repro Archive',
+    }))
   }
 
   const hasContent = brief || thinkingSteps.length > 0 || allSources.length > 0
@@ -396,7 +418,12 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                   {allSources.map(({ item, type }, idx) => {
                     const isExpanded = expandedSource === idx
                     const title = item.subject || item.title || item.name || `Source ${idx + 1}`
-                    const score = item.score ? Math.round(item.score * 100) : null
+                    // Only show score as percentage if it's a valid 0-1 similarity score
+                    // Cross-encoder rerank scores can be negative logits — hide those
+                    const rawScore = item.score
+                    const score = (rawScore != null && rawScore >= 0 && rawScore <= 1)
+                      ? Math.round(rawScore * 100)
+                      : null
                     const preview = item.content || item.abstract || item.content_preview || ''
                     const badgeColor = SOURCE_BADGE_COLORS[type] || COLORS.primary
 

@@ -379,12 +379,24 @@ export default function CoWorkChat({
                 source_url: s.source_url || '',
                 is_shared: s.is_shared || false,
                 facility_name: s.facility_name || '',
+                source_origin: s.source_origin || (s.is_shared ? 'ctsi' : 'user_kb'),
+                source_origin_label: s.source_origin_label || (s.is_shared ? 'CTSI Research' : 'Your KB'),
               }))
 
               setStreamingSources(localSources)
 
-              // Forward sources as context update
-              onContextUpdate({ documents: localSources })
+              // Forward sources as context update, routed by origin
+              const docSources = localSources.filter((s: any) => s.source_origin === 'user_kb')
+              const ctsiSources = localSources.filter((s: any) => s.source_origin === 'ctsi')
+              const pubmedSources = localSources.filter((s: any) => s.source_origin === 'pubmed')
+              const journalSources = localSources.filter((s: any) => s.source_origin === 'journal')
+              const reproSources = localSources.filter((s: any) => s.source_origin === 'reproducibility')
+              onContextUpdate({
+                documents: [...docSources, ...ctsiSources],
+                pubmed_papers: pubmedSources,
+                journals: journalSources,
+                experiments: reproSources,
+              })
 
             } else if (eventType === 'chunk') {
               accumulatedText += parsedData.content || ''
@@ -404,6 +416,8 @@ export default function CoWorkChat({
                   source_url: s.source_url || '',
                   is_shared: s.is_shared || false,
                   facility_name: s.facility_name || '',
+                  source_origin: s.source_origin || (s.is_shared ? 'ctsi' : 'user_kb'),
+                  source_origin_label: s.source_origin_label || (s.is_shared ? 'CTSI Research' : 'Your KB'),
                 }))
               }
 

@@ -1399,6 +1399,17 @@ def search():
                     except Exception:
                         pass  # Graceful fallback — no URLs is fine
 
+                # Look up source_type for origin labeling
+                doc_source_type_map = {}
+                if doc_ids:
+                    try:
+                        docs_with_types = db.query(Document.id, Document.source_type).filter(
+                            Document.id.in_(doc_ids)
+                        ).all()
+                        doc_source_type_map = {str(d.id): d.source_type for d in docs_with_types}
+                    except Exception:
+                        pass
+
                 for src in raw_sources:
                     doc_id = src.get('doc_id', '')
                     is_shared = src.get('is_shared', False)
@@ -1413,8 +1424,23 @@ def search():
                         source_entry["source_url"] = src.get('source_url', '')
                         source_entry["is_shared"] = True
                         source_entry["facility_name"] = src.get('facility_name', '')
+                        source_entry["source_origin"] = "ctsi"
+                        source_entry["source_origin_label"] = "CTSI Research"
                     else:
                         source_entry["source_url"] = source_url_map.get(doc_id, '')
+                        doc_st = doc_source_type_map.get(doc_id, '')
+                        if doc_st == 'pubmed':
+                            source_entry["source_origin"] = "pubmed"
+                            source_entry["source_origin_label"] = "PubMed"
+                        elif doc_st == 'journal':
+                            source_entry["source_origin"] = "journal"
+                            source_entry["source_origin_label"] = "Journal DB"
+                        elif doc_st == 'experiment':
+                            source_entry["source_origin"] = "reproducibility"
+                            source_entry["source_origin_label"] = "Repro Archive"
+                        else:
+                            source_entry["source_origin"] = "user_kb"
+                            source_entry["source_origin_label"] = "Your KB"
                     sources.append(source_entry)
 
             # Check if any sources are from grant data
@@ -1700,11 +1726,17 @@ def search_stream():
                         summary_parts.append(f"{count} {label}")
                     user_context['data_summary'] = ", ".join(summary_parts)
 
-                # Recent doc titles for reference resolution
-                recent_docs = db.query(Document.title).filter(
+                # Recent doc titles for reference resolution — get more for inventory queries
+                recent_docs = db.query(Document.title, Document.source_type, Document.created_at).filter(
                     Document.tenant_id == tenant_id
-                ).order_by(Document.created_at.desc()).limit(10).all()
+                ).order_by(Document.created_at.desc()).limit(25).all()
                 user_context['recent_doc_titles'] = [d.title for d in recent_docs if d.title]
+
+                # Total document count
+                total_docs = db.query(sqlfunc.count(Document.id)).filter(
+                    Document.tenant_id == tenant_id
+                ).scalar() or 0
+                user_context['total_documents'] = total_docs
             except Exception as uctx_err:
                 print(f"[SEARCH-STREAM] Error building user context: {uctx_err}", flush=True)
 
