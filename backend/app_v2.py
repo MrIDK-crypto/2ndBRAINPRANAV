@@ -1779,14 +1779,51 @@ def search_stream():
 
             print(f"[SEARCH-STREAM] Starting (mode={response_mode}): '{query}'", flush=True)
 
-            # Emit plan steps (action events) for the Plan panel
-            yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Analyze query and expand terms', 'status': 'in_progress'})}\n\n"
-            yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base for relevant sources', 'status': 'pending'})}\n\n"
-            yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Rerank and filter results by relevance', 'status': 'pending'})}\n\n"
-            yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate answer with source attribution', 'status': 'pending'})}\n\n"
+            # Emit dynamic plan steps based on query intent
+            from services.enhanced_search_service import get_enhanced_search_service as _get_ess
+            _ess_temp = _get_ess()
+            _intent = _ess_temp._classify_query_intent(query)
+            _special = _intent.get('special_mode', '')
 
-            # Thinking: expanding query
-            yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Expanding query...'})}\n\n"
+            if _special == 'journal_analysis':
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Identify referenced manuscript', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base for paper content', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Detect academic field and keywords', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Analyze citation neighborhood', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Match journals by top-cited authors', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Check methodology gaps', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate journal recommendations', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Preparing journal analysis...'})}\n\n"
+            elif _special == 'methodology_analysis':
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Identify referenced manuscript', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Retrieve paper content from knowledge base', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Methodology Review', 'text': 'Detect methodology gaps and weaknesses', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Methodology Review', 'text': 'Assess experimental design', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate improvement recommendations', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Preparing methodology review...'})}\n\n"
+            elif any(p in query.lower() for p in ['compare', 'versus', 'vs', 'difference']):
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Decompose comparison query', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search each sub-topic separately', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Cross-reference and align findings', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate comparative analysis', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Breaking down comparison...'})}\n\n"
+            elif _intent.get('user_kb', 0) >= 0.9:
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search your uploaded documents', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Rank results by relevance', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Summarize findings from your files', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Searching your documents...'})}\n\n"
+            elif _intent.get('pubmed', 0) >= 0.3:
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Expand query with medical terminology', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base and PubMed', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Cross-reference literature with your data', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Synthesize evidence-based answer', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Searching literature...'})}\n\n"
+            else:
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Analyze query and expand terms', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base for relevant sources', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Rerank and filter results by relevance', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate answer with source attribution', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Expanding query...'})}\n\n"
 
             sources_for_response = []
             for event in enhanced_service.search_and_answer_stream(
