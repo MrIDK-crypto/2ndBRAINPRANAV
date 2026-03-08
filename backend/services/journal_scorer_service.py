@@ -326,6 +326,16 @@ class JournalScorerService:
                 "score_breakdown": score_result["breakdown"],
             })
 
+            # ── Step 5.5: Methodology Gap Detection ─────────────────
+            yield _sse("progress", {"step": 5, "message": "Checking for methodology gaps...", "percent": 54})
+
+            methodology_gaps = self._detect_methodology_gaps(text, field)
+
+            yield _sse("methodology_gaps", {
+                "gaps": methodology_gaps,
+                "gaps_found": len(methodology_gaps),
+            })
+
             # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
             yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
 
@@ -381,7 +391,11 @@ class JournalScorerService:
 
             # ── Done ────────────────────────────────────────────────────
             elapsed = round(time.time() - start_time, 1)
-            done_data = {"success": True, "analysis_time_seconds": elapsed}
+            done_data = {
+                "success": True,
+                "analysis_time_seconds": elapsed,
+                "methodology_gaps": methodology_gaps,
+            }
             if manuscript_url:
                 done_data["manuscript_url"] = manuscript_url
             yield _sse("done", done_data)
@@ -1003,6 +1017,85 @@ class JournalScorerService:
 
         best = max(counts) if counts else 0
         return best
+
+    def _detect_methodology_gaps(self, text: str, field: str) -> list:
+        """Detect common methodology gaps that journal reviewers will flag.
+
+        Args:
+            text: Full manuscript text
+            field: Academic field (e.g., 'biomedical', 'psychology', 'economics')
+
+        Returns:
+            List of gap dicts with name, severity, recommendation, detected status
+        """
+        text_lower = text.lower()
+
+        checks = [
+            {
+                'name': 'Sample Size Justification',
+                'keywords': ['sample size', 'power analysis', 'power calculation', 'n =', 'participants were', 'sample of'],
+                'severity': 'high',
+                'recommendation': 'Add a power analysis or sample size justification in the Methods section.',
+            },
+            {
+                'name': 'Blinding/Randomization',
+                'keywords': ['blind', 'randomiz', 'double-blind', 'single-blind', 'allocation conceal', 'random assignment'],
+                'severity': 'high' if field in ('biomedical', 'psychology', 'biology') else 'medium',
+                'recommendation': 'Describe blinding and randomization procedures, or explain why they were not applicable.',
+            },
+            {
+                'name': 'Ethics Statement',
+                'keywords': ['ethics', 'irb', 'institutional review', 'informed consent', 'ethics committee', 'iacuc', 'ethical approval'],
+                'severity': 'high' if field in ('biomedical', 'psychology', 'biology') else 'low',
+                'recommendation': 'Include IRB/ethics committee approval number and informed consent details.',
+            },
+            {
+                'name': 'Data Availability',
+                'keywords': ['data availab', 'data sharing', 'openly available', 'repository', 'supplementary data', 'upon request', 'data access'],
+                'severity': 'medium',
+                'recommendation': 'Add a Data Availability Statement specifying where data can be accessed.',
+            },
+            {
+                'name': 'Conflict of Interest',
+                'keywords': ['conflict of interest', 'competing interest', 'disclosure', 'no conflict', 'declare no'],
+                'severity': 'medium',
+                'recommendation': 'Include a Conflict of Interest / Competing Interests declaration.',
+            },
+            {
+                'name': 'Statistical Methods',
+                'keywords': ['t-test', 'anova', 'regression', 'chi-square', 'p-value', 'confidence interval',
+                            'mann-whitney', 'statistical analys', 'significance level', 'alpha ='],
+                'severity': 'high',
+                'recommendation': 'Describe statistical tests used, significance thresholds, and software/versions.',
+            },
+            {
+                'name': 'Limitations',
+                'keywords': ['limitation', 'caveat', 'shortcoming', 'weakness', 'future work should address',
+                            'acknowledge that', 'despite these'],
+                'severity': 'medium',
+                'recommendation': 'Add a Limitations section discussing study constraints and their impact.',
+            },
+            {
+                'name': 'Reproducibility Details',
+                'keywords': ['protocol', 'code availab', 'software version', 'package version', 'reproducib',
+                            'materials and methods', 'detailed in supplementa'],
+                'severity': 'medium' if field in ('biomedical', 'biology', 'cs_data_science') else 'low',
+                'recommendation': 'Provide sufficient detail for independent replication: software versions, parameter settings, protocol steps.',
+            },
+        ]
+
+        gaps = []
+        for check in checks:
+            found = any(kw in text_lower for kw in check['keywords'])
+            if not found:
+                gaps.append({
+                    'gap': check['name'],
+                    'severity': check['severity'],
+                    'recommendation': check['recommendation'],
+                    'detected': False,
+                })
+
+        return gaps
 
     def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield=""):
         feature_summary = "\n".join(
