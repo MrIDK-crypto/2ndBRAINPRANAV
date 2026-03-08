@@ -1312,29 +1312,31 @@ class EnhancedSearchService:
             return {'user_kb': 1.0, 'ctsi': 0.0, 'pubmed': 0.0, 'journals': 0.0}
 
         # JOURNAL/PUBLICATION queries — trigger journal analysis mode
-        journal_patterns = ['which journal', 'what journal', 'where should i publish',
-                          'where to publish', 'where to submit', 'where should i submit',
-                          'submit this to', 'submit to', 'journal recommend',
-                          'best journal', 'target journal', 'high impact journal',
-                          'publication venue', 'suitable journal', 'good journal for',
-                          'impact factor', 'journal suggestion', 'journal match',
-                          'journal fit']
-        if any(p in q_lower for p in journal_patterns):
+        # Use regex for typo tolerance (jounral, journl, etc.)
+        import re
+        journal_regex = re.compile(
+            r'jo[u]?rn[ae]?l|where.{0,10}(?:publish|submit)|submit.{0,10}(?:to|this)|'
+            r'publication venue|impact factor|get.{0,10}(?:into|published)|'
+            r'can this get into|suitable.{0,5}journal|target.{0,5}journal|'
+            r'high.{0,5}impact|best.{0,5}journal',
+            re.IGNORECASE
+        )
+        if journal_regex.search(q_lower):
             return {'user_kb': 0.6, 'ctsi': 0.0, 'pubmed': 0.2, 'journals': 0.2,
                     'special_mode': 'journal_analysis'}
 
         # METHODOLOGY GAP queries — trigger methodology analysis mode
-        methodology_patterns = ['methodology gap', 'method gap', 'methodology issue',
-                              'methodology improvement', 'improve the method',
-                              'weakness in method', 'limitation of method',
-                              'reviewer will flag', 'reviewer concern',
-                              'what are the gaps', 'missing methodology',
-                              'methodology check', 'manuscript check',
-                              'paper ready', 'is my paper ready',
-                              'red flag', 'improve my paper', 'improve this paper',
-                              'what improvements', 'new experiments',
-                              'what experiments']
-        if any(p in q_lower for p in methodology_patterns):
+        # Broad patterns: improvements, experiments, gaps, limitations, reviewer concerns
+        methodology_regex = re.compile(
+            r'methodolog|improve.{0,15}(?:paper|manuscript|method|this)|'
+            r'new.{0,10}experiment|what.{0,10}experiment|'
+            r'gaps?.{0,5}(?:in|of|for|detect)|reviewer.{0,5}(?:flag|concern)|'
+            r'paper.{0,5}ready|manuscript.{0,5}(?:check|ready)|'
+            r'red.{0,3}flag|weakness|limitation.{0,5}(?:of|in)|'
+            r'what.{0,10}improv|experiment.{0,10}(?:we|can|should|to)',
+            re.IGNORECASE
+        )
+        if methodology_regex.search(q_lower):
             return {'user_kb': 0.7, 'ctsi': 0.0, 'pubmed': 0.2, 'journals': 0.1,
                     'special_mode': 'methodology_analysis'}
 

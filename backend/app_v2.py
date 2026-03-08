@@ -1744,6 +1744,39 @@ def search_stream():
             except Exception as uctx_err:
                 print(f"[SEARCH-STREAM] Error building user context: {uctx_err}", flush=True)
 
+            # Auto-detect document references in query or conversation history
+            # If user mentions a filename, boost that document
+            if not boost_doc_ids:
+                try:
+                    import re as _re
+                    # Check query and recent conversation for filenames
+                    texts_to_check = [query]
+                    if conversation_history:
+                        for msg in conversation_history[-6:]:
+                            texts_to_check.append(str(msg.get('content', '')))
+                    combined_text = ' '.join(texts_to_check).lower()
+
+                    # Find documents whose titles appear in the conversation
+                    if recent_docs:
+                        for doc in recent_docs:
+                            if doc.title:
+                                # Match filename without extension, case-insensitive
+                                title_lower = doc.title.lower()
+                                name_no_ext = _re.sub(r'\.[a-z0-9]{1,5}$', '', title_lower)
+                                if name_no_ext and len(name_no_ext) > 3 and name_no_ext in combined_text:
+                                    # Found a referenced document — get its ID
+                                    ref_doc = db.query(Document.id).filter(
+                                        Document.tenant_id == tenant_id,
+                                        Document.title == doc.title
+                                    ).first()
+                                    if ref_doc:
+                                        boost_doc_ids.append(str(ref_doc.id))
+                                        print(f"[SEARCH-STREAM] Auto-boosting document: '{doc.title}' (ID: {ref_doc.id})", flush=True)
+                    if boost_doc_ids:
+                        print(f"[SEARCH-STREAM] Boosting {len(boost_doc_ids)} referenced documents", flush=True)
+                except Exception as boost_err:
+                    print(f"[SEARCH-STREAM] Error in doc reference detection: {boost_err}", flush=True)
+
             print(f"[SEARCH-STREAM] Starting (mode={response_mode}): '{query}'", flush=True)
 
             # Emit plan steps (action events) for the Plan panel
