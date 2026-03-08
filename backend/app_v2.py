@@ -1742,6 +1742,12 @@ def search_stream():
 
             print(f"[SEARCH-STREAM] Starting (mode={response_mode}): '{query}'", flush=True)
 
+            # Emit plan steps (action events) for the Plan panel
+            yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Analyze query and expand terms', 'status': 'in_progress'})}\n\n"
+            yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base for relevant sources', 'status': 'pending'})}\n\n"
+            yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Rerank and filter results by relevance', 'status': 'pending'})}\n\n"
+            yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate answer with source attribution', 'status': 'pending'})}\n\n"
+
             # Thinking: expanding query
             yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Expanding query...'})}\n\n"
 
