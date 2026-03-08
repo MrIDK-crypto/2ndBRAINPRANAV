@@ -35,8 +35,8 @@ openpyxl==3.1.2
 python-docx==1.1.0
 PyPDF2==3.0.1
 
-# Document Parsing (local fallback - no API keys needed)
-docling
+# Document Parsing (optional local fallback - install separately: pip install docling)
+# docling  # Excluded from Docker build due to heavy dependencies; GPT-4o + traditional parsers suffice
 
 # Microsoft Graph (OneDrive)
 msal==1.24.1
