@@ -115,37 +115,6 @@ export default function CoWorkHistory({
       {/* Conversation list */}
       {isOpen && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
-          {/* New Chat button */}
-          <button
-            onClick={onNewChat}
-            style={{
-              width: '100%',
-              padding: '9px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: COLORS.primary,
-              cursor: 'pointer',
-              textAlign: 'left',
-              marginBottom: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              color: '#FFFFFF',
-              fontSize: '12.5px',
-              fontWeight: 600,
-              fontFamily: FONT,
-              transition: 'background-color 0.15s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = COLORS.primaryHover }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = COLORS.primary }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            New Chat
-          </button>
-
           {conversations.length === 0 ? (
             <p style={{
               fontSize: '11px', color: COLORS.textMuted,

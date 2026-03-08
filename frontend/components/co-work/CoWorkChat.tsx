@@ -595,26 +595,27 @@ export default function CoWorkChat({
         <button
           onClick={handleNewChat}
           style={{
-            padding: '5px 12px',
+            padding: '6px 14px',
             borderRadius: '8px',
-            border: `1px solid ${COLORS.border}`,
-            backgroundColor: COLORS.cardBg,
-            color: COLORS.textSecondary,
+            border: 'none',
+            backgroundColor: COLORS.primary,
+            color: '#FFFFFF',
             fontSize: '12px',
+            fontWeight: 600,
             cursor: 'pointer',
             fontFamily: FONT,
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
-            transition: 'all 0.15s',
+            gap: '5px',
+            transition: 'background-color 0.15s',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = COLORS.primary; e.currentTarget.style.color = COLORS.primary }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.color = COLORS.textSecondary }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#B8948A' }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = COLORS.primary }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          New
+          New Chat
         </button>
       </div>
 
