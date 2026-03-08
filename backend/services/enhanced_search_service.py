@@ -1290,6 +1290,81 @@ class EnhancedSearchService:
         print(f"[EnhancedSearch] Intent extraction: enabled")
         print(f"[EnhancedSearch] Query contextualization: enabled")
         print(f"[EnhancedSearch] Query decomposition: enabled")
+        print(f"[EnhancedSearch] Adaptive source selection: enabled")
+
+    def _classify_query_intent(self, query: str) -> dict:
+        """Classify query to determine optimal source mix.
+        Returns dict of source weights {user_kb, ctsi, pubmed, journals} summing to ~1.0
+        """
+        q_lower = query.lower()
+
+        # Personal/internal queries — only user KB
+        personal_patterns = ['my file', 'my data', 'my document', 'our protocol', 'our lab',
+                            'we have', 'i uploaded', 'my upload', 'my csv', 'my knowledge',
+                            'what do i have', 'what did i upload', 'my notes',
+                            'my report', 'my paper', 'i have', 'my lab', 'my research',
+                            'in my', 'essence of the', 'essence of my', 'what files',
+                            'what documents', 'tell me about my']
+        if any(p in q_lower for p in personal_patterns):
+            return {'user_kb': 1.0, 'ctsi': 0.0, 'pubmed': 0.0, 'journals': 0.0}
+
+        # Literature queries — heavy PubMed/journals
+        literature_patterns = ['literature', 'published', 'studies show', 'research says',
+                              'evidence for', 'clinical trial', 'meta-analysis', 'systematic review',
+                              'what does the research', 'peer-reviewed']
+        if any(p in q_lower for p in literature_patterns):
+            return {'user_kb': 0.2, 'ctsi': 0.1, 'pubmed': 0.5, 'journals': 0.2}
+
+        # Comparison queries — balanced
+        comparison_patterns = ['compare', 'versus', 'vs', 'difference between',
+                             'how does our', 'relative to', 'compared to']
+        if any(p in q_lower for p in comparison_patterns):
+            return {'user_kb': 0.4, 'ctsi': 0.1, 'pubmed': 0.3, 'journals': 0.2}
+
+        # Protocol/method queries — user KB heavy + some literature
+        protocol_patterns = ['protocol', 'method', 'procedure', 'technique', 'reagent',
+                           'concentration', 'incubat', 'centrifug']
+        if any(p in q_lower for p in protocol_patterns):
+            return {'user_kb': 0.6, 'ctsi': 0.15, 'pubmed': 0.15, 'journals': 0.1}
+
+        # Default balanced
+        return {'user_kb': 0.5, 'ctsi': 0.15, 'pubmed': 0.2, 'journals': 0.15}
+
+    def _decompose_query(self, query: str) -> list:
+        """Break complex queries into searchable sub-queries using LLM.
+        Only decomposes if query looks complex (>15 words or has comparison terms).
+        Returns list of query strings (original query if not complex).
+        """
+        words = query.split()
+        comparison_terms = ['compare', 'versus', 'vs', 'difference', 'between', 'relationship', 'contrast', 'similarities']
+
+        if len(words) < 15 and not any(w.lower() in comparison_terms for w in words):
+            return [query]
+
+        try:
+            response = self.client.chat_completion(
+                messages=[{
+                    'role': 'system',
+                    'content': 'Break this research question into 2-4 simpler, self-contained search queries. Return ONLY a JSON array of strings. Each should be a complete question that can be searched independently.'
+                }, {
+                    'role': 'user',
+                    'content': query
+                }],
+                temperature=0,
+                max_tokens=300,
+            )
+
+            content = response.choices[0].message.content.strip()
+            # Handle markdown code blocks
+            if content.startswith('```'):
+                content = content.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
+            sub_queries = json.loads(content)
+            if isinstance(sub_queries, list) and len(sub_queries) >= 2:
+                return sub_queries[:4]
+        except Exception as e:
+            print(f"[QueryDecomposition] Failed to decompose query: {e}")
+
+        return [query]
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding with caching"""
@@ -1438,44 +1513,79 @@ class EnhancedSearchService:
         classification = QueryClassifier.classify(query)
         features_applied['classification'] = classification['type']
 
+        # Step 1.75: Query decomposition for complex queries
+        sub_queries = self._decompose_query(query) if use_decomposition else [query]
+
         # Step 2: Initial retrieval from Pinecone (get more for reranking)
         retrieve_k = top_k * 3 if use_reranking else top_k * 2
 
-        # Use hybrid search if available - NOW WITH FILTERED KEYWORDS
-        if hasattr(vector_store, 'hybrid_search'):
-            initial_results = vector_store.hybrid_search(
-                query=search_query,
-                tenant_id=tenant_id,
-                top_k=retrieve_k
-            )
+        if len(sub_queries) > 1:
+            # Multi-sub-query retrieval: search each sub-query, merge by unique ID
+            print(f"[Search] Decomposed into {len(sub_queries)} sub-queries: {sub_queries}")
+            features_applied['decomposition'] = True
+            features_applied['sub_queries'] = sub_queries
+            all_results = []
+            seen_ids = set()
+            per_sq_k = max(8, retrieve_k // len(sub_queries))
+            for sq in sub_queries:
+                if hasattr(vector_store, 'hybrid_search'):
+                    sq_results = vector_store.hybrid_search(
+                        query=sq,
+                        tenant_id=tenant_id,
+                        top_k=per_sq_k
+                    )
+                else:
+                    sq_results = vector_store.search(
+                        query=sq,
+                        tenant_id=tenant_id,
+                        top_k=per_sq_k
+                    )
+                for r in sq_results:
+                    rid = r.get('id') or r.get('doc_id') or r.get('metadata', {}).get('doc_id', '')
+                    if rid and rid not in seen_ids:
+                        seen_ids.add(rid)
+                        all_results.append(r)
+                    elif not rid:
+                        all_results.append(r)
+            initial_results = all_results[:retrieve_k]
+            print(f"[EnhancedSearch] Multi-query retrieval: {len(initial_results)} unique results from {len(sub_queries)} sub-queries")
         else:
-            initial_results = vector_store.search(
-                query=search_query,
-                tenant_id=tenant_id,
-                top_k=retrieve_k
-            )
+            # Original single-query path (unchanged)
+            if hasattr(vector_store, 'hybrid_search'):
+                initial_results = vector_store.hybrid_search(
+                    query=search_query,
+                    tenant_id=tenant_id,
+                    top_k=retrieve_k
+                )
+            else:
+                initial_results = vector_store.search(
+                    query=search_query,
+                    tenant_id=tenant_id,
+                    top_k=retrieve_k
+                )
 
-        print(f"[EnhancedSearch] Initial retrieval: {len(initial_results)} results")
+            print(f"[EnhancedSearch] Initial retrieval: {len(initial_results)} results")
 
-        # Step 2b: Query shared CTSI namespace (accessible to all tenants)
-        # Skip CTSI for self-referential queries about the user's own data
-        _q_lower = query.lower()
-        _personal_indicators = [
-            'my file', 'my data', 'my document', 'my csv', 'my knowledge',
-            'my upload', 'what do i have', 'what did i upload', 'my report',
-            'my paper', 'i uploaded', 'i have', 'my lab', 'my research',
-            'in my', 'essence of the', 'essence of my', 'what files',
-            'what documents', 'tell me about my',
-        ]
-        _skip_ctsi = any(p in _q_lower for p in _personal_indicators)
+        # Step 2b: Adaptive source selection by query intent
+        # Classify query to determine optimal source mix (replaces old personal indicators list)
+        source_weights = self._classify_query_intent(query)
+        print(f"[Search] Source allocation for query: {source_weights}")
 
-        if _skip_ctsi:
-            print(f"[EnhancedSearch] Skipping CTSI shared namespace (personal query detected)")
+        # Allocate top_k across sources based on intent weights
+        kb_k = max(1, int(top_k * source_weights['user_kb']))
+        ctsi_k = max(0, int(top_k * source_weights['ctsi']))
+
+        # Store allocation for logging/debugging
+        self._last_source_allocation = source_weights
+
+        # Skip CTSI shared namespace when weight is 0 (personal queries)
+        if source_weights['ctsi'] <= 0:
+            print(f"[EnhancedSearch] Skipping CTSI shared namespace (personal query detected, ctsi weight=0)")
         else:
             try:
                 from vector_stores.pinecone_store import SHARED_CTSI_NAMESPACE
                 query_embedding = vector_store.get_query_embedding(search_query)
-                shared_top_k = max(top_k // 2, 3)
+                shared_top_k = max(ctsi_k, 2)
                 shared_results = vector_store.search_shared_namespace(
                     query_embedding=query_embedding,
                     namespace=SHARED_CTSI_NAMESPACE,
@@ -1486,7 +1596,7 @@ class EnhancedSearchService:
                     for r in shared_results:
                         r['score'] = r.get('score', 0) * 0.9
                     initial_results.extend(shared_results)
-                    print(f"[EnhancedSearch] Added {len(shared_results)} shared CTSI results")
+                    print(f"[EnhancedSearch] Added {len(shared_results)} shared CTSI results (weight={source_weights['ctsi']:.2f})")
             except Exception as e:
                 # Shared search failure must never break tenant search
                 print(f"[EnhancedSearch] Shared namespace query failed (non-fatal): {e}")
@@ -1608,6 +1718,7 @@ class EnhancedSearchService:
             'expansion': expansion,
             'contextualization': contextualization,  # NEW: Coreference resolution info
             'query_classification': classification,  # NEW: Query type
+            'source_weights': source_weights,  # NEW: Adaptive source allocation
             'results': initial_results,
             'num_results': len(initial_results),
             'search_time': search_time,
