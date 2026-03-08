@@ -1803,7 +1803,11 @@ def search_stream():
                             "content_preview": (src.get('content', '') or '')[:300],
                             "score": src.get('rerank_score', src.get('score', 0)),
                         }
-                        if is_shared:
+                        if src.get('source_origin') == 'openalex':
+                            source_entry["source_origin"] = "openalex"
+                            source_entry["source_origin_label"] = src.get('source_origin_label', 'OpenAlex')
+                            source_entry["source_url"] = src.get('source_url', '')
+                        elif is_shared:
                             source_entry["source_url"] = src.get('source_url', '')
                             source_entry["is_shared"] = True
                             source_entry["facility_name"] = src.get('facility_name', '')

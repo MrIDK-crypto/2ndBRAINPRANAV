@@ -1234,7 +1234,9 @@ class FreshnessScorer:
         return max(years) if years else None
 
     @classmethod
-    def get_boost(cls, year: Optional[int], current_year: int = 2025) -> float:
+    def get_boost(cls, year: Optional[int], current_year: int = None) -> float:
+        if current_year is None:
+            current_year = datetime.now().year
         """Get freshness boost factor"""
         if year is None:
             return 1.0

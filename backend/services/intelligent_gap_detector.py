@@ -2151,13 +2151,20 @@ def compute_auto_priority(gap_data: dict, all_docs: list, feedback_history: list
 
     # Recency boost (0-0.2)
     from datetime import datetime, timezone
+    from dateutil.parser import parse as parse_date
     recent_count = 0
     for d in all_docs:
         created = d.get('created_at')
-        if created and hasattr(created, 'timestamp'):
-            age_days = (datetime.now(timezone.utc) - created).days
-            if age_days < 30:
-                recent_count += 1
+        if created:
+            try:
+                if isinstance(created, str):
+                    created = parse_date(created)
+                if hasattr(created, 'timestamp'):
+                    age_days = (datetime.now(timezone.utc) - created).days
+                    if age_days < 30:
+                        recent_count += 1
+            except (ValueError, TypeError):
+                pass
     recency = min(0.2, recent_count / max(len(all_docs), 1) * 0.4)
     score += recency
     signals['recency'] = recent_count
@@ -2218,14 +2225,14 @@ def merge_gap_questions(existing_gap, new_questions: list) -> int:
     existing_q_texts = set()
     for q in (existing_gap.questions or []):
         if isinstance(q, dict):
-            existing_q_texts.add(q.get('question', '').lower().strip())
+            existing_q_texts.add(q.get('text', q.get('question', '')).lower().strip())
         elif isinstance(q, str):
             existing_q_texts.add(q.lower().strip())
 
     added = 0
     current_questions = list(existing_gap.questions or [])
     for q in new_questions:
-        q_text = q.get('question', '') if isinstance(q, dict) else str(q)
+        q_text = q.get('text', q.get('question', '')) if isinstance(q, dict) else str(q)
         if q_text.lower().strip() not in existing_q_texts:
             current_questions.append(q)
             added += 1
