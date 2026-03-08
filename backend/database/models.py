@@ -1030,6 +1030,8 @@ class KnowledgeGap(Base):
     feedback_not_useful = Column(Integer, default=0)  # Count of "not useful" votes
     feedback_comments = Column(JSON, default=list)  # List of feedback comments
     quality_score = Column(Float, default=0.0)  # AI-generated quality score 0-1
+    auto_priority_score = Column(Float, default=0.0)  # ML-derived priority
+    priority_signals = Column(JSON, default=dict)  # {recency, frequency, cross_ref_count, user_boost}
     fingerprint = Column(String(32), index=True)  # For deduplication
 
     # Audit
@@ -1081,6 +1083,8 @@ class KnowledgeGap(Base):
             "feedback_useful": self.feedback_useful or 0,
             "feedback_not_useful": self.feedback_not_useful or 0,
             "quality_score": self.quality_score or 0.0,
+            "auto_priority_score": self.auto_priority_score or 0.0,
+            "priority_signals": self.priority_signals or {},
             "fingerprint": self.fingerprint,
         }
         if include_answers:

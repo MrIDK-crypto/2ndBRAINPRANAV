@@ -458,6 +458,7 @@ def list_gaps():
         project_id: filter by project
         status: open, in_progress, answered, verified, closed
         category: decision, technical, process, context, etc.
+        sort: "priority" to order by auto_priority_score DESC (default: priority+created_at)
         limit: page size (default 50)
         offset: page offset
 
@@ -472,6 +473,7 @@ def list_gaps():
         project_id = request.args.get('project_id')
         status_str = request.args.get('status')
         category_str = request.args.get('category')
+        sort = request.args.get('sort')  # "priority" for auto_priority_score DESC
         limit = min(int(request.args.get('limit', 50)), 200)
         offset = int(request.args.get('offset', 0))
 
@@ -511,7 +513,8 @@ def list_gaps():
                 status=status,
                 category=category,
                 limit=limit,
-                offset=offset
+                offset=offset,
+                sort=sort
             )
 
             # Enrich gaps with source document titles

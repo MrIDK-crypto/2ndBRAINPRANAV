@@ -1614,10 +1614,15 @@ Return JSON:
         status: Optional[GapStatus] = None,
         category: Optional[GapCategory] = None,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
+        sort: Optional[str] = None
     ) -> Tuple[List[KnowledgeGap], int]:
         """
         Get knowledge gaps with filtering.
+
+        Args:
+            sort: Optional sort mode. "priority" sorts by auto_priority_score DESC.
+                  Default sorts by priority DESC, created_at DESC.
         """
         query = self.db.query(KnowledgeGap).filter(
             KnowledgeGap.tenant_id == tenant_id
@@ -1631,10 +1636,18 @@ Return JSON:
             query = query.filter(KnowledgeGap.category == category)
 
         total = query.count()
-        gaps = query.order_by(
-            KnowledgeGap.priority.desc(),
-            KnowledgeGap.created_at.desc()
-        ).offset(offset).limit(limit).all()
+
+        if sort == 'priority':
+            gaps = query.order_by(
+                KnowledgeGap.auto_priority_score.desc(),
+                KnowledgeGap.priority.desc(),
+                KnowledgeGap.created_at.desc()
+            ).offset(offset).limit(limit).all()
+        else:
+            gaps = query.order_by(
+                KnowledgeGap.priority.desc(),
+                KnowledgeGap.created_at.desc()
+            ).offset(offset).limit(limit).all()
 
         return gaps, total
 
