@@ -423,6 +423,9 @@ export default function CoWorkChat({
 
               // Clean up source citations in text
               let cleanedAnswer = accumulatedText
+              // Remove "Sources Used" / "Sources" section and everything after it (multi-line)
+              cleanedAnswer = cleanedAnswer.replace(/\n#{0,3}\s*\*{0,2}Sources?\s*Used?\*{0,2}:?\s*\n[\s\S]*$/i, '')
+              cleanedAnswer = cleanedAnswer.replace(/\n#{0,3}\s*\*{0,2}References?\*{0,2}:?\s*\n[\s\S]*$/i, '')
               cleanedAnswer = cleanedAnswer.replace(/Sources Used:.*$/gm, '')
               cleanedAnswer = cleanedAnswer.replace(/.*Citation Coverage:.*$/gm, '')
               cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n').trim()
