@@ -2521,6 +2521,71 @@ class ExperimentCategory(Base):
         }
 
 
+# ============================================================================
+# PROTOCOL KNOWLEDGE GRAPH
+# ============================================================================
+
+class ProtocolEntity(Base):
+    """Extracted entity from a protocol document."""
+    __tablename__ = 'protocol_entities'
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey('tenants.id'), nullable=False, index=True)
+    document_id = Column(String(36), ForeignKey('documents.id'), nullable=False)
+
+    entity_type = Column(String(50), nullable=False)  # technique, reagent, equipment, parameter, organism, cell_line, buffer, assay
+    name = Column(String(500), nullable=False)
+    normalized_name = Column(String(500))  # lowercase, canonical form
+    attributes = Column(JSON, default=dict)  # {concentration: "10mM", temperature: "37°C", etc.}
+
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    # Relationships
+    document = relationship("Document")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'entity_type': self.entity_type,
+            'name': self.name,
+            'normalized_name': self.normalized_name,
+            'attributes': self.attributes or {},
+            'document_id': self.document_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ProtocolRelation(Base):
+    """Relationship between two protocol entities."""
+    __tablename__ = 'protocol_relations'
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey('tenants.id'), nullable=False, index=True)
+    document_id = Column(String(36), ForeignKey('documents.id'), nullable=False)
+
+    source_entity_id = Column(String(36), ForeignKey('protocol_entities.id'), nullable=False)
+    target_entity_id = Column(String(36), ForeignKey('protocol_entities.id'), nullable=False)
+    relation_type = Column(String(100), nullable=False)  # uses, requires, produces, follows, conflicts_with, alternative_to, measured_by
+    confidence = Column(Float, default=1.0)
+    context = Column(Text)  # surrounding text that describes this relationship
+
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    source_entity = relationship('ProtocolEntity', foreign_keys=[source_entity_id])
+    target_entity = relationship('ProtocolEntity', foreign_keys=[target_entity_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source_entity_id': self.source_entity_id,
+            'target_entity_id': self.target_entity_id,
+            'relation_type': self.relation_type,
+            'confidence': self.confidence,
+            'context': self.context,
+            'document_id': self.document_id,
+        }
+
+
 def init_database():
     """Initialize database (create tables)"""
     _migrate_enum_values()
