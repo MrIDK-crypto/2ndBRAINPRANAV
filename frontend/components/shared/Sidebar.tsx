@@ -28,6 +28,43 @@ interface SidebarProps {
   isLoadingHistory?: boolean
 }
 
+// ---------- design tokens ----------
+const FONT = "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
+const COLORS = {
+  accent: '#C9A598',
+  activeBg: '#FBF4F1',
+  hoverBg: '#F7F5F3',
+  textPrimary: '#2D2D2D',
+  textInactive: '#6B6B6B',
+  textMuted: '#9A9A9A',
+  border: '#F0EEEC',
+  sidebarBg: '#FAF9F7',
+}
+
+// ---------- types ----------
+interface MenuItem {
+  id: string
+  label: string
+  href: string
+  icon: string
+  adminOnly: boolean
+  comingSoon?: boolean
+}
+
+interface MenuSection {
+  type: 'section'
+  label: string
+  id: string
+  items: MenuItem[]
+}
+
+interface MenuStandalone {
+  type: 'item'
+  item: MenuItem
+}
+
+type MenuEntry = MenuSection | MenuStandalone
+
 export default function Sidebar({
   activeItem,
   onItemClick,
@@ -40,29 +77,39 @@ export default function Sidebar({
   isLoadingHistory = false
 }: SidebarProps) {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
   const pathname = usePathname()
   const { user: authUser } = useAuth()
   const isAdmin = authUser?.role === 'admin'
 
+  // Toggle section collapse
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }))
+  }
+
+  // Sections start expanded (collapsed = false by default)
+  const isSectionCollapsed = (sectionId: string) => !!collapsedSections[sectionId]
+
   // Determine active item from pathname if not provided
   const getActiveItem = () => {
     if (activeItem) return activeItem
+    if (pathname === '/uploads/drag-drop') return 'Drag & Drop'
     if (pathname === '/integrations') return 'Integrations'
     if (pathname === '/documents') return 'Documents'
-    if (pathname === '/knowledge-gaps') return 'Knowledge Gaps'
+    if (pathname === '/co-work' || pathname === '/chat') return 'Co-Work'
     if (pathname === '/training-guides') return 'Training Videos'
-    if (pathname === '/inventory') return 'Inventory'
+    if (pathname === '/knowledge-gaps') return 'Knowledge Gaps'
     if (pathname === '/analytics') return 'Analytics'
-    if (pathname === '/chat') return 'ChatBot'
-    return 'ChatBot'
+    if (pathname === '/inventory') return 'Inventory'
+    return 'Co-Work'
   }
 
   const currentActive = getActiveItem()
 
   const handleClick = (item: string) => {
     analytics.sidebarClick(item)
-    // Clicking ChatBot should always open a new chat
-    if (item === 'ChatBot' && onNewChat) {
+    // Clicking Co-Work should always open a new chat
+    if (item === 'Co-Work' && onNewChat) {
       onNewChat()
     }
     if (onItemClick) {
@@ -86,29 +133,57 @@ export default function Sidebar({
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 
-  const showChatHistory = currentActive === 'ChatBot' && (conversations.length > 0 || onNewChat)
+  const showChatHistory = currentActive === 'Co-Work' && (conversations.length > 0 || onNewChat)
 
-  // Menu items configuration - Order: Integrations, Documents, Knowledge Gaps, ChatBot, Training Guides, Inventory, Analytics
-  // Using inline SVG icons for better quality and consistency
-  const allMenuItems = [
-    { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations', adminOnly: true },
-    { id: 'Documents', label: 'Documents', href: '/documents', icon: 'documents', adminOnly: false },
-    { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
-    { id: 'ChatBot', label: 'ChatBot', href: '/chat', icon: 'chatbot', adminOnly: false },
-    { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false },
-    { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
-    { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
+  // ---------- Grouped menu structure ----------
+  const menuStructure: MenuEntry[] = [
+    {
+      type: 'section',
+      label: 'Uploads',
+      id: 'uploads',
+      items: [
+        { id: 'Drag & Drop', label: 'Drag & Drop', href: '/uploads/drag-drop', icon: 'upload', adminOnly: false },
+        { id: 'Integrations', label: 'Integrations', href: '/integrations', icon: 'integrations', adminOnly: true },
+      ],
+    },
+    {
+      type: 'item',
+      item: { id: 'Documents', label: 'Documents', href: '/documents', icon: 'documents', adminOnly: false },
+    },
+    {
+      type: 'item',
+      item: { id: 'Co-Work', label: 'Co-Work', href: '/co-work', icon: 'cowork', adminOnly: false },
+    },
+    {
+      type: 'section',
+      label: 'More',
+      id: 'more',
+      items: [
+        { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false, comingSoon: true },
+        { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
+        { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
+        { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
+      ],
+    },
   ]
 
-  const menuItems = isAdmin
-    ? allMenuItems
-    : allMenuItems.filter(item => !item.adminOnly)
+  // Filter admin-only items
+  const filterItems = (items: MenuItem[]): MenuItem[] =>
+    isAdmin ? items : items.filter(i => !i.adminOnly)
 
   // SVG icon components
   const renderIcon = (iconId: string, isActive: boolean) => {
-    const color = isActive ? '#C9A598' : '#9A9A9A'
+    const color = isActive ? COLORS.accent : COLORS.textMuted
 
     switch (iconId) {
+      case 'upload':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+        )
       case 'integrations':
         return (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -127,20 +202,21 @@ export default function Sidebar({
             <line x1="10" y1="9" x2="8" y2="9" />
           </svg>
         )
+      case 'cowork':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            <circle cx="12" cy="10" r="1" />
+            <circle cx="8" cy="10" r="1" />
+            <circle cx="16" cy="10" r="1" />
+          </svg>
+        )
       case 'gaps':
         return (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="10" />
             <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
             <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-        )
-      case 'chatbot':
-        return (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-            <line x1="9" y1="10" x2="9.01" y2="10" />
-            <line x1="15" y1="10" x2="15.01" y2="10" />
           </svg>
         )
       case 'training':
@@ -170,13 +246,147 @@ export default function Sidebar({
     }
   }
 
+  // ---------- render a single menu item row ----------
+  const renderMenuItem = (item: MenuItem) => {
+    const isActive = currentActive === item.id
+    const isComingSoon = item.comingSoon
+
+    const inner = (
+      <div
+        onClick={() => !isComingSoon && handleClick(item.id)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '12px 16px',
+          borderRadius: '12px',
+          cursor: isComingSoon ? 'default' : 'pointer',
+          backgroundColor: isActive ? COLORS.activeBg : 'transparent',
+          opacity: isComingSoon ? 0.7 : 1,
+          transition: 'all 0.15s ease'
+        }}
+        onMouseEnter={(e) => {
+          if (!isActive && !isComingSoon) {
+            e.currentTarget.style.backgroundColor = COLORS.hoverBg
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive && !isComingSoon) {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }
+        }}
+      >
+        {/* Icon */}
+        <div style={{ width: '20px', height: '20px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {renderIcon(item.icon, isActive)}
+        </div>
+        <span
+          style={{
+            flex: 1,
+            color: isActive ? COLORS.accent : COLORS.textInactive,
+            fontFamily: FONT,
+            fontSize: '15px',
+            fontWeight: isActive ? 500 : 400
+          }}
+        >
+          {item.label}
+        </span>
+        {/* "soon" badge for coming-soon items */}
+        {isComingSoon && (
+          <span
+            style={{
+              flexShrink: 0,
+              padding: '2px 7px',
+              fontSize: '10px',
+              fontWeight: 600,
+              color: COLORS.accent,
+              backgroundColor: COLORS.activeBg,
+              borderRadius: '4px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            soon
+          </span>
+        )}
+      </div>
+    )
+
+    if (isComingSoon) {
+      return <div key={item.id}>{inner}</div>
+    }
+
+    return (
+      <Link href={item.href} key={item.id}>
+        {inner}
+      </Link>
+    )
+  }
+
+  // ---------- render a collapsible section ----------
+  const renderSection = (section: MenuSection) => {
+    const visibleItems = filterItems(section.items)
+    if (visibleItems.length === 0) return null
+    const collapsed = isSectionCollapsed(section.id)
+
+    return (
+      <div key={section.id} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        {/* Section header */}
+        <button
+          onClick={() => toggleSection(section.id)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 16px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: COLORS.textMuted,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            fontFamily: FONT,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            width: '100%',
+            textAlign: 'left',
+          }}
+        >
+          <svg
+            style={{
+              width: '10px',
+              height: '10px',
+              transition: 'transform 0.2s',
+              transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+              flexShrink: 0,
+            }}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          {section.label}
+        </button>
+
+        {/* Section items */}
+        {!collapsed && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {visibleItems.map(renderMenuItem)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div
       style={{
         width: '280px',
         minHeight: '100vh',
-        backgroundColor: '#FAF9F7',
-        borderRight: '1px solid #F0EEEC',
+        backgroundColor: COLORS.sidebarBg,
+        borderRight: `1px solid ${COLORS.border}`,
         display: 'flex',
         flexDirection: 'column',
         padding: '24px 0'
@@ -185,7 +395,7 @@ export default function Sidebar({
       <div style={{ padding: '0 24px' }}>
         {/* Logo */}
         <div style={{ marginBottom: '32px' }}>
-          <Link href="/chat">
+          <Link href="/co-work">
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
               <div style={{ width: '48px', height: '60px', flexShrink: 0 }}>
                 <Image
@@ -198,8 +408,8 @@ export default function Sidebar({
               </div>
               <h1
                 style={{
-                  color: '#2D2D2D',
-                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+                  color: COLORS.textPrimary,
+                  fontFamily: FONT,
                   fontSize: '20px',
                   fontWeight: 700,
                   lineHeight: '24px',
@@ -223,7 +433,7 @@ export default function Sidebar({
               padding: '10px 14px',
               backgroundColor: '#FFFFFF',
               borderRadius: '10px',
-              border: '1px solid #F0EEEC'
+              border: `1px solid ${COLORS.border}`
             }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2">
@@ -240,62 +450,26 @@ export default function Sidebar({
                 backgroundColor: 'transparent',
                 fontSize: '14px',
                 color: '#374151',
-                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
+                fontFamily: FONT
               }}
             />
           </div>
         </div>
 
-        {/* Menu Items */}
+        {/* Menu Items (grouped) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {menuItems.map((item) => {
-            const isActive = currentActive === item.id
-            return (
-              <Link href={item.href} key={item.id}>
-                <div
-                  onClick={() => handleClick(item.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    backgroundColor: isActive ? '#FBF4F1' : 'transparent',
-                    transition: 'all 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = '#F7F5F3'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = 'transparent'
-                    }
-                  }}
-                >
-                  {/* Icon */}
-                  <div style={{ width: '20px', height: '20px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {renderIcon(item.icon, isActive)}
-                  </div>
-                  <span
-                    style={{
-                      color: isActive ? '#C9A598' : '#6B6B6B',
-                      fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
-                      fontSize: '15px',
-                      fontWeight: isActive ? 500 : 400
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                </div>
-              </Link>
-            )
+          {menuStructure.map((entry) => {
+            if (entry.type === 'section') {
+              return renderSection(entry)
+            }
+            // standalone item -- filter admin
+            const item = entry.item
+            if (item.adminOnly && !isAdmin) return null
+            return renderMenuItem(item)
           })}
         </div>
 
-        {/* Chat History Section - Only show on ChatBot page */}
+        {/* Chat History Section - Only show on Co-Work page */}
         {showChatHistory && (
           <div style={{ marginTop: '24px' }}>
             {/* Section Header */}
@@ -308,7 +482,7 @@ export default function Sidebar({
                   gap: '6px',
                   fontSize: '12px',
                   fontWeight: 600,
-                  color: '#9A9A9A',
+                  color: COLORS.textMuted,
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                   background: 'none',
@@ -348,8 +522,8 @@ export default function Sidebar({
                   }}
                   title="New Chat"
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#F7F5F3'
-                    e.currentTarget.style.color = '#9A9A9A'
+                    e.currentTarget.style.backgroundColor = COLORS.hoverBg
+                    e.currentTarget.style.color = COLORS.textMuted
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = 'transparent'
@@ -371,8 +545,8 @@ export default function Sidebar({
                     <div style={{
                       width: '16px',
                       height: '16px',
-                      border: '2px solid #F0EEEC',
-                      borderTopColor: '#C9A598',
+                      border: `2px solid ${COLORS.border}`,
+                      borderTopColor: COLORS.accent,
                       borderRadius: '50%',
                       animation: 'spin 1s linear infinite'
                     }} />
@@ -393,12 +567,12 @@ export default function Sidebar({
                         padding: '8px 16px',
                         cursor: 'pointer',
                         borderRadius: '8px',
-                        backgroundColor: currentConversationId === conv.id ? '#FBF4F1' : 'transparent',
+                        backgroundColor: currentConversationId === conv.id ? COLORS.activeBg : 'transparent',
                         transition: 'background-color 0.15s'
                       }}
                       onMouseEnter={(e) => {
                         if (currentConversationId !== conv.id) {
-                          e.currentTarget.style.backgroundColor = '#F7F5F3'
+                          e.currentTarget.style.backgroundColor = COLORS.hoverBg
                         }
                       }}
                       onMouseLeave={(e) => {
@@ -416,7 +590,7 @@ export default function Sidebar({
                       <span style={{
                         flex: 1,
                         fontSize: '13px',
-                        color: currentConversationId === conv.id ? '#C9A598' : '#2D2D2D',
+                        color: currentConversationId === conv.id ? COLORS.accent : COLORS.textPrimary,
                         fontWeight: currentConversationId === conv.id ? 500 : 400,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
@@ -480,7 +654,7 @@ export default function Sidebar({
       <div style={{ padding: '0 24px' }}>
         <div
           style={{
-            borderTop: '1px solid #F0EEEC',
+            borderTop: `1px solid ${COLORS.border}`,
             paddingTop: '20px',
             marginTop: '20px'
           }}
@@ -497,7 +671,7 @@ export default function Sidebar({
                   transition: 'background-color 0.15s'
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#F7F5F3'
+                  e.currentTarget.style.backgroundColor = COLORS.hoverBg
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = 'transparent'
@@ -509,23 +683,23 @@ export default function Sidebar({
                   borderRadius: '50%',
                   overflow: 'hidden',
                   flexShrink: 0,
-                  border: '2px solid #F0EEEC'
+                  border: `2px solid ${COLORS.border}`
                 }}>
                   <Image src="/Maya.png" alt="User" width={40} height={40} />
                 </div>
                 <div>
                   <div style={{
-                    color: '#2D2D2D',
+                    color: COLORS.textPrimary,
                     fontSize: '14px',
                     fontWeight: 600,
-                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
+                    fontFamily: FONT
                   }}>
                     {userName}
                   </div>
                   <div style={{
-                    color: '#9A9A9A',
+                    color: COLORS.textMuted,
                     fontSize: '12px',
-                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
+                    fontFamily: FONT
                   }}>
                     Account settings
                   </div>

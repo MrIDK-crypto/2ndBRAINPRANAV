@@ -263,7 +263,17 @@ Respond with ONLY the intent name."""},
             context_data["pubmed_papers"] = pubmed_results
         yield f"event: action\ndata: {json.dumps({'type': 'pubmed_done', 'text': f'Found {len(pubmed_results)} PubMed papers'})}\n\n"
 
-        # --- Step 3: Send context update ---
+        # --- Step 2b: Search journal database ---
+        yield f"event: action\ndata: {json.dumps({'type': 'searching_journals', 'text': 'Querying journal database...'})}\n\n"
+        journal_results = self._search_journals(message, db)
+
+        # --- Step 2c: Search reproducibility archive ---
+        yield f"event: action\ndata: {json.dumps({'type': 'searching_experiments', 'text': 'Checking reproducibility archive...'})}\n\n"
+        experiment_results = self._search_experiments(message, db)
+
+        # --- Step 3: Send context update with ALL sources ---
+        context_data["journals"] = journal_results
+        context_data["experiments"] = experiment_results
         yield f"event: context_update\ndata: {json.dumps(context_data)}\n\n"
 
         # --- Step 4: Generate research plan if empty ---
@@ -280,6 +290,18 @@ Respond with ONLY the intent name."""},
         # --- Step 5: Synthesize and stream answer ---
         yield f"event: action\ndata: {json.dumps({'type': 'synthesizing', 'text': 'Synthesizing findings...'})}\n\n"
         actions.append({"icon": "plan", "text": "Synthesizing research findings"})
+
+        # Build extra context from journal and experiment results
+        extra_context = ""
+        if journal_results:
+            extra_context += "\n\n--- JOURNAL DATABASE ---\n"
+            for j in journal_results:
+                extra_context += f"Journal: {j['title']} (Field: {j['field']}, Impact: {j.get('impact_factor', 'N/A')}, Tier: {j.get('tier', 'N/A')})\n"
+        if experiment_results:
+            extra_context += "\n\n--- REPRODUCIBILITY ARCHIVE ---\n"
+            for e in experiment_results:
+                extra_context += f"Experiment: {e['title']}\nHypothesis: {e['hypothesis']}\nWhat Failed: {e['what_failed']}\nLessons: {e['lessons_learned']}\n\n"
+        kb_results["extra_context"] = extra_context
 
         answer_text = ""
         for chunk in self._synthesize_stream(message, kb_results, pubmed_results, history, session):
@@ -616,6 +638,67 @@ Use clear, concise scientific language. Cite specific findings from the conversa
         return papers
 
     # =========================================================================
+    # JOURNAL & EXPERIMENT SEARCH
+    # =========================================================================
+
+    def _search_journals(self, query: str, db, limit=5):
+        """Search JournalProfile table for relevant journals."""
+        from database.models import JournalProfile
+        from sqlalchemy import or_
+
+        try:
+            journals = db.query(JournalProfile).filter(
+                or_(
+                    JournalProfile.name.ilike(f'%{query}%'),
+                    JournalProfile.primary_field.ilike(f'%{query}%'),
+                    JournalProfile.primary_subfield.ilike(f'%{query}%'),
+                )
+            ).order_by(JournalProfile.composite_score.desc()).limit(limit).all()
+
+            return [{
+                'source_type': 'journal_database',
+                'title': j.name,
+                'field': j.primary_field,
+                'subfield': getattr(j, 'primary_subfield', ''),
+                'h_index': getattr(j, 'h_index', None),
+                'impact_factor': getattr(j, 'impact_factor', None),
+                'tier': getattr(j, 'computed_tier', None),
+                'sjr_quartile': getattr(j, 'sjr_quartile', None),
+            } for j in journals]
+        except Exception as e:
+            print(f"[CoResearcher] Journal search error: {e}")
+            return []
+
+    def _search_experiments(self, query: str, db, limit=5):
+        """Search FailedExperiment table for relevant experiments."""
+        from database.models import FailedExperiment
+        from sqlalchemy import or_
+
+        try:
+            experiments = db.query(FailedExperiment).filter(
+                or_(
+                    FailedExperiment.title.ilike(f'%{query}%'),
+                    FailedExperiment.hypothesis.ilike(f'%{query}%'),
+                    FailedExperiment.what_failed.ilike(f'%{query}%'),
+                    FailedExperiment.field.ilike(f'%{query}%'),
+                )
+            ).order_by(FailedExperiment.upvotes.desc()).limit(limit).all()
+
+            return [{
+                'source_type': 'reproducibility_archive',
+                'title': e.title,
+                'field': getattr(e, 'field', ''),
+                'category': getattr(e, 'category', ''),
+                'hypothesis': getattr(e, 'hypothesis', ''),
+                'what_failed': getattr(e, 'what_failed', ''),
+                'lessons_learned': getattr(e, 'lessons_learned', ''),
+                'upvotes': getattr(e, 'upvotes', 0),
+            } for e in experiments]
+        except Exception as e:
+            print(f"[CoResearcher] Experiment search error: {e}")
+            return []
+
+    # =========================================================================
     # SYNTHESIS (STREAMING)
     # =========================================================================
 
@@ -633,6 +716,9 @@ Use clear, concise scientific language. Cite specific findings from the conversa
             authors = ", ".join(paper.get("authors", [])[:3])
             pubmed_context += f"[PubMed-{i}] {paper['title']} ({authors}, {paper.get('year', 'N/A')})\n{paper.get('abstract', '')[:300]}\n\n"
 
+        # Format extra context (journals + experiments) if available
+        extra_context = kb_results.get("extra_context", "")
+
         # Conversation context
         recent = history[-8:] if len(history) > 8 else history
         history_text = "\n".join([f"{m['role']}: {m['content'][:200]}" for m in recent])
@@ -648,13 +734,19 @@ Instructions:
 - Highlight agreements and contradictions between sources
 - Note knowledge gaps if information is incomplete
 - Be specific and evidence-based
-- Use clear, professional language"""},
+- Use clear, professional language
+
+When citing information, indicate the source type:
+- [KB] for knowledge base documents
+- [PubMed] for academic papers
+- [Journal DB] for journal database entries
+- [Repro Archive] for reproducibility archive experiments"""},
             {"role": "user", "content": f"""Internal Knowledge Base Results:
 {kb_context if kb_context else 'No internal documents found.'}
 
 PubMed Results:
 {pubmed_context if pubmed_context else 'No PubMed papers found.'}
-
+{extra_context}
 Recent conversation:
 {history_text}
 

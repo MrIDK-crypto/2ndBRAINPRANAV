@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -11,31 +11,132 @@ interface TopNavProps {
   onNewChat?: () => void
 }
 
-const navItems = [
-  { id: 'Integrations', label: 'integrations', href: '/integrations', adminOnly: true },
-  { id: 'Documents', label: 'documents', href: '/documents' },
-  { id: 'Knowledge Gaps', label: 'knowledge gaps', href: '/knowledge-gaps' },
-  { id: 'ChatBot', label: 'chatbot', href: '/chat', icon: 'chatbot' },
-  { id: 'Training Videos', label: 'training videos', href: '/training-guides' },
-  { id: 'Co-Researcher', label: 'co-researcher', href: '/co-researcher' },
-  { id: 'Inventory', label: 'inventory', href: '/inventory' },
-  { id: 'Analytics', label: 'analytics', href: '/analytics', adminOnly: true },
+// ---------- types ----------
+interface DropdownItem {
+  label: string
+  description: string
+  href: string
+  adminOnly?: boolean
+  comingSoon?: boolean
+}
+
+type NavEntry = {
+  kind: 'dropdown'
+  id: string
+  label: string
+  items: DropdownItem[]
+} | {
+  kind: 'link'
+  id: string
+  label: string
+  href: string
+}
+
+// ---------- nav structure ----------
+const navStructure: NavEntry[] = [
+  {
+    kind: 'dropdown',
+    id: 'uploads',
+    label: 'uploads',
+    items: [
+      { label: 'drag & drop', description: 'Upload files by dragging them in', href: '/uploads/drag-drop' },
+      { label: 'integrations', description: 'Connect external data sources', href: '/integrations', adminOnly: true },
+    ],
+  },
+  {
+    kind: 'link',
+    id: 'documents',
+    label: 'documents',
+    href: '/documents',
+  },
+  {
+    kind: 'link',
+    id: 'co-work',
+    label: 'co-work',
+    href: '/co-work',
+  },
+  {
+    kind: 'dropdown',
+    id: 'more',
+    label: 'more',
+    items: [
+      { label: 'training videos', description: 'Guided walkthroughs and tutorials', href: '/training-guides', comingSoon: true },
+      { label: 'knowledge gaps', description: 'Identify missing organizational knowledge', href: '/knowledge-gaps' },
+      { label: 'analytics', description: 'Usage metrics and insights', href: '/analytics', adminOnly: true },
+      { label: 'inventory', description: 'Browse your indexed knowledge base', href: '/inventory' },
+    ],
+  },
 ]
 
+// ---------- design tokens ----------
+const COLORS = {
+  accent: '#C9A598',
+  activeBg: '#FBF4F1',
+  hoverBg: '#F7F5F3',
+  textPrimary: '#2D2D2D',
+  textSecondary: '#6B6B6B',
+  textMuted: '#9A9A9A',
+  border: '#F0EEEC',
+  white: '#FFFFFF',
+}
+const FONT = "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
+
+// ---------- chevron icon ----------
+function ChevronDown({ color = COLORS.textMuted, size = 11 }: { color?: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: '2px', flexShrink: 0 }}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
+// ---------- component ----------
 export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
   const pathname = usePathname()
   const { user: authUser, logout } = useAuth()
   const isAdmin = authUser?.role === 'admin'
   const [showUserMenu, setShowUserMenu] = useState(false)
 
-  const visibleItems = isAdmin
-    ? navItems
-    : navItems.filter(item => !item.adminOnly)
+  // dropdown hover state
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const isActive = (href: string) => {
+  // clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    }
+  }, [])
+
+  const handleMouseEnter = useCallback((id: string) => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+    setOpenDropdown(id)
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    closeTimerRef.current = setTimeout(() => {
+      setOpenDropdown(null)
+    }, 150)
+  }, [])
+
+  // helpers
+  const isPathActive = (href: string) => {
     if (href === '/chat') return pathname === '/chat'
     return pathname?.startsWith(href)
   }
+
+  const isDropdownActive = (items: DropdownItem[]) => {
+    return items.some(item => {
+      if (item.adminOnly && !isAdmin) return false
+      return isPathActive(item.href)
+    })
+  }
+
+  const filterItems = (items: DropdownItem[]) =>
+    isAdmin ? items : items.filter(item => !item.adminOnly)
 
   return (
     <nav style={{
@@ -47,9 +148,9 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
       justifyContent: 'space-between',
       padding: '0 32px',
       height: '60px',
-      backgroundColor: '#FFFFFF',
-      borderBottom: '1px solid #F0EEEC',
-      fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+      backgroundColor: COLORS.white,
+      borderBottom: `1px solid ${COLORS.border}`,
+      fontFamily: FONT,
     }}>
       {/* Left: Logo */}
       <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
@@ -57,50 +158,208 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
         <span style={{
           fontWeight: 700,
           fontSize: '17px',
-          color: '#2D2D2D',
+          color: COLORS.textPrimary,
           letterSpacing: '-0.3px',
         }}>
           2nd Brain
         </span>
       </Link>
 
-      {/* Center: Nav links */}
+      {/* Center: Nav items */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        {visibleItems.map((item) => {
-          const active = isActive(item.href)
+        {navStructure.map((entry) => {
+          if (entry.kind === 'link') {
+            const active = isPathActive(entry.href)
+            return (
+              <Link
+                key={entry.id}
+                href={entry.href}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: '8px',
+                  fontSize: '14.5px',
+                  fontWeight: active ? 600 : 400,
+                  color: active ? COLORS.accent : COLORS.textSecondary,
+                  backgroundColor: active ? COLORS.activeBg : 'transparent',
+                  textDecoration: 'none',
+                  transition: 'all 0.15s ease',
+                  textTransform: 'lowercase' as const,
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.backgroundColor = COLORS.hoverBg
+                    e.currentTarget.style.color = COLORS.textPrimary
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                    e.currentTarget.style.color = COLORS.textSecondary
+                  }
+                }}
+              >
+                {entry.label}
+              </Link>
+            )
+          }
+
+          // dropdown entry
+          const visibleItems = filterItems(entry.items)
+          if (visibleItems.length === 0) return null
+
+          const active = isDropdownActive(entry.items)
+          const isOpen = openDropdown === entry.id
+
           return (
-            <Link
-              key={item.id}
-              href={item.href}
-              onClick={() => {
-                if (item.id === 'ChatBot' && onNewChat) onNewChat()
-              }}
-              style={{
-                padding: '7px 16px',
-                borderRadius: '8px',
-                fontSize: '14.5px',
-                fontWeight: active ? 600 : 400,
-                color: active ? '#C9A598' : '#6B6B6B',
-                backgroundColor: active ? '#FBF4F1' : 'transparent',
-                textDecoration: 'none',
-                transition: 'all 0.15s ease',
-                textTransform: 'lowercase' as const,
-              }}
-              onMouseEnter={(e) => {
-                if (!active) {
-                  e.currentTarget.style.backgroundColor = '#F7F5F3'
-                  e.currentTarget.style.color = '#2D2D2D'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!active) {
-                  e.currentTarget.style.backgroundColor = 'transparent'
-                  e.currentTarget.style.color = '#6B6B6B'
-                }
-              }}
+            <div
+              key={entry.id}
+              style={{ position: 'relative' }}
+              onMouseEnter={() => handleMouseEnter(entry.id)}
+              onMouseLeave={handleMouseLeave}
             >
-              {item.label}
-            </Link>
+              {/* trigger button */}
+              <button
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  fontSize: '14.5px',
+                  fontWeight: active ? 600 : 400,
+                  color: active ? COLORS.accent : isOpen ? COLORS.textPrimary : COLORS.textSecondary,
+                  backgroundColor: active ? COLORS.activeBg : isOpen ? COLORS.hoverBg : 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  textTransform: 'lowercase' as const,
+                  fontFamily: FONT,
+                  lineHeight: '1',
+                }}
+              >
+                {entry.label}
+                <ChevronDown color={active ? COLORS.accent : COLORS.textMuted} />
+              </button>
+
+              {/* dropdown panel */}
+              {isOpen && (
+                <div style={{
+                  position: 'absolute',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  top: '100%',
+                  paddingTop: '6px', // gap between button and panel (mouse bridge)
+                }}>
+                  <div style={{
+                    minWidth: '240px',
+                    backgroundColor: COLORS.white,
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: '12px',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04)',
+                    padding: '6px',
+                    animation: 'topnav-dropdown-fade-in 0.12s ease-out',
+                  }}>
+                    {visibleItems.map((item, idx) => {
+                      const itemActive = isPathActive(item.href)
+
+                      if (item.comingSoon) {
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              justifyContent: 'space-between',
+                              gap: '10px',
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              cursor: 'default',
+                              opacity: 0.55,
+                            }}
+                          >
+                            <div>
+                              <div style={{
+                                fontSize: '13.5px',
+                                fontWeight: 500,
+                                color: COLORS.textMuted,
+                                textTransform: 'lowercase' as const,
+                              }}>
+                                {item.label}
+                              </div>
+                              <div style={{
+                                fontSize: '12px',
+                                color: COLORS.textMuted,
+                                marginTop: '2px',
+                                lineHeight: '1.35',
+                              }}>
+                                {item.description}
+                              </div>
+                            </div>
+                            <span style={{
+                              flexShrink: 0,
+                              marginTop: '1px',
+                              padding: '2px 7px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              color: COLORS.accent,
+                              backgroundColor: COLORS.activeBg,
+                              borderRadius: '4px',
+                              textTransform: 'uppercase' as const,
+                              letterSpacing: '0.5px',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              soon
+                            </span>
+                          </div>
+                        )
+                      }
+
+                      return (
+                        <Link
+                          key={idx}
+                          href={item.href}
+                          style={{
+                            display: 'block',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            textDecoration: 'none',
+                            backgroundColor: itemActive ? COLORS.activeBg : 'transparent',
+                            transition: 'background 0.12s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!itemActive) {
+                              e.currentTarget.style.backgroundColor = COLORS.hoverBg
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!itemActive) {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }
+                          }}
+                        >
+                          <div style={{
+                            fontSize: '13.5px',
+                            fontWeight: itemActive ? 600 : 500,
+                            color: itemActive ? COLORS.accent : COLORS.textPrimary,
+                            textTransform: 'lowercase' as const,
+                          }}>
+                            {item.label}
+                          </div>
+                          <div style={{
+                            fontSize: '12px',
+                            color: COLORS.textMuted,
+                            marginTop: '2px',
+                            lineHeight: '1.35',
+                          }}>
+                            {item.description}
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           )
         })}
       </div>
@@ -119,7 +378,7 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
             backgroundColor: 'transparent',
             cursor: 'pointer',
             transition: 'all 0.15s',
-            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+            fontFamily: FONT,
           }}
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FAF9F7' }}
           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
@@ -193,7 +452,7 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
                   borderRadius: '8px',
                   cursor: 'pointer',
                   transition: 'background 0.15s',
-                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+                  fontFamily: FONT,
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FDF2F2' }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
@@ -204,6 +463,14 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
           </>
         )}
       </div>
+
+      {/* Inline keyframes for dropdown animation */}
+      <style>{`
+        @keyframes topnav-dropdown-fade-in {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </nav>
   )
 }

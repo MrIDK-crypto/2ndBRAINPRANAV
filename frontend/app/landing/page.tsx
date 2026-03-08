@@ -60,21 +60,18 @@ export default function LandingPage() {
             </button>
             <div className="nav-dropdown-menu">
               <Link href="/high-impact-journal" className="nav-dropdown-item">
-                <span className="nav-dropdown-icon">📊</span>
                 <div>
                   <span className="nav-dropdown-label">High Impact Journals</span>
                   <span className="nav-dropdown-desc">AI-powered manuscript scoring & journal matching</span>
                 </div>
               </Link>
               <Link href="/reproducibility-archive" className="nav-dropdown-item">
-                <span className="nav-dropdown-icon">🔬</span>
                 <div>
                   <span className="nav-dropdown-label">Reproducibility Archive</span>
                   <span className="nav-dropdown-desc">Track and verify experimental reproducibility</span>
                 </div>
               </Link>
               <Link href="/reproducibility-archive/submit" className="nav-dropdown-item">
-                <span className="nav-dropdown-icon">🧪</span>
                 <div>
                   <span className="nav-dropdown-label">Anonymous Failed Experiments</span>
                   <span className="nav-dropdown-desc">Share negative results anonymously to advance science</span>

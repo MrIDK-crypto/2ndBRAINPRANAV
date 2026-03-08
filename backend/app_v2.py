@@ -1672,6 +1672,9 @@ def search_stream():
 
             print(f"[SEARCH-STREAM] Starting (mode={response_mode}): '{query}'", flush=True)
 
+            # Thinking: expanding query
+            yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Expanding query...'})}\n\n"
+
             sources_for_response = []
             for event in enhanced_service.search_and_answer_stream(
                 query=query,
@@ -1716,7 +1719,16 @@ def search_stream():
                             source_entry["source_url"] = source_url_map.get(doc_id, '')
                         sources_for_response.append(source_entry)
 
+                    # Thinking: report search results found
+                    yield f"event: thinking\ndata: {json.dumps({'type': 'searching_kb', 'text': f'Searching knowledge base... Found {len(sources_for_response)} sources'})}\n\n"
+
+                    # Thinking: reranking
+                    yield f"event: thinking\ndata: {json.dumps({'type': 'reranking', 'text': 'Reranking and filtering results...'})}\n\n"
+
                     yield f"event: search_complete\ndata: {json.dumps({'expanded_query': event.get('expanded_query', query), 'num_sources': event.get('num_sources', 0), 'sources': sources_for_response})}\n\n"
+
+                    # Thinking: generating answer
+                    yield f"event: thinking\ndata: {json.dumps({'type': 'generating', 'text': 'Generating answer...'})}\n\n"
 
                 elif event_type == 'chunk':
                     content = event.get('content', '')

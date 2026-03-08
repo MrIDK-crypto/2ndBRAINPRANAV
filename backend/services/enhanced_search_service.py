@@ -1668,6 +1668,12 @@ HONESTY REQUIREMENTS:
 - If you can only partially answer: State what you know and what's missing
 - Never make up examples, URLs, or specific details
 
+When citing information, indicate the source type:
+- [KB] for knowledge base documents
+- [PubMed] for academic papers
+- [Journal DB] for journal database entries
+- [Repro Archive] for reproducibility archive experiments
+
 Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
 
             user_instruction = """Provide a DETAILED, well-formatted answer:
