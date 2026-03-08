@@ -1823,6 +1823,12 @@ def search_stream():
                                 source_entry["source_origin_label"] = "Your KB"
                         sources_for_response.append(source_entry)
 
+                    # Emit decomposition action if query was decomposed
+                    features_used = event.get('features_used', {})
+                    if features_used.get('decomposition'):
+                        sub_queries = features_used.get('sub_queries', [])
+                        yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': f'Decomposed into {len(sub_queries)} sub-queries', 'status': 'in_progress'})}\n\n"
+
                     # Thinking: report search results found
                     yield f"event: thinking\ndata: {json.dumps({'type': 'searching_kb', 'text': f'Searching knowledge base... Found {len(sources_for_response)} sources'})}\n\n"
 
