@@ -360,6 +360,43 @@ def analyze_gaps():
 
             print(f"[GapAnalysis] Created {gaps_created} gaps")
 
+            # Post-process: deduplicate gaps
+            try:
+                from services.intelligent_gap_detector import find_similar_existing_gap, merge_gap_questions
+                # This is a lightweight pass — just check recent gaps for near-duplicates
+                recent_gaps = db.query(KnowledgeGap).filter(
+                    KnowledgeGap.tenant_id == tenant_id,
+                    KnowledgeGap.status == GapStatus.OPEN
+                ).order_by(KnowledgeGap.created_at.desc()).limit(200).all()
+
+                # Group by fingerprint first (exact dupes)
+                seen_fingerprints = {}
+                merged_count = 0
+                for gap in recent_gaps:
+                    if gap.fingerprint and gap.fingerprint in seen_fingerprints:
+                        # Exact duplicate — merge questions and delete the duplicate
+                        original = seen_fingerprints[gap.fingerprint]
+                        merge_gap_questions(original, gap.questions or [])
+                        db.delete(gap)
+                        merged_count += 1
+                    elif gap.fingerprint:
+                        seen_fingerprints[gap.fingerprint] = gap
+
+                # Then fuzzy match remaining
+                unique_gaps = [g for g in recent_gaps if g in db]  # still in session
+                for i, gap in enumerate(unique_gaps):
+                    match = find_similar_existing_gap(gap.title, unique_gaps[:i])
+                    if match and match.id != gap.id:
+                        merge_gap_questions(match, gap.questions or [])
+                        db.delete(gap)
+                        merged_count += 1
+
+                if merged_count > 0:
+                    db.commit()
+                    print(f"[GapAnalysis] Merged {merged_count} duplicate gaps")
+            except Exception as e:
+                print(f"[GapAnalysis] Deduplication failed (non-critical): {e}")
+
             return jsonify({
                 "success": True,
                 "message": f"Gap analysis completed (mode: {mode})",

@@ -2128,9 +2128,108 @@ class IntelligentGapDetector:
 
 
 # =============================================================================
+# AUTO-PRIORITY SCORING
+# =============================================================================
+
+def compute_auto_priority(gap_data: dict, all_docs: list, feedback_history: list) -> tuple:
+    """Score 0-1 based on cross-ref density, recency, feedback, bus factor.
+    Returns (score, signals_dict)
+    """
+    score = 0.0
+    signals = {}
+    title = gap_data.get('title', '')
+    topic_terms = set(w for w in title.lower().split() if len(w) > 3)  # skip short words
+
+    if not topic_terms:
+        return (0.5, {'note': 'no topic terms extracted'})
+
+    # Cross-reference density (0-0.3)
+    ref_count = sum(1 for doc in all_docs if any(t in (doc.get('content', '') or '').lower() for t in topic_terms))
+    cross_ref = min(0.3, ref_count / max(len(all_docs), 1) * 3)
+    score += cross_ref
+    signals['cross_ref_count'] = ref_count
+
+    # Recency boost (0-0.2)
+    from datetime import datetime, timezone
+    recent_count = 0
+    for d in all_docs:
+        created = d.get('created_at')
+        if created and hasattr(created, 'timestamp'):
+            age_days = (datetime.now(timezone.utc) - created).days
+            if age_days < 30:
+                recent_count += 1
+    recency = min(0.2, recent_count / max(len(all_docs), 1) * 0.4)
+    score += recency
+    signals['recency'] = recent_count
+
+    # Feedback boost (0-0.3) — same category gaps marked useful
+    category = gap_data.get('category', '')
+    useful_in_cat = sum(1 for f in feedback_history if f.get('category') == category and f.get('useful'))
+    feedback = min(0.3, useful_in_cat * 0.1)
+    score += feedback
+    signals['user_boost'] = useful_in_cat
+
+    # Bus factor (0-0.2) — single-person knowledge
+    context = gap_data.get('context', {}) or {}
+    if context.get('bus_factor_person') or context.get('bus_factor_risk'):
+        score += 0.2
+        signals['bus_factor'] = True
+
+    return (round(min(1.0, score), 3), signals)
+
+
+# =============================================================================
 # FACTORY FUNCTION
 # =============================================================================
 
 def get_intelligent_gap_detector() -> IntelligentGapDetector:
     """Factory function"""
     return IntelligentGapDetector()
+
+
+# =============================================================================
+# CROSS-RUN GAP DEDUPLICATION (Fuzzy Merge)
+# =============================================================================
+
+def find_similar_existing_gap(new_gap_title: str, existing_gaps) -> object:
+    """Find existing gap with >80% title token overlap.
+    Args:
+        new_gap_title: Title of the new gap
+        existing_gaps: List of KnowledgeGap ORM objects
+    Returns: matching KnowledgeGap object or None
+    """
+    new_tokens = set(w.lower() for w in new_gap_title.split() if len(w) > 2)
+    if len(new_tokens) < 3:
+        return None
+    for existing in existing_gaps:
+        existing_tokens = set(w.lower() for w in (existing.title or '').split() if len(w) > 2)
+        if not existing_tokens:
+            continue
+        overlap = len(new_tokens & existing_tokens) / max(len(new_tokens | existing_tokens), 1)
+        if overlap > 0.8:
+            return existing
+    return None
+
+
+def merge_gap_questions(existing_gap, new_questions: list) -> int:
+    """Merge new questions into existing gap, avoiding duplicates.
+    Returns number of new questions added.
+    """
+    existing_q_texts = set()
+    for q in (existing_gap.questions or []):
+        if isinstance(q, dict):
+            existing_q_texts.add(q.get('question', '').lower().strip())
+        elif isinstance(q, str):
+            existing_q_texts.add(q.lower().strip())
+
+    added = 0
+    current_questions = list(existing_gap.questions or [])
+    for q in new_questions:
+        q_text = q.get('question', '') if isinstance(q, dict) else str(q)
+        if q_text.lower().strip() not in existing_q_texts:
+            current_questions.append(q)
+            added += 1
+
+    if added > 0:
+        existing_gap.questions = current_questions
+    return added
