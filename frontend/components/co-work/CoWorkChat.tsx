@@ -432,11 +432,14 @@ export default function CoWorkChat({
 
               // Clean up source citations in text
               let cleanedAnswer = accumulatedText
-              // Remove "Sources Used" / "Sources" section and everything after it (multi-line)
-              cleanedAnswer = cleanedAnswer.replace(/\n#{0,3}\s*\*{0,2}Sources?\s*Used?\*{0,2}:?\s*\n[\s\S]*$/i, '')
+              // Remove "Sources Used" / "Sources" / "References" section and everything after it
+              cleanedAnswer = cleanedAnswer.replace(/\n#{0,3}\s*\*{0,2}Sources?\s*(?:Used|Cited|Referenced)?\*{0,2}:?\s*(?:\n[\s\S]*$|\[[\d, ]+\].*$)/i, '')
               cleanedAnswer = cleanedAnswer.replace(/\n#{0,3}\s*\*{0,2}References?\*{0,2}:?\s*\n[\s\S]*$/i, '')
-              cleanedAnswer = cleanedAnswer.replace(/Sources Used:.*$/gm, '')
+              // Remove inline "Sources Used: [1, 2, 3]" lines anywhere
+              cleanedAnswer = cleanedAnswer.replace(/\**Sources?\s*(?:Used|Cited|Referenced)?\**:?\s*\[?[\d,\s]+\]?\.?\s*$/gmi, '')
               cleanedAnswer = cleanedAnswer.replace(/.*Citation Coverage:.*$/gm, '')
+              // Remove standalone source list lines like "- [Source 1] Title" at the end
+              cleanedAnswer = cleanedAnswer.replace(/(\n\s*[-•]\s*\[Source \d+\].*){2,}$/g, '')
               cleanedAnswer = cleanedAnswer.replace(/\n{3,}/g, '\n\n').trim()
 
               // Replace [Source X] with markers
@@ -744,8 +747,8 @@ export default function CoWorkChat({
                     </div>
                   )}
 
-                  {/* Confidence indicator */}
-                  {!message.isUser && message.confidence && (
+                  {/* Confidence indicator — only show for high confidence */}
+                  {!message.isUser && message.confidence && message.confidence.confidence_label === 'high' && (
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -753,19 +756,17 @@ export default function CoWorkChat({
                       marginTop: '8px',
                       padding: '4px 10px',
                       borderRadius: '6px',
-                      backgroundColor: message.confidence.confidence_label === 'high' ? '#F0FDF4'
-                        : message.confidence.confidence_label === 'medium' ? '#FFF7ED' : '#FEF2F2',
+                      backgroundColor: '#F0FDF4',
                       fontSize: '11.5px',
                       color: '#6B6B6B',
                       fontFamily: FONT,
                     }}>
                       <span style={{
                         width: '6px', height: '6px', borderRadius: '50%',
-                        backgroundColor: message.confidence.confidence_label === 'high' ? '#22C55E'
-                          : message.confidence.confidence_label === 'medium' ? '#F59E0B' : '#EF4444',
+                        backgroundColor: '#22C55E',
                       }} />
                       <span>
-                        Confidence: {message.confidence.confidence_label} ({Math.round(message.confidence.confidence * 100)}%)
+                        High confidence
                         {message.confidence.sources_used > 0 && ` · ${message.confidence.sources_used} sources`}
                       </span>
                     </div>

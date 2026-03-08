@@ -52,7 +52,7 @@ class DocumentParser:
     }
 
     # Plain text files (read directly)
-    PLAIN_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm"}
+    PLAIN_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm", ".r", ".rmd"}
 
     # All supported extensions
     SUPPORTED_EXTENSIONS = AZURE_DI_EXTENSIONS | LLAMAPARSE_EXTENSIONS | PLAIN_TEXT_EXTENSIONS

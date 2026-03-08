@@ -44,6 +44,7 @@ ZIP_SUPPORTED_EXTENSIONS = {
     '.pdf', '.doc', '.docx', '.txt', '.csv', '.tsv',
     '.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt',
     '.rtf', '.ods', '.numbers', '.json', '.xml', '.html', '.htm', '.md',
+    '.r', '.rmd', '.rdata',
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff',
     '.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm'
 }
@@ -594,9 +595,12 @@ def upload_documents():
                         elif lower_name.endswith(('.csv', '.tsv')):
                             print(f"[Upload] Parsing spreadsheet: {filename}")
                             text = parser.parse_file_bytes(file_content, filename)
-                        elif lower_name.endswith(('.txt', '.md', '.json', '.xml', '.html', '.htm')):
+                        elif lower_name.endswith(('.txt', '.md', '.json', '.xml', '.html', '.htm', '.r', '.rmd')):
                             print(f"[Upload] Parsing text file: {filename}")
                             text = file_content.decode('utf-8', errors='ignore')
+                        elif lower_name.endswith('.rdata'):
+                            print(f"[Upload] R data file (binary): {filename}")
+                            text = f"[R Data file: {filename}] This is a binary R workspace/data file (.RData). It contains serialized R objects that require R to inspect."
                         elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.ods', '.numbers', '.rtf')):
                             print(f"[Upload] Parsing binary document: {filename}")
                             text = parser.parse_file_bytes(file_content, filename)

@@ -11,9 +11,16 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + 
 const ACCEPTED_EXTENSIONS = [
   '.pdf', '.doc', '.docx', '.txt', '.csv', '.tsv', '.xlsx', '.xls',
   '.pptx', '.ppt', '.rtf', '.json', '.xml', '.html', '.md',
+  '.r', '.rmd', '.rdata',
   '.png', '.jpg', '.jpeg', '.gif',
   '.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm',
   '.zip',
+]
+
+// Files to silently skip (system/junk files) — never show as errors
+const SILENT_SKIP_PATTERNS = [
+  '.ds_store', '.rhistory', '.gitignore', '.gitattributes',
+  'thumbs.db', '.spotlight-v100', '.trashes', '.fseventsd',
 ]
 
 const ACCEPTED_MIME_TYPES = [
@@ -101,6 +108,11 @@ export default function DragDropUploadPage() {
     const rejected: string[] = []
 
     Array.from(incoming).forEach((file) => {
+      const nameLower = file.name.toLowerCase()
+      // Silently skip system/junk files — don't show as errors
+      if (SILENT_SKIP_PATTERNS.some(p => nameLower === p || nameLower.endsWith(p))) {
+        return
+      }
       if (isAcceptedFile(file)) {
         accepted.push({
           file,
