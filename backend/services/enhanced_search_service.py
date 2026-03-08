@@ -1604,6 +1604,24 @@ class EnhancedSearchService:
             }
         }
 
+    def _merge_doc_chunks(self, results):
+        """Merge chunks from same document into single richer context"""
+        by_doc = {}
+        order = []
+        for r in results:
+            doc_id = r.get('doc_id', id(r))
+            if doc_id not in by_doc:
+                by_doc[doc_id] = r.copy()
+                order.append(doc_id)
+            else:
+                existing = by_doc[doc_id]
+                existing_content = existing.get('content', '')
+                new_content = r.get('content', '')
+                if new_content and new_content[:200] not in existing_content:
+                    existing['content'] = existing_content + '\n\n' + new_content
+                existing['score'] = max(existing.get('score', 0), r.get('score', 0))
+        return [by_doc[d] for d in order]
+
     def _get_mode_config(self, response_mode: int, query: str, context: str, user_context: dict = None):
         """
         Get system prompt, user instruction, temperature, max_tokens, and frequency_penalty based on response mode.
@@ -1676,6 +1694,14 @@ CRITICAL ACCURACY RULES (NEVER VIOLATE):
 3. **Quote directly when possible** - Use exact text from sources for key claims
 4. **Distinguish facts from interpretation** - If you're explaining something, make clear what's from sources vs your explanation
 5. **Never hallucinate code, numbers, dates, or names** - Only include these if they appear in sources
+
+ANSWER QUALITY RULES:
+- Be SPECIFIC. Use exact names, numbers, dates, and details from sources.
+- NEVER say "various", "several", "multiple" when you can list the actual items.
+- If the user asks "what files do I have" or "what's in my data", list them by name.
+- If sources contain tables or structured data, reproduce the key data points.
+- Prefer direct quotes and specific facts over summaries.
+- If you only have partial information, say what you DO know specifically, then note what's missing.
 
 RESPONSE FORMAT:
 - Use **headers** (## Section) for organization
@@ -1757,14 +1783,17 @@ End with "Sources Used: [list numbers]"."""
                 'hallucination_check': None
             }
 
+        # Merge chunks from same document before building context
+        results = self._merge_doc_chunks(results)
+
         # Build context with FULL content (not just 500 chars)
         # Only include sources with meaningful relevance scores
         context_parts = []
         sources_used = []  # Track which sources made it into context
         total_chars = 0
-        max_chars = max_context_tokens * 4  # ~4 chars per token
+        max_chars = 50000  # ~12.5K tokens
 
-        for i, result in enumerate(results[:15], 1):  # Use up to 15 sources
+        for i, result in enumerate(results[:8], 1):  # Use up to 8 sources
             content = result.get('content', '') or result.get('content_preview', '')
             title = result.get('title', 'Untitled')
             score = result.get('rerank_score', result.get('score', 0))
@@ -1775,8 +1804,8 @@ End with "Sources Used: [list numbers]"."""
                 continue
 
             # Don't truncate aggressively - use more content
-            if len(content) > 3000:
-                content = content[:3000] + "..."
+            if len(content) > 6000:
+                content = content[:6000] + "..."
 
             if total_chars + len(content) > max_chars:
                 remaining = max_chars - total_chars
@@ -2010,18 +2039,21 @@ CURRENT QUESTION: {query}
             yield {'type': 'done', 'confidence': 0.0, 'sources': []}
             return
 
+        # Merge chunks from same document before building context
+        results = self._merge_doc_chunks(results)
+
         # Build context (same as non-streaming)
         context_parts = []
         total_chars = 0
-        max_chars = max_context_tokens * 4
+        max_chars = 50000  # ~12.5K tokens
 
-        for i, result in enumerate(results[:15], 1):
+        for i, result in enumerate(results[:8], 1):
             content = result.get('content', '') or result.get('content_preview', '')
             title = result.get('title', 'Untitled')
             score = result.get('rerank_score', result.get('score', 0))
 
-            if len(content) > 3000:
-                content = content[:3000] + "..."
+            if len(content) > 6000:
+                content = content[:6000] + "..."
 
             if total_chars + len(content) > max_chars:
                 remaining = max_chars - total_chars
