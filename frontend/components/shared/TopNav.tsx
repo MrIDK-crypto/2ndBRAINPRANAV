@@ -91,11 +91,12 @@ function ChevronDown({ color = COLORS.textMuted, size = 11 }: { color?: string; 
 }
 
 // ---------- component ----------
-export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
+export default function TopNav({ userName, onNewChat }: TopNavProps) {
   const pathname = usePathname()
   const router = useRouter()
   const { user: authUser, logout } = useAuth()
   const isAdmin = authUser?.role === 'admin'
+  const displayName = userName || authUser?.full_name?.split(' ')[0] || 'User'
   const [showUserMenu, setShowUserMenu] = useState(false)
 
   // dropdown hover state
@@ -398,7 +399,7 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
             <Image src="/Maya.png" alt="User" width={28} height={28} />
           </div>
           <span style={{ fontSize: '13px', fontWeight: 500, color: '#2D2D2D' }}>
-            {userName}
+            {displayName}
           </span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9A9A9A" strokeWidth="2" strokeLinecap="round">
             <polyline points="6 9 12 15 18 9" />
