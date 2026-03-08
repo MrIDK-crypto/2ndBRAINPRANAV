@@ -63,6 +63,7 @@ interface FileEntry {
   file: File
   id: string
   status: 'pending' | 'uploading' | 'done' | 'error'
+  progress?: number
   error?: string
 }
 
@@ -92,6 +93,7 @@ export default function DragDropUploadPage() {
 
   // Counter to track nested drag events
   const dragCounterRef = useRef(0)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   // ---------- file handling ----------
   const addFiles = useCallback((incoming: FileList | File[]) => {
@@ -145,15 +147,67 @@ export default function DragDropUploadPage() {
     e.stopPropagation()
   }, [])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragOver(false)
     dragCounterRef.current = 0
 
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    // Try to read directory entries (folder drag-and-drop)
+    const items = e.dataTransfer.items
+    if (items && items.length > 0) {
+      const allFiles: File[] = []
+
+      const readEntry = (entry: FileSystemEntry): Promise<File[]> => {
+        return new Promise((resolve) => {
+          if (entry.isFile) {
+            (entry as FileSystemFileEntry).file((f) => {
+              // Skip hidden files and macOS resource forks
+              if (!f.name.startsWith('.') && !entry.fullPath.includes('__MACOSX')) {
+                resolve([f])
+              } else {
+                resolve([])
+              }
+            }, () => resolve([]))
+          } else if (entry.isDirectory) {
+            const reader = (entry as FileSystemDirectoryEntry).createReader()
+            const readAll = (entries: FileSystemEntry[]): Promise<File[]> => {
+              return new Promise((resolve2) => {
+                reader.readEntries(async (batch) => {
+                  if (batch.length === 0) {
+                    const results = await Promise.all(entries.map(readEntry))
+                    resolve2(results.flat())
+                  } else {
+                    readAll([...entries, ...batch]).then(resolve2)
+                  }
+                }, () => resolve2([]))
+              })
+            }
+            readAll([]).then(resolve)
+          } else {
+            resolve([])
+          }
+        })
+      }
+
+      const entries: FileSystemEntry[] = []
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry?.()
+        if (entry) entries.push(entry)
+      }
+
+      if (entries.length > 0) {
+        const results = await Promise.all(entries.map(readEntry))
+        allFiles.push(...results.flat())
+      }
+
+      if (allFiles.length > 0) {
+        addFiles(allFiles)
+      } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        addFiles(e.dataTransfer.files)
+      }
+    } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       addFiles(e.dataTransfer.files)
-      e.dataTransfer.clearData()
     }
   }, [addFiles])
 
@@ -183,7 +237,7 @@ export default function DragDropUploadPage() {
 
     // Mark all pending as uploading
     setFiles((prev) =>
-      prev.map((f) => (f.status === 'pending' ? { ...f, status: 'uploading' as const } : f))
+      prev.map((f) => (f.status === 'pending' ? { ...f, status: 'uploading' as const, progress: 0 } : f))
     )
 
     const formData = new FormData()
@@ -191,22 +245,28 @@ export default function DragDropUploadPage() {
       formData.append('files', entry.file)
     })
 
-    try {
-      const response = await fetch(`${API_BASE}/documents/upload`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      })
+    // Use XMLHttpRequest for upload progress tracking
+    const xhr = new XMLHttpRequest()
 
-      if (response.ok) {
-        // Mark all as done
-        setFiles((prev) => prev.map((f) => ({ ...f, status: 'done' as const })))
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100)
+        setFiles((prev) =>
+          prev.map((f) => (f.status === 'uploading' ? { ...f, progress: pct } : f))
+        )
+      }
+    })
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setFiles((prev) => prev.map((f) => ({ ...f, status: 'done' as const, progress: 100 })))
         setPhase('complete')
       } else {
-        const data = await response.json().catch(() => ({}))
-        const errMsg = data.error || data.message || `Upload failed (${response.status})`
+        let errMsg = `Upload failed (${xhr.status})`
+        try {
+          const data = JSON.parse(xhr.responseText)
+          errMsg = data.error || data.message || errMsg
+        } catch {}
         setFiles((prev) =>
           prev.map((f) =>
             f.status === 'uploading' ? { ...f, status: 'error' as const, error: errMsg } : f
@@ -215,8 +275,10 @@ export default function DragDropUploadPage() {
         setUploadError(errMsg)
         setPhase('idle')
       }
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Network error during upload'
+    })
+
+    xhr.addEventListener('error', () => {
+      const errMsg = 'Network error during upload'
       setFiles((prev) =>
         prev.map((f) =>
           f.status === 'uploading' ? { ...f, status: 'error' as const, error: errMsg } : f
@@ -224,7 +286,11 @@ export default function DragDropUploadPage() {
       )
       setUploadError(errMsg)
       setPhase('idle')
-    }
+    })
+
+    xhr.open('POST', `${API_BASE}/documents/upload`)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.send(formData)
   }, [files, token])
 
   // ---------- reset ----------
@@ -415,7 +481,7 @@ export default function DragDropUploadPage() {
               fontWeight: 500,
               color: COLORS.textPrimary,
             }}>
-              {isDragOver ? 'Drop files here' : 'Drag & drop files here or click to browse'}
+              {isDragOver ? 'Drop files or folders here' : 'Drag & drop files or folders here, or click to browse'}
             </p>
             <p style={{
               marginTop: '8px',
@@ -427,6 +493,24 @@ export default function DragDropUploadPage() {
             }}>
               PDF, DOC, TXT, CSV, XLSX, PPTX, RTF, JSON, XML, HTML, MD, images, audio, video, ZIP
             </p>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click() }}
+              style={{
+                marginTop: '12px',
+                padding: '8px 20px',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: COLORS.accent,
+                background: 'transparent',
+                border: `1px solid ${COLORS.accent}`,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontFamily: FONT,
+              }}
+            >
+              Or select a folder
+            </button>
           </div>
         )}
 
@@ -472,6 +556,17 @@ export default function DragDropUploadPage() {
                   }}>
                     {entry.file.name}
                   </p>
+                  {entry.status === 'uploading' && typeof entry.progress === 'number' && (
+                    <div style={{ marginTop: '6px', width: '100%', height: '4px', borderRadius: '2px', background: COLORS.border }}>
+                      <div style={{
+                        width: `${entry.progress}%`,
+                        height: '100%',
+                        borderRadius: '2px',
+                        background: COLORS.accent,
+                        transition: 'width 0.2s ease',
+                      }} />
+                    </div>
+                  )}
                   {entry.error && (
                     <p style={{ fontSize: '12px', color: COLORS.error, margin: '2px 0 0' }}>
                       {entry.error}
@@ -552,6 +647,17 @@ export default function DragDropUploadPage() {
           type="file"
           multiple
           accept={ACCEPTED_MIME_TYPES}
+          onChange={handleFileInputChange}
+          style={{ display: 'none' }}
+        />
+
+        {/* Hidden folder input */}
+        <input
+          ref={folderInputRef}
+          type="file"
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          {...({ webkitdirectory: '', directory: '' } as any)}
+          multiple
           onChange={handleFileInputChange}
           style={{ display: 'none' }}
         />

@@ -97,10 +97,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         router.push('/verification-pending')
       } else if (user && (user.email_verified || window.location.hostname.includes('localhost')) && isVerificationPending) {
         // Email is verified (or localhost) but on verification pending page -> redirect to integrations
-        router.push('/integrations')
+        router.push('/co-work')
       } else if (user && (user.email_verified || window.location.hostname.includes('localhost')) && (pathname === '/login' || pathname === '/')) {
         // Authenticated and verified (or localhost) but on login/landing page -> redirect to integrations
-        router.push('/integrations')
+        router.push('/co-work')
       }
     }
   }, [user, isLoading, pathname, router])
@@ -178,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Redirect based on email verification status (skip on localhost)
         if (data.user.email_verified || window.location.hostname.includes('localhost')) {
-          router.push('/integrations')
+          router.push('/co-work')
         } else {
           router.push('/verification-pending')
         }
@@ -238,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
 
         // Redirect to integrations page
-        router.push('/integrations')
+        router.push('/co-work')
 
         return { success: true }
       } else {

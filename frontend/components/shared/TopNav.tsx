@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 
 interface TopNavProps {
@@ -93,6 +93,7 @@ function ChevronDown({ color = COLORS.textMuted, size = 11 }: { color?: string; 
 // ---------- component ----------
 export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const { user: authUser, logout } = useAuth()
   const isAdmin = authUser?.role === 'admin'
   const [showUserMenu, setShowUserMenu] = useState(false)
@@ -217,8 +218,12 @@ export default function TopNav({ userName = 'User', onNewChat }: TopNavProps) {
               onMouseEnter={() => handleMouseEnter(entry.id)}
               onMouseLeave={handleMouseLeave}
             >
-              {/* trigger button */}
+              {/* trigger button — clicking navigates to the first dropdown item */}
               <button
+                onClick={() => {
+                  const defaultHref = visibleItems[0]?.href
+                  if (defaultHref) router.push(defaultHref)
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

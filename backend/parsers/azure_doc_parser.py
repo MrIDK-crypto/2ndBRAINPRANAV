@@ -179,6 +179,12 @@ class AzureDocumentParser:
             return None
 
         file_name = Path(file_path).name
+        file_size = os.path.getsize(file_path)
+
+        # Skip GPT-4o for large files (>10MB) — too slow and expensive
+        if file_size > 10 * 1024 * 1024 and ext not in self.image_formats:
+            print(f"  ⚠ {file_name} is {file_size / (1024*1024):.1f}MB — skipping GPT-4o (too large), using traditional parser")
+            return None
 
         try:
             # Text files: read directly, no GPT-4o needed
