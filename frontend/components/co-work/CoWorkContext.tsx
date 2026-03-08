@@ -130,23 +130,6 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
       /* borderLeft handled by parent layout */
       fontFamily: FONT,
     }}>
-      {/* Header */}
-      <div style={{
-        padding: '14px 20px',
-        borderBottom: `1px solid ${COLORS.border}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        flexShrink: 0,
-      }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="16" x2="12" y2="12" />
-          <line x1="12" y1="8" x2="12.01" y2="8" />
-        </svg>
-        <span style={{ fontSize: '15px', fontWeight: 600, color: COLORS.textPrimary }}>Context</span>
-      </div>
-
       {/* Scrollable content */}
       <div style={{
         flex: 1,

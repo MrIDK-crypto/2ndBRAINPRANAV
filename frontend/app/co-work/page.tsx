@@ -38,7 +38,7 @@ export default function CoWorkPage() {
   // ── Right panel resize ──
   const [rightPanelWidth, setRightPanelWidth] = useState(340)
   const [isResizing, setIsResizing] = useState(false)
-  const [contextHeight, setContextHeight] = useState(50) // percentage of right panel
+  const [activeRightTab, setActiveRightTab] = useState<'context' | 'plan'>('context')
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -59,32 +59,6 @@ export default function CoWorkPage() {
       window.removeEventListener('mouseup', handleMouseUp)
     }
   }, [isResizing])
-
-  // Vertical divider drag for context/plan split
-  const [isVResizing, setIsVResizing] = useState(false)
-  const rightPanelRef = React.useRef<HTMLDivElement>(null)
-
-  const handleVMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsVResizing(true)
-  }, [])
-
-  useEffect(() => {
-    if (!isVResizing) return
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!rightPanelRef.current) return
-      const rect = rightPanelRef.current.getBoundingClientRect()
-      const pct = ((e.clientY - rect.top) / rect.height) * 100
-      setContextHeight(Math.max(20, Math.min(80, pct)))
-    }
-    const handleMouseUp = () => setIsVResizing(false)
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isVResizing])
 
   // ── Load conversation on mount ──
   // Fresh login → new chat (null). Navigate away & back → restore last chat.
@@ -331,9 +305,8 @@ export default function CoWorkPage() {
           onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.backgroundColor = 'transparent' }}
         />
 
-        {/* Right panel: Context (top) + Plan (bottom) */}
+        {/* Right panel: Tabbed Context / Plan */}
         <div
-          ref={rightPanelRef}
           style={{
             width: `${rightPanelWidth}px`,
             minWidth: '260px',
@@ -342,40 +315,82 @@ export default function CoWorkPage() {
             flexDirection: 'column',
             overflow: 'hidden',
             borderLeft: `1px solid ${COLORS.border}`,
+            backgroundColor: COLORS.cardBg,
           }}
         >
-          {/* Context panel (top) */}
+          {/* Tab bar */}
           <div style={{
-            height: `${contextHeight}%`,
-            overflow: 'hidden',
+            display: 'flex',
+            borderBottom: `1px solid ${COLORS.border}`,
+            flexShrink: 0,
           }}>
-            <CoWorkContext
-              thinkingSteps={thinkingSteps}
-              brief={researchBrief}
-              sources={contextSources}
-            />
+            {(['context', 'plan'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveRightTab(tab)}
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: activeRightTab === tab ? 600 : 400,
+                  color: activeRightTab === tab ? COLORS.primary : COLORS.textMuted,
+                  borderBottom: activeRightTab === tab ? `2px solid ${COLORS.primary}` : '2px solid transparent',
+                  transition: 'all 0.15s',
+                  fontFamily: FONT,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                {tab === 'context' ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="16" x2="12" y2="12" />
+                      <line x1="12" y1="8" x2="12.01" y2="8" />
+                    </svg>
+                    Context
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12 6 12 12 16 14" />
+                    </svg>
+                    Plan
+                    {planSteps.length > 0 && (
+                      <span style={{
+                        fontSize: '10px',
+                        backgroundColor: COLORS.primaryLight,
+                        color: COLORS.primary,
+                        borderRadius: '8px',
+                        padding: '1px 6px',
+                        fontWeight: 600,
+                      }}>
+                        {planSteps.length}
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
+            ))}
           </div>
 
-          {/* Vertical resize handle */}
-          <div
-            onMouseDown={handleVMouseDown}
-            style={{
-              height: '4px',
-              cursor: 'row-resize',
-              backgroundColor: isVResizing ? COLORS.primary : COLORS.border,
-              flexShrink: 0,
-              transition: isVResizing ? 'none' : 'background-color 0.15s',
-            }}
-            onMouseEnter={(e) => { if (!isVResizing) e.currentTarget.style.backgroundColor = COLORS.primary }}
-            onMouseLeave={(e) => { if (!isVResizing) e.currentTarget.style.backgroundColor = COLORS.border }}
-          />
-
-          {/* Plan panel (bottom) */}
-          <div style={{
-            flex: 1,
-            overflow: 'hidden',
-          }}>
-            <CoWorkPlan steps={planSteps} />
+          {/* Tab content */}
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            {activeRightTab === 'context' ? (
+              <CoWorkContext
+                thinkingSteps={thinkingSteps}
+                brief={researchBrief}
+                sources={contextSources}
+              />
+            ) : (
+              <CoWorkPlan steps={planSteps} />
+            )}
           </div>
         </div>
       </div>

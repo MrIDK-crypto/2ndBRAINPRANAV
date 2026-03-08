@@ -49,22 +49,6 @@ export default function CoWorkPlan({ steps }: CoWorkPlanProps) {
       backgroundColor: COLORS.cardBg,
       fontFamily: FONT,
     }}>
-      {/* Header */}
-      <div style={{
-        padding: '14px 20px',
-        borderBottom: `1px solid ${COLORS.border}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        flexShrink: 0,
-      }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
-        </svg>
-        <span style={{ fontSize: '15px', fontWeight: 600, color: COLORS.textPrimary }}>Plan</span>
-      </div>
-
       {/* Content */}
       <div style={{
         flex: 1,
