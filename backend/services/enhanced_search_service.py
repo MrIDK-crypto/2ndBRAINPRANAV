@@ -1601,6 +1601,36 @@ class EnhancedSearchService:
                 # Shared search failure must never break tenant search
                 print(f"[EnhancedSearch] Shared namespace query failed (non-fatal): {e}")
 
+        # Step 2c: OpenAlex academic paper search for literature queries
+        if source_weights.get('pubmed', 0) > 0.1:
+            try:
+                from services.openalex_search_service import OpenAlexSearchService
+                openalex = OpenAlexSearchService()
+                openalex_k = max(1, int(top_k * source_weights.get('pubmed', 0.2)))
+                openalex_results = openalex.search_works(query, max_results=openalex_k)
+                print(f"[EnhancedSearch] OpenAlex returned {len(openalex_results)} papers")
+
+                # Convert to source format matching KB results
+                for paper in openalex_results:
+                    initial_results.append({
+                        'doc_id': paper['openalex_id'],
+                        'title': paper['title'],
+                        'content': paper.get('abstract', ''),
+                        'score': 0.5,  # Neutral score, let reranker decide
+                        'source_origin': 'openalex',
+                        'source_origin_label': 'OpenAlex',
+                        'source_url': paper.get('doi', ''),
+                        'is_shared': False,
+                        'metadata': {
+                            'authors': paper.get('authors', []),
+                            'year': paper.get('year'),
+                            'journal': paper.get('journal', ''),
+                            'cited_by_count': paper.get('cited_by_count', 0),
+                        }
+                    })
+            except Exception as e:
+                print(f"[EnhancedSearch] OpenAlex search failed (non-critical): {e}")
+
         # Filter out very low cosine similarity results (clearly irrelevant)
         MIN_COSINE_SCORE = 0.12
         before_filter = len(initial_results)
@@ -1875,6 +1905,71 @@ Your goal: Accurate, helpful answers grounded STRICTLY in source documents with 
 End with "Sources Used: [list numbers]"."""
             return system_prompt, user_instruction, 0.1, 2000, 0.0
 
+    def _score_answer_confidence(self, answer: str, sources: list, query: str) -> dict:
+        """Score answer quality 0-1 with breakdown.
+
+        Args:
+            answer: The generated answer text
+            sources: List of source dicts used (each has 'title', 'score' or 'rerank_score', 'content')
+            query: The original query
+
+        Returns:
+            Dict with confidence score and breakdown
+        """
+        import math
+
+        # Source coverage: ratio of answer paragraphs that reference source material
+        paragraphs = [p.strip() for p in answer.split('\n\n') if len(p.strip()) > 50]
+        if not paragraphs:
+            paragraphs = [answer]
+
+        cited = 0
+        for p in paragraphs:
+            p_lower = p.lower()
+            for s in sources:
+                title = (s.get('title') or '')[:30].lower()
+                if title and len(title) > 5 and title in p_lower:
+                    cited += 1
+                    break
+
+        coverage = cited / max(len(paragraphs), 1)
+
+        # Source quality: average reranker score (normalized 0-1 via sigmoid)
+        scores = []
+        for s in sources:
+            sc = s.get('rerank_score') or s.get('score') or 0
+            if isinstance(sc, (int, float)):
+                scores.append(sc)
+
+        if scores:
+            avg_raw = sum(scores) / len(scores)
+            # Sigmoid normalization for cross-encoder scores (which can be negative)
+            avg_quality = 1 / (1 + math.exp(-avg_raw))
+        else:
+            avg_quality = 0.5
+
+        # Query-answer alignment: simple keyword overlap check
+        query_terms = set(w.lower() for w in query.split() if len(w) > 3)
+        answer_lower = answer.lower()
+        if query_terms:
+            term_hits = sum(1 for t in query_terms if t in answer_lower)
+            alignment = term_hits / len(query_terms)
+        else:
+            alignment = 0.5
+
+        # Overall weighted score
+        confidence = round(coverage * 0.4 + avg_quality * 0.3 + alignment * 0.3, 2)
+        confidence = max(0.0, min(1.0, confidence))
+
+        return {
+            'confidence': confidence,
+            'source_coverage': round(coverage, 2),
+            'source_quality': round(avg_quality, 2),
+            'query_alignment': round(alignment, 2),
+            'sources_used': len(sources),
+            'confidence_label': 'high' if confidence >= 0.7 else 'medium' if confidence >= 0.4 else 'low',
+        }
+
     def generate_answer(
         self,
         query: str,
@@ -2028,6 +2123,9 @@ CURRENT QUESTION: {query}
             if citation_check:
                 base_confidence = min(base_confidence, citation_check['cited_ratio'])
 
+            # Score answer confidence with source coverage metrics
+            answer_confidence = self._score_answer_confidence(answer, sources_used, query)
+
             return {
                 'answer': answer,
                 'confidence': base_confidence,
@@ -2035,7 +2133,8 @@ CURRENT QUESTION: {query}
                 'hallucination_check': hallucination_check,
                 'citation_check': citation_check,
                 'context_chars': total_chars,
-                'sources_used': len(context_parts)
+                'sources_used': len(context_parts),
+                'answer_confidence': answer_confidence
             }
 
         except Exception as e:
@@ -2140,7 +2239,8 @@ CURRENT QUESTION: {query}
             'features_used': search_results.get('features_used', {}),
             'hallucination_check': answer_result.get('hallucination_check'),
             'citation_check': answer_result.get('citation_check'),
-            'context_chars': answer_result.get('context_chars', 0)
+            'context_chars': answer_result.get('context_chars', 0),
+            'answer_confidence': answer_result.get('answer_confidence')
         }
 
     def generate_answer_stream(
@@ -2271,11 +2371,15 @@ CURRENT QUESTION: {query}
             except Exception as e:
                 print(f"[Stream] Hallucination check error: {e}", flush=True)
 
+            # Score answer confidence with source coverage metrics
+            answer_confidence = self._score_answer_confidence(full_answer, results[:10], query)
+
             yield {
                 'type': 'done',
                 'confidence': base_confidence,
                 'sources': results[:10],
-                'hallucination_check': hallucination_check
+                'hallucination_check': hallucination_check,
+                'answer_confidence': answer_confidence
             }
 
         except Exception as e:

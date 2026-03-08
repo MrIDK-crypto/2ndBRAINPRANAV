@@ -29,6 +29,14 @@ interface Message {
   sources?: any[]
   sourceMap?: { [key: string]: { name: string; doc_id: string; source_url?: string } }
   attachments?: { name: string; type: string }[]
+  confidence?: {
+    confidence: number
+    source_coverage: number
+    source_quality: number
+    query_alignment: number
+    sources_used: number
+    confidence_label: 'high' | 'medium' | 'low'
+  }
 }
 
 export interface PlanStep {
@@ -389,11 +397,12 @@ export default function CoWorkChat({
               const docSources = localSources.filter((s: any) => s.source_origin === 'user_kb')
               const ctsiSources = localSources.filter((s: any) => s.source_origin === 'ctsi')
               const pubmedSources = localSources.filter((s: any) => s.source_origin === 'pubmed')
+              const openalexSources = localSources.filter((s: any) => s.source_origin === 'openalex')
               const journalSources = localSources.filter((s: any) => s.source_origin === 'journal')
               const reproSources = localSources.filter((s: any) => s.source_origin === 'reproducibility')
               onContextUpdate({
                 documents: [...docSources, ...ctsiSources],
-                pubmed_papers: pubmedSources,
+                pubmed_papers: [...pubmedSources, ...openalexSources],
                 journals: journalSources,
                 experiments: reproSources,
               })
@@ -454,6 +463,7 @@ export default function CoWorkChat({
                 isUser: false,
                 sources: localSources,
                 sourceMap: localSourceMap,
+                confidence: parsedData.answer_confidence || undefined,
               }])
               setIsStreaming(false)
               setStreamingText('')
@@ -731,6 +741,33 @@ export default function CoWorkChat({
                           {att.name}
                         </span>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Confidence indicator */}
+                  {!message.isUser && message.confidence && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      marginTop: '8px',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      backgroundColor: message.confidence.confidence_label === 'high' ? '#F0FDF4'
+                        : message.confidence.confidence_label === 'medium' ? '#FFF7ED' : '#FEF2F2',
+                      fontSize: '11.5px',
+                      color: '#6B6B6B',
+                      fontFamily: FONT,
+                    }}>
+                      <span style={{
+                        width: '6px', height: '6px', borderRadius: '50%',
+                        backgroundColor: message.confidence.confidence_label === 'high' ? '#22C55E'
+                          : message.confidence.confidence_label === 'medium' ? '#F59E0B' : '#EF4444',
+                      }} />
+                      <span>
+                        Confidence: {message.confidence.confidence_label} ({Math.round(message.confidence.confidence * 100)}%)
+                        {message.confidence.sources_used > 0 && ` · ${message.confidence.sources_used} sources`}
+                      </span>
                     </div>
                   )}
 

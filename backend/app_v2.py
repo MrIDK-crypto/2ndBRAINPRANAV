@@ -1852,6 +1852,10 @@ def search_stream():
                         'hallucination_check': event.get('hallucination_check'),
                         'features_used': event.get('features_used', {})
                     }
+                    # Include answer confidence scoring if available
+                    answer_confidence = event.get('answer_confidence')
+                    if answer_confidence:
+                        final_data['answer_confidence'] = answer_confidence
                     yield f"event: done\ndata: {json.dumps(final_data)}\n\n"
 
             print(f"[SEARCH-STREAM] Complete: '{query}'", flush=True)
