@@ -14,7 +14,7 @@ const t = {
   green: '#16a34a', greenBg: '#f0fdf4', greenBorder: '#bbf7d0',
   amber: '#d97706', amberBg: '#fffbeb', amberBorder: '#fde68a',
   red: '#dc2626', redBg: '#fef2f2', redBorder: '#fecaca',
-  font: "'Manrope', -apple-system, sans-serif",
+  font: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
   mono: "'JetBrains Mono', 'SF Mono', monospace",
 }
 
@@ -226,7 +226,7 @@ export default function ResearchReproducibilityPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
         @keyframes co-spin { to { transform: rotate(360deg) } }
         @keyframes co-fadeIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
         .co-markdown h1 { font-size: 18px; font-weight: 600; margin: 0 0 10px; color: #1c1917; }

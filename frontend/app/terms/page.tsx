@@ -48,7 +48,7 @@ export default function TermsPage() {
           }}>
             <Image src="/owl.png" alt="2nd Brain" width={36} height={45} style={{ objectFit: 'contain' }} />
             <span style={{
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
               fontSize: '18px',
               fontWeight: 600,
               color: warmTheme.textPrimary
@@ -62,7 +62,7 @@ export default function TermsPage() {
             gap: '6px',
             color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500
           }}>
@@ -74,7 +74,7 @@ export default function TermsPage() {
         </div>
 
         <h1 style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '32px',
           fontWeight: 700,
           color: warmTheme.textPrimary,
@@ -84,7 +84,7 @@ export default function TermsPage() {
         </h1>
 
         <p style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '14px',
           color: warmTheme.textMuted,
           marginBottom: '32px'
@@ -93,7 +93,7 @@ export default function TermsPage() {
         </p>
 
         <div style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '15px',
           color: warmTheme.textSecondary,
           lineHeight: '1.7'
@@ -276,7 +276,7 @@ export default function TermsPage() {
           <Link href="/privacy" style={{
             color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500,
             marginRight: '24px'
@@ -286,7 +286,7 @@ export default function TermsPage() {
           <Link href="/" style={{
             color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500
           }}>

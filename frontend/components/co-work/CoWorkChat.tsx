@@ -86,6 +86,7 @@ export default function CoWorkChat({
 
   // Keep a ref of accumulated plan steps so we can update in-place during SSE
   const planStepsRef = useRef<PlanStep[]>([])
+  const thinkingStepsRef = useRef<ThinkingStep[]>([])
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
@@ -213,8 +214,9 @@ export default function CoWorkChat({
     if (textareaRef.current) textareaRef.current.style.height = '24px'
     setIsLoading(true)
 
-    // Reset plan steps for this new query
+    // Reset plan and thinking steps for this new query
     planStepsRef.current = []
+    thinkingStepsRef.current = []
 
     // Build conversation history
     const history = messages.map(m => ({
@@ -366,13 +368,20 @@ export default function CoWorkChat({
                 onPlanUpdate(completedSteps)
               }
 
+              // Mark all thinking steps as done
+              for (const step of thinkingStepsRef.current) {
+                onThinkingStep({ ...step, status: 'done' })
+              }
+
             } else if (eventType === 'thinking') {
-              // Forward thinking events
-              onThinkingStep({
+              // Forward thinking events and track in ref
+              const step: ThinkingStep = {
                 type: parsedData.type || 'thinking',
                 text: parsedData.text || parsedData.message || '',
                 status: parsedData.status || 'active',
-              })
+              }
+              thinkingStepsRef.current = [...thinkingStepsRef.current, step]
+              onThinkingStep(step)
 
             } else if (eventType === 'action') {
               // Forward plan/action events

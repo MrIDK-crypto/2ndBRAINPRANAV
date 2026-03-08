@@ -48,7 +48,7 @@ export default function PrivacyPage() {
           }}>
             <Image src="/owl.png" alt="2nd Brain" width={36} height={45} style={{ objectFit: 'contain' }} />
             <span style={{
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
               fontSize: '18px',
               fontWeight: 600,
               color: warmTheme.textPrimary
@@ -62,7 +62,7 @@ export default function PrivacyPage() {
             gap: '6px',
             color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500
           }}>
@@ -74,7 +74,7 @@ export default function PrivacyPage() {
         </div>
 
         <h1 style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '32px',
           fontWeight: 700,
           color: warmTheme.textPrimary,
@@ -84,7 +84,7 @@ export default function PrivacyPage() {
         </h1>
 
         <p style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '14px',
           color: warmTheme.textMuted,
           marginBottom: '32px'
@@ -93,7 +93,7 @@ export default function PrivacyPage() {
         </p>
 
         <div style={{
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '15px',
           color: warmTheme.textSecondary,
           lineHeight: '1.7'
@@ -295,7 +295,7 @@ export default function PrivacyPage() {
           <Link href="/terms" style={{
             color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             marginRight: '24px'
           }}>
@@ -304,7 +304,7 @@ export default function PrivacyPage() {
           <Link href="/" style={{
             color: warmTheme.primary,
             textDecoration: 'none',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px'
           }}>
             Return to Home

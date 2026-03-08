@@ -217,17 +217,7 @@ export default function CoWorkPage() {
           />
         </div>
 
-        {/* Middle: Plan panel (~30%) */}
-        <div style={{
-          width: '30%',
-          minWidth: '240px',
-          height: '100%',
-          overflow: 'hidden',
-        }}>
-          <CoWorkPlan steps={planSteps} />
-        </div>
-
-        {/* Right: Context panel (~30%) */}
+        {/* Middle: Context panel (~30%) */}
         <div style={{
           width: '30%',
           minWidth: '240px',
@@ -239,6 +229,16 @@ export default function CoWorkPage() {
             brief={researchBrief}
             sources={contextSources}
           />
+        </div>
+
+        {/* Right: Plan panel (~30%) */}
+        <div style={{
+          width: '30%',
+          minWidth: '240px',
+          height: '100%',
+          overflow: 'hidden',
+        }}>
+          <CoWorkPlan steps={planSteps} />
         </div>
       </div>
     </div>

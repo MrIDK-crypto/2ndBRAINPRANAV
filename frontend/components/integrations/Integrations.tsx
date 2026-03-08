@@ -136,7 +136,7 @@ const ChannelSelectionModal = ({
           Select Slack Channels
         </h2>
         <p style={{
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '14px',
           color: '#71717A',
           marginBottom: '16px'
@@ -216,7 +216,7 @@ const ChannelSelectionModal = ({
                 />
                 <div style={{ flex: 1 }}>
                   <div style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '14px',
                     fontWeight: 500,
                     color: '#18181B'
@@ -224,7 +224,7 @@ const ChannelSelectionModal = ({
                     {channel.is_private ? '🔒' : '#'} {channel.name}
                   </div>
                   <div style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '12px',
                     color: '#71717A'
                   }}>
@@ -382,7 +382,7 @@ const AnimatedCounter = ({ value, label }: { value: number; label: string }) => 
   return (
     <div style={{ textAlign: 'center' }}>
       <div style={{
-        fontFamily: '"Work Sans", sans-serif',
+        fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
         fontSize: '20px',
         fontWeight: 600,
         color: '#18181B',
@@ -392,7 +392,7 @@ const AnimatedCounter = ({ value, label }: { value: number; label: string }) => 
         {displayValue}
       </div>
       <div style={{
-        fontFamily: '"Work Sans", sans-serif',
+        fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
         fontSize: '11px',
         color: '#9CA3AF',
         textTransform: 'uppercase',
@@ -687,7 +687,7 @@ const PollingProgressModal = ({
           </div>
 
           <h2 style={{
-            fontFamily: '"Work Sans", sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '18px',
             fontWeight: 600,
             color: '#18181B',
@@ -698,7 +698,7 @@ const PollingProgressModal = ({
              `Syncing ${integrationName}`}
           </h2>
           <p style={{
-            fontFamily: '"Work Sans", sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '13px',
             color: '#71717A',
             margin: 0
@@ -719,7 +719,7 @@ const PollingProgressModal = ({
                 marginBottom: '8px'
               }}>
                 <span style={{
-                  fontFamily: '"Work Sans", sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '12px',
                   color: '#9CA3AF',
                   fontWeight: 500
@@ -727,7 +727,7 @@ const PollingProgressModal = ({
                   {Math.round(progress.progress)}% complete
                 </span>
                 <span style={{
-                  fontFamily: '"Work Sans", sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '12px',
                   color: '#9CA3AF'
                 }}>
@@ -785,7 +785,7 @@ const PollingProgressModal = ({
                 <path d="M8 5v3M8 10h.01" stroke="#C9A598" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
               <span style={{
-                fontFamily: '"Work Sans", sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '12px',
                 color: '#8B6F63',
                 lineHeight: '1.4'
@@ -821,7 +821,7 @@ const PollingProgressModal = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                 <Mail size={16} color={emailWhenComplete ? '#C9A598' : '#64748B'} />
                 <span style={{
-                  fontFamily: '"Work Sans", sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '13px',
                   color: emailWhenComplete ? '#A07D6F' : '#374151',
                   fontWeight: 500
@@ -844,7 +844,7 @@ const PollingProgressModal = ({
                 border: '1px solid #8A8A8A',
                 backgroundColor: '#FEFEFE',
                 color: '#8A8A8A',
-                fontFamily: '"Work Sans", sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '14px',
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -873,7 +873,7 @@ const PollingProgressModal = ({
             }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{
-                  fontFamily: '"Work Sans", sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '24px',
                   fontWeight: 600,
                   color: '#C9A598'
@@ -881,7 +881,7 @@ const PollingProgressModal = ({
                   {progress.documentsFound}
                 </div>
                 <div style={{
-                  fontFamily: '"Work Sans", sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '12px',
                   color: '#64748B'
                 }}>
@@ -898,7 +898,7 @@ const PollingProgressModal = ({
                 border: 'none',
                 backgroundColor: '#C9A598',
                 color: '#fff',
-                fontFamily: '"Work Sans", sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '14px',
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -922,7 +922,7 @@ const PollingProgressModal = ({
               marginBottom: '20px'
             }}>
               <p style={{
-                fontFamily: '"Work Sans", sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '13px',
                 color: '#991B1B',
                 margin: 0,
@@ -940,7 +940,7 @@ const PollingProgressModal = ({
                 border: 'none',
                 backgroundColor: '#64748B',
                 color: '#fff',
-                fontFamily: '"Work Sans", sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '14px',
                 fontWeight: 500,
                 cursor: 'pointer',
@@ -1020,7 +1020,7 @@ const SlackTokenModal = ({
         </h2>
 
         <p style={{
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '14px',
           color: '#71717A',
           marginBottom: '20px'
@@ -1031,7 +1031,7 @@ const SlackTokenModal = ({
 
         <div style={{ marginBottom: '20px' }}>
           <label style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500,
             display: 'block',
@@ -1062,7 +1062,7 @@ const SlackTokenModal = ({
           marginBottom: '20px'
         }}>
           <p style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '13px',
             color: '#92400E',
             margin: 0
@@ -1176,7 +1176,7 @@ const PubMedConfigModal = ({
         </h2>
 
         <p style={{
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '14px',
           color: '#71717A',
           marginBottom: '20px'
@@ -1187,7 +1187,7 @@ const PubMedConfigModal = ({
         {/* Search Query */}
         <div style={{ marginBottom: '20px' }}>
           <label style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500,
             display: 'block',
@@ -1206,11 +1206,11 @@ const PubMedConfigModal = ({
               borderRadius: '8px',
               border: '1px solid #D4D4D8',
               fontSize: '14px',
-              fontFamily: 'Inter, sans-serif'
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
             }}
           />
           <p style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '12px',
             color: '#71717A',
             marginTop: '4px'
@@ -1222,7 +1222,7 @@ const PubMedConfigModal = ({
         {/* Max Results */}
         <div style={{ marginBottom: '20px' }}>
           <label style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500,
             display: 'block',
@@ -1242,11 +1242,11 @@ const PubMedConfigModal = ({
               borderRadius: '8px',
               border: '1px solid #D4D4D8',
               fontSize: '14px',
-              fontFamily: 'Inter, sans-serif'
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
             }}
           />
           <p style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '12px',
             color: '#71717A',
             marginTop: '4px'
@@ -1258,7 +1258,7 @@ const PubMedConfigModal = ({
         {/* Date Range */}
         <div style={{ marginBottom: '20px' }}>
           <label style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500,
             display: 'block',
@@ -1275,7 +1275,7 @@ const PubMedConfigModal = ({
               borderRadius: '8px',
               border: '1px solid #D4D4D8',
               fontSize: '14px',
-              fontFamily: 'Inter, sans-serif'
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
             }}
           >
             <option value="0">All time</option>
@@ -1289,7 +1289,7 @@ const PubMedConfigModal = ({
         {/* API Key (Optional) */}
         <div style={{ marginBottom: '20px' }}>
           <label style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '14px',
             fontWeight: 500,
             display: 'block',
@@ -1312,7 +1312,7 @@ const PubMedConfigModal = ({
             }}
           />
           <p style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '12px',
             color: '#71717A',
             marginTop: '4px'
@@ -1329,7 +1329,7 @@ const PubMedConfigModal = ({
           marginBottom: '20px'
         }}>
           <p style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '13px',
             color: '#8B6F63',
             margin: 0
@@ -1470,7 +1470,7 @@ const QuartzyConfigModal = ({
         </h2>
 
         <p style={{
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
           fontSize: '14px',
           color: '#71717A',
           marginBottom: '20px'
@@ -1496,7 +1496,7 @@ const QuartzyConfigModal = ({
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif'
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
             }}
           >
             API Token
@@ -1512,7 +1512,7 @@ const QuartzyConfigModal = ({
               fontSize: '14px',
               fontWeight: 500,
               cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif'
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
             }}
           >
             CSV Upload
@@ -1524,7 +1524,7 @@ const QuartzyConfigModal = ({
           <div>
             <div style={{ marginBottom: '20px' }}>
               <label style={{
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '14px',
                 fontWeight: 500,
                 display: 'block',
@@ -1547,7 +1547,7 @@ const QuartzyConfigModal = ({
                 }}
               />
               <p style={{
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '12px',
                 color: '#71717A',
                 marginTop: '4px'
@@ -1563,7 +1563,7 @@ const QuartzyConfigModal = ({
               marginBottom: '20px'
             }}>
               <p style={{
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '13px',
                 color: '#8B6F63',
                 margin: 0
@@ -1603,7 +1603,7 @@ const QuartzyConfigModal = ({
               {selectedFile ? (
                 <div>
                   <p style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '16px',
                     fontWeight: 500,
                     color: '#111827',
@@ -1612,7 +1612,7 @@ const QuartzyConfigModal = ({
                     {selectedFile.name}
                   </p>
                   <p style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '13px',
                     color: '#6B7280'
                   }}>
@@ -1622,7 +1622,7 @@ const QuartzyConfigModal = ({
               ) : (
                 <div>
                   <p style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '16px',
                     fontWeight: 500,
                     color: '#374151',
@@ -1631,7 +1631,7 @@ const QuartzyConfigModal = ({
                     Drop your Quartzy export here
                   </p>
                   <p style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '13px',
                     color: '#9CA3AF'
                   }}>
@@ -1648,7 +1648,7 @@ const QuartzyConfigModal = ({
               marginBottom: '20px'
             }}>
               <p style={{
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '13px',
                 color: '#92400E',
                 margin: 0
@@ -1662,7 +1662,7 @@ const QuartzyConfigModal = ({
         {/* Error */}
         {error && (
           <p style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '13px',
             color: '#DC2626',
             marginBottom: '16px'
@@ -1827,16 +1827,16 @@ const WebScraperConfigModal = ({
             onKeyDown={e => e.key === 'Enter' && handleSubmit()}
             placeholder="Enter website URL (e.g., example.com)"
             autoFocus
-            style={{ width: '100%', padding: '14px 16px', borderRadius: '10px', border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}`, fontSize: '15px', fontFamily: 'Inter, sans-serif', outline: 'none', boxSizing: 'border-box' as const }}
+            style={{ width: '100%', padding: '14px 16px', borderRadius: '10px', border: `1px solid ${urlError ? '#EF4444' : '#D4D4D8'}`, fontSize: '15px', fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif", outline: 'none', boxSizing: 'border-box' as const }}
           />
-          {urlError && <p style={{ fontFamily: 'Inter, sans-serif', fontSize: '12px', color: '#EF4444', marginTop: '6px' }}>{urlError}</p>}
+          {urlError && <p style={{ fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif", fontSize: '12px', color: '#EF4444', marginTop: '6px' }}>{urlError}</p>}
         </div>
 
         {/* Sync Button */}
         <button
           onClick={handleSubmit}
           disabled={!startUrl.trim() || isLoading || !!urlError}
-          style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}
+          style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', backgroundColor: (!startUrl.trim() || !!urlError) ? '#9ca3af' : '#C9A598', color: '#fff', fontSize: '15px', fontWeight: 600, cursor: !startUrl.trim() ? 'not-allowed' : 'pointer', fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif" }}
         >
           {isLoading ? 'Syncing...' : 'Sync'}
         </button>
@@ -2283,7 +2283,7 @@ const IntegrationDetailsModal = ({
                   borderRadius: '100px',
                   backgroundColor: integration.connected ? '#D1FAE5' : '#E2E8F0',
                   color: integration.connected ? '#059669' : '#64748B',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '12px',
                   fontWeight: 500
                 }}
@@ -2296,7 +2296,7 @@ const IntegrationDetailsModal = ({
                   borderRadius: '100px',
                   backgroundColor: '#E2E8F0',
                   color: '#64748B',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '12px',
                   fontWeight: 500
                 }}
@@ -2331,7 +2331,7 @@ const IntegrationDetailsModal = ({
           {/* Description */}
           <div style={{ marginBottom: '24px' }}>
             <p style={{
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
               fontSize: '15px',
               color: '#52525B',
               lineHeight: '1.6',
@@ -2385,7 +2385,7 @@ const IntegrationDetailsModal = ({
                     </svg>
                   </div>
                   <span style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '14px',
                     color: '#3F3F46'
                   }}>
@@ -2418,7 +2418,7 @@ const IntegrationDetailsModal = ({
                     borderRadius: '8px',
                     backgroundColor: '#fff',
                     border: '1px solid #E5E5E5',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '13px',
                     color: '#52525B'
                   }}
@@ -2467,7 +2467,7 @@ const IntegrationDetailsModal = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '12px',
                     fontWeight: 600,
                     flexShrink: 0
@@ -2475,7 +2475,7 @@ const IntegrationDetailsModal = ({
                     {idx + 1}
                   </div>
                   <span style={{
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                     fontSize: '14px',
                     color: '#3F3F46',
                     paddingTop: '2px'
@@ -2496,7 +2496,7 @@ const IntegrationDetailsModal = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: '6px',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
               fontSize: '14px',
               color: details.brandColor,
               textDecoration: 'none'
@@ -2531,7 +2531,7 @@ const IntegrationDetailsModal = ({
                   borderRadius: '10px',
                   border: '1px solid #E5E5E5',
                   backgroundColor: '#fff',
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '14px',
                   fontWeight: 500,
                   color: '#8A8A8A',
@@ -2550,7 +2550,7 @@ const IntegrationDetailsModal = ({
                   borderRadius: '10px',
                   border: 'none',
                   backgroundColor: details.brandColor,
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                   fontSize: '14px',
                   fontWeight: 500,
                   color: '#fff',
@@ -2577,7 +2577,7 @@ const IntegrationDetailsModal = ({
                 borderRadius: '10px',
                 border: 'none',
                 backgroundColor: details.brandColor,
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '14px',
                 fontWeight: 500,
                 color: '#fff',
@@ -2866,7 +2866,7 @@ const IntegrationCard = ({
           <span
             style={{
               color: isSyncing || isThisSyncing ? '#FFFFFF' : integration.connected ? '#FFFFFF' : '#374151',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
               fontSize: '12px',
               fontWeight: 500
             }}
@@ -2919,7 +2919,7 @@ const IntegrationCard = ({
             <span
               style={{
                 color: '#FFFFFF',
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: '12px',
                 fontWeight: 400
               }}
@@ -2934,7 +2934,7 @@ const IntegrationCard = ({
           className="flex items-center gap-1 hover:opacity-70 transition-opacity"
           style={{
             color: '#1E293B',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
             fontSize: '12px',
             fontWeight: 400,
             background: 'none',
@@ -4305,7 +4305,7 @@ export default function Integrations() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
                 fontSize: 14,
                 fontWeight: 500,
                 opacity: toastVisible ? 1 : 0,

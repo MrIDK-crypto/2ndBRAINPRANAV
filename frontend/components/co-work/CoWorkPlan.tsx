@@ -104,7 +104,7 @@ export default function CoWorkPlan({ steps }: CoWorkPlanProps) {
               lineHeight: '1.5',
               maxWidth: '200px',
             }}>
-              Start a conversation to generate a research plan
+              For complex tasks, I will lay out a step-by-step plan here
             </p>
           </div>
         ) : (
