@@ -1364,7 +1364,9 @@ Return JSON:
                         "source_docs": source_doc_ids[:10],
                         "stats": result.get("stats", {})
                     },
-                    related_document_ids=source_doc_ids[:10] if source_doc_ids else [doc.id for doc in documents[:5]]
+                    related_document_ids=source_doc_ids[:10] if source_doc_ids else [doc.id for doc in documents[:5]],
+                    auto_priority_score=gap_data.get("quality_score", 0.0),
+                    priority_signals=gap_data.get("priority_signals", {}),
                 )
                 self.db.add(gap)
                 saved_gaps.append(gap)

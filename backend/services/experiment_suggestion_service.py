@@ -122,7 +122,11 @@ Keep suggestions practical and actionable.'''
             research_question, available_resources, existing_results, constraints
         )
 
-        from services.feasibility_scorer import FeasibilityScorer
+        try:
+            from services.feasibility_scorer import FeasibilityScorer
+        except ImportError:
+            print("[ExperimentSuggestion] FeasibilityScorer not available, returning unscored")
+            return suggestions
         scorer = FeasibilityScorer()
 
         for suggestion in suggestions:
