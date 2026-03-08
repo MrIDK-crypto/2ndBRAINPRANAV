@@ -375,6 +375,51 @@ class JournalScorerService:
             citation_result = self._verify_citations(text)
             yield _sse("citation_verification", citation_result)
 
+            # ── Citation Neighborhood Matching (additive, between Steps 9 & 10) ──
+            citation_neighbor_journals = []
+            try:
+                yield _sse("progress", {"step": 9, "message": "Analyzing citation neighborhood...", "percent": 78})
+
+                # Extract reference-like strings from manuscript
+                doi_pattern = r'10\.\d{4,}/[^\s]+'
+                dois = re.findall(doi_pattern, text)
+
+                # Also try to extract reference titles (lines that look like citations)
+                ref_section_text = ''
+                for marker in ['References', 'Bibliography', 'Works Cited', 'Literature Cited']:
+                    idx = text.lower().rfind(marker.lower())
+                    if idx > 0:
+                        ref_section_text = text[idx:idx+5000]
+                        break
+
+                ref_queries = dois[:10]
+                if ref_section_text and len(ref_queries) < 5:
+                    # Extract lines that look like references
+                    ref_lines = [l.strip() for l in ref_section_text.split('\n')
+                                 if len(l.strip()) > 30 and any(c.isdigit() for c in l[:20])]
+                    ref_queries.extend(ref_lines[:10])
+
+                if ref_queries:
+                    citation_neighbor_journals = self._find_citation_neighbor_journals(ref_queries, field)
+                    if citation_neighbor_journals:
+                        # Deduplicate against existing journal matches
+                        existing_names = set()
+                        for category in ['primary_matches', 'stretch_matches', 'safe_matches']:
+                            for j in journals.get(category, []):
+                                existing_names.add(j.get('name', '').lower().strip())
+
+                        citation_neighbor_journals = [
+                            j for j in citation_neighbor_journals
+                            if j['journal_name'].lower().strip() not in existing_names
+                        ]
+
+                        yield _sse("citation_neighbor_journals", {
+                            "journals": citation_neighbor_journals,
+                            "total_references_analyzed": len(ref_queries),
+                        })
+            except Exception as e:
+                print(f"[JournalScorer] Citation neighborhood matching failed (non-critical): {e}")
+
             # ── Step 10: Generate Recommendations ───────────────────────
             yield _sse("progress", {"step": 10, "message": "Generating recommendations...", "percent": 82})
 
@@ -395,6 +440,7 @@ class JournalScorerService:
                 "success": True,
                 "analysis_time_seconds": elapsed,
                 "methodology_gaps": methodology_gaps,
+                "citation_neighbor_journals": citation_neighbor_journals,
             }
             if manuscript_url:
                 done_data["manuscript_url"] = manuscript_url
@@ -1096,6 +1142,49 @@ class JournalScorerService:
                 })
 
         return gaps
+
+    def _find_citation_neighbor_journals(self, references: list, field: str) -> list:
+        """Find journals that frequently publish papers in the same citation neighborhood.
+
+        Analyzes the manuscript's references via OpenAlex to find journals
+        where related papers are frequently published.
+
+        Args:
+            references: List of reference strings (DOIs, titles, or citation text)
+            field: Academic field for context
+
+        Returns:
+            List of journal suggestion dicts sorted by citation overlap
+        """
+        try:
+            from services.openalex_search_service import OpenAlexSearchService
+        except ImportError:
+            print("[JournalScorer] OpenAlex service not available")
+            return []
+
+        openalex = OpenAlexSearchService()
+        journal_counts = {}
+
+        for ref in references[:15]:  # Cap at 15 references for speed
+            try:
+                # Search OpenAlex for this reference
+                works = openalex.search_works(ref, max_results=3)
+                for work in works:
+                    journal = work.get('journal', '')
+                    if journal and len(journal) > 2:
+                        journal_counts[journal] = journal_counts.get(journal, 0) + 1
+            except Exception:
+                continue
+
+        # Sort by frequency — journals appearing most often in citation neighborhood
+        neighbor_journals = sorted(journal_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return [{
+            'journal_name': name,
+            'citation_overlap': count,
+            'match_reason': f'Found in {count} of your references\' citation neighborhoods',
+            'source': 'citation_neighborhood',
+        } for name, count in neighbor_journals]
 
     def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield=""):
         feature_summary = "\n".join(
