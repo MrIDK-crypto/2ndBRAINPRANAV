@@ -1771,16 +1771,26 @@ def search_stream():
                 if event_type == 'journal_analysis':
                     # Emit journal analysis plan steps and thinking events
                     analysis = event.get('analysis', {})
-                    yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': f\"Detected field: {analysis.get('field_label', 'Unknown')}\", 'status': 'complete'})}\n\n"
+                    field_text = 'Detected field: ' + analysis.get('field_label', 'Unknown')
+                    action1 = json.dumps({'section': 'Journal Analysis', 'text': field_text, 'status': 'complete'})
+                    yield f"event: action\ndata: {action1}\n\n"
                     gaps = analysis.get('methodology_gaps', [])
-                    yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': f'Found {len(gaps)} methodology gaps', 'status': 'complete'})}\n\n"
+                    gap_text = 'Found ' + str(len(gaps)) + ' methodology gaps'
+                    action2 = json.dumps({'section': 'Journal Analysis', 'text': gap_text, 'status': 'complete'})
+                    yield f"event: action\ndata: {action2}\n\n"
                     neighbors = analysis.get('citation_neighbor_journals', [])
                     kw_journals = analysis.get('keyword_journals', [])
                     total_journals = len(neighbors) + len(kw_journals)
-                    yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': f'Matched {total_journals} target journals', 'status': 'complete'})}\n\n"
-                    yield f"event: thinking\ndata: {json.dumps({'type': 'journal_analysis', 'text': f\"Running High-Impact Journal Analysis on '{analysis.get('doc_title', 'document')}'...\"})}\n\n"
+                    journal_text = 'Matched ' + str(total_journals) + ' target journals'
+                    action3 = json.dumps({'section': 'Journal Analysis', 'text': journal_text, 'status': 'complete'})
+                    yield f"event: action\ndata: {action3}\n\n"
+                    doc_title = analysis.get('doc_title', 'document')
+                    thinking_text = 'Running High-Impact Journal Analysis on ' + doc_title + '...'
+                    thinking_data = json.dumps({'type': 'journal_analysis', 'text': thinking_text})
+                    yield f"event: thinking\ndata: {thinking_data}\n\n"
                     # Emit the full analysis data as a separate event for the frontend context panel
-                    yield f"event: journal_analysis\ndata: {json.dumps(analysis)}\n\n"
+                    analysis_data = json.dumps(analysis)
+                    yield f"event: journal_analysis\ndata: {analysis_data}\n\n"
 
                 elif event_type == 'search_complete':
                     raw_sources = event.get('sources', [])
