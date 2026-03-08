@@ -397,6 +397,37 @@ def analyze_gaps():
             except Exception as e:
                 print(f"[GapAnalysis] Deduplication failed (non-critical): {e}")
 
+            # Auto-prioritize newly created gaps
+            try:
+                from services.intelligent_gap_detector import compute_auto_priority
+                # Get feedback history for this tenant
+                existing_gaps = db.query(KnowledgeGap).filter(
+                    KnowledgeGap.tenant_id == tenant_id,
+                    KnowledgeGap.feedback_useful > 0
+                ).all()
+                feedback_history = [{'category': g.category.value, 'useful': True} for g in existing_gaps if g.feedback_useful > 0]
+
+                # Get document data for cross-referencing
+                doc_data = [{'content': d.content[:500] if d.content else '', 'created_at': d.created_at}
+                            for d in db.query(Document).filter(Document.tenant_id == tenant_id, Document.is_deleted == False).limit(200).all()]
+
+                # Score each new gap
+                new_gaps = db.query(KnowledgeGap).filter(
+                    KnowledgeGap.tenant_id == tenant_id,
+                    KnowledgeGap.auto_priority_score == 0.0
+                ).all()
+                for gap in new_gaps:
+                    score, signals = compute_auto_priority(
+                        {'title': gap.title, 'category': gap.category.value, 'context': gap.context},
+                        doc_data, feedback_history
+                    )
+                    gap.auto_priority_score = score
+                    gap.priority_signals = signals
+                db.commit()
+                print(f"[GapAnalysis] Auto-priority scored {len(new_gaps)} gaps")
+            except Exception as e:
+                print(f"[GapAnalysis] Auto-priority scoring failed (non-critical): {e}")
+
             return jsonify({
                 "success": True,
                 "message": f"Gap analysis completed (mode: {mode})",
@@ -1493,3 +1524,57 @@ def get_protocol_training_stats():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/gaps/<gap_id>/enrich', methods=['POST'])
+@require_auth
+def enrich_gap(gap_id):
+    """Enrich a gap with RAG context showing what's already known."""
+    db = get_db()
+    try:
+        tenant_id = getattr(g, 'tenant_id', 'local-tenant')
+        gap = db.query(KnowledgeGap).filter(
+            KnowledgeGap.id == gap_id,
+            KnowledgeGap.tenant_id == tenant_id
+        ).first()
+
+        if not gap:
+            return jsonify({"error": "Gap not found"}), 404
+
+        # Search KB for related content using the gap title + description
+        search_query = f"{gap.title} {gap.description or ''}"[:500]
+
+        try:
+            from services.enhanced_search_service import EnhancedSearchService
+            search_service = EnhancedSearchService()
+
+            # Use the vector store directly for a simple search
+            vector_store = search_service.vector_store
+            results = vector_store.hybrid_search(
+                query=search_query,
+                tenant_id=tenant_id,
+                top_k=5,
+            )
+
+            known_context = []
+            for r in results:
+                known_context.append({
+                    'title': r.get('title', 'Untitled'),
+                    'content_preview': (r.get('content', ''))[:300],
+                    'score': round(r.get('score', 0), 3),
+                    'doc_id': r.get('doc_id', ''),
+                })
+        except Exception as e:
+            print(f"[GapEnrich] Search failed: {e}")
+            known_context = []
+
+        return jsonify({
+            'gap_id': gap_id,
+            'gap_title': gap.title,
+            'known_context': known_context,
+            'known_count': len(known_context),
+            'gap_questions': gap.questions,
+            'gap_category': gap.category.value if gap.category else None,
+        })
+    finally:
+        db.close()
