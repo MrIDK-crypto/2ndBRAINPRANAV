@@ -1458,24 +1458,38 @@ class EnhancedSearchService:
         print(f"[EnhancedSearch] Initial retrieval: {len(initial_results)} results")
 
         # Step 2b: Query shared CTSI namespace (accessible to all tenants)
-        try:
-            from vector_stores.pinecone_store import SHARED_CTSI_NAMESPACE
-            query_embedding = vector_store.get_query_embedding(search_query)
-            shared_top_k = max(top_k // 2, 3)
-            shared_results = vector_store.search_shared_namespace(
-                query_embedding=query_embedding,
-                namespace=SHARED_CTSI_NAMESPACE,
-                top_k=shared_top_k
-            )
-            if shared_results:
-                # Apply 0.9x score multiplier so tenant data gets slight priority
-                for r in shared_results:
-                    r['score'] = r.get('score', 0) * 0.9
-                initial_results.extend(shared_results)
-                print(f"[EnhancedSearch] Added {len(shared_results)} shared CTSI results")
-        except Exception as e:
-            # Shared search failure must never break tenant search
-            print(f"[EnhancedSearch] Shared namespace query failed (non-fatal): {e}")
+        # Skip CTSI for self-referential queries about the user's own data
+        _q_lower = query.lower()
+        _personal_indicators = [
+            'my file', 'my data', 'my document', 'my csv', 'my knowledge',
+            'my upload', 'what do i have', 'what did i upload', 'my report',
+            'my paper', 'i uploaded', 'i have', 'my lab', 'my research',
+            'in my', 'essence of the', 'essence of my', 'what files',
+            'what documents', 'tell me about my',
+        ]
+        _skip_ctsi = any(p in _q_lower for p in _personal_indicators)
+
+        if _skip_ctsi:
+            print(f"[EnhancedSearch] Skipping CTSI shared namespace (personal query detected)")
+        else:
+            try:
+                from vector_stores.pinecone_store import SHARED_CTSI_NAMESPACE
+                query_embedding = vector_store.get_query_embedding(search_query)
+                shared_top_k = max(top_k // 2, 3)
+                shared_results = vector_store.search_shared_namespace(
+                    query_embedding=query_embedding,
+                    namespace=SHARED_CTSI_NAMESPACE,
+                    top_k=shared_top_k
+                )
+                if shared_results:
+                    # Apply 0.9x score multiplier so tenant data gets slight priority
+                    for r in shared_results:
+                        r['score'] = r.get('score', 0) * 0.9
+                    initial_results.extend(shared_results)
+                    print(f"[EnhancedSearch] Added {len(shared_results)} shared CTSI results")
+            except Exception as e:
+                # Shared search failure must never break tenant search
+                print(f"[EnhancedSearch] Shared namespace query failed (non-fatal): {e}")
 
         # Filter out very low cosine similarity results (clearly irrelevant)
         MIN_COSINE_SCORE = 0.20
