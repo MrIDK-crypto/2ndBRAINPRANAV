@@ -817,6 +817,7 @@ export default function CoWorkChat({
                                     pubmed: COLORS.primary,
                                     journal: '#B39DDB',
                                     reproducibility: '#FFB74D',
+                                    openalex: '#F59E0B',
                                   }[source.source_origin as string] || '#E0E0E0',
                                   color: '#FFFFFF',
                                   fontWeight: 600,

@@ -26,12 +26,14 @@ const SOURCE_BADGE_COLORS: Record<string, string> = {
   'Repro Archive': '#FFB74D',
   'Knowledge Base': '#C9A598',
   'Reproducibility': '#FCA5A5',
+  'OpenAlex': '#F59E0B',
   // Also keyed by source_origin codes
   'user_kb': '#9CB896',
   'ctsi': '#7BA7C9',
   'pubmed': '#93C5FD',
   'journal': '#A5B4FC',
   'reproducibility': '#FFB74D',
+  'openalex': '#F59E0B',
 }
 
 // ── Types ──
