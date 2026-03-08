@@ -34,6 +34,7 @@ Pillow==10.2.0
 openpyxl==3.1.2
 python-docx==1.1.0
 PyPDF2==3.0.1
+striprtf>=0.0.26
 
 # Document Parsing (optional local fallback - install separately: pip install docling)
 # docling  # Excluded from Docker build due to heavy dependencies; GPT-4o + traditional parsers suffice

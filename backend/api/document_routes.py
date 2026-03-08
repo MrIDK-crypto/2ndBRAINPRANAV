@@ -54,6 +54,8 @@ IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif')
 # Audio/Video extensions for Whisper transcription
 MEDIA_EXTENSIONS = ('.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm')
 
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB per file
+
 
 # ============================================================================
 # LIST DOCUMENTS
@@ -574,6 +576,12 @@ def upload_documents():
                 for filename, file_content, content_type in files_to_process:
                     lower_name = filename.lower()
 
+                    if len(file_content) > MAX_FILE_SIZE:
+                        parsing_errors.append(
+                            f'File exceeds 100 MB limit ({len(file_content) // (1024*1024)} MB): {filename}'
+                        )
+                        continue
+
                     try:
                         print(f"[Upload] Processing file: {filename} ({len(file_content)} bytes)")
 
@@ -886,6 +894,12 @@ def upload_and_embed():
                 file_content = file.read()
                 filename = file.filename
                 lower_name = filename.lower()
+
+                if len(file_content) > MAX_FILE_SIZE:
+                    parsing_errors.append(
+                        f'File exceeds 100 MB limit ({len(file_content) // (1024*1024)} MB): {filename}'
+                    )
+                    continue
 
                 # Parse content
                 try:

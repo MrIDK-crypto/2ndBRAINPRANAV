@@ -196,6 +196,11 @@ class DocumentParser:
         if not ext:
             return None
 
+        MAX_PARSE_BYTES = 50 * 1024 * 1024  # 50 MB general limit
+        if len(file_bytes) > MAX_PARSE_BYTES:
+            size_mb = len(file_bytes) / (1024 * 1024)
+            return f"[File too large to parse: {filename} ({size_mb:.1f} MB). Metadata stored but content not indexed.]"
+
         # CSV/TSV files - parse as tabular data
         if ext in ('.csv', '.tsv'):
             try:
@@ -203,12 +208,39 @@ class DocumentParser:
             except Exception:
                 return file_bytes.decode('utf-8', errors='ignore')
 
-        # Plain text files - decode directly
-        if ext in ('.txt', '.md', '.json', '.xml', '.html', '.htm'):
+        # HTML files - strip tags
+        if ext in ('.html', '.htm'):
+            return self._parse_html_bytes(file_bytes)
+
+        # JSON files - extract structure
+        if ext == '.json':
+            return self._parse_json_bytes(file_bytes)
+
+        # XML files - extract text content
+        if ext == '.xml':
+            return self._parse_xml_bytes(file_bytes)
+
+        # Plain text / markdown
+        if ext in ('.txt', '.md'):
             try:
                 return file_bytes.decode('utf-8', errors='ignore')
             except Exception:
                 return None
+
+        # RTF files
+        if ext == '.rtf':
+            return self._parse_rtf_bytes(file_bytes)
+
+        # Image files - describe via GPT-4o vision
+        if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'):
+            if len(file_bytes) > 20 * 1024 * 1024:
+                return f"[Image: {filename} — too large for vision analysis ({len(file_bytes) // (1024*1024)} MB)]"
+            return self._parse_image_bytes(file_bytes, filename)
+
+        # Audio/video files - transcribe via Whisper
+        audio_exts = ('.mp3', '.wav', '.m4a', '.webm', '.mp4', '.mov', '.ogg', '.flac')
+        if ext in audio_exts:
+            return self._parse_audio_bytes(file_bytes, filename)
 
         tmp_path = None
         try:
@@ -236,7 +268,11 @@ class DocumentParser:
 
         with open(file_path, 'rb') as f:
             pdf_reader = PyPDF2.PdfReader(f)
-            num_pages = len(pdf_reader.pages)
+            MAX_PDF_PAGES = 500
+            total_pages = len(pdf_reader.pages)
+            num_pages = min(total_pages, MAX_PDF_PAGES)
+            if total_pages > MAX_PDF_PAGES:
+                text_parts.append(f"[NOTE: PDF has {total_pages} pages. Only first {MAX_PDF_PAGES} indexed.]")
 
             for page_num in range(num_pages):
                 page = pdf_reader.pages[page_num]
@@ -254,7 +290,8 @@ class DocumentParser:
         return {
             'content': content,
             'metadata': {
-                'pages': num_pages,
+                'pages': total_pages,
+                'pages_indexed': num_pages,
                 'file_type': 'pdf'
             }
         }
@@ -551,6 +588,144 @@ class DocumentParser:
                 'file_type': 'docx'
             }
         }
+
+    def _parse_html_bytes(self, file_bytes):
+        """Extract clean text from HTML"""
+        try:
+            from bs4 import BeautifulSoup
+            html = file_bytes.decode('utf-8', errors='ignore')
+            soup = BeautifulSoup(html, 'html.parser')
+            for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
+                tag.decompose()
+            text = soup.get_text(separator='\n', strip=True)
+            import re
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            return text
+        except Exception:
+            return file_bytes.decode('utf-8', errors='ignore')
+
+    def _parse_json_bytes(self, file_bytes):
+        """Extract readable content from JSON"""
+        import json as json_mod
+        try:
+            data = json_mod.loads(file_bytes.decode('utf-8', errors='ignore'))
+            return self._json_to_text(data, max_depth=5)
+        except (json_mod.JSONDecodeError, Exception):
+            return file_bytes.decode('utf-8', errors='ignore')
+
+    def _json_to_text(self, data, max_depth=5, depth=0, prefix=''):
+        """Convert JSON structure to readable text"""
+        if depth > max_depth:
+            return '[nested data truncated]'
+        parts = []
+        if isinstance(data, dict):
+            for key, value in list(data.items())[:100]:
+                if isinstance(value, (dict, list)):
+                    parts.append(f"{prefix}{key}:")
+                    parts.append(self._json_to_text(value, max_depth, depth + 1, prefix + '  '))
+                else:
+                    parts.append(f"{prefix}{key}: {value}")
+        elif isinstance(data, list):
+            for i, item in enumerate(data[:200]):
+                parts.append(f"{prefix}[{i}] {self._json_to_text(item, max_depth, depth + 1, prefix + '  ')}")
+        else:
+            return str(data)
+        return '\n'.join(parts)
+
+    def _parse_xml_bytes(self, file_bytes):
+        """Extract text content from XML"""
+        try:
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(file_bytes.decode('utf-8', errors='ignore'))
+            texts = []
+            for elem in root.iter():
+                if elem.text and elem.text.strip():
+                    tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+                    texts.append(f"{tag}: {elem.text.strip()}")
+                if elem.tail and elem.tail.strip():
+                    texts.append(elem.tail.strip())
+            return '\n'.join(texts[:5000])
+        except Exception:
+            return file_bytes.decode('utf-8', errors='ignore')
+
+    def _parse_rtf_bytes(self, file_bytes):
+        """Extract text from RTF files"""
+        try:
+            from striprtf.striprtf import rtf_to_text
+            rtf_content = file_bytes.decode('utf-8', errors='ignore')
+            return rtf_to_text(rtf_content)
+        except ImportError:
+            import re
+            text = file_bytes.decode('utf-8', errors='ignore')
+            text = re.sub(r'\\[a-z]+\d*\s?', '', text)
+            text = re.sub(r'[{}]', '', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+            return text if len(text) > 20 else None
+        except Exception:
+            return None
+
+    def _parse_image_bytes(self, file_bytes, filename):
+        """Describe image content using GPT-4o vision"""
+        import base64
+        try:
+            from openai import AzureOpenAI
+            client = AzureOpenAI(
+                azure_endpoint=os.environ.get('AZURE_OPENAI_ENDPOINT'),
+                api_key=os.environ.get('AZURE_OPENAI_API_KEY'),
+                api_version="2024-12-01-preview"
+            )
+            b64 = base64.b64encode(file_bytes).decode('utf-8')
+            ext = Path(filename).suffix.lower().lstrip('.')
+            mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp', 'bmp': 'image/bmp'}
+            mime = mime_map.get(ext, 'image/png')
+            response = client.chat.completions.create(
+                model=os.environ.get('AZURE_CHAT_DEPLOYMENT', 'gpt-5-chat'),
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this image in detail. Include any text, labels, data, charts, diagrams, or notable content. Be thorough and specific."},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                    ]
+                }],
+                max_tokens=1000
+            )
+            description = response.choices[0].message.content
+            return f"[Image: {filename}]\n{description}"
+        except Exception as e:
+            print(f"[DocumentParser] Image parsing error for {filename}: {e}")
+            return f"[Image file: {filename} — could not extract content]"
+
+    def _parse_audio_bytes(self, file_bytes, filename):
+        """Transcribe audio using Azure Whisper"""
+        ext = Path(filename).suffix.lower()
+        try:
+            from openai import AzureOpenAI
+            client = AzureOpenAI(
+                azure_endpoint=os.environ.get('AZURE_OPENAI_ENDPOINT'),
+                api_key=os.environ.get('AZURE_OPENAI_API_KEY'),
+                api_version="2024-12-01-preview"
+            )
+            if len(file_bytes) > 25 * 1024 * 1024:
+                return f"[Audio: {filename} — too large for transcription ({len(file_bytes) // (1024*1024)} MB, limit 25 MB)]"
+
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                    tmp.write(file_bytes)
+                    tmp_path = tmp.name
+                with open(tmp_path, 'rb') as audio_file:
+                    transcript = client.audio.transcriptions.create(
+                        model=os.environ.get('AZURE_WHISPER_DEPLOYMENT', 'whisper'),
+                        file=audio_file,
+                        response_format="text"
+                    )
+                return f"[Audio transcription: {filename}]\n{transcript}"
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+        except Exception as e:
+            print(f"[DocumentParser] Audio transcription error for {filename}: {e}")
+            return f"[Audio file: {filename} — transcription failed]"
 
     def parse_pdf_bytes(self, content: bytes) -> str:
         """
