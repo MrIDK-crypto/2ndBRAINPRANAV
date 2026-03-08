@@ -47,7 +47,6 @@ export default function CoWorkPlan({ steps }: CoWorkPlanProps) {
       flexDirection: 'column',
       height: '100%',
       backgroundColor: COLORS.cardBg,
-      borderLeft: `1px solid ${COLORS.border}`,
       fontFamily: FONT,
     }}>
       {/* Header */}

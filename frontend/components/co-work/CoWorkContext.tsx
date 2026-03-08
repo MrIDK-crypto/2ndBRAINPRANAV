@@ -110,7 +110,16 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
     }))
   }
 
-  const hasContent = brief || thinkingSteps.length > 0 || allSources.length > 0
+  // Deduplicate sources by title (same document may appear as multiple chunks)
+  const seen = new Set<string>()
+  const dedupedSources = allSources.filter(({ item }) => {
+    const title = (item.subject || item.title || item.name || '').toLowerCase().trim()
+    if (!title || seen.has(title)) return false
+    seen.add(title)
+    return true
+  })
+
+  const hasContent = brief || thinkingSteps.length > 0 || dedupedSources.length > 0
 
   return (
     <div style={{
@@ -118,7 +127,7 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
       flexDirection: 'column',
       height: '100%',
       backgroundColor: COLORS.cardBg,
-      borderLeft: `1px solid ${COLORS.border}`,
+      /* borderLeft handled by parent layout */
       fontFamily: FONT,
     }}>
       {/* Header */}
@@ -389,7 +398,7 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
             )}
 
             {/* ── Sources ── */}
-            {allSources.length > 0 && (
+            {dedupedSources.length > 0 && (
               <div>
                 <div style={{
                   display: 'flex',
@@ -412,12 +421,12 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                     borderRadius: '8px',
                     marginLeft: '4px',
                   }}>
-                    {allSources.length}
+                    {dedupedSources.length}
                   </span>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {allSources.map(({ item, type }, idx) => {
+                  {dedupedSources.map(({ item, type }, idx) => {
                     const isExpanded = expandedSource === idx
                     const title = item.subject || item.title || item.name || `Source ${idx + 1}`
                     // Only show score as percentage if it's a valid 0-1 similarity score

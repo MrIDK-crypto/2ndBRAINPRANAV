@@ -776,7 +776,9 @@ export default function CoWorkChat({
                   {!message.isUser && message.sources && message.sources.length > 0 && (
                     <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                       {message.sources
-                        .filter((source, idx, arr) => arr.findIndex(s => (s.subject || s.doc_id) === (source.subject || source.doc_id)) === idx)
+                        .filter((source, idx, arr) => arr.findIndex(s =>
+                          (s.subject || '').toLowerCase().trim() === (source.subject || '').toLowerCase().trim()
+                        ) === idx)
                         .slice(0, 5)
                         .map((source, idx) => {
                           const sourceViewUrl = source.source_url || null

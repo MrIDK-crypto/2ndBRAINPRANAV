@@ -35,6 +35,57 @@ export default function CoWorkPage() {
   const [researchBrief, setResearchBrief] = useState<ResearchBrief | null>(null)
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
 
+  // ── Right panel resize ──
+  const [rightPanelWidth, setRightPanelWidth] = useState(340)
+  const [isResizing, setIsResizing] = useState(false)
+  const [contextHeight, setContextHeight] = useState(50) // percentage of right panel
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isResizing) return
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = window.innerWidth - e.clientX
+      setRightPanelWidth(Math.max(260, Math.min(600, newWidth)))
+    }
+    const handleMouseUp = () => setIsResizing(false)
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing])
+
+  // Vertical divider drag for context/plan split
+  const [isVResizing, setIsVResizing] = useState(false)
+  const rightPanelRef = React.useRef<HTMLDivElement>(null)
+
+  const handleVMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsVResizing(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isVResizing) return
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!rightPanelRef.current) return
+      const rect = rightPanelRef.current.getBoundingClientRect()
+      const pct = ((e.clientY - rect.top) / rect.height) * 100
+      setContextHeight(Math.max(20, Math.min(80, pct)))
+    }
+    const handleMouseUp = () => setIsVResizing(false)
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isVResizing])
+
   // ── Auto-load most recent conversation on mount ──
   useEffect(() => {
     if (!token) return
@@ -225,7 +276,7 @@ export default function CoWorkPage() {
       {/* Top navigation */}
       <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
 
-      {/* 3-panel layout with history sidebar */}
+      {/* Layout: History sidebar + Chat + Right panel (Context + Plan stacked) */}
       <div style={{
         display: 'flex',
         flex: 1,
@@ -260,28 +311,66 @@ export default function CoWorkPage() {
           />
         </div>
 
-        {/* Context panel */}
-        <div style={{
-          width: '25%',
-          minWidth: '220px',
-          height: '100%',
-          overflow: 'hidden',
-        }}>
-          <CoWorkContext
-            thinkingSteps={thinkingSteps}
-            brief={researchBrief}
-            sources={contextSources}
-          />
-        </div>
+        {/* Resize handle (horizontal) */}
+        <div
+          onMouseDown={handleMouseDown}
+          style={{
+            width: '4px',
+            cursor: 'col-resize',
+            backgroundColor: isResizing ? COLORS.primary : 'transparent',
+            transition: isResizing ? 'none' : 'background-color 0.15s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => { if (!isResizing) e.currentTarget.style.backgroundColor = COLORS.border }}
+          onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.backgroundColor = 'transparent' }}
+        />
 
-        {/* Plan panel */}
-        <div style={{
-          width: '25%',
-          minWidth: '220px',
-          height: '100%',
-          overflow: 'hidden',
-        }}>
-          <CoWorkPlan steps={planSteps} />
+        {/* Right panel: Context (top) + Plan (bottom) */}
+        <div
+          ref={rightPanelRef}
+          style={{
+            width: `${rightPanelWidth}px`,
+            minWidth: '260px',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            borderLeft: `1px solid ${COLORS.border}`,
+          }}
+        >
+          {/* Context panel (top) */}
+          <div style={{
+            height: `${contextHeight}%`,
+            overflow: 'hidden',
+          }}>
+            <CoWorkContext
+              thinkingSteps={thinkingSteps}
+              brief={researchBrief}
+              sources={contextSources}
+            />
+          </div>
+
+          {/* Vertical resize handle */}
+          <div
+            onMouseDown={handleVMouseDown}
+            style={{
+              height: '4px',
+              cursor: 'row-resize',
+              backgroundColor: isVResizing ? COLORS.primary : COLORS.border,
+              flexShrink: 0,
+              transition: isVResizing ? 'none' : 'background-color 0.15s',
+            }}
+            onMouseEnter={(e) => { if (!isVResizing) e.currentTarget.style.backgroundColor = COLORS.primary }}
+            onMouseLeave={(e) => { if (!isVResizing) e.currentTarget.style.backgroundColor = COLORS.border }}
+          />
+
+          {/* Plan panel (bottom) */}
+          <div style={{
+            flex: 1,
+            overflow: 'hidden',
+          }}>
+            <CoWorkPlan steps={planSteps} />
+          </div>
         </div>
       </div>
     </div>
