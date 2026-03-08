@@ -650,11 +650,12 @@ export default function CoWorkChat({
             </div>
             <div>
               <h3 style={{
-                fontSize: '17px',
-                fontWeight: 600,
+                fontSize: '18px',
+                fontWeight: 700,
                 color: COLORS.textPrimary,
                 marginBottom: '6px',
-                fontFamily: "'Instrument Serif', Georgia, serif",
+                fontFamily: FONT,
+                letterSpacing: '-0.01em',
               }}>
                 Start a conversation
               </h3>

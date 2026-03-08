@@ -86,20 +86,26 @@ export default function CoWorkPage() {
     }
   }, [isVResizing])
 
-  // ── Auto-load most recent conversation on mount ──
+  // ── Load conversation on mount ──
+  // Fresh login → new chat (null). Navigate away & back → restore last chat.
   useEffect(() => {
     if (!token) return
-    fetch(`${API_BASE}/chat/conversations?limit=1`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success && data.conversations?.length > 0) {
-          setActiveConversationId(data.conversations[0].id)
-        }
-      })
-      .catch(() => {})
+
+    // Check if we've already visited co-work this session
+    const lastChatId = sessionStorage.getItem('cowork_last_chat')
+    if (lastChatId) {
+      // Returning to page — restore last conversation
+      setActiveConversationId(lastChatId)
+    }
+    // else: fresh login session — start with new chat (null)
   }, [token])
+
+  // Persist active conversation to sessionStorage
+  useEffect(() => {
+    if (activeConversationId) {
+      sessionStorage.setItem('cowork_last_chat', activeConversationId)
+    }
+  }, [activeConversationId])
 
   // ── Callbacks from chat panel ──
   const handlePlanUpdate = useCallback((steps: PlanStep[]) => {

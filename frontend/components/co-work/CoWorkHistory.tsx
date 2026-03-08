@@ -120,25 +120,27 @@ export default function CoWorkHistory({
             onClick={onNewChat}
             style={{
               width: '100%',
-              padding: '8px 10px',
+              padding: '9px 12px',
               borderRadius: '8px',
-              border: `1px dashed ${COLORS.border}`,
-              backgroundColor: 'transparent',
+              border: 'none',
+              backgroundColor: COLORS.primary,
               cursor: 'pointer',
               textAlign: 'left',
-              marginBottom: '6px',
+              marginBottom: '8px',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '6px',
-              color: COLORS.textMuted,
-              fontSize: '12px',
+              color: '#FFFFFF',
+              fontSize: '12.5px',
+              fontWeight: 600,
               fontFamily: FONT,
-              transition: 'all 0.15s',
+              transition: 'background-color 0.15s',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = COLORS.primary; e.currentTarget.style.color = COLORS.primary }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.color = COLORS.textMuted }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = COLORS.primaryHover }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = COLORS.primary }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             New Chat
