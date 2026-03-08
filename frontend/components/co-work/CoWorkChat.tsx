@@ -63,6 +63,8 @@ interface CoWorkChatProps {
   onThinkingStep: (step: ThinkingStep) => void
   onContextUpdate: (ctx: ContextData) => void
   onBriefUpdate: (brief: ResearchBrief) => void
+  conversationId?: string | null
+  onConversationChange?: (id: string) => void
 }
 
 export default function CoWorkChat({
@@ -72,6 +74,8 @@ export default function CoWorkChat({
   onThinkingStep,
   onContextUpdate,
   onBriefUpdate,
+  conversationId: propConversationId,
+  onConversationChange,
 }: CoWorkChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -80,6 +84,8 @@ export default function CoWorkChat({
   const [streamingText, setStreamingText] = useState('')
   const [streamingSources, setStreamingSources] = useState<any[]>([])
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(propConversationId || null)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -95,6 +101,53 @@ export default function CoWorkChat({
   useEffect(() => {
     scrollToBottom()
   }, [messages, streamingText, scrollToBottom])
+
+  // ── Conversation persistence ──
+  const loadConversation = useCallback(async (convId: string) => {
+    if (!token) return
+    setIsLoadingHistory(true)
+    try {
+      const res = await fetch(`${apiBase}/chat/conversations/${convId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (data.success && data.conversation?.messages) {
+        const loaded: Message[] = data.conversation.messages.map((m: any) => ({
+          id: m.id,
+          text: m.content,
+          isUser: m.role === 'user',
+          sources: m.sources || [],
+        }))
+        setMessages(loaded)
+      }
+    } catch (e) {
+      console.error('[Chat] Failed to load conversation:', e)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }, [apiBase, token])
+
+  // Load conversation when prop changes
+  useEffect(() => {
+    if (propConversationId && propConversationId !== conversationId) {
+      setConversationId(propConversationId)
+      loadConversation(propConversationId)
+    } else if (propConversationId === null && conversationId !== null) {
+      // New chat requested
+      setConversationId(null)
+      setMessages([])
+    }
+  }, [propConversationId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleNewChat = useCallback(() => {
+    setMessages([])
+    setConversationId(null)
+    onConversationChange?.('')
+    planStepsRef.current = []
+    thinkingStepsRef.current = []
+    onPlanUpdate([])
+    onContextUpdate({ documents: [], pubmed_papers: [], journals: [], experiments: [] })
+  }, [onConversationChange, onPlanUpdate, onContextUpdate])
 
   // ── File handling ──
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,6 +277,33 @@ export default function CoWorkChat({
       content: m.text,
     }))
     history.push({ role: 'user', content: queryText })
+
+    // ── Persist: create conversation on first message ──
+    let activeConvId = conversationId
+    if (!activeConvId && token) {
+      try {
+        const res = await fetch(`${apiBase}/chat/conversations`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: queryText.slice(0, 100) })
+        })
+        const data = await res.json()
+        if (data.success) {
+          activeConvId = data.conversation.id
+          setConversationId(activeConvId)
+          onConversationChange?.(activeConvId!)
+        }
+      } catch (e) { console.error('[Chat] Failed to create conversation:', e) }
+    }
+
+    // Save user message
+    if (activeConvId && token) {
+      fetch(`${apiBase}/chat/conversations/${activeConvId}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'user', content: queryText })
+      }).catch(e => console.error('[Chat] Failed to save user message:', e))
+    }
 
     try {
       const aiMessageId = (Date.now() + 1).toString()
@@ -373,6 +453,15 @@ export default function CoWorkChat({
                 onThinkingStep({ ...step, status: 'done' })
               }
 
+              // Persist assistant message
+              if (activeConvId && token) {
+                fetch(`${apiBase}/chat/conversations/${activeConvId}/messages`, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ role: 'assistant', content: cleanedAnswer, sources: localSources })
+                }).catch(e => console.error('[Chat] Failed to save assistant message:', e))
+              }
+
             } else if (eventType === 'thinking') {
               // Forward thinking events and track in ref
               const step: ThinkingStep = {
@@ -472,7 +561,31 @@ export default function CoWorkChat({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
         </svg>
-        <span style={{ fontSize: '15px', fontWeight: 600, color: COLORS.textPrimary }}>Chat</span>
+        <span style={{ fontSize: '15px', fontWeight: 600, color: COLORS.textPrimary, flex: 1 }}>Chat</span>
+        <button
+          onClick={handleNewChat}
+          style={{
+            padding: '5px 12px',
+            borderRadius: '8px',
+            border: `1px solid ${COLORS.border}`,
+            backgroundColor: COLORS.cardBg,
+            color: COLORS.textSecondary,
+            fontSize: '12px',
+            cursor: 'pointer',
+            fontFamily: FONT,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = COLORS.primary; e.currentTarget.style.color = COLORS.primary }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.color = COLORS.textSecondary }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New
+        </button>
       </div>
 
       {/* Messages area */}
@@ -639,6 +752,24 @@ export default function CoWorkChat({
                               <span style={{ maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {source.subject?.split('/').pop() || source.subject || `Source ${idx + 1}`}
                               </span>
+                              {source.source_origin_label && (
+                                <span style={{
+                                  fontSize: '9px',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  backgroundColor: {
+                                    user_kb: '#9CB896',
+                                    ctsi: '#7BA7C9',
+                                    pubmed: COLORS.primary,
+                                    journal: '#B39DDB',
+                                    reproducibility: '#FFB74D',
+                                  }[source.source_origin as string] || '#E0E0E0',
+                                  color: '#FFFFFF',
+                                  fontWeight: 600,
+                                }}>
+                                  {source.source_origin_label}
+                                </span>
+                              )}
                             </a>
                           )
                         })}

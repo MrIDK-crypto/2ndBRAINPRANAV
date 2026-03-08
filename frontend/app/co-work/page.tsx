@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import TopNav from '@/components/shared/TopNav'
 import CoWorkChat from '@/components/co-work/CoWorkChat'
 import CoWorkPlan from '@/components/co-work/CoWorkPlan'
 import CoWorkContext from '@/components/co-work/CoWorkContext'
+import CoWorkHistory from '@/components/co-work/CoWorkHistory'
 
 import type { PlanStep, ThinkingStep, ContextData, ResearchBrief } from '@/components/co-work/CoWorkChat'
 
@@ -32,6 +33,22 @@ export default function CoWorkPage() {
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([])
   const [contextSources, setContextSources] = useState<ContextData | null>(null)
   const [researchBrief, setResearchBrief] = useState<ResearchBrief | null>(null)
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+
+  // ── Auto-load most recent conversation on mount ──
+  useEffect(() => {
+    if (!token) return
+    fetch(`${API_BASE}/chat/conversations?limit=1`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.conversations?.length > 0) {
+          setActiveConversationId(data.conversations[0].id)
+        }
+      })
+      .catch(() => {})
+  }, [token])
 
   // ── Callbacks from chat panel ──
   const handlePlanUpdate = useCallback((steps: PlanStep[]) => {
@@ -40,7 +57,6 @@ export default function CoWorkPage() {
 
   const handleThinkingStep = useCallback((step: ThinkingStep) => {
     setThinkingSteps(prev => {
-      // If the step already exists (same type), update its status
       const existingIdx = prev.findIndex(s => s.type === step.type && s.text === step.text)
       if (existingIdx >= 0) {
         const updated = [...prev]
@@ -54,7 +70,6 @@ export default function CoWorkPage() {
   const handleContextUpdate = useCallback((ctx: ContextData) => {
     setContextSources(prev => {
       if (!prev) return ctx
-      // Merge sources
       return {
         documents: [...(prev.documents || []), ...(ctx.documents || [])],
         pubmed_papers: [...(prev.pubmed_papers || []), ...(ctx.pubmed_papers || [])],
@@ -66,6 +81,23 @@ export default function CoWorkPage() {
 
   const handleBriefUpdate = useCallback((brief: ResearchBrief) => {
     setResearchBrief(brief)
+  }, [])
+
+  const handleSelectConversation = useCallback((id: string) => {
+    setActiveConversationId(id)
+    // Reset side panels when switching conversations
+    setPlanSteps([])
+    setThinkingSteps([])
+    setContextSources(null)
+    setResearchBrief(null)
+  }, [])
+
+  const handleNewChat = useCallback(() => {
+    setActiveConversationId(null)
+    setPlanSteps([])
+    setThinkingSteps([])
+    setContextSources(null)
+    setResearchBrief(null)
   }, [])
 
   // ── Loading state ──
@@ -193,23 +225,34 @@ export default function CoWorkPage() {
       {/* Top navigation */}
       <TopNav userName={user?.full_name?.split(' ')[0] || 'User'} />
 
-      {/* 3-panel layout */}
+      {/* 3-panel layout with history sidebar */}
       <div style={{
         display: 'flex',
         flex: 1,
         height: 'calc(100vh - 60px)',
         overflow: 'hidden',
       }}>
-        {/* Left: Chat panel (~40%) */}
+        {/* History sidebar */}
+        <CoWorkHistory
+          apiBase={API_BASE}
+          token={token}
+          activeConversationId={activeConversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={handleNewChat}
+        />
+
+        {/* Chat panel */}
         <div style={{
-          width: '40%',
-          minWidth: '340px',
+          flex: 1,
+          minWidth: '300px',
           height: '100%',
           overflow: 'hidden',
         }}>
           <CoWorkChat
             apiBase={API_BASE}
             token={token}
+            conversationId={activeConversationId}
+            onConversationChange={(id) => setActiveConversationId(id || null)}
             onPlanUpdate={handlePlanUpdate}
             onThinkingStep={handleThinkingStep}
             onContextUpdate={handleContextUpdate}
@@ -217,10 +260,10 @@ export default function CoWorkPage() {
           />
         </div>
 
-        {/* Middle: Context panel (~30%) */}
+        {/* Context panel */}
         <div style={{
-          width: '30%',
-          minWidth: '240px',
+          width: '25%',
+          minWidth: '220px',
           height: '100%',
           overflow: 'hidden',
         }}>
@@ -231,10 +274,10 @@ export default function CoWorkPage() {
           />
         </div>
 
-        {/* Right: Plan panel (~30%) */}
+        {/* Plan panel */}
         <div style={{
-          width: '30%',
-          minWidth: '240px',
+          width: '25%',
+          minWidth: '220px',
           height: '100%',
           overflow: 'hidden',
         }}>

@@ -1590,7 +1590,7 @@ class EnhancedSearchService:
             }
         }
 
-    def _get_mode_config(self, response_mode: int, query: str, context: str):
+    def _get_mode_config(self, response_mode: int, query: str, context: str, user_context: dict = None):
         """
         Get system prompt, user instruction, temperature, max_tokens, and frequency_penalty based on response mode.
         Mode 1: Sources — just document titles/links, no AI answer
@@ -1635,8 +1635,21 @@ End with "Sources Used: [list numbers]"."""
             return system_prompt, user_instruction, 0.1, 500, 0.8
 
         else:  # Mode 3 (default) — current full behavior: in-depth with insights
-            system_prompt = """You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
+            # Build user context section
+            user_context_section = ""
+            if user_context:
+                parts = []
+                if user_context.get('user_name'):
+                    parts.append(f"- The user's name is {user_context['user_name']}")
+                if user_context.get('organization'):
+                    parts.append(f"- They belong to organization: {user_context['organization']}")
+                if user_context.get('data_summary'):
+                    parts.append(f"- Their knowledge base contains: {user_context['data_summary']}")
+                if parts:
+                    user_context_section = "\nUSER CONTEXT:\n" + "\n".join(parts) + "\nUse this context to understand references like 'my files', 'our lab', 'my data', etc.\n"
 
+            system_prompt = f"""You are a precise knowledge assistant. You ONLY answer based on the provided source documents.
+{user_context_section}
 CRITICAL ACCURACY RULES (NEVER VIOLATE):
 1. **ONLY use information explicitly stated in the sources** - Never infer, assume, or add information not in the sources
 2. **If sources don't contain the answer, say so clearly** - "Based on the provided documents, I don't have information about [topic]."
@@ -1662,19 +1675,22 @@ CITATION FORMAT:
 - For code snippets, cite the source file: [Source 3: filename.py]
 - If combining info from multiple sources, cite all: [Source 1, 2]
 
+SOURCE ATTRIBUTION (ALWAYS clearly indicate data origin):
+- Each source document has a tag like [Your KB], [CTSI Research], [PubMed], [Journal DB], or [Repro Archive]
+- When presenting information, make it clear where it comes from:
+  - "From your uploaded documents..." or "Your knowledge base shows..." for [Your KB] sources
+  - "From CTSI research data..." for [CTSI Research] sources
+  - "According to the reproducibility archive..." for [Repro Archive] sources
+  - "PubMed research indicates..." for [PubMed] sources
+- If mixing sources from different origins, clearly separate the information by origin
+
 HONESTY REQUIREMENTS:
 - If asked about something not in sources: "I don't have that information in my knowledge base."
 - If sources are unclear or contradictory: Acknowledge the uncertainty
 - If you can only partially answer: State what you know and what's missing
 - Never make up examples, URLs, or specific details
 
-When citing information, indicate the source type:
-- [KB] for knowledge base documents
-- [PubMed] for academic papers
-- [Journal DB] for journal database entries
-- [Repro Archive] for reproducibility archive experiments
-
-Your goal: Accurate, helpful answers grounded STRICTLY in source documents."""
+Your goal: Accurate, helpful answers grounded STRICTLY in source documents with clear attribution of where each piece of information comes from."""
 
             user_instruction = """Provide a DETAILED, well-formatted answer:
 - Use numbered steps for processes/procedures
@@ -1693,7 +1709,8 @@ End with "Sources Used: [list numbers]"."""
         validate: bool = True,
         max_context_tokens: int = 12000,
         conversation_history: list = None,
-        response_mode: int = 3
+        response_mode: int = 3,
+        user_context: dict = None
     ) -> Dict:
         """
         Generate answer with strict citation enforcement and conversation context.
@@ -1748,9 +1765,20 @@ End with "Sources Used: [list numbers]"."""
                 else:
                     break
 
+            # Determine source origin tag
+            origin_tag = "[Your KB]"
+            if result.get('is_shared'):
+                origin_tag = "[CTSI Research]"
+            elif result.get('source_type') == 'pubmed':
+                origin_tag = "[PubMed]"
+            elif result.get('source_type') == 'journal':
+                origin_tag = "[Journal DB]"
+            elif result.get('source_type') == 'experiment':
+                origin_tag = "[Repro Archive]"
+
             source_idx = len(context_parts) + 1
             context_parts.append(
-                f"[Source {source_idx}] (Relevance: {score:.2%})\n"
+                f"[Source {source_idx}] {origin_tag} (Relevance: {score:.2%})\n"
                 f"Title: {title}\n"
                 f"Content: {content}\n"
             )
@@ -1760,7 +1788,7 @@ End with "Sources Used: [list numbers]"."""
         context = "\n---\n".join(context_parts)
 
         # Get mode-specific prompt configuration
-        system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context)
+        system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context, user_context=user_context)
 
         # Build conversation context if history exists
         conversation_context = ""
@@ -1945,7 +1973,8 @@ CURRENT QUESTION: {query}
         search_results: Dict,
         max_context_tokens: int = 12000,
         conversation_history: list = None,
-        response_mode: int = 3
+        response_mode: int = 3,
+        user_context: dict = None
     ):
         """
         Generate answer with STREAMING - yields chunks as they arrive.
@@ -1981,8 +2010,19 @@ CURRENT QUESTION: {query}
                 else:
                     break
 
+            # Determine source origin tag
+            origin_tag = "[Your KB]"
+            if result.get('is_shared'):
+                origin_tag = "[CTSI Research]"
+            elif result.get('source_type') == 'pubmed':
+                origin_tag = "[PubMed]"
+            elif result.get('source_type') == 'journal':
+                origin_tag = "[Journal DB]"
+            elif result.get('source_type') == 'experiment':
+                origin_tag = "[Repro Archive]"
+
             context_parts.append(
-                f"[Source {i}] (Relevance: {score:.2%})\n"
+                f"[Source {i}] {origin_tag} (Relevance: {score:.2%})\n"
                 f"Title: {title}\n"
                 f"Content: {content}\n"
             )
@@ -1991,7 +2031,7 @@ CURRENT QUESTION: {query}
         context = "\n---\n".join(context_parts)
 
         # Get mode-specific prompt configuration
-        system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context)
+        system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context, user_context=user_context)
 
         conversation_context = ""
         if conversation_history and len(conversation_history) > 0:
@@ -2071,7 +2111,8 @@ CURRENT QUESTION: {query}
         top_k: int = 10,
         conversation_history: list = None,
         boost_doc_ids: list = None,
-        response_mode: int = 3
+        response_mode: int = 3,
+        user_context: dict = None
     ):
         """
         Complete RAG pipeline with STREAMING response.
@@ -2129,7 +2170,8 @@ CURRENT QUESTION: {query}
             query=query,
             search_results=search_results,
             conversation_history=conversation_history or [],
-            response_mode=response_mode
+            response_mode=response_mode,
+            user_context=user_context
         ):
             yield event
 

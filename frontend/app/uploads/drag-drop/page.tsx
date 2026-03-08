@@ -373,9 +373,9 @@ export default function DragDropUploadPage() {
       }}>
         {/* Page heading */}
         <h1 style={{
-          fontFamily: DISPLAY_FONT,
-          fontSize: '32px',
-          fontWeight: 400,
+          fontFamily: FONT,
+          fontSize: '28px',
+          fontWeight: 700,
           color: COLORS.textPrimary,
           marginBottom: '8px',
           letterSpacing: '-0.3px',

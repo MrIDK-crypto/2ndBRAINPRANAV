@@ -1607,7 +1607,7 @@ def search_stream():
     - event: error - Error occurred
     """
     from vector_stores.pinecone_store import get_hybrid_store
-    from database.models import SessionLocal, Document, Tenant
+    from database.models import SessionLocal, Document, Tenant, User
 
     tenant_id = g.tenant_id
     print(f"[SEARCH-STREAM] Tenant: {tenant_id}", flush=True)
@@ -1670,6 +1670,44 @@ def search_stream():
             from services.enhanced_search_service import get_enhanced_search_service
             enhanced_service = get_enhanced_search_service()
 
+            # Build user context for RAG personalization
+            user_context = {}
+            try:
+                user_obj = db.query(User).filter(User.id == g.user_id).first()
+                if user_obj:
+                    user_context['user_name'] = user_obj.full_name
+                if tenant:
+                    user_context['organization'] = tenant.name
+
+                # Build data inventory summary
+                from sqlalchemy import func as sqlfunc
+                doc_counts = db.query(
+                    Document.source_type,
+                    sqlfunc.count(Document.id)
+                ).filter(
+                    Document.tenant_id == tenant_id
+                ).group_by(Document.source_type).all()
+
+                if doc_counts:
+                    summary_parts = []
+                    type_labels = {
+                        'email': 'emails', 'message': 'Slack messages',
+                        'file': 'uploaded files', 'document': 'documents',
+                        'grant': 'grant documents',
+                    }
+                    for source_type, count in doc_counts:
+                        label = type_labels.get(source_type, f'{source_type} items')
+                        summary_parts.append(f"{count} {label}")
+                    user_context['data_summary'] = ", ".join(summary_parts)
+
+                # Recent doc titles for reference resolution
+                recent_docs = db.query(Document.title).filter(
+                    Document.tenant_id == tenant_id
+                ).order_by(Document.created_at.desc()).limit(10).all()
+                user_context['recent_doc_titles'] = [d.title for d in recent_docs if d.title]
+            except Exception as uctx_err:
+                print(f"[SEARCH-STREAM] Error building user context: {uctx_err}", flush=True)
+
             print(f"[SEARCH-STREAM] Starting (mode={response_mode}): '{query}'", flush=True)
 
             # Thinking: expanding query
@@ -1683,7 +1721,8 @@ def search_stream():
                 top_k=top_k,
                 conversation_history=conversation_history,
                 boost_doc_ids=boost_doc_ids,
-                response_mode=response_mode
+                response_mode=response_mode,
+                user_context=user_context
             ):
                 event_type = event.get('type')
 
@@ -1702,6 +1741,17 @@ def search_stream():
                         except Exception:
                             pass
 
+                    # Build doc source_type lookup for origin tagging
+                    doc_source_type_map = {}
+                    if doc_ids:
+                        try:
+                            docs_with_types = db.query(Document.id, Document.source_type).filter(
+                                Document.id.in_(doc_ids)
+                            ).all()
+                            doc_source_type_map = {str(d.id): d.source_type for d in docs_with_types}
+                        except Exception:
+                            pass
+
                     for src in raw_sources:
                         doc_id = src.get('doc_id', '')
                         is_shared = src.get('is_shared', False)
@@ -1715,8 +1765,24 @@ def search_stream():
                             source_entry["source_url"] = src.get('source_url', '')
                             source_entry["is_shared"] = True
                             source_entry["facility_name"] = src.get('facility_name', '')
+                            source_entry["source_origin"] = "ctsi"
+                            source_entry["source_origin_label"] = "CTSI Research"
                         else:
                             source_entry["source_url"] = source_url_map.get(doc_id, '')
+                            # Determine origin from source_type
+                            doc_st = doc_source_type_map.get(doc_id, '')
+                            if doc_st == 'pubmed':
+                                source_entry["source_origin"] = "pubmed"
+                                source_entry["source_origin_label"] = "PubMed"
+                            elif doc_st == 'journal':
+                                source_entry["source_origin"] = "journal"
+                                source_entry["source_origin_label"] = "Journal DB"
+                            elif doc_st == 'experiment':
+                                source_entry["source_origin"] = "reproducibility"
+                                source_entry["source_origin_label"] = "Repro Archive"
+                            else:
+                                source_entry["source_origin"] = "user_kb"
+                                source_entry["source_origin_label"] = "Your KB"
                         sources_for_response.append(source_entry)
 
                     # Thinking: report search results found
