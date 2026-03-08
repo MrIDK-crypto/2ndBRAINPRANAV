@@ -1327,8 +1327,8 @@ class EnhancedSearchService:
         if any(p in q_lower for p in protocol_patterns):
             return {'user_kb': 0.6, 'ctsi': 0.15, 'pubmed': 0.15, 'journals': 0.1}
 
-        # Default balanced
-        return {'user_kb': 0.5, 'ctsi': 0.15, 'pubmed': 0.2, 'journals': 0.15}
+        # Default — strongly favor user KB, only light external augmentation
+        return {'user_kb': 0.7, 'ctsi': 0.15, 'pubmed': 0.1, 'journals': 0.05}
 
     def _decompose_query(self, query: str) -> list:
         """Break complex queries into searchable sub-queries using LLM.
@@ -1601,8 +1601,9 @@ class EnhancedSearchService:
                 # Shared search failure must never break tenant search
                 print(f"[EnhancedSearch] Shared namespace query failed (non-fatal): {e}")
 
-        # Step 2c: OpenAlex academic paper search for literature queries
-        if source_weights.get('pubmed', 0) > 0.1:
+        # Step 2c: OpenAlex academic paper search for explicit literature queries only
+        # Only trigger for strong literature intent (>0.3) to avoid polluting personal/general queries
+        if source_weights.get('pubmed', 0) > 0.3:
             try:
                 from services.openalex_search_service import OpenAlexSearchService
                 openalex = OpenAlexSearchService()
@@ -1610,13 +1611,17 @@ class EnhancedSearchService:
                 openalex_results = openalex.search_works(query, max_results=openalex_k)
                 print(f"[EnhancedSearch] OpenAlex returned {len(openalex_results)} papers")
 
-                # Convert to source format matching KB results
+                # Convert to source format matching KB results — skip papers without abstracts
+                added = 0
                 for paper in openalex_results:
+                    abstract = paper.get('abstract', '')
+                    if not abstract or len(abstract) < 50:
+                        continue  # Skip papers without meaningful abstracts
                     initial_results.append({
                         'doc_id': paper['openalex_id'],
                         'title': paper['title'],
-                        'content': paper.get('abstract', ''),
-                        'score': 0.5,  # Neutral score, let reranker decide
+                        'content': abstract,
+                        'score': 0.45,  # Slightly below neutral so KB results get priority
                         'source_origin': 'openalex',
                         'source_origin_label': 'OpenAlex',
                         'source_url': paper.get('doi', ''),
@@ -1628,6 +1633,9 @@ class EnhancedSearchService:
                             'cited_by_count': paper.get('cited_by_count', 0),
                         }
                     })
+                    added += 1
+                if added < len(openalex_results):
+                    print(f"[EnhancedSearch] Skipped {len(openalex_results) - added} OpenAlex papers without abstracts")
             except Exception as e:
                 print(f"[EnhancedSearch] OpenAlex search failed (non-critical): {e}")
 
@@ -2040,6 +2048,8 @@ End with "Sources Used: [list numbers]"."""
             origin_tag = "[Your KB]"
             if result.get('is_shared'):
                 origin_tag = "[CTSI Research]"
+            elif result.get('source_origin') == 'openalex':
+                origin_tag = "[OpenAlex]"
             elif result.get('source_type') == 'pubmed':
                 origin_tag = "[PubMed]"
             elif result.get('source_type') == 'journal':
@@ -2293,6 +2303,8 @@ CURRENT QUESTION: {query}
             origin_tag = "[Your KB]"
             if result.get('is_shared'):
                 origin_tag = "[CTSI Research]"
+            elif result.get('source_origin') == 'openalex':
+                origin_tag = "[OpenAlex]"
             elif result.get('source_type') == 'pubmed':
                 origin_tag = "[PubMed]"
             elif result.get('source_type') == 'journal':
