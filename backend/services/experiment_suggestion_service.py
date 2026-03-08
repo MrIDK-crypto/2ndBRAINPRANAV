@@ -109,3 +109,27 @@ Keep suggestions practical and actionable.'''
         except Exception as e:
             print(f"[ExperimentSuggestion] LLM call failed: {e}")
             return []
+
+    def suggest_experiments_with_feasibility(self, research_question: str,
+                                             available_resources: list = None,
+                                             existing_results: list = None,
+                                             constraints: dict = None) -> list:
+        """Suggest experiments and score each for feasibility.
+
+        Returns suggestions sorted by feasibility (highest first).
+        """
+        suggestions = self.suggest_experiments(
+            research_question, available_resources, existing_results, constraints
+        )
+
+        from services.feasibility_scorer import FeasibilityScorer
+        scorer = FeasibilityScorer()
+
+        for suggestion in suggestions:
+            suggestion['feasibility'] = scorer.score(
+                suggestion, available_resources or [], constraints or {}
+            )
+
+        # Sort by feasibility (highest first)
+        suggestions.sort(key=lambda s: s.get('feasibility', {}).get('overall', 0), reverse=True)
+        return suggestions

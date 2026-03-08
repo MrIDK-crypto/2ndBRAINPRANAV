@@ -41,7 +41,7 @@ def suggest_experiments():
     from services.experiment_suggestion_service import ExperimentSuggestionService
     client = get_azure_client()
     service = ExperimentSuggestionService(client, AZURE_CHAT_DEPLOYMENT)
-    suggestions = service.suggest_experiments(question, resources, constraints=constraints)
+    suggestions = service.suggest_experiments_with_feasibility(question, resources, constraints=constraints)
 
     return jsonify({
         'suggestions': suggestions,
