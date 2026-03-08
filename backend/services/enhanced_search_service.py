@@ -1297,6 +1297,7 @@ class EnhancedSearchService:
     def _classify_query_intent(self, query: str) -> dict:
         """Classify query to determine optimal source mix.
         Returns dict of source weights {user_kb, ctsi, pubmed, journals} summing to ~1.0
+        Plus optional 'special_mode' key for routing to specialized services.
         """
         q_lower = query.lower()
 
@@ -1309,6 +1310,33 @@ class EnhancedSearchService:
                             'what documents', 'tell me about my']
         if any(p in q_lower for p in personal_patterns):
             return {'user_kb': 1.0, 'ctsi': 0.0, 'pubmed': 0.0, 'journals': 0.0}
+
+        # JOURNAL/PUBLICATION queries — trigger journal analysis mode
+        journal_patterns = ['which journal', 'what journal', 'where should i publish',
+                          'where to publish', 'where to submit', 'where should i submit',
+                          'submit this to', 'submit to', 'journal recommend',
+                          'best journal', 'target journal', 'high impact journal',
+                          'publication venue', 'suitable journal', 'good journal for',
+                          'impact factor', 'journal suggestion', 'journal match',
+                          'journal fit']
+        if any(p in q_lower for p in journal_patterns):
+            return {'user_kb': 0.6, 'ctsi': 0.0, 'pubmed': 0.2, 'journals': 0.2,
+                    'special_mode': 'journal_analysis'}
+
+        # METHODOLOGY GAP queries — trigger methodology analysis mode
+        methodology_patterns = ['methodology gap', 'method gap', 'methodology issue',
+                              'methodology improvement', 'improve the method',
+                              'weakness in method', 'limitation of method',
+                              'reviewer will flag', 'reviewer concern',
+                              'what are the gaps', 'missing methodology',
+                              'methodology check', 'manuscript check',
+                              'paper ready', 'is my paper ready',
+                              'red flag', 'improve my paper', 'improve this paper',
+                              'what improvements', 'new experiments',
+                              'what experiments']
+        if any(p in q_lower for p in methodology_patterns):
+            return {'user_kb': 0.7, 'ctsi': 0.0, 'pubmed': 0.2, 'journals': 0.1,
+                    'special_mode': 'methodology_analysis'}
 
         # Literature queries — heavy PubMed/journals
         literature_patterns = ['literature', 'published', 'studies show', 'research says',
@@ -2323,8 +2351,45 @@ CURRENT QUESTION: {query}
 
         context = "\n---\n".join(context_parts)
 
+        # Inject journal analysis context if available
+        journal_analysis = search_results.get('journal_analysis')
+        journal_context = ""
+        if journal_analysis:
+            journal_context = self._build_journal_context(journal_analysis)
+            print(f"[Stream] Injecting journal analysis context ({len(journal_context)} chars)")
+
         # Get mode-specific prompt configuration
         system_prompt, user_instruction, temperature, max_tokens, freq_penalty = self._get_mode_config(response_mode, query, context, user_context=user_context)
+
+        # If journal analysis is present, enhance the system prompt
+        if journal_analysis:
+            special_mode = 'journal_analysis' if any(p in query.lower() for p in ['journal', 'publish', 'submit']) else 'methodology_analysis'
+            if special_mode == 'journal_analysis':
+                system_prompt += """
+
+JOURNAL ANALYSIS MODE:
+You have access to journal analysis results from the High-Impact Journal Predictor.
+Use this data to give specific, data-driven journal recommendations.
+Structure your response as:
+1. Recommended journals (from both citation neighborhood and keyword matching)
+2. Why each journal is a good fit (based on the analysis data)
+3. Any methodology gaps the user should address before submission
+4. Suggested improvements to strengthen the manuscript
+Always cite the specific analysis data (e.g., "appears in X reference neighborhoods").
+"""
+            else:
+                system_prompt += """
+
+METHODOLOGY ANALYSIS MODE:
+You have access to methodology gap analysis results from the Journal Scorer.
+Use this data to give specific, actionable improvement recommendations.
+Structure your response as:
+1. Methodology gaps detected (with severity levels)
+2. Specific recommendations for each gap
+3. Suggested experiments or analyses to strengthen the paper
+4. Overall assessment of manuscript readiness
+Be specific and practical — tell the user exactly what to add or fix.
+"""
 
         conversation_context = ""
         if conversation_history and len(conversation_history) > 0:
@@ -2337,7 +2402,7 @@ CURRENT QUESTION: {query}
 
         user_prompt = f"""{conversation_context}SOURCE DOCUMENTS:
 {context}
-
+{journal_context}
 CURRENT QUESTION: {query}
 
 {user_instruction}"""
@@ -2400,6 +2465,137 @@ CURRENT QUESTION: {query}
             yield {'type': 'chunk', 'content': f"Error generating answer: {str(e)}"}
             yield {'type': 'done', 'confidence': 0.0, 'sources': [], 'error': str(e)}
 
+    def _run_journal_analysis(self, doc_text: str, doc_title: str) -> dict:
+        """Run lightweight journal analysis on a document's text.
+
+        Uses the journal scorer service's methods for:
+        - Field detection (LLM-based)
+        - Citation neighbor journal matching (OpenAlex)
+        - Methodology gap detection (pattern-based)
+        - Keyword-based journal matching (OpenAlex professor pipeline)
+
+        Returns dict with analysis results to inject into RAG context.
+        """
+        try:
+            from services.journal_scorer_service import get_journal_scorer_service, FIELD_CONFIGS
+            scorer = get_journal_scorer_service()
+
+            # Use first 8000 chars for field detection (LLM call)
+            text_excerpt = doc_text[:8000]
+            field_result = scorer._detect_field(text_excerpt)
+            field = field_result.get('field', 'economics')
+            field_label = FIELD_CONFIGS.get(field, {}).get('label', field)
+            keywords = field_result.get('keywords', [])
+            print(f"[JournalAnalysis] Detected field: {field_label}, keywords: {keywords[:5]}")
+
+            # Detect methodology gaps (fast, pattern-based)
+            gaps = scorer._detect_methodology_gaps(doc_text, field)
+            print(f"[JournalAnalysis] Found {len(gaps)} methodology gaps")
+
+            # Extract references for citation neighborhood
+            ref_queries = []
+            import re as _re
+            doi_pattern = r'10\.\d{4,}/[^\s]+'
+            dois = _re.findall(doi_pattern, doc_text)
+            ref_queries = dois[:10]
+
+            # Try to find reference section for more reference strings
+            ref_section_text = ''
+            for marker in ['References', 'Bibliography', 'Works Cited', 'Literature Cited']:
+                idx = doc_text.lower().rfind(marker.lower())
+                if idx > 0:
+                    ref_section_text = doc_text[idx:idx+5000]
+                    break
+
+            if ref_section_text and len(ref_queries) < 5:
+                ref_lines = [l.strip() for l in ref_section_text.split('\n')
+                             if len(l.strip()) > 30 and any(c.isdigit() for c in l[:20])]
+                ref_queries.extend(ref_lines[:10])
+
+            print(f"[JournalAnalysis] Found {len(ref_queries)} references")
+
+            neighbor_journals = []
+            if ref_queries:
+                try:
+                    neighbor_journals = scorer._find_citation_neighbor_journals(ref_queries, field)
+                    print(f"[JournalAnalysis] Found {len(neighbor_journals)} neighbor journals")
+                except Exception as e:
+                    print(f"[JournalAnalysis] Citation neighbor error: {e}")
+
+            # Keyword-based journal matching (professor pipeline via OpenAlex)
+            keyword_journals = []
+            if keywords and len(keywords) >= 3:
+                try:
+                    journal_data = scorer._match_journals_by_keywords(keywords, field, tier=2)
+                    # Flatten the primary + stretch + safe matches
+                    for category in ['primary_matches', 'stretch_matches', 'safe_matches']:
+                        for j in journal_data.get(category, []):
+                            keyword_journals.append({
+                                'name': j.get('name', 'Unknown'),
+                                'category': category.replace('_matches', ''),
+                                'relevance_score': j.get('relevance_score', 0),
+                                'h_index': j.get('h_index', 0),
+                            })
+                    print(f"[JournalAnalysis] Found {len(keyword_journals)} keyword-matched journals")
+                except Exception as e:
+                    print(f"[JournalAnalysis] Keyword journal match error: {e}")
+
+            return {
+                'field': field,
+                'field_label': field_label,
+                'keywords': keywords[:10],
+                'methodology_gaps': gaps,
+                'citation_neighbor_journals': neighbor_journals,
+                'keyword_journals': keyword_journals,
+                'references_found': len(ref_queries),
+                'doc_title': doc_title,
+            }
+        except Exception as e:
+            print(f"[JournalAnalysis] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _build_journal_context(self, analysis: dict) -> str:
+        """Build context string from journal analysis results for LLM prompt injection."""
+        parts = []
+        parts.append(f"\n\n=== JOURNAL ANALYSIS RESULTS for '{analysis['doc_title']}' ===")
+        parts.append(f"Detected Academic Field: {analysis['field_label']}")
+
+        # Methodology gaps
+        gaps = analysis.get('methodology_gaps', [])
+        if gaps:
+            parts.append(f"\nMethodology Gaps Detected ({len(gaps)} issues):")
+            for g in gaps:
+                parts.append(f"  - [{g['severity'].upper()}] {g['gap']}: {g['recommendation']}")
+        else:
+            parts.append("\nNo methodology gaps detected — manuscript looks methodologically sound.")
+
+        # Citation neighbor journals
+        neighbor_journals = analysis.get('citation_neighbor_journals', [])
+        if neighbor_journals:
+            parts.append(f"\nJournals from Citation Neighborhood ({len(neighbor_journals)} matches):")
+            for j in neighbor_journals:
+                parts.append(f"  - {j['journal_name']} (appears in {j['citation_overlap']} reference neighborhoods)")
+
+        # Keyword-matched journals (grouped by category)
+        keyword_journals = analysis.get('keyword_journals', [])
+        if keyword_journals:
+            parts.append(f"\nJournals Matching Paper Keywords ({len(keyword_journals)} matches):")
+            for category_label, cat_key in [('Target Journals', 'primary'), ('Stretch Journals', 'stretch'), ('Safe/Backup Journals', 'safe')]:
+                cat_journals = [j for j in keyword_journals if j.get('category') == cat_key]
+                if cat_journals:
+                    parts.append(f"  {category_label}:")
+                    for j in cat_journals[:5]:
+                        name = j.get('name', j.get('journal_name', 'Unknown'))
+                        h_idx = j.get('h_index', 0)
+                        parts.append(f"    - {name} (h-index: {h_idx})" if h_idx else f"    - {name}")
+
+        parts.append(f"\nReferences found in manuscript: {analysis.get('references_found', 0)}")
+        parts.append("=== END JOURNAL ANALYSIS ===\n")
+
+        return "\n".join(parts)
+
     def search_and_answer_stream(
         self,
         query: str,
@@ -2415,7 +2611,7 @@ CURRENT QUESTION: {query}
         Complete RAG pipeline with STREAMING response.
 
         Yields:
-            dict events: 'search_complete', 'chunk', 'done'
+            dict events: 'search_complete', 'chunk', 'done', 'journal_analysis'
         """
         # Sanitize query
         sanitized_query, warnings = sanitize_query(query)
@@ -2444,6 +2640,10 @@ CURRENT QUESTION: {query}
                     })
             conversation_history = bounded_history
 
+        # Classify intent to check for journal/methodology special modes
+        intent = self._classify_query_intent(query)
+        special_mode = intent.get('special_mode')
+
         # Search (non-streaming - this is fast)
         search_results = self.enhanced_search(
             query=query,
@@ -2452,6 +2652,34 @@ CURRENT QUESTION: {query}
             top_k=top_k,
             boost_doc_ids=boost_doc_ids
         )
+
+        # If journal/methodology mode, run analysis on the top document
+        journal_analysis = None
+        if special_mode in ('journal_analysis', 'methodology_analysis'):
+            top_results = search_results.get('results', [])
+            if top_results:
+                # Get the most relevant document's full text
+                best_doc = top_results[0]
+                doc_text = best_doc.get('content', '') or ''
+                doc_title = best_doc.get('title', 'Untitled')
+
+                # For better analysis, concatenate text from all chunks of the same document
+                best_doc_id = best_doc.get('doc_id', '')
+                if best_doc_id:
+                    all_chunks = [r.get('content', '') for r in top_results
+                                  if r.get('doc_id') == best_doc_id]
+                    if len(all_chunks) > 1:
+                        doc_text = '\n\n'.join(all_chunks)
+
+                if len(doc_text) > 500:  # Only run if we have substantial text
+                    print(f"[SearchStream] Running {special_mode} on '{doc_title}' ({len(doc_text)} chars)")
+                    journal_analysis = self._run_journal_analysis(doc_text, doc_title)
+
+                    if journal_analysis:
+                        # Emit journal analysis event for the frontend
+                        yield {'type': 'journal_analysis', 'analysis': journal_analysis}
+                        # Inject the analysis into search results so generate_answer_stream can use it
+                        search_results['journal_analysis'] = journal_analysis
 
         # Send search complete event with sources
         yield {

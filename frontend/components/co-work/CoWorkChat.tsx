@@ -512,6 +512,41 @@ export default function CoWorkChat({
               planStepsRef.current = [...planStepsRef.current, newStep]
               onPlanUpdate([...planStepsRef.current])
 
+            } else if (eventType === 'journal_analysis') {
+              // Forward journal analysis results to the context panel
+              const analysis = parsedData
+              // Build a research brief from the journal analysis
+              const keyPoints: string[] = []
+              if (analysis.field_label) keyPoints.push(`Academic field: ${analysis.field_label}`)
+              const gaps = analysis.methodology_gaps || []
+              if (gaps.length > 0) keyPoints.push(`${gaps.length} methodology gaps detected`)
+              const neighbors = analysis.citation_neighbor_journals || []
+              const kwJournals = analysis.keyword_journals || []
+              if (neighbors.length > 0) keyPoints.push(`${neighbors.length} journals from citation neighborhood`)
+              if (kwJournals.length > 0) keyPoints.push(`${kwJournals.length} journals from keyword matching`)
+              onBriefUpdate({
+                heading: 'Journal Analysis',
+                description: `Analyzed "${analysis.doc_title || 'document'}" for journal fit and methodology gaps.`,
+                keyPoints,
+              })
+              // Also push journal data to context panel
+              const journalSources = [
+                ...neighbors.map((j: any) => ({
+                  subject: j.journal_name,
+                  source_origin: 'journal',
+                  source_origin_label: 'Citation Neighborhood',
+                  citation_overlap: j.citation_overlap,
+                })),
+                ...kwJournals.map((j: any) => ({
+                  subject: j.name,
+                  source_origin: 'journal',
+                  source_origin_label: j.category === 'primary' ? 'Target Journal' : j.category === 'stretch' ? 'Stretch Journal' : 'Safe Journal',
+                })),
+              ]
+              if (journalSources.length > 0) {
+                onContextUpdate({ journals: journalSources })
+              }
+
             } else if (eventType === 'context_update') {
               onContextUpdate(parsedData)
 
