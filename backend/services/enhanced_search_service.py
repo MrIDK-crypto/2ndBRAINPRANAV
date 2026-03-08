@@ -1492,15 +1492,31 @@ class EnhancedSearchService:
                 print(f"[EnhancedSearch] Shared namespace query failed (non-fatal): {e}")
 
         # Filter out very low cosine similarity results (clearly irrelevant)
-        MIN_COSINE_SCORE = 0.20
+        MIN_COSINE_SCORE = 0.12
         before_filter = len(initial_results)
         filtered = [r for r in initial_results if r.get('score', 0) >= MIN_COSINE_SCORE]
         if not filtered and initial_results:
-            # Keep at least the single best result
-            filtered = sorted(initial_results, key=lambda x: x.get('score', 0), reverse=True)[:1]
+            # Keep top 3 results even if below threshold — let reranker decide
+            filtered = sorted(initial_results, key=lambda x: x.get('score', 0), reverse=True)[:3]
         initial_results = filtered
         if before_filter != len(initial_results):
             print(f"[EnhancedSearch] Filtered {before_filter - len(initial_results)} low-score results (< {MIN_COSINE_SCORE})")
+
+        # Simplified query fallback if initial retrieval returned nothing
+        if not initial_results and query:
+            # Extract key terms (words longer than 3 chars)
+            simplified_terms = [w for w in query.split() if len(w) > 3]
+            if simplified_terms:
+                simplified_query = ' '.join(simplified_terms[:5])
+                if hasattr(vector_store, 'hybrid_search'):
+                    initial_results = vector_store.hybrid_search(
+                        query=simplified_query, tenant_id=tenant_id, top_k=top_k
+                    )
+                else:
+                    initial_results = vector_store.search(
+                        query=simplified_query, tenant_id=tenant_id, top_k=top_k
+                    )
+                print(f"[EnhancedSearch] Fallback search with '{simplified_query}': {len(initial_results)} results")
 
         if not initial_results:
             return {
