@@ -1976,6 +1976,31 @@ def list_projects():
         db.close()
 
 # ============================================================================
+# CITATION GRAPH ENDPOINT
+# ============================================================================
+
+@app.route('/api/citations/graph', methods=['POST'])
+@require_auth
+def get_citation_graph():
+    """Build citation graph around a seed paper."""
+    data = request.get_json() or {}
+    openalex_id = data.get('openalex_id')
+    if not openalex_id:
+        return jsonify({'error': 'openalex_id required'}), 400
+
+    depth = min(data.get('depth', 1), 2)  # Cap at 2
+    max_nodes = min(data.get('max_nodes', 50), 100)  # Cap at 100
+
+    try:
+        from services.citation_graph_service import CitationGraphService
+        service = CitationGraphService()
+        graph = service.build_citation_graph(openalex_id, depth=depth, max_nodes=max_nodes)
+        return jsonify(graph)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
 # LEGACY URL REDIRECTS
 # ============================================================================
 
