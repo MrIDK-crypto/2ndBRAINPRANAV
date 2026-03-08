@@ -242,6 +242,7 @@ from api.research_translator_routes import research_translator_bp
 from api.journal_routes import journal_bp
 from api.reproducibility_routes import reproducibility_bp
 from api.protocol_graph_routes import protocol_graph_bp
+from api.experiment_routes import experiment_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -268,6 +269,7 @@ app.register_blueprint(research_translator_bp)
 app.register_blueprint(journal_bp)
 app.register_blueprint(reproducibility_bp)
 app.register_blueprint(protocol_graph_bp)
+app.register_blueprint(experiment_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")
