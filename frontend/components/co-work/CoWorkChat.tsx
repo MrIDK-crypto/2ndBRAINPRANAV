@@ -56,6 +56,8 @@ export interface ContextData {
   pubmed_papers?: any[]
   journals?: any[]
   experiments?: any[]
+  experiment_suggestions?: any[]
+  feasibility_check?: any
 }
 
 export interface ResearchBrief {
@@ -546,6 +548,20 @@ export default function CoWorkChat({
               if (journalSources.length > 0) {
                 onContextUpdate({ journals: journalSources })
               }
+
+            } else if (eventType === 'experiment_suggestions') {
+              const suggestions = parsedData.suggestions || []
+              // Pass to context panel
+              onContextUpdate({
+                experiment_suggestions: suggestions,
+              })
+              // The LLM answer will follow — this just pre-loads the context panel
+
+            } else if (eventType === 'feasibility_check') {
+              const feasibility = parsedData.feasibility || parsedData
+              onContextUpdate({
+                feasibility_check: feasibility,
+              })
 
             } else if (eventType === 'context_update') {
               onContextUpdate(parsedData)

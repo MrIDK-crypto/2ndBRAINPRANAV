@@ -3308,35 +3308,24 @@ def sync_connector(connector_type: str):
 
         db = get_db()
         try:
-            # Check for already-running sync (dedup)
-            already_syncing = db.query(Connector).filter(
+            # Atomic check-and-lock: SELECT FOR UPDATE prevents race condition
+            # between multiple gunicorn workers processing simultaneous requests
+            connector = db.query(Connector).filter(
                 Connector.tenant_id == g.tenant_id,
                 Connector.connector_type == type_map[connector_type],
-                Connector.status == ConnectorStatus.SYNCING
-            ).first()
+            ).with_for_update().first()
 
-            if already_syncing:
-                return jsonify({
-                    "success": False,
-                    "error": f"{connector_type.title()} sync already in progress",
-                    "sync_id": (already_syncing.settings or {}).get('current_sync_id')
-                }), 409
-
-            # Retry logic for race condition after OAuth callback
-            # (connector may not be visible immediately after creation)
-            connector = None
-            for attempt in range(3):
-                connector = db.query(Connector).filter(
-                    Connector.tenant_id == g.tenant_id,
-                    Connector.connector_type == type_map[connector_type],
-                    Connector.status == ConnectorStatus.CONNECTED
-                ).first()
-                if connector:
-                    break
-                if attempt < 2:
-                    print(f"[Sync] Connector not found, retrying in 1s (attempt {attempt + 1}/3)...", flush=True)
+            if not connector:
+                # Retry logic for race condition after OAuth callback
+                for attempt in range(2):
                     time.sleep(1)
-                    db.expire_all()  # Clear SQLAlchemy cache
+                    db.expire_all()
+                    connector = db.query(Connector).filter(
+                        Connector.tenant_id == g.tenant_id,
+                        Connector.connector_type == type_map[connector_type],
+                    ).with_for_update().first()
+                    if connector:
+                        break
 
             if not connector:
                 return jsonify({
@@ -3344,7 +3333,23 @@ def sync_connector(connector_type: str):
                     "error": f"{connector_type.title()} not connected"
                 }), 400
 
-            # Update status
+            # Check if already syncing (under the row lock — no race condition)
+            if connector.status == ConnectorStatus.SYNCING:
+                db.rollback()  # Release the FOR UPDATE lock
+                return jsonify({
+                    "success": False,
+                    "error": f"{connector_type.title()} sync already in progress",
+                    "sync_id": (connector.settings or {}).get('current_sync_id')
+                }), 409
+
+            if connector.status != ConnectorStatus.CONNECTED:
+                db.rollback()
+                return jsonify({
+                    "success": False,
+                    "error": f"{connector_type.title()} not connected (status: {connector.status})"
+                }), 400
+
+            # Atomically set to SYNCING (lock held, no other worker can pass)
             connector.status = ConnectorStatus.SYNCING
             db.commit()
 

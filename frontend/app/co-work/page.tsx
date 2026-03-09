@@ -35,30 +35,41 @@ export default function CoWorkPage() {
   const [researchBrief, setResearchBrief] = useState<ResearchBrief | null>(null)
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
 
-  // ── Right panel resize ──
-  const [rightPanelWidth, setRightPanelWidth] = useState(340)
-  const [isResizing, setIsResizing] = useState(false)
-  const [activeRightTab, setActiveRightTab] = useState<'context' | 'plan'>('context')
+  // ── Right columns resize ──
+  const [contextWidth, setContextWidth] = useState(280)
+  const [planWidth, setPlanWidth] = useState(280)
+  const [resizingCol, setResizingCol] = useState<'context' | 'plan' | null>(null)
+  // Store the starting X and starting width when drag begins
+  const dragRef = React.useRef<{ startX: number; startW: number }>({ startX: 0, startW: 0 })
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const handleContextResizeDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    setIsResizing(true)
-  }, [])
+    dragRef.current = { startX: e.clientX, startW: contextWidth }
+    setResizingCol('context')
+  }, [contextWidth])
+
+  const handlePlanResizeDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    dragRef.current = { startX: e.clientX, startW: planWidth }
+    setResizingCol('plan')
+  }, [planWidth])
 
   useEffect(() => {
-    if (!isResizing) return
+    if (!resizingCol) return
     const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = window.innerWidth - e.clientX
-      setRightPanelWidth(Math.max(260, Math.min(600, newWidth)))
+      const dx = dragRef.current.startX - e.clientX // positive = dragging left = wider
+      const newW = Math.max(200, Math.min(500, dragRef.current.startW + dx))
+      if (resizingCol === 'context') setContextWidth(newW)
+      else setPlanWidth(newW)
     }
-    const handleMouseUp = () => setIsResizing(false)
+    const handleMouseUp = () => setResizingCol(null)
     window.addEventListener('mousemove', handleMouseMove)
     window.addEventListener('mouseup', handleMouseUp)
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isResizing])
+  }, [resizingCol])
 
   // ── Load conversation on mount ──
   // Fresh login → new chat (null). Navigate away & back → restore last chat.
@@ -106,6 +117,9 @@ export default function CoWorkPage() {
         pubmed_papers: [...(prev.pubmed_papers || []), ...(ctx.pubmed_papers || [])],
         journals: [...(prev.journals || []), ...(ctx.journals || [])],
         experiments: [...(prev.experiments || []), ...(ctx.experiments || [])],
+        // Replace (not merge) for experiment suggestions and feasibility — latest result wins
+        experiment_suggestions: ctx.experiment_suggestions || prev.experiment_suggestions,
+        feasibility_check: ctx.feasibility_check || prev.feasibility_check,
       }
     })
   }, [])
@@ -291,107 +305,58 @@ export default function CoWorkPage() {
           />
         </div>
 
-        {/* Resize handle (horizontal) */}
+        {/* Context column resize handle */}
         <div
-          onMouseDown={handleMouseDown}
+          onMouseDown={handleContextResizeDown}
           style={{
             width: '4px',
             cursor: 'col-resize',
-            backgroundColor: isResizing ? COLORS.primary : 'transparent',
-            transition: isResizing ? 'none' : 'background-color 0.15s',
+            backgroundColor: resizingCol === 'context' ? COLORS.primary : 'transparent',
+            transition: resizingCol ? 'none' : 'background-color 0.15s',
             flexShrink: 0,
           }}
-          onMouseEnter={(e) => { if (!isResizing) e.currentTarget.style.backgroundColor = COLORS.border }}
-          onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.backgroundColor = 'transparent' }}
+          onMouseEnter={(e) => { if (!resizingCol) e.currentTarget.style.backgroundColor = COLORS.border }}
+          onMouseLeave={(e) => { if (!resizingCol) e.currentTarget.style.backgroundColor = 'transparent' }}
         />
 
-        {/* Right panel: Tabbed Context / Plan */}
-        <div
-          style={{
-            width: `${rightPanelWidth}px`,
-            minWidth: '260px',
-            height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            borderLeft: `1px solid ${COLORS.border}`,
-            backgroundColor: COLORS.cardBg,
-          }}
-        >
-          {/* Tab bar */}
-          <div style={{
-            display: 'flex',
-            borderBottom: `1px solid ${COLORS.border}`,
-            flexShrink: 0,
-          }}>
-            {(['context', 'plan'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveRightTab(tab)}
-                style={{
-                  flex: 1,
-                  padding: '12px 0',
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: activeRightTab === tab ? 600 : 400,
-                  color: activeRightTab === tab ? COLORS.primary : COLORS.textMuted,
-                  borderBottom: activeRightTab === tab ? `2px solid ${COLORS.primary}` : '2px solid transparent',
-                  transition: 'all 0.15s',
-                  fontFamily: FONT,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                {tab === 'context' ? (
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="16" x2="12" y2="12" />
-                      <line x1="12" y1="8" x2="12.01" y2="8" />
-                    </svg>
-                    Context
-                  </>
-                ) : (
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                    Plan
-                    {planSteps.length > 0 && (
-                      <span style={{
-                        fontSize: '10px',
-                        backgroundColor: COLORS.primaryLight,
-                        color: COLORS.primary,
-                        borderRadius: '8px',
-                        padding: '1px 6px',
-                        fontWeight: 600,
-                      }}>
-                        {planSteps.length}
-                      </span>
-                    )}
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
+        {/* Context column */}
+        <div style={{
+          width: `${contextWidth}px`,
+          minWidth: '200px',
+          height: '100%',
+          overflow: 'hidden',
+          borderLeft: `1px solid ${COLORS.border}`,
+        }}>
+          <CoWorkContext
+            thinkingSteps={thinkingSteps}
+            brief={researchBrief}
+            sources={contextSources}
+          />
+        </div>
 
-          {/* Tab content */}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            {activeRightTab === 'context' ? (
-              <CoWorkContext
-                thinkingSteps={thinkingSteps}
-                brief={researchBrief}
-                sources={contextSources}
-              />
-            ) : (
-              <CoWorkPlan steps={planSteps} />
-            )}
-          </div>
+        {/* Plan column resize handle */}
+        <div
+          onMouseDown={handlePlanResizeDown}
+          style={{
+            width: '4px',
+            cursor: 'col-resize',
+            backgroundColor: resizingCol === 'plan' ? COLORS.primary : 'transparent',
+            transition: resizingCol ? 'none' : 'background-color 0.15s',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => { if (!resizingCol) e.currentTarget.style.backgroundColor = COLORS.border }}
+          onMouseLeave={(e) => { if (!resizingCol) e.currentTarget.style.backgroundColor = 'transparent' }}
+        />
+
+        {/* Plan column */}
+        <div style={{
+          width: `${planWidth}px`,
+          minWidth: '200px',
+          height: '100%',
+          overflow: 'hidden',
+          borderLeft: `1px solid ${COLORS.border}`,
+        }}>
+          <CoWorkPlan steps={planSteps} />
         </div>
       </div>
     </div>

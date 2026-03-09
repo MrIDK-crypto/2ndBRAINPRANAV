@@ -1495,6 +1495,91 @@ def trigger_protocol_training():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@knowledge_bp.route('/protocol-training/embed-corpus', methods=['POST'])
+@require_auth
+def trigger_embed_corpus():
+    """Embed protocol corpus into Pinecone for RAG."""
+    try:
+        from tasks.protocol_training_tasks import embed_protocol_corpus
+        task = embed_protocol_corpus.delay()
+        return jsonify({"success": True, "task_id": task.id, "message": "Protocol corpus embedding started"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/openalex-methods', methods=['POST'])
+@require_auth
+def trigger_openalex_methods():
+    """Download and process methods sections from top journals."""
+    try:
+        data = request.get_json(silent=True) or {}
+        max_per_journal = data.get('max_per_journal', 500)
+        from tasks.protocol_training_tasks import ingest_openalex_methods
+        task = ingest_openalex_methods.delay(max_per_journal=max_per_journal)
+        return jsonify({"success": True, "task_id": task.id, "message": "OpenAlex methods ingestion started"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/journal-abstracts', methods=['POST'])
+@require_auth
+def trigger_journal_abstracts():
+    """Index 10K+ journal abstracts into Pinecone."""
+    try:
+        data = request.get_json(silent=True) or {}
+        max_per_topic = data.get('max_per_topic', 1000)
+        from tasks.protocol_training_tasks import index_journal_abstracts
+        task = index_journal_abstracts.delay(max_per_topic=max_per_topic)
+        return jsonify({"success": True, "task_id": task.id, "message": "Journal abstract indexing started"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/build-cooccurrences', methods=['POST'])
+@require_auth
+def trigger_build_cooccurrences():
+    """Build co-occurrence graph from protocol corpus."""
+    try:
+        from tasks.protocol_training_tasks import build_cooccurrence_graph
+        task = build_cooccurrence_graph.delay()
+        return jsonify({"success": True, "task_id": task.id, "message": "Co-occurrence graph building started"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@knowledge_bp.route('/protocol-training/run-full-pipeline', methods=['POST'])
+@require_auth
+def trigger_full_pipeline():
+    """Run the complete protocol training pipeline: ingest → embed → methods → abstracts → cooccurrences."""
+    try:
+        from tasks.protocol_training_tasks import (
+            ingest_protocol_corpus, embed_protocol_corpus,
+            ingest_openalex_methods, index_journal_abstracts,
+            build_cooccurrence_graph
+        )
+        # Chain: ingest first, then the rest in parallel-ish (Celery will queue them)
+        task_ids = {}
+        t1 = ingest_protocol_corpus.delay()
+        task_ids['ingest_corpus'] = t1.id
+        t2 = ingest_openalex_methods.delay(max_per_journal=200)
+        task_ids['openalex_methods'] = t2.id
+        t3 = index_journal_abstracts.delay(max_per_topic=500)
+        task_ids['journal_abstracts'] = t3.id
+        # These depend on corpus being ready, but Celery will retry
+        t4 = embed_protocol_corpus.delay()
+        task_ids['embed_corpus'] = t4.id
+        t5 = build_cooccurrence_graph.delay()
+        task_ids['build_cooccurrences'] = t5.id
+
+        return jsonify({
+            "success": True,
+            "task_ids": task_ids,
+            "message": "Full protocol pipeline started (5 tasks queued)"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @knowledge_bp.route('/protocol-training/stats', methods=['GET'])
 @require_auth
 def get_protocol_training_stats():

@@ -24,7 +24,7 @@ llama-index-core==0.10.43  # Pinned for compatibility with protobuf 3.20.3
 
 # Data Processing
 pandas==2.1.4
-numpy==1.26.3
+numpy>=1.26.3
 
 # Content Generation
 python-pptx==0.6.23
@@ -71,7 +71,7 @@ boto3==1.34.19
 python-dotenv==1.0.0
 requests==2.31.0
 beautifulsoup4==4.12.3
-httpx==0.26.0
+httpx>=0.27.0
 python-dateutil==2.8.2
 
 # Background Job Processing
@@ -105,3 +105,6 @@ pytesseract>=0.3.10
 scikit-learn>=1.3.0
 markdown>=3.5.0
 mwparserfromhell>=0.6
+
+# NotebookLM (training video & slide generation)
+notebooklm-py>=0.3.3

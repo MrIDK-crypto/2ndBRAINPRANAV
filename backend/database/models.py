@@ -123,6 +123,14 @@ class VideoStatus(PyEnum):
     FAILED = "failed"
 
 
+class TrainingGuideStatus(PyEnum):
+    """Training guide generation status"""
+    DRAFT = "draft"            # Outline created, awaiting confirmation
+    GENERATING = "generating"  # NotebookLM is generating content
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class ResearchSessionStatus(PyEnum):
     """Research session status"""
     ACTIVE = "active"
@@ -218,6 +226,7 @@ class Tenant(Base):
     projects = relationship("Project", back_populates="tenant", cascade="all, delete-orphan")
     knowledge_gaps = relationship("KnowledgeGap", back_populates="tenant", cascade="all, delete-orphan")
     videos = relationship("Video", back_populates="tenant", cascade="all, delete-orphan")
+    training_guides = relationship("TrainingGuide", back_populates="tenant", cascade="all, delete-orphan")
     share_links = relationship("TenantShareLink", back_populates="tenant", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -1218,6 +1227,92 @@ class Video(Base):
             "file_size_bytes": self.file_size_bytes,
             "duration_seconds": self.duration_seconds,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
+# ============================================================================
+# TRAINING GUIDE MODEL
+# ============================================================================
+
+class TrainingGuide(Base):
+    """
+    Training guide generated via NotebookLM.
+    Contains both video overview and slide deck from user's knowledge base.
+    Two-step flow: generate outline (DRAFT) → confirm → generate content.
+    """
+    __tablename__ = "training_guides"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+
+    # Info
+    title = Column(String(500), nullable=False)
+    description = Column(Text)
+
+    # Source documents from knowledge base
+    source_document_ids = Column(JSON, default=list)
+
+    # Content outline (LLM-generated, user-confirmed)
+    content_outline = Column(Text)
+    instructions = Column(Text)  # User's custom instructions for generation
+
+    # NotebookLM tracking
+    notebooklm_notebook_id = Column(String(200))
+    video_style = Column(String(50), default="classic")  # classic, whiteboard, anime, etc.
+    video_format = Column(String(50), default="explainer")  # explainer, brief
+    slide_format = Column(String(50), default="detailed_deck")  # detailed_deck, presenter_slides
+
+    # Generation status
+    status = Column(Enum(TrainingGuideStatus), default=TrainingGuideStatus.DRAFT, index=True)
+    progress_percent = Column(Integer, default=0)
+    current_step = Column(String(200))
+    error_message = Column(Text)
+
+    # Output paths (S3 URLs)
+    video_path = Column(String(500))
+    video_size_bytes = Column(Integer)
+    video_duration_seconds = Column(Float)
+    slides_path = Column(String(500))  # PPTX
+    slides_pdf_path = Column(String(500))  # PDF version
+    thumbnail_path = Column(String(500))
+
+    # Audit
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    confirmed_at = Column(DateTime(timezone=True))  # When user confirmed outline
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+
+    # Relationships
+    tenant = relationship("Tenant", back_populates="training_guides")
+
+    def __repr__(self):
+        return f"<TrainingGuide {self.title[:30]}>"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "title": self.title,
+            "description": self.description,
+            "source_document_ids": self.source_document_ids or [],
+            "content_outline": self.content_outline,
+            "instructions": self.instructions,
+            "video_style": self.video_style,
+            "video_format": self.video_format,
+            "slide_format": self.slide_format,
+            "status": self.status.value if self.status else None,
+            "progress_percent": self.progress_percent,
+            "current_step": self.current_step,
+            "error_message": self.error_message,
+            "video_path": self.video_path,
+            "video_size_bytes": self.video_size_bytes,
+            "video_duration_seconds": self.video_duration_seconds,
+            "slides_path": self.slides_path,
+            "slides_pdf_path": self.slides_pdf_path,
+            "thumbnail_path": self.thumbnail_path,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "confirmed_at": self.confirmed_at.isoformat() if self.confirmed_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
 
@@ -2530,8 +2625,8 @@ class ProtocolEntity(Base):
     __tablename__ = 'protocol_entities'
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(String(36), ForeignKey('tenants.id'), nullable=False, index=True)
-    document_id = Column(String(36), ForeignKey('documents.id'), nullable=False)
+    tenant_id = Column(String(36), ForeignKey('tenants.id'), nullable=True, index=True)  # NULL = global corpus entity
+    document_id = Column(String(36), ForeignKey('documents.id'), nullable=True)  # NULL = from corpus file
 
     entity_type = Column(String(50), nullable=False)  # technique, reagent, equipment, parameter, organism, cell_line, buffer, assay
     name = Column(String(500), nullable=False)
@@ -2584,6 +2679,36 @@ class ProtocolRelation(Base):
             'context': self.context,
             'document_id': self.document_id,
         }
+
+
+class ProtocolCooccurrence(Base):
+    """
+    Co-occurrence tracking between protocol entities across the corpus.
+    Records how often technique-reagent, technique-system, etc. pairs appear together.
+    High counts = validated combination. Zero counts for common entities = potential incompatibility.
+    """
+    __tablename__ = 'protocol_cooccurrence'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey('tenants.id'), nullable=True)  # NULL = global corpus
+    technique_entity_id = Column(String(36), ForeignKey('protocol_entities.id'), nullable=False, index=True)
+    target_entity_id = Column(String(36), ForeignKey('protocol_entities.id'), nullable=False, index=True)
+    target_type = Column(String(50), nullable=False)  # reagent, organism, cell_line, equipment, buffer
+    cooccurrence_count = Column(Integer, default=1)
+    source_protocols = Column(JSON, default=list)  # [{source, protocol_id, title}]
+    confidence = Column(Float, default=0.0)  # Computed from count + source diversity
+    first_seen = Column(DateTime(timezone=True), default=utc_now)
+    last_seen = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    technique = relationship('ProtocolEntity', foreign_keys=[technique_entity_id])
+    target = relationship('ProtocolEntity', foreign_keys=[target_entity_id])
+
+    __table_args__ = (
+        Index('ix_cooccurrence_technique_target', 'technique_entity_id', 'target_entity_id', unique=True),
+        Index('ix_cooccurrence_count', 'cooccurrence_count'),
+        Index('ix_cooccurrence_target_type', 'target_type'),
+    )
 
 
 def init_database():

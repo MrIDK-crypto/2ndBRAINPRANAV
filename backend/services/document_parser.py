@@ -1,12 +1,16 @@
 """
 Universal Document Parser Service
-Routes documents to the appropriate parser:
-- PDF and Images: Azure Document Intelligence
-- Office formats (DOCX, PPTX, XLSX, etc.): LlamaParse
+Priority: Local parsing (instant) → GPT-4o vision (fast) → LlamaParse (fallback)
+
+- DOCX/PPTX/XLSX: python-docx/python-pptx/openpyxl (instant, no API)
+- PDF: PyPDF2 (instant for text PDFs) → GPT-4o vision (for scanned)
+- Images: GPT-4o vision
+- Fallback: LlamaParse API
 """
 
 import os
 import io
+import base64
 import time
 import httpx
 import asyncio
@@ -16,51 +20,89 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-# LlamaParse configuration - reload from env each time
+# Local parsers (instant, no API calls)
+try:
+    from docx import Document as DocxDocument
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
+try:
+    from pptx import Presentation
+    HAS_PPTX = True
+except ImportError:
+    HAS_PPTX = False
+
+try:
+    import openpyxl
+    HAS_XLSX = True
+except ImportError:
+    HAS_XLSX = False
+
+try:
+    import PyPDF2
+    HAS_PDF = True
+except ImportError:
+    HAS_PDF = False
+
+try:
+    from striprtf.striprtf import rtf_to_text
+    HAS_RTF = True
+except ImportError:
+    HAS_RTF = False
+
+# Azure OpenAI for GPT-4o vision (scanned PDFs, images)
+try:
+    from openai import AzureOpenAI
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+
+# LlamaParse configuration (last resort fallback)
 def _get_llama_key():
     return os.getenv("LLAMA_CLOUD_API_KEY", "")
 
 LLAMAPARSE_API_URL = "https://api.cloud.llamaindex.ai/api/parsing"
 
-# Azure Document Intelligence configuration - reload from env each time
+# Azure Document Intelligence configuration
 def _get_azure_config():
     return (
         os.getenv("AZURE_DI_ENDPOINT", ""),
         os.getenv("AZURE_DI_API_KEY", "")
     )
 
+# Minimum chars to consider local extraction successful
+MIN_CONTENT_CHARS = 50
+
 
 class DocumentParser:
     """
-    Universal document parser that routes to the appropriate service:
-    - PDF and Images -> Azure Document Intelligence
-    - Office formats (DOCX, PPTX, XLSX) -> LlamaParse
+    Universal document parser with speed-first routing:
+    1. Local parsers (instant) for DOCX, PPTX, XLSX, PDF, RTF
+    2. GPT-4o vision for scanned PDFs and images
+    3. LlamaParse API as last resort fallback
     """
 
-    # File extensions handled by Azure Document Intelligence
-    AZURE_DI_EXTENSIONS = {
-        # PDFs moved to LlamaParse (Azure DI is not configured)
-        # ".pdf",
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
+    # Extensions that can be parsed locally (instant)
+    LOCAL_PARSE_EXTENSIONS = {
+        ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".rtf",
     }
 
-    # File extensions handled by LlamaParse
-    LLAMAPARSE_EXTENSIONS = {
-        ".pdf",  # Use LlamaParse for PDFs (Azure DI not configured)
-        ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
-        ".rtf", ".odt", ".ods", ".odp",
+    # Image extensions → GPT-4o vision
+    IMAGE_EXTENSIONS = {
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
     }
 
     # Plain text files (read directly)
     PLAIN_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm", ".r", ".rmd"}
 
+    # LlamaParse fallback extensions (ODF formats without local parsers)
+    LLAMAPARSE_EXTENSIONS = {".odt", ".ods", ".odp"}
+
     # All supported extensions
-    SUPPORTED_EXTENSIONS = AZURE_DI_EXTENSIONS | LLAMAPARSE_EXTENSIONS | PLAIN_TEXT_EXTENSIONS
+    SUPPORTED_EXTENSIONS = LOCAL_PARSE_EXTENSIONS | IMAGE_EXTENSIONS | PLAIN_TEXT_EXTENSIONS | LLAMAPARSE_EXTENSIONS
 
     def __init__(self, llama_api_key: Optional[str] = None, azure_endpoint: Optional[str] = None, azure_api_key: Optional[str] = None):
-        """
-        Initialize the document parser with both services.
-        """
         # Get fresh values from environment
         azure_ep, azure_key = _get_azure_config()
 
@@ -68,32 +110,43 @@ class DocumentParser:
         self.azure_endpoint = (azure_endpoint or azure_ep).rstrip('/')
         self.azure_api_key = azure_api_key or azure_key
 
-        if not self.llama_api_key:
-            print("[DocumentParser] Warning: No LlamaParse API key configured")
-        if not self.azure_endpoint or not self.azure_api_key:
-            print("[DocumentParser] Warning: Azure Document Intelligence not configured")
-        else:
-            print(f"[DocumentParser] Azure DI configured: {self.azure_endpoint}")
+        # Initialize GPT-4o client for vision tasks
+        self.openai_client = None
+        self.chat_model = None
+        if HAS_OPENAI:
+            try:
+                oai_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+                oai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+                oai_version = os.getenv("AZURE_API_VERSION", "2024-12-01-preview")
+                if oai_key and oai_endpoint:
+                    self.openai_client = AzureOpenAI(
+                        azure_endpoint=oai_endpoint,
+                        api_key=oai_key,
+                        api_version=oai_version,
+                    )
+                    self.chat_model = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
+                    print(f"[DocumentParser] GPT-4o vision ready (model: {self.chat_model})")
+            except Exception as e:
+                print(f"[DocumentParser] GPT-4o init failed: {e}")
+
+        caps = []
+        if HAS_DOCX: caps.append("DOCX")
+        if HAS_PPTX: caps.append("PPTX")
+        if HAS_XLSX: caps.append("XLSX")
+        if HAS_PDF: caps.append("PDF")
+        if HAS_RTF: caps.append("RTF")
+        if self.openai_client: caps.append("GPT-4o-vision")
+        print(f"[DocumentParser] Local parsers: {', '.join(caps) or 'none'}")
 
     def is_supported(self, file_extension: str) -> bool:
-        """Check if a file extension is supported for parsing."""
         ext = file_extension.lower() if file_extension.startswith('.') else f".{file_extension.lower()}"
         return ext in self.SUPPORTED_EXTENSIONS
 
     def is_plain_text(self, file_extension: str) -> bool:
-        """Check if a file is plain text that can be read directly."""
         ext = file_extension.lower() if file_extension.startswith('.') else f".{file_extension.lower()}"
         return ext in self.PLAIN_TEXT_EXTENSIONS
 
-    def _uses_azure_di(self, file_extension: str) -> bool:
-        """Check if file should be parsed with Azure Document Intelligence."""
-        ext = file_extension.lower() if file_extension.startswith('.') else f".{file_extension.lower()}"
-        return ext in self.AZURE_DI_EXTENSIONS
-
-    def _uses_llamaparse(self, file_extension: str) -> bool:
-        """Check if file should be parsed with LlamaParse."""
-        ext = file_extension.lower() if file_extension.startswith('.') else f".{file_extension.lower()}"
-        return ext in self.LLAMAPARSE_EXTENSIONS
+    # ─── Main entry point ───────────────────────────────────────────
 
     async def parse_bytes(
         self,
@@ -101,20 +154,9 @@ class DocumentParser:
         file_name: str,
         file_extension: str
     ) -> str:
-        """
-        Parse document from bytes, routing to the appropriate service.
-
-        Args:
-            file_bytes: Raw file content
-            file_name: Original file name
-            file_extension: File extension (e.g., ".pdf", "pdf")
-
-        Returns:
-            Extracted text content
-        """
         ext = file_extension.lower() if file_extension.startswith('.') else f".{file_extension.lower()}"
 
-        # For plain text files, decode directly
+        # Plain text — decode directly
         if self.is_plain_text(ext):
             try:
                 return file_bytes.decode('utf-8', errors='ignore')
@@ -122,44 +164,241 @@ class DocumentParser:
                 print(f"[DocumentParser] Error decoding text file: {e}")
                 return ""
 
-        # Route to appropriate parser
-        if self._uses_azure_di(ext):
-            if not self.azure_endpoint or not self.azure_api_key:
-                print("[DocumentParser] Azure DI not configured, cannot parse PDF/image")
-                return ""
-            return await self._parse_with_azure_di(file_bytes, file_name, ext)
+        # Images — GPT-4o vision
+        if ext in self.IMAGE_EXTENSIONS:
+            return await self._parse_image_with_gpt4o(file_bytes, file_name, ext)
 
-        elif self._uses_llamaparse(ext):
-            if not self.llama_api_key:
-                print("[DocumentParser] LlamaParse not configured, cannot parse Office document")
-                return ""
-            return await self._parse_with_llamaparse(file_bytes, file_name, ext)
+        # Office docs & PDFs — try local first, then GPT-4o, then LlamaParse
+        if ext in self.LOCAL_PARSE_EXTENSIONS:
+            # Step 1: Local parsing (instant)
+            content = self._parse_locally(file_bytes, file_name, ext)
+            if content and len(content.strip()) >= MIN_CONTENT_CHARS:
+                print(f"[DocumentParser] Local parse OK: {file_name} → {len(content)} chars")
+                return content
 
-        else:
-            print(f"[DocumentParser] Unsupported file type: {ext}")
+            # Step 2: For PDFs with no/minimal text (scanned), try GPT-4o vision
+            if ext == ".pdf" and self.openai_client:
+                print(f"[DocumentParser] Local PDF extraction minimal, trying GPT-4o vision for {file_name}")
+                gpt_content = await self._parse_pdf_with_gpt4o(file_bytes, file_name)
+                if gpt_content and len(gpt_content.strip()) >= MIN_CONTENT_CHARS:
+                    return gpt_content
+
+            # Step 3: LlamaParse fallback
+            if self.llama_api_key:
+                print(f"[DocumentParser] Falling back to LlamaParse for {file_name}")
+                return await self._parse_with_llamaparse(file_bytes, file_name, ext)
+
+            # Return whatever local parsing got (even if minimal)
+            return content or ""
+
+        # ODF formats — LlamaParse only
+        if ext in self.LLAMAPARSE_EXTENSIONS:
+            if self.llama_api_key:
+                return await self._parse_with_llamaparse(file_bytes, file_name, ext)
+            print(f"[DocumentParser] No parser available for {ext}")
             return ""
 
+        print(f"[DocumentParser] Unsupported file type: {ext}")
+        return ""
+
     async def parse_file(self, file_path: str) -> str:
-        """
-        Parse document from file path.
-
-        Args:
-            file_path: Path to the file
-
-        Returns:
-            Extracted text content
-        """
         path = Path(file_path)
         if not path.exists():
             print(f"[DocumentParser] File not found: {file_path}")
             return ""
-
         ext = path.suffix.lower()
-
         with open(file_path, 'rb') as f:
             file_bytes = f.read()
-
         return await self.parse_bytes(file_bytes, path.name, ext)
+
+    # ─── Local parsers (instant, no API calls) ──────────────────────
+
+    def _parse_locally(self, file_bytes: bytes, file_name: str, ext: str) -> str:
+        """Parse document using local libraries. Returns extracted text or empty string."""
+        try:
+            if ext == ".docx" and HAS_DOCX:
+                return self._parse_docx(file_bytes)
+            elif ext == ".doc":
+                # .doc (legacy) - no good Python parser, skip to fallback
+                return ""
+            elif ext == ".pptx" and HAS_PPTX:
+                return self._parse_pptx(file_bytes)
+            elif ext == ".ppt":
+                return ""
+            elif ext == ".xlsx" and HAS_XLSX:
+                return self._parse_xlsx(file_bytes)
+            elif ext == ".xls":
+                return ""
+            elif ext == ".pdf" and HAS_PDF:
+                return self._parse_pdf(file_bytes)
+            elif ext == ".rtf" and HAS_RTF:
+                return self._parse_rtf(file_bytes)
+        except Exception as e:
+            print(f"[DocumentParser] Local parse error for {file_name}: {e}")
+        return ""
+
+    def _parse_docx(self, file_bytes: bytes) -> str:
+        doc = DocxDocument(io.BytesIO(file_bytes))
+        parts = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text.strip())
+        # Also extract tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = ' | '.join(c.text.strip() for c in row.cells if c.text.strip())
+                if row_text:
+                    parts.append(row_text)
+        return '\n\n'.join(parts)
+
+    def _parse_pptx(self, file_bytes: bytes) -> str:
+        prs = Presentation(io.BytesIO(file_bytes))
+        parts = []
+        for i, slide in enumerate(prs.slides, 1):
+            slide_texts = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_texts.append(shape.text.strip())
+            if slide_texts:
+                parts.append(f"[Slide {i}]\n" + '\n'.join(slide_texts))
+        return '\n\n'.join(parts)
+
+    def _parse_xlsx(self, file_bytes: bytes) -> str:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        parts = []
+        MAX_ROWS = 10000
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            sheet_parts = [f"[Sheet: {sheet_name}]"]
+            row_count = 0
+            for row in ws.iter_rows(values_only=True):
+                row_count += 1
+                if row_count > MAX_ROWS:
+                    sheet_parts.append(f"... (truncated at {MAX_ROWS} rows)")
+                    break
+                cells = [str(c) if c is not None else '' for c in row]
+                line = ' | '.join(cells)
+                if line.strip() and line.strip(' |'):
+                    sheet_parts.append(line)
+            parts.append('\n'.join(sheet_parts))
+        wb.close()
+        return '\n\n'.join(parts)
+
+    def _parse_pdf(self, file_bytes: bytes) -> str:
+        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        parts = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text and text.strip():
+                parts.append(text.replace('\x00', '').strip())
+        return '\n\n'.join(parts)
+
+    def _parse_rtf(self, file_bytes: bytes) -> str:
+        text = file_bytes.decode('utf-8', errors='ignore')
+        return rtf_to_text(text)
+
+    # ─── GPT-4o vision (for scanned PDFs and images) ────────────────
+
+    async def _parse_image_with_gpt4o(self, file_bytes: bytes, file_name: str, ext: str) -> str:
+        """Parse image using GPT-4o vision."""
+        if not self.openai_client:
+            # Fall back to Azure Document Intelligence for images
+            if self.azure_endpoint and self.azure_api_key:
+                return await self._parse_with_azure_di(file_bytes, file_name, ext)
+            print(f"[DocumentParser] No vision parser available for {file_name}")
+            return ""
+
+        try:
+            print(f"[DocumentParser] Parsing {file_name} with GPT-4o vision")
+            b64 = base64.b64encode(file_bytes).decode('utf-8')
+            mime_map = {
+                ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".gif": "image/gif", ".bmp": "image/bmp", ".tiff": "image/tiff", ".tif": "image/tiff",
+            }
+            mime = mime_map.get(ext, "image/png")
+
+            response = self.openai_client.chat.completions.create(
+                model=self.chat_model,
+                messages=[
+                    {"role": "system", "content": "Extract ALL text and content from this image. Return clean text preserving structure. Include tables in markdown format. Do NOT add commentary."},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extract all content from this image:"},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"}}
+                        ]
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=16000,
+            )
+            content = response.choices[0].message.content
+            if content and len(content.strip()) >= 10:
+                print(f"[DocumentParser] GPT-4o vision extracted {len(content)} chars from {file_name}")
+                return content
+        except Exception as e:
+            print(f"[DocumentParser] GPT-4o vision error for {file_name}: {e}")
+
+        # Fall back to Azure DI
+        if self.azure_endpoint and self.azure_api_key:
+            return await self._parse_with_azure_di(file_bytes, file_name, ext)
+        return ""
+
+    async def _parse_pdf_with_gpt4o(self, file_bytes: bytes, file_name: str) -> str:
+        """Parse scanned PDF by converting pages to images and using GPT-4o vision."""
+        if not self.openai_client:
+            return ""
+
+        try:
+            # Try PyMuPDF (fitz) for page-to-image conversion
+            import fitz  # PyMuPDF
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            all_text = []
+
+            # Process up to 20 pages to avoid excessive API calls
+            max_pages = min(len(doc), 20)
+            print(f"[DocumentParser] Converting {max_pages} PDF pages to images for GPT-4o ({file_name})")
+
+            for page_num in range(max_pages):
+                page = doc[page_num]
+                # Render page to image at 150 DPI
+                pix = page.get_pixmap(dpi=150)
+                img_bytes = pix.tobytes("png")
+                b64 = base64.b64encode(img_bytes).decode('utf-8')
+
+                response = self.openai_client.chat.completions.create(
+                    model=self.chat_model,
+                    messages=[
+                        {"role": "system", "content": "Extract ALL text from this PDF page image. Preserve structure, tables, and formatting. Return only the extracted content."},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"Extract all text from page {page_num + 1}:"},
+                                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}}
+                            ]
+                        }
+                    ],
+                    temperature=0.1,
+                    max_tokens=16000,
+                )
+                page_text = response.choices[0].message.content
+                if page_text and page_text.strip():
+                    all_text.append(page_text.strip())
+
+            doc.close()
+            if all_text:
+                content = '\n\n'.join(all_text)
+                print(f"[DocumentParser] GPT-4o vision extracted {len(content)} chars from {max_pages} PDF pages")
+                return content
+
+        except ImportError:
+            print(f"[DocumentParser] PyMuPDF not available, cannot use GPT-4o for scanned PDF")
+        except Exception as e:
+            print(f"[DocumentParser] GPT-4o PDF parsing error for {file_name}: {e}")
+
+        return ""
+
+    # ─── Azure Document Intelligence (images) ───────────────────────
 
     async def _parse_with_azure_di(
         self,
@@ -167,21 +406,9 @@ class DocumentParser:
         file_name: str,
         extension: str
     ) -> str:
-        """
-        Parse document using Azure Document Intelligence.
-
-        Args:
-            file_bytes: Raw file content
-            file_name: Original file name
-            extension: File extension with dot
-
-        Returns:
-            Extracted text content
-        """
         try:
             print(f"[DocumentParser] Parsing {file_name} ({len(file_bytes)} bytes) with Azure Document Intelligence")
 
-            # Use the Layout API for best results
             analyze_url = f"{self.azure_endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-11-30"
 
             headers = {
@@ -190,96 +417,49 @@ class DocumentParser:
             }
 
             async with httpx.AsyncClient(timeout=120.0) as client:
-                # Step 1: Submit document for analysis
-                response = await client.post(
-                    analyze_url,
-                    content=file_bytes,
-                    headers=headers
-                )
-
+                response = await client.post(analyze_url, content=file_bytes, headers=headers)
                 if response.status_code != 202:
                     print(f"[DocumentParser] Azure DI submit failed: {response.status_code} - {response.text}")
                     return ""
 
-                # Get the operation location for polling
                 operation_location = response.headers.get("Operation-Location")
                 if not operation_location:
                     print("[DocumentParser] No operation location in Azure DI response")
                     return ""
 
-                print(f"[DocumentParser] Azure DI job submitted, polling for result...")
-
-                # Step 2: Poll for completion
-                max_attempts = 60  # 5 minutes max
-                poll_headers = {
-                    "Ocp-Apim-Subscription-Key": self.azure_api_key
-                }
-
-                for attempt in range(max_attempts):
-                    await asyncio.sleep(2)  # Wait 2 seconds between polls
-
-                    status_response = await client.get(
-                        operation_location,
-                        headers=poll_headers
-                    )
-
+                poll_headers = {"Ocp-Apim-Subscription-Key": self.azure_api_key}
+                for attempt in range(60):
+                    await asyncio.sleep(2)
+                    status_response = await client.get(operation_location, headers=poll_headers)
                     if status_response.status_code != 200:
-                        print(f"[DocumentParser] Azure DI status check failed: {status_response.status_code}")
                         continue
-
                     result = status_response.json()
                     status = result.get("status")
-
                     if status == "succeeded":
-                        print(f"[DocumentParser] Azure DI parsing complete for {file_name}")
-
-                        # Extract text from the result
                         analyze_result = result.get("analyzeResult", {})
                         content = analyze_result.get("content", "")
-
                         if content:
-                            print(f"[DocumentParser] Extracted {len(content)} characters from {file_name}")
+                            print(f"[DocumentParser] Azure DI: {len(content)} chars from {file_name}")
                             return content
-
-                        # Fallback: concatenate paragraphs
                         paragraphs = analyze_result.get("paragraphs", [])
                         if paragraphs:
-                            text = "\n\n".join([p.get("content", "") for p in paragraphs])
-                            print(f"[DocumentParser] Extracted {len(text)} characters from paragraphs")
-                            return text
-
-                        # Fallback: concatenate pages
-                        pages = analyze_result.get("pages", [])
-                        text_parts = []
-                        for page in pages:
-                            for line in page.get("lines", []):
-                                text_parts.append(line.get("content", ""))
-                        if text_parts:
-                            text = "\n".join(text_parts)
-                            print(f"[DocumentParser] Extracted {len(text)} characters from lines")
-                            return text
-
-                        print("[DocumentParser] Azure DI returned empty content")
+                            return "\n\n".join([p.get("content", "") for p in paragraphs])
                         return ""
-
                     elif status == "failed":
                         error = result.get("error", {})
-                        print(f"[DocumentParser] Azure DI failed: {error.get('message', 'Unknown error')}")
+                        print(f"[DocumentParser] Azure DI failed: {error.get('message', 'Unknown')}")
                         return ""
-
                     elif status in ["notStarted", "running"]:
                         continue
-                    else:
-                        print(f"[DocumentParser] Unknown Azure DI status: {status}")
 
-                print(f"[DocumentParser] Azure DI timeout waiting for {file_name}")
+                print(f"[DocumentParser] Azure DI timeout for {file_name}")
                 return ""
 
         except Exception as e:
-            print(f"[DocumentParser] Error parsing with Azure DI: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[DocumentParser] Azure DI error: {e}")
             return ""
+
+    # ─── LlamaParse (last resort fallback) ───────────────────────────
 
     async def _parse_with_llamaparse(
         self,
@@ -287,128 +467,71 @@ class DocumentParser:
         file_name: str,
         extension: str
     ) -> str:
-        """
-        Parse document using LlamaParse API.
-
-        Args:
-            file_bytes: Raw file content
-            file_name: Original file name
-            extension: File extension (with or without dot)
-
-        Returns:
-            Extracted text content
-        """
         try:
             ext = extension.lstrip('.')
-            print(f"[DocumentParser] Parsing {file_name} ({len(file_bytes)} bytes) with LlamaParse")
+            print(f"[DocumentParser] Parsing {file_name} ({len(file_bytes)} bytes) with LlamaParse (fallback)")
 
             async with httpx.AsyncClient(timeout=120.0) as client:
-                # Create multipart form data
-                files = {
-                    "file": (file_name, file_bytes, self._get_mime_type(ext))
-                }
+                files = {"file": (file_name, file_bytes, self._get_mime_type(ext))}
+                data = {"gpt4o_mode": "true"}
+                headers = {"Authorization": f"Bearer {self.llama_api_key}"}
 
-                headers = {
-                    "Authorization": f"Bearer {self.llama_api_key}"
-                }
-
-                # Step 1: Upload for parsing
                 upload_response = await client.post(
                     f"{LLAMAPARSE_API_URL}/upload",
-                    files=files,
-                    headers=headers
+                    files=files, data=data, headers=headers
                 )
-
                 if upload_response.status_code != 200:
-                    print(f"[DocumentParser] LlamaParse upload failed: {upload_response.status_code} - {upload_response.text}")
+                    print(f"[DocumentParser] LlamaParse upload failed: {upload_response.status_code}")
                     return ""
 
-                upload_data = upload_response.json()
-                job_id = upload_data.get("id")
-
+                job_id = upload_response.json().get("id")
                 if not job_id:
-                    print(f"[DocumentParser] No job ID in LlamaParse response: {upload_data}")
                     return ""
 
-                print(f"[DocumentParser] LlamaParse job created: {job_id}")
-
-                # Step 2: Poll for completion
-                max_attempts = 60  # 5 minutes max
-                for attempt in range(max_attempts):
+                for attempt in range(60):
                     status_response = await client.get(
-                        f"{LLAMAPARSE_API_URL}/job/{job_id}",
-                        headers=headers
+                        f"{LLAMAPARSE_API_URL}/job/{job_id}", headers=headers
                     )
-
                     if status_response.status_code != 200:
-                        print(f"[DocumentParser] LlamaParse status check failed: {status_response.status_code}")
                         await asyncio.sleep(5)
                         continue
-
                     status_data = status_response.json()
                     status = status_data.get("status")
-
                     if status == "SUCCESS":
-                        print(f"[DocumentParser] LlamaParse complete for {file_name}")
                         break
                     elif status == "ERROR":
-                        print(f"[DocumentParser] LlamaParse error: {status_data.get('error')}")
                         return ""
-                    elif status in ["PENDING", "PROCESSING"]:
-                        await asyncio.sleep(5)
-                    else:
-                        print(f"[DocumentParser] Unknown LlamaParse status: {status}")
-                        await asyncio.sleep(5)
+                    await asyncio.sleep(5)
                 else:
-                    print(f"[DocumentParser] LlamaParse timeout waiting for {file_name}")
                     return ""
 
-                # Step 3: Get the parsed result
                 result_response = await client.get(
-                    f"{LLAMAPARSE_API_URL}/job/{job_id}/result/text",
-                    headers=headers
+                    f"{LLAMAPARSE_API_URL}/job/{job_id}/result/text", headers=headers
                 )
-
                 if result_response.status_code != 200:
-                    # Try markdown format as fallback
                     result_response = await client.get(
-                        f"{LLAMAPARSE_API_URL}/job/{job_id}/result/markdown",
-                        headers=headers
+                        f"{LLAMAPARSE_API_URL}/job/{job_id}/result/markdown", headers=headers
                     )
-
                 if result_response.status_code == 200:
-                    # LlamaParse might return JSON with {"text": "..."} or plain text
                     try:
-                        # Try parsing as JSON first
-                        result_json = result_response.json()
-                        if isinstance(result_json, dict) and "text" in result_json:
-                            text = result_json["text"]
-                            print(f"[DocumentParser] Extracted {len(text)} characters from {file_name} (JSON response)")
-                        elif isinstance(result_json, dict) and "markdown" in result_json:
-                            text = result_json["markdown"]
-                            print(f"[DocumentParser] Extracted {len(text)} characters from {file_name} (markdown JSON)")
+                        rj = result_response.json()
+                        if isinstance(rj, dict):
+                            text = rj.get("text") or rj.get("markdown") or result_response.text
                         else:
-                            # JSON but unknown structure, use plain text
                             text = result_response.text
-                            print(f"[DocumentParser] Extracted {len(text)} characters from {file_name} (JSON fallback)")
                     except Exception:
-                        # Not JSON, use plain text
                         text = result_response.text
-                        print(f"[DocumentParser] Extracted {len(text)} characters from {file_name} (plain text)")
-
+                    print(f"[DocumentParser] LlamaParse: {len(text)} chars from {file_name}")
                     return text
-                else:
-                    print(f"[DocumentParser] Failed to get LlamaParse result: {result_response.status_code}")
-                    return ""
+                return ""
 
         except Exception as e:
-            print(f"[DocumentParser] Error parsing with LlamaParse: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[DocumentParser] LlamaParse error: {e}")
             return ""
 
+    # ─── Utilities ──────────────────────────────────────────────────
+
     def _get_mime_type(self, extension: str) -> str:
-        """Get MIME type for file extension."""
         ext = extension.lower().lstrip('.')
         mime_types = {
             "pdf": "application/pdf",
@@ -418,31 +541,20 @@ class DocumentParser:
             "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "xls": "application/vnd.ms-excel",
             "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "txt": "text/plain",
-            "md": "text/markdown",
-            "csv": "text/csv",
-            "json": "application/json",
-            "xml": "application/xml",
-            "html": "text/html",
-            "htm": "text/html",
-            "rtf": "application/rtf",
-            "png": "image/png",
-            "jpg": "image/jpeg",
-            "jpeg": "image/jpeg",
-            "gif": "image/gif",
-            "bmp": "image/bmp",
-            "tiff": "image/tiff",
-            "tif": "image/tiff",
+            "txt": "text/plain", "md": "text/markdown", "csv": "text/csv",
+            "json": "application/json", "xml": "application/xml",
+            "html": "text/html", "htm": "text/html", "rtf": "application/rtf",
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "gif": "image/gif", "bmp": "image/bmp", "tiff": "image/tiff", "tif": "image/tiff",
         }
         return mime_types.get(ext, "application/octet-stream")
 
 
-# Singleton instance for easy access
+# Singleton instance
 _parser_instance: Optional[DocumentParser] = None
 
 
 def get_document_parser(force_new: bool = False) -> DocumentParser:
-    """Get the singleton document parser instance."""
     global _parser_instance
     if _parser_instance is None or force_new:
         _parser_instance = DocumentParser()
@@ -450,31 +562,16 @@ def get_document_parser(force_new: bool = False) -> DocumentParser:
 
 
 def reset_parser():
-    """Reset the parser singleton to reload configuration."""
     global _parser_instance
     _parser_instance = None
 
 
-# Convenience function for synchronous code
 def parse_document_sync(file_bytes: bytes, file_name: str, extension: str) -> str:
-    """
-    Synchronous wrapper for parsing documents.
-
-    Args:
-        file_bytes: Raw file content
-        file_name: Original file name
-        extension: File extension
-
-    Returns:
-        Extracted text content
-    """
+    """Synchronous wrapper for parsing documents."""
     parser = get_document_parser()
-
-    # Run async function in event loop
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # If we're already in an async context, create a new loop in a thread
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(
@@ -485,7 +582,6 @@ def parse_document_sync(file_bytes: bytes, file_name: str, extension: str) -> st
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
     return loop.run_until_complete(
         parser.parse_bytes(file_bytes, file_name, extension)
     )

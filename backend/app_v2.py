@@ -22,6 +22,7 @@ from flask import Flask, jsonify, request, g, Response, stream_with_context
 from flask_cors import CORS
 from dotenv import load_dotenv
 from services.auth_service import require_auth
+from services.intent_classifier import get_intent_classifier
 
 # Load environment variables
 load_dotenv()
@@ -243,6 +244,7 @@ from api.journal_routes import journal_bp
 from api.reproducibility_routes import reproducibility_bp
 from api.protocol_graph_routes import protocol_graph_bp
 from api.experiment_routes import experiment_bp
+from api.training_guide_routes import training_guide_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -270,6 +272,7 @@ app.register_blueprint(journal_bp)
 app.register_blueprint(reproducibility_bp)
 app.register_blueprint(protocol_graph_bp)
 app.register_blueprint(experiment_bp)
+app.register_blueprint(training_guide_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")
@@ -1779,11 +1782,18 @@ def search_stream():
 
             print(f"[SEARCH-STREAM] Starting (mode={response_mode}): '{query}'", flush=True)
 
-            # Emit dynamic plan steps based on query intent
-            from services.enhanced_search_service import get_enhanced_search_service as _get_ess
-            _ess_temp = _get_ess()
-            _intent = _ess_temp._classify_query_intent(query)
-            _special = _intent.get('special_mode', '')
+            # Emit dynamic plan steps based on query intent (LLM-based classifier)
+            from openai import AzureOpenAI as _AzureOpenAI
+            _azure_client = _AzureOpenAI(
+                azure_endpoint=AZURE_OPENAI_ENDPOINT,
+                api_key=AZURE_OPENAI_API_KEY,
+                api_version=AZURE_API_VERSION,
+            )
+            _intent_classifier = get_intent_classifier(llm_client=_azure_client)
+            _intent_result = _intent_classifier.classify(query, conversation_history=conversation_history)
+            _intent_name = _intent_result["intent"]
+            _special = _intent_result.get("special_mode", "")
+            _source_weights = _intent_result.get("source_weights", {})
 
             if _special == 'journal_analysis':
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Identify referenced manuscript', 'status': 'in_progress'})}\n\n"
@@ -1801,18 +1811,31 @@ def search_stream():
                 yield f"event: action\ndata: {json.dumps({'section': 'Methodology Review', 'text': 'Assess experimental design', 'status': 'pending'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate improvement recommendations', 'status': 'pending'})}\n\n"
                 yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Preparing methodology review...'})}\n\n"
+            elif _intent_name == 'experiment_suggestion':
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Analyzing research question', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Querying protocol knowledge graph', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Experiment Design', 'text': 'Generating experiment suggestions', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Experiment Design', 'text': 'Validating feasibility', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Preparing results', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Designing experiment suggestions...'})}\n\n"
+            elif _intent_name == 'protocol_feasibility':
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Extracting technique details', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Checking protocol compatibility', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Querying evidence database', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Assessing feasibility', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Checking protocol feasibility...'})}\n\n"
             elif any(p in query.lower() for p in ['compare', 'versus', 'vs', 'difference']):
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Decompose comparison query', 'status': 'in_progress'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search each sub-topic separately', 'status': 'pending'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Cross-reference and align findings', 'status': 'pending'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate comparative analysis', 'status': 'pending'})}\n\n"
                 yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Breaking down comparison...'})}\n\n"
-            elif _intent.get('user_kb', 0) >= 0.9:
+            elif _source_weights.get('user_kb', 0) >= 0.9:
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search your uploaded documents', 'status': 'in_progress'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Rank results by relevance', 'status': 'pending'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Summarize findings from your files', 'status': 'pending'})}\n\n"
                 yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Searching your documents...'})}\n\n"
-            elif _intent.get('pubmed', 0) >= 0.3:
+            elif _source_weights.get('pubmed', 0) >= 0.3:
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Expand query with medical terminology', 'status': 'in_progress'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base and PubMed', 'status': 'pending'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Cross-reference literature with your data', 'status': 'pending'})}\n\n"
@@ -1824,6 +1847,106 @@ def search_stream():
                 yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Rerank and filter results by relevance', 'status': 'pending'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate answer with source attribution', 'status': 'pending'})}\n\n"
                 yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Expanding query...'})}\n\n"
+
+            # Handle experiment suggestion intent
+            if _intent_name == "experiment_suggestion":
+                try:
+                    from services.experiment_suggestion_service import ExperimentSuggestionService
+                    from services.feasibility_checker import FeasibilityChecker
+                    from services.protocol_graph_service import ProtocolGraphService
+
+                    # Step 1: Get user's paper content via RAG search
+                    paper_context = ""
+                    paper_references = []
+                    try:
+                        # Search user's knowledge base for relevant content
+                        rag_results = vector_store.hybrid_search(
+                            query=query,
+                            tenant_id=tenant_id,
+                            top_k=10,
+                            boost_doc_ids=boost_doc_ids,
+                        )
+                        if rag_results:
+                            paper_chunks = []
+                            seen_docs = set()
+                            for r in rag_results:
+                                chunk_text = r.get("content", "") or r.get("text", "")
+                                doc_title = r.get("title", "")
+                                doc_id = r.get("doc_id", "")
+                                if chunk_text:
+                                    paper_chunks.append(f"[{doc_title}]: {chunk_text[:1500]}")
+                                if doc_id and doc_id not in seen_docs:
+                                    seen_docs.add(doc_id)
+                                    paper_references.append({"title": doc_title, "doc_id": doc_id})
+                            paper_context = "\n\n".join(paper_chunks[:8])  # Top 8 chunks
+                    except Exception as rag_err:
+                        print(f"[SEARCH-STREAM] RAG for experiments failed: {rag_err}", flush=True)
+
+                    # Step 2: Search protocol corpus for related protocols
+                    protocol_context = ""
+                    try:
+                        if vector_store:
+                            query_embedding = vector_store._get_embedding(query)
+                            corpus_results = vector_store.index.query(
+                                vector=query_embedding,
+                                top_k=5,
+                                namespace="protocol-corpus",
+                                include_metadata=True,
+                            )
+                            if corpus_results and corpus_results.matches:
+                                protocol_chunks = []
+                                for m in corpus_results.matches:
+                                    meta = m.metadata or {}
+                                    protocol_chunks.append(
+                                        f"[Protocol: {meta.get('title', 'Unknown')}] {meta.get('text', '')}"
+                                    )
+                                protocol_context = "\n\n".join(protocol_chunks)
+                    except Exception as corpus_err:
+                        print(f"[SEARCH-STREAM] Protocol corpus search failed: {corpus_err}", flush=True)
+
+                    # Step 3: Get available resources from protocol graph
+                    graph_service = ProtocolGraphService(_azure_client, AZURE_CHAT_DEPLOYMENT)
+                    graph_data = graph_service.query_graph(tenant_id, db)
+                    available_resources = [
+                        {"name": e.get("name", ""), "type": e.get("entity_type", ""), "attributes": e.get("attributes", {})}
+                        for e in graph_data.get("entities", [])
+                    ]
+
+                    # Step 4: Generate grounded suggestions
+                    suggestion_service = ExperimentSuggestionService(_azure_client, AZURE_CHAT_DEPLOYMENT)
+                    suggestions = suggestion_service.suggest_experiments_with_feasibility(
+                        research_question=query,
+                        available_resources=available_resources,
+                        existing_results=paper_references[:10],
+                        paper_context=paper_context,
+                        protocol_context=protocol_context,
+                    )
+
+                    # Step 5: Deep feasibility check with protocol corpus
+                    checker = FeasibilityChecker(llm_client=_azure_client, vector_store=vector_store)
+                    for suggestion in suggestions:
+                        if suggestion.get("feasibility", {}).get("overall", 0) < 0.9:
+                            deep_check = checker.check(suggestion, tenant_id=tenant_id)
+                            suggestion["deep_feasibility"] = deep_check
+
+                    # Emit as SSE event
+                    yield f"data: {json.dumps({'type': 'experiment_suggestions', 'suggestions': suggestions})}\n\n"
+                except Exception as e:
+                    print(f"[SEARCH-STREAM] Experiment suggestion failed: {e}", flush=True)
+
+            # Handle protocol feasibility intent
+            elif _intent_name == "protocol_feasibility":
+                try:
+                    from services.feasibility_checker import FeasibilityChecker
+
+                    checker = FeasibilityChecker(llm_client=_azure_client, vector_store=vector_store)
+                    # Parse the query as an experiment proposal
+                    experiment = {"title": query, "methodology": query}
+                    feasibility = checker.check(experiment, tenant_id=tenant_id)
+
+                    yield f"data: {json.dumps({'type': 'feasibility_check', 'feasibility': feasibility})}\n\n"
+                except Exception as e:
+                    print(f"[SEARCH-STREAM] Feasibility check failed: {e}", flush=True)
 
             sources_for_response = []
             for event in enhanced_service.search_and_answer_stream(

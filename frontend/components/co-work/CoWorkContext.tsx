@@ -54,6 +54,8 @@ export interface ContextData {
   pubmed_papers?: any[]
   journals?: any[]
   experiments?: any[]
+  experiment_suggestions?: any[]
+  feasibility_check?: any
 }
 
 interface CoWorkContextProps {
@@ -119,7 +121,11 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
     return true
   })
 
-  const hasContent = brief || thinkingSteps.length > 0 || dedupedSources.length > 0
+  // Extract experiment suggestions and feasibility from sources prop
+  const experimentSuggestions = sources?.experiment_suggestions || []
+  const feasibilityResult = sources?.feasibility_check || null
+
+  const hasContent = brief || thinkingSteps.length > 0 || dedupedSources.length > 0 || experimentSuggestions.length > 0 || feasibilityResult
 
   return (
     <div style={{
@@ -130,6 +136,24 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
       /* borderLeft handled by parent layout */
       fontFamily: FONT,
     }}>
+      {/* Header */}
+      <div style={{
+        padding: '14px 20px',
+        borderBottom: `1px solid ${COLORS.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        flexShrink: 0,
+      }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
+          <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+        </svg>
+        <span style={{ fontSize: '14px', fontWeight: 600, color: COLORS.textPrimary }}>
+          Context
+        </span>
+      </div>
+
       {/* Scrollable content */}
       <div style={{
         flex: 1,
@@ -503,6 +527,167 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                       </div>
                     )
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Experiment Suggestions ── */}
+            {experimentSuggestions.length > 0 && (
+              <div>
+                <div style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: COLORS.textSecondary,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '8px',
+                }}>
+                  Experiment Suggestions
+                </div>
+                {experimentSuggestions.map((s: any, i: number) => {
+                  const score = s.deep_feasibility?.score ?? s.feasibility?.overall ?? 0
+                  const tier = s.deep_feasibility?.tier ?? s.feasibility?.feasibility_tier ?? 'unknown'
+                  const tierColor = tier === 'high' ? '#9CB896' : tier === 'medium' ? '#D4A853' : '#D97B7B'
+
+                  return (
+                    <div key={i} style={{
+                      padding: '10px 12px',
+                      marginBottom: '6px',
+                      borderRadius: '8px',
+                      backgroundColor: COLORS.cardBg,
+                      border: `1px solid ${COLORS.border}`,
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: COLORS.textPrimary }}>{s.title}</span>
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          color: tierColor,
+                          backgroundColor: `${tierColor}15`,
+                          textTransform: 'uppercase',
+                          flexShrink: 0,
+                          marginLeft: '8px',
+                        }}>
+                          {tier} ({Math.round(score * 100)}%)
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: COLORS.textSecondary, marginBottom: '4px' }}>
+                        {s.hypothesis || s.methodology?.slice(0, 100) || ''}
+                      </div>
+                      {s.deep_feasibility?.issues?.length > 0 && (
+                        <div style={{ fontSize: '11px', color: '#D97B7B', marginTop: '4px' }}>
+                          {s.deep_feasibility.issues.map((issue: any, j: number) => (
+                            <div key={j}>&#x26A0; {issue.description}</div>
+                          ))}
+                        </div>
+                      )}
+                      {s.deep_feasibility?.modifications?.length > 0 && (
+                        <div style={{ fontSize: '11px', color: '#9CB896', marginTop: '4px' }}>
+                          {s.deep_feasibility.modifications.map((mod: any, j: number) => (
+                            <div key={j}>{'\u2192'} {mod.suggested}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* ── Feasibility Assessment ── */}
+            {feasibilityResult && (
+              <div>
+                <div style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: COLORS.textSecondary,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '8px',
+                }}>
+                  Feasibility Assessment
+                </div>
+                <div style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  backgroundColor: COLORS.cardBg,
+                  border: `1px solid ${COLORS.border}`,
+                }}>
+                  {/* Score bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{
+                      flex: 1, height: '6px', borderRadius: '3px', backgroundColor: COLORS.border,
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        width: `${Math.round((feasibilityResult.score || 0) * 100)}%`,
+                        height: '100%',
+                        borderRadius: '3px',
+                        backgroundColor: feasibilityResult.tier === 'high' ? '#9CB896' :
+                                       feasibilityResult.tier === 'medium' ? '#D4A853' : '#D97B7B',
+                      }} />
+                    </div>
+                    <span style={{
+                      fontSize: '12px', fontWeight: 600,
+                      color: feasibilityResult.tier === 'high' ? '#9CB896' :
+                             feasibilityResult.tier === 'medium' ? '#D4A853' : '#D97B7B',
+                    }}>
+                      {Math.round((feasibilityResult.score || 0) * 100)}%
+                    </span>
+                  </div>
+
+                  {/* Reasoning */}
+                  {feasibilityResult.reasoning && (
+                    <div style={{ fontSize: '12px', color: COLORS.textPrimary, marginBottom: '8px' }}>
+                      {feasibilityResult.reasoning}
+                    </div>
+                  )}
+
+                  {/* Evidence summary */}
+                  <div style={{ fontSize: '11px', color: COLORS.textMuted }}>
+                    {feasibilityResult.evidence?.cooccurrence_hits > 0 && (
+                      <span>{feasibilityResult.evidence.cooccurrence_hits} validated pairs &middot; </span>
+                    )}
+                    {feasibilityResult.evidence?.corpus_matches > 0 && (
+                      <span>{feasibilityResult.evidence.corpus_matches} similar protocols &middot; </span>
+                    )}
+                    {feasibilityResult.evidence?.unsupported_pairs > 0 && (
+                      <span style={{ color: '#D97B7B' }}>{feasibilityResult.evidence.unsupported_pairs} unsupported</span>
+                    )}
+                  </div>
+
+                  {/* Issues */}
+                  {feasibilityResult.issues?.length > 0 && (
+                    <div style={{ marginTop: '8px' }}>
+                      {feasibilityResult.issues.map((issue: any, i: number) => (
+                        <div key={i} style={{
+                          fontSize: '11px',
+                          color: issue.severity === 'critical' ? '#D97B7B' : '#D4A853',
+                          padding: '4px 0',
+                        }}>
+                          {issue.severity === 'critical' ? '\u2715' : '\u26A0'} {issue.description}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Modifications */}
+                  {feasibilityResult.modifications?.length > 0 && (
+                    <div style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', backgroundColor: '#F7FAF7' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 600, color: '#9CB896', marginBottom: '4px' }}>
+                        Suggested Modifications
+                      </div>
+                      {feasibilityResult.modifications.map((mod: any, i: number) => (
+                        <div key={i} style={{ fontSize: '11px', color: COLORS.textSecondary, padding: '2px 0' }}>
+                          <span style={{ textDecoration: 'line-through', color: COLORS.textMuted }}>{mod.original}</span>
+                          {' \u2192 '}
+                          <span style={{ color: '#9CB896' }}>{mod.suggested}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

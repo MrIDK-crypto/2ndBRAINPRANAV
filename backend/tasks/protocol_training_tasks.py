@@ -109,3 +109,99 @@ def update_reference_store(self):
     except Exception as e:
         logger.error(f'[ProtocolTask] Reference store update failed: {e}')
         return {'error': str(e)}
+
+
+@celery.task(bind=True, max_retries=2)
+def embed_protocol_corpus(self):
+    """Embed BioProBench protocols into Pinecone protocol-corpus namespace."""
+    _ensure_app_in_path()
+    try:
+        from protocol_training.ingest_bioprotocolbench_embeddings import embed_protocols
+        from services.openai_client import get_openai_client
+        # Get vector store
+        from vector_stores.pinecone_store import get_vector_store
+
+        client = get_openai_client()
+        store = get_vector_store()
+
+        if not store:
+            logger.error("[ProtocolTask] Pinecone store not available")
+            return {"error": "Pinecone not configured"}
+
+        stats = embed_protocols(embedding_client=client, vector_store=store)
+        logger.info(f"[ProtocolTask] Protocol corpus embedded: {stats}")
+        return stats
+    except Exception as e:
+        logger.error(f"[ProtocolTask] embed_protocol_corpus failed: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
+
+
+@celery.task(bind=True, max_retries=2)
+def ingest_openalex_methods(self, max_per_journal=500):
+    """Download and process methods sections from top journals."""
+    _ensure_app_in_path()
+    try:
+        from protocol_training.ingest_openalex_methods import ingest
+        stats = ingest(max_per_journal=max_per_journal)
+        logger.info(f"[ProtocolTask] OpenAlex methods ingested: {stats}")
+        return stats
+    except Exception as e:
+        logger.error(f"[ProtocolTask] ingest_openalex_methods failed: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
+
+
+@celery.task(bind=True, max_retries=2, time_limit=18000, soft_time_limit=17700)
+def index_journal_abstracts(self, max_per_topic=1000):
+    """Index journal abstracts from OpenAlex into Pinecone (up to 5hr limit)."""
+    _ensure_app_in_path()
+    try:
+        from protocol_training.ingest_journal_abstracts import ingest
+        from services.openai_client import get_openai_client
+        from vector_stores.pinecone_store import get_vector_store
+
+        client = get_openai_client()
+        store = get_vector_store()
+
+        if not store:
+            logger.error("[ProtocolTask] Pinecone store not available")
+            return {"error": "Pinecone not configured"}
+
+        stats = ingest(embedding_client=client, vector_store=store, max_per_topic=max_per_topic)
+        logger.info(f"[ProtocolTask] Journal abstracts indexed: {stats}")
+        return stats
+    except Exception as e:
+        logger.error(f"[ProtocolTask] index_journal_abstracts failed: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)
+
+
+@celery.task(bind=True, max_retries=2)
+def build_cooccurrence_graph(self):
+    """Build co-occurrence graph from protocol corpus and existing entities."""
+    _ensure_app_in_path()
+    try:
+        from services.protocol_graph_service import ProtocolGraphService
+        from services.openai_client import get_openai_client
+        from database.models import SessionLocal
+        from pathlib import Path
+
+        client = get_openai_client()
+        service = ProtocolGraphService(client, os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat"))
+        db = SessionLocal()
+
+        try:
+            # Build from corpus file first
+            corpus_file = Path(__file__).parent.parent / "data" / "protocol_corpus" / "unified_corpus.jsonl"
+            if corpus_file.exists():
+                count = service.build_cooccurrences_from_corpus_file(str(corpus_file), db)
+                logger.info(f"[ProtocolTask] Corpus co-occurrences: {count}")
+
+            # Then from existing extracted entities
+            count2 = service.build_cooccurrences_from_corpus(db)
+            logger.info(f"[ProtocolTask] Entity co-occurrences: {count2}")
+
+            return {"corpus_cooccurrences": count if corpus_file.exists() else 0, "entity_cooccurrences": count2}
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"[ProtocolTask] build_cooccurrence_graph failed: {e}", exc_info=True)
+        raise self.retry(exc=e, countdown=60)

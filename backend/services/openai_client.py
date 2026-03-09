@@ -88,6 +88,11 @@ class OpenAIClientWrapper:
         return self.embedding_model
 
     @property
+    def embeddings(self):
+        """Expose the underlying client's embeddings API for direct access"""
+        return self.client.embeddings
+
+    @property
     def audio(self):
         """Expose the underlying client's audio API for Whisper transcription"""
         return self.client.audio
