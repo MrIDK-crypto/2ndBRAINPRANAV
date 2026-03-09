@@ -398,7 +398,7 @@ class BoxConnector(BaseConnector):
             print("[BoxConnector] No client, attempting to connect...")
             connected = await self.connect()
             if not connected:
-                print(f"[BoxConnector] Connection failed: {self.error_message}")
+                print(f"[BoxConnector] Connection failed: {self.last_error}")
                 return []
             print("[BoxConnector] Connected successfully")
 
