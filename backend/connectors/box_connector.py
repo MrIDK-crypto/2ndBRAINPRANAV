@@ -82,6 +82,47 @@ class BoxConnector(BaseConnector):
         ".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm"
     }
 
+    # File extensions to always skip (code, build artifacts, configs, etc.)
+    SKIP_EXTENSIONS = {
+        # TypeScript/JavaScript build artifacts
+        ".d.ts", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+        ".js.map", ".css.map", ".d.ts.map", ".min.js", ".min.css",
+        # Protocol buffers / compiled
+        ".proto", ".pb", ".pyc", ".pyo", ".class", ".o", ".obj", ".so", ".dll", ".dylib",
+        ".wasm", ".jar", ".war", ".ear",
+        # Package/dependency files
+        ".lock", ".resolved",
+        # Binary/executable
+        ".exe", ".bin", ".dmg", ".msi", ".iso", ".img",
+        # Archive (not useful as documents)
+        ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".tgz",
+        # Font files
+        ".woff", ".woff2", ".ttf", ".eot", ".otf",
+        # Source maps and configs
+        ".map", ".npmrc", ".yarnrc", ".eslintrc", ".prettierrc",
+        # Database / cache
+        ".db", ".sqlite", ".sqlite3", ".cache",
+        # System files
+        ".DS_Store", ".thumbs.db", ".desktop",
+        # Compiled CSS
+        ".sass-cache", ".less",
+        # Go / Rust / C artifacts
+        ".a", ".lib", ".mod", ".sum",
+        # SVG is borderline - skip since not useful for knowledge extraction
+        ".svg", ".ico", ".cur",
+        # Log files
+        ".log",
+    }
+
+    # Directory names to always skip
+    SKIP_DIRS = {
+        "node_modules", ".git", ".svn", ".hg", "__pycache__", ".pytest_cache",
+        ".mypy_cache", ".tox", "dist", "build", ".next", ".nuxt", "out",
+        "vendor", "venv", ".venv", "env", ".env", "coverage", ".coverage",
+        "tmp", "temp", "cache", ".cache", "logs", "target", ".gradle",
+        ".idea", ".vscode", ".settings", "bower_components",
+    }
+
     # OAuth configuration
     @classmethod
     def _get_oauth_config(cls) -> Dict:
@@ -477,6 +518,10 @@ class BoxConnector(BaseConnector):
                         print(f"[BoxConnector] Item: id={item.id}, name={item.name}, type={item_type}")
 
                         if item_type == "folder":
+                            # Skip known junk directories entirely
+                            if item.name and item.name.lower() in self.SKIP_DIRS:
+                                print(f"[BoxConnector] Skipping junk directory: {item.name}")
+                                continue
                             if recursive and item.id not in exclude_folders:
                                 print(f"[BoxConnector] Recursing into subfolder: {item.name}")
                                 sub_docs = await self._sync_folder(
@@ -541,6 +586,10 @@ class BoxConnector(BaseConnector):
                     for item in items_list:
                         print(f"[BoxConnector] Item (legacy): id={item.id}, name={item.name}, type={item.type}")
                         if item.type == "folder":
+                            # Skip known junk directories entirely
+                            if item.name and item.name.lower() in self.SKIP_DIRS:
+                                print(f"[BoxConnector] Skipping junk directory: {item.name}")
+                                continue
                             if recursive and item.id not in exclude_folders:
                                 sub_docs = await self._sync_folder(
                                     folder_id=item.id,
@@ -654,6 +703,21 @@ class BoxConnector(BaseConnector):
             file_ext = ""
             if "." in file_name:
                 file_ext = "." + file_name.rsplit(".", 1)[-1]
+
+            # Skip code/build artifact file types
+            lower_ext = file_ext.lower()
+            if lower_ext in self.SKIP_EXTENSIONS:
+                return None
+            # Handle compound extensions like .d.ts, .js.map, .d.ts.map
+            lower_name = file_name.lower()
+            if any(lower_name.endswith(skip) for skip in (".d.ts", ".js.map", ".css.map", ".d.ts.map", ".min.js", ".min.css")):
+                return None
+
+            # Skip files from known junk directories
+            full_path_check = f"{folder_path}/{file_name}".lower()
+            if any(f"/{skip_dir}/" in full_path_check for skip_dir in self.SKIP_DIRS):
+                return None
+
             if file_extensions and file_ext.lower() not in [e.lower() for e in file_extensions]:
                 log_info("BoxConnector", "File extension not in allowed list, skipping",
                         file_name=file_name, extension=file_ext)
@@ -905,6 +969,21 @@ class BoxConnector(BaseConnector):
 
             # Check file extension
             file_ext = f".{file_item.extension}" if file_item.extension else ""
+
+            # Skip code/build artifact file types
+            lower_ext = file_ext.lower()
+            if lower_ext in self.SKIP_EXTENSIONS:
+                return None
+            # Handle compound extensions like .d.ts, .js.map
+            lower_name = (file_item.name or "").lower()
+            if any(lower_name.endswith(skip) for skip in (".d.ts", ".js.map", ".css.map", ".d.ts.map", ".min.js", ".min.css")):
+                return None
+
+            # Skip files from known junk directories
+            full_path_check = f"{folder_path}/{file_item.name}".lower()
+            if any(f"/{skip_dir}/" in full_path_check for skip_dir in self.SKIP_DIRS):
+                return None
+
             if file_extensions and file_ext.lower() not in [e.lower() for e in file_extensions]:
                 return None
 
