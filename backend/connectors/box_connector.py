@@ -78,7 +78,7 @@ class BoxConnector(BaseConnector):
         ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm",
         ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
         ".rtf", ".odt", ".ods", ".odp",
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff",
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
         ".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm"
     }
 
