@@ -310,10 +310,27 @@ class DocumentParser:
 
         try:
             print(f"[DocumentParser] Parsing {file_name} with GPT-4o vision")
+
+            # Azure OpenAI vision only supports PNG, JPEG, GIF, WebP
+            # Convert BMP/TIFF/other formats to PNG first
+            NATIVE_FORMATS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+            if ext not in NATIVE_FORMATS:
+                try:
+                    from PIL import Image as PILImage
+                    img = PILImage.open(io.BytesIO(file_bytes))
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    file_bytes = buf.getvalue()
+                    ext = ".png"
+                    print(f"[DocumentParser] Converted {file_name} to PNG for GPT-4o vision")
+                except Exception as conv_err:
+                    print(f"[DocumentParser] Image conversion failed for {file_name}: {conv_err}")
+                    return ""
+
             b64 = base64.b64encode(file_bytes).decode('utf-8')
             mime_map = {
                 ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                ".gif": "image/gif", ".bmp": "image/bmp", ".tiff": "image/tiff", ".tif": "image/tiff",
+                ".gif": "image/gif", ".webp": "image/webp",
             }
             mime = mime_map.get(ext, "image/png")
 
