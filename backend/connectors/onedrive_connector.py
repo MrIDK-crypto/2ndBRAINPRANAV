@@ -377,7 +377,7 @@ class OneDriveConnector(BaseConnector):
                 return self._parse_pdf(content)
 
             # Images (OCR via Azure Document Intelligence)
-            elif lower_name.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff")):
+            elif lower_name.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif")):
                 return self._parse_image(content, filename)
 
             # Video/Audio (Whisper transcription)
@@ -512,7 +512,7 @@ class OneDriveConnector(BaseConnector):
             return "document"
         elif lower_name.endswith(".pdf"):
             return "pdf"
-        elif lower_name.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff")):
+        elif lower_name.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif")):
             return "image"
         elif lower_name.endswith((".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm")):
             return "video"

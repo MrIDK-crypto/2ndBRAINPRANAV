@@ -618,7 +618,7 @@ class NotionConnector(BaseConnector):
     def _parse_with_gpt4o_vision(self, file_bytes: bytes, filename: str, ext: str) -> Optional[str]:
         """Parse file using Azure GPT-4o Vision for images, returns None for other file types"""
         # GPT-4o Vision only supports image formats
-        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'}
+        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.tif'}
         if ext.lower() not in image_extensions:
             return None  # Let local parsers handle non-image files
 
@@ -641,6 +641,22 @@ class NotionConnector(BaseConnector):
                 api_version=azure_api_version
             )
 
+            # Azure OpenAI vision only supports PNG, JPEG, GIF, WebP
+            # Convert BMP/TIFF to PNG first
+            native_formats = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
+            if ext.lower() not in native_formats:
+                try:
+                    import io as _io
+                    from PIL import Image as PILImage
+                    img = PILImage.open(_io.BytesIO(file_bytes))
+                    buf = _io.BytesIO()
+                    img.save(buf, format="PNG")
+                    file_bytes = buf.getvalue()
+                    ext = '.png'
+                except Exception as conv_err:
+                    print(f"[Notion] Image conversion failed for {filename}: {conv_err}")
+                    return None
+
             # Encode image to base64
             image_base64 = base64.b64encode(file_bytes).decode('utf-8')
 
@@ -651,8 +667,6 @@ class NotionConnector(BaseConnector):
                 '.jpeg': 'image/jpeg',
                 '.gif': 'image/gif',
                 '.webp': 'image/webp',
-                '.bmp': 'image/bmp',
-                '.tiff': 'image/tiff'
             }
             mime_type = mime_types.get(ext.lower(), 'image/png')
 

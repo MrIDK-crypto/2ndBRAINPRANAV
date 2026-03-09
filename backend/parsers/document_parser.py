@@ -232,7 +232,7 @@ class DocumentParser:
             return self._parse_rtf_bytes(file_bytes)
 
         # Image files - describe via GPT-4o vision
-        if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'):
+        if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff'):
             if len(file_bytes) > 20 * 1024 * 1024:
                 return f"[Image: {filename} — too large for vision analysis ({len(file_bytes) // (1024*1024)} MB)]"
             return self._parse_image_bytes(file_bytes, filename)
@@ -667,6 +667,7 @@ class DocumentParser:
     def _parse_image_bytes(self, file_bytes, filename):
         """Describe image content using GPT-4o vision"""
         import base64
+        import io as _io
         try:
             from openai import AzureOpenAI
             client = AzureOpenAI(
@@ -674,9 +675,24 @@ class DocumentParser:
                 api_key=os.environ.get('AZURE_OPENAI_API_KEY'),
                 api_version="2024-12-01-preview"
             )
-            b64 = base64.b64encode(file_bytes).decode('utf-8')
             ext = Path(filename).suffix.lower().lstrip('.')
-            mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp', 'bmp': 'image/bmp'}
+
+            # Azure OpenAI vision only supports PNG, JPEG, GIF, WebP
+            # Convert BMP/TIFF/other formats to PNG first
+            if ext not in ('png', 'jpg', 'jpeg', 'gif', 'webp'):
+                try:
+                    from PIL import Image as PILImage
+                    img = PILImage.open(_io.BytesIO(file_bytes))
+                    buf = _io.BytesIO()
+                    img.save(buf, format="PNG")
+                    file_bytes = buf.getvalue()
+                    ext = 'png'
+                except Exception as conv_err:
+                    print(f"[DocumentParser] Image conversion failed for {filename}: {conv_err}")
+                    return f"[Image file: {filename} — format conversion failed]"
+
+            b64 = base64.b64encode(file_bytes).decode('utf-8')
+            mime_map = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
             mime = mime_map.get(ext, 'image/png')
             response = client.chat.completions.create(
                 model=os.environ.get('AZURE_CHAT_DEPLOYMENT', 'gpt-5-chat'),
