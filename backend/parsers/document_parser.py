@@ -220,8 +220,24 @@ class DocumentParser:
         if ext == '.xml':
             return self._parse_xml_bytes(file_bytes)
 
-        # Plain text / markdown
-        if ext in ('.txt', '.md'):
+        # Plain text / markdown / code / config files — read as text
+        TEXT_EXTENSIONS = {
+            '.txt', '.md', '.rst', '.tex', '.bib',
+            # Code
+            '.py', '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+            '.java', '.go', '.rb', '.php', '.cs', '.cpp', '.c', '.h', '.hpp',
+            '.rs', '.kt', '.swift', '.scala', '.r', '.rmd',
+            '.sh', '.bash', '.zsh', '.ps1', '.bat',
+            '.sql', '.graphql', '.proto',
+            '.css', '.scss', '.sass', '.less',
+            '.vue', '.svelte', '.ipynb',
+            '.d.ts', '.js.map', '.css.map',
+            # Config
+            '.yaml', '.yml', '.toml', '.ini', '.conf', '.cfg', '.env',
+            '.lock', '.mod', '.sum',
+            '.log', '.ndjson', '.jsonl', '.geojson',
+        }
+        if ext in TEXT_EXTENSIONS:
             try:
                 return file_bytes.decode('utf-8', errors='ignore')
             except Exception:

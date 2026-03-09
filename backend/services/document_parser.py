@@ -93,8 +93,23 @@ class DocumentParser:
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
     }
 
-    # Plain text files (read directly)
-    PLAIN_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm", ".r", ".rmd"}
+    # Plain text files (read directly) — includes code, config, data formats
+    PLAIN_TEXT_EXTENSIONS = {
+        ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm", ".r", ".rmd",
+        # Code
+        ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
+        ".java", ".go", ".rb", ".php", ".cs", ".cpp", ".c", ".h", ".hpp",
+        ".rs", ".kt", ".swift", ".scala",
+        ".sh", ".bash", ".zsh", ".ps1", ".bat",
+        ".sql", ".graphql", ".proto",
+        ".css", ".scss", ".sass", ".less",
+        ".vue", ".svelte", ".ipynb", ".tex", ".bib", ".rst",
+        ".d.ts", ".js.map", ".css.map",
+        # Config
+        ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg", ".env",
+        ".lock", ".mod", ".sum",
+        ".log", ".tsv", ".ndjson", ".jsonl", ".geojson",
+    }
 
     # LlamaParse fallback extensions (ODF formats without local parsers)
     LLAMAPARSE_EXTENSIONS = {".odt", ".ods", ".odp"}

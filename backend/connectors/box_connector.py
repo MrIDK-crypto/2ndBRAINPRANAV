@@ -75,43 +75,43 @@ class BoxConnector(BaseConnector):
 
     # Supported file types for text extraction
     EXTRACTABLE_TYPES = {
+        # Documents
         ".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm",
         ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
         ".rtf", ".odt", ".ods", ".odp",
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif",
-        ".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm"
+        # Images (converted to PNG for GPT-4o vision)
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".svg",
+        # Media (transcribed via Whisper)
+        ".mp4", ".mov", ".wav", ".mp3", ".m4a", ".webm",
+        # Code/config files (read as plain text)
+        ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
+        ".java", ".go", ".rb", ".php", ".cs", ".cpp", ".c", ".h", ".hpp",
+        ".rs", ".kt", ".swift", ".scala", ".r", ".rmd", ".R",
+        ".sh", ".bash", ".zsh", ".ps1", ".bat",
+        ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg", ".env",
+        ".sql", ".graphql", ".proto",
+        ".css", ".scss", ".sass", ".less",
+        ".vue", ".svelte",
+        ".ipynb", ".tex", ".bib", ".rst",
+        # Data files
+        ".tsv", ".ndjson", ".jsonl", ".geojson", ".parquet",
+        # Logs
+        ".log",
+        # Archives (list contents)
+        ".zip", ".tar", ".gz", ".7z", ".rar",
+        # Other text formats
+        ".d.ts", ".js.map", ".css.map",
+        ".lock", ".mod", ".sum",
     }
 
-    # File extensions to always skip (code, build artifacts, configs, etc.)
-    SKIP_EXTENSIONS = {
-        # TypeScript/JavaScript build artifacts
-        ".d.ts", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
-        ".js.map", ".css.map", ".d.ts.map", ".min.js", ".min.css",
-        # Protocol buffers / compiled
-        ".proto", ".pb", ".pyc", ".pyo", ".class", ".o", ".obj", ".so", ".dll", ".dylib",
-        ".wasm", ".jar", ".war", ".ear",
-        # Package/dependency files
-        ".lock", ".resolved",
-        # Binary/executable
-        ".exe", ".bin", ".dmg", ".msi", ".iso", ".img",
-        # Archive (not useful as documents)
-        ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".tgz",
-        # Font files
+    # Binary files that truly cannot be parsed (no useful text or visual content)
+    BINARY_SKIP_EXTENSIONS = {
+        ".pyc", ".pyo", ".class", ".o", ".obj", ".so", ".dll", ".dylib",
+        ".wasm", ".exe", ".bin", ".dmg", ".msi", ".iso", ".img",
         ".woff", ".woff2", ".ttf", ".eot", ".otf",
-        # Source maps and configs
-        ".map", ".npmrc", ".yarnrc", ".eslintrc", ".prettierrc",
-        # Database / cache
-        ".db", ".sqlite", ".sqlite3", ".cache",
-        # System files
-        ".DS_Store", ".thumbs.db", ".desktop",
-        # Compiled CSS
-        ".sass-cache", ".less",
-        # Go / Rust / C artifacts
-        ".a", ".lib", ".mod", ".sum",
-        # SVG is borderline - skip since not useful for knowledge extraction
-        ".svg", ".ico", ".cur",
-        # Log files
-        ".log",
+        ".DS_Store", ".thumbs.db",
+        ".a", ".lib",
+        ".ico", ".cur",
     }
 
     # Directory names to always skip
@@ -704,16 +704,12 @@ class BoxConnector(BaseConnector):
             if "." in file_name:
                 file_ext = "." + file_name.rsplit(".", 1)[-1]
 
-            # Skip code/build artifact file types
+            # Skip only true binary files that cannot produce useful content
             lower_ext = file_ext.lower()
-            if lower_ext in self.SKIP_EXTENSIONS:
-                return None
-            # Handle compound extensions like .d.ts, .js.map, .d.ts.map
-            lower_name = file_name.lower()
-            if any(lower_name.endswith(skip) for skip in (".d.ts", ".js.map", ".css.map", ".d.ts.map", ".min.js", ".min.css")):
+            if lower_ext in self.BINARY_SKIP_EXTENSIONS:
                 return None
 
-            # Skip files from known junk directories
+            # Skip files from known dependency/build directories (node_modules, .git, etc.)
             full_path_check = f"{folder_path}/{file_name}".lower()
             if any(f"/{skip_dir}/" in full_path_check for skip_dir in self.SKIP_DIRS):
                 return None
@@ -970,16 +966,12 @@ class BoxConnector(BaseConnector):
             # Check file extension
             file_ext = f".{file_item.extension}" if file_item.extension else ""
 
-            # Skip code/build artifact file types
+            # Skip only true binary files that cannot produce useful content
             lower_ext = file_ext.lower()
-            if lower_ext in self.SKIP_EXTENSIONS:
-                return None
-            # Handle compound extensions like .d.ts, .js.map
-            lower_name = (file_item.name or "").lower()
-            if any(lower_name.endswith(skip) for skip in (".d.ts", ".js.map", ".css.map", ".d.ts.map", ".min.js", ".min.css")):
+            if lower_ext in self.BINARY_SKIP_EXTENSIONS:
                 return None
 
-            # Skip files from known junk directories
+            # Skip files from known dependency/build directories
             full_path_check = f"{folder_path}/{file_item.name}".lower()
             if any(f"/{skip_dir}/" in full_path_check for skip_dir in self.SKIP_DIRS):
                 return None
