@@ -213,14 +213,68 @@ FIELD_CONFIGS = {
     },
 }
 
+# ── Paper-Type-Aware Feature Overrides ─────────────────────────────────────
+# When a paper is detected as a non-experimental type, these features REPLACE
+# the field-specific experimental features. This prevents review papers from
+# being scored on "Experimental Rigor" or "Statistical Methods".
+
+PAPER_TYPE_FEATURE_OVERRIDES = {
+    "review": {
+        "label_suffix": " (Review)",
+        "features": {
+            "scope_coverage": {"label": "Scope & Coverage Breadth", "weight": 0.25},
+            "synthesis_quality": {"label": "Synthesis & Critical Analysis", "weight": 0.25},
+            "literature_completeness": {"label": "Literature Completeness & Recency", "weight": 0.20},
+            "organization_clarity": {"label": "Organization & Narrative Flow", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "impact_utility": {"label": "Impact & Utility for Readers", "weight": 0.05},
+        },
+    },
+    "meta_analysis": {
+        "label_suffix": " (Meta-Analysis)",
+        "features": {
+            "search_methodology": {"label": "Search Strategy & Methodology", "weight": 0.25},
+            "statistical_rigor": {"label": "Statistical Rigor (Pooling, Heterogeneity)", "weight": 0.25},
+            "study_selection": {"label": "Study Selection & Quality Assessment", "weight": 0.20},
+            "results_interpretation": {"label": "Results Interpretation & Bias Assessment", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "clinical_relevance": {"label": "Clinical / Practical Relevance", "weight": 0.05},
+        },
+    },
+    "case_report": {
+        "label_suffix": " (Case Report)",
+        "features": {
+            "clinical_detail": {"label": "Clinical Detail & Completeness", "weight": 0.25},
+            "diagnostic_reasoning": {"label": "Diagnostic Reasoning", "weight": 0.20},
+            "literature_context": {"label": "Literature Context & Comparison", "weight": 0.20},
+            "educational_value": {"label": "Educational Value & Takeaways", "weight": 0.15},
+            "writing": {"label": "Writing Quality", "weight": 0.10},
+            "care_adherence": {"label": "CARE Guideline Adherence", "weight": 0.10},
+        },
+    },
+    "protocol": {
+        "label_suffix": " (Protocol)",
+        "features": {
+            "completeness": {"label": "Procedural Completeness", "weight": 0.30},
+            "reproducibility": {"label": "Reproducibility & Detail Level", "weight": 0.25},
+            "validation": {"label": "Validation & Controls", "weight": 0.15},
+            "safety_documentation": {"label": "Safety & Troubleshooting", "weight": 0.10},
+            "writing": {"label": "Writing Clarity", "weight": 0.10},
+            "novelty": {"label": "Novelty vs. Existing Protocols", "weight": 0.10},
+        },
+    },
+}
+
+
 # ── Red Flag Checks ────────────────────────────────────────────────────────
+# Note: paper_type_exclude lists paper types for which this flag should NOT apply
 
 RED_FLAG_CHECKS = [
-    {"id": "no_abstract", "pattern": r"\babstract\b", "check": "missing", "severity": "critical", "issue": "No abstract detected", "penalty": -15, "fix": "Add a structured abstract (150-300 words)"},
-    {"id": "no_references", "pattern": r"\breferences?\b|\bbibliography\b", "check": "missing", "severity": "critical", "issue": "No references section detected", "penalty": -20, "fix": "Add a properly formatted references section"},
-    {"id": "low_references", "pattern": None, "check": "ref_count_low", "severity": "warning", "issue": "Fewer than 15 references", "penalty": -5, "fix": "Expand your literature review — top journals expect 30-60 references"},
-    {"id": "too_short", "pattern": None, "check": "word_count_low", "severity": "warning", "issue": "Manuscript under 3,000 words", "penalty": -10, "fix": "Expand methodology and results sections for journal-length depth"},
-    {"id": "no_tables", "pattern": r"\btable\s+\d+\b|\btable\s+[ivx]+\b", "check": "missing", "severity": "info", "issue": "No tables detected", "penalty": -3, "fix": "Add summary statistics, regression results, or comparison tables"},
+    {"id": "no_abstract", "pattern": r"\babstract\b", "check": "missing", "severity": "critical", "issue": "No abstract detected", "penalty": -15, "fix": "Add a structured abstract (150-300 words)", "paper_type_exclude": []},
+    {"id": "no_references", "pattern": r"\breferences?\b|\bbibliography\b", "check": "missing", "severity": "critical", "issue": "No references section detected", "penalty": -20, "fix": "Add a properly formatted references section", "paper_type_exclude": []},
+    {"id": "low_references", "pattern": None, "check": "ref_count_low", "severity": "warning", "issue": "Fewer than 15 references", "penalty": -5, "fix": "Expand your literature review — top journals expect 30-60 references", "paper_type_exclude": ["review", "meta_analysis"]},
+    {"id": "too_short", "pattern": None, "check": "word_count_low", "severity": "warning", "issue": "Manuscript under 3,000 words", "penalty": -10, "fix": "Expand methodology and results sections for journal-length depth", "paper_type_exclude": ["case_report"]},
+    {"id": "no_tables", "pattern": r"\btable\s+\d+\b|\btable\s+[ivx]+\b", "check": "missing", "severity": "info", "issue": "No tables detected", "penalty": -3, "fix": "Add summary statistics, regression results, or comparison tables", "paper_type_exclude": ["review", "protocol"]},
 ]
 
 MAX_FEATURE_CHARS = 100000  # max chars sent for feature extraction (~25K tokens)
@@ -238,7 +292,12 @@ class JournalScorerService:
         self.parser = DocumentParser()
 
     def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None) -> Generator[str, None, None]:
-        """10-step pipeline — yields SSE events as analysis progresses."""
+        """10-step pipeline — yields SSE events as analysis progresses.
+
+        IMPORTANT: Paper type detection runs BEFORE feature extraction so that
+        scoring criteria are appropriate for the paper type (review papers get
+        review criteria, not experimental criteria).
+        """
         start_time = time.time()
 
         try:
@@ -283,7 +342,42 @@ class JournalScorerService:
                 "reasoning": field_result["reasoning"],
             })
 
-            # ── Step 3: Extract Features (full text) ─────────────────────
+            # ── Step 2.5: Detect Paper Type (BEFORE feature extraction) ──
+            # This is critical: paper type determines which scoring criteria
+            # are used. A review paper must NOT be scored on experimental criteria.
+            paper_type_result = None
+            paper_type = 'experimental'  # default
+
+            try:
+                yield _sse("progress", {"step": 2, "message": "Detecting paper type...", "percent": 14})
+
+                from services.paper_type_detector import PaperTypeDetector
+                detector = PaperTypeDetector(openai_client=self.openai)
+                paper_type_result = detector.detect(text, title=text[:200].split('\n')[0] if text else '')
+                paper_type = paper_type_result.get('paper_type', 'experimental')
+
+                yield _sse("paper_type", paper_type_result)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"[JournalScorer] Paper type detection failed (defaulting to experimental): {e}")
+                paper_type_result = {"paper_type": "experimental", "confidence": "low", "signals": ["Detection failed"], "all_scores": {}}
+                yield _sse("paper_type", paper_type_result)
+
+            # ── Step 2.7: Apply Paper-Type Feature Overrides ─────────────
+            # If the paper is a review, meta-analysis, case report, or protocol,
+            # replace the field-specific experimental features with type-appropriate ones.
+            scoring_field_config = dict(field_config)  # shallow copy
+            if paper_type in PAPER_TYPE_FEATURE_OVERRIDES:
+                override = PAPER_TYPE_FEATURE_OVERRIDES[paper_type]
+                scoring_field_config = {
+                    "label": field_config["label"] + override["label_suffix"],
+                    "features": override["features"],
+                }
+                print(f"[JournalScorer] Overriding features for paper type '{paper_type}': "
+                      f"{list(override['features'].keys())}")
+
+            # ── Step 3: Extract Features (full text, type-aware) ──────────
             yield _sse("progress", {"step": 3, "message": "Evaluating manuscript features...", "percent": 18})
 
             # Send full text (up to MAX_FEATURE_CHARS) for feature extraction
@@ -291,7 +385,7 @@ class JournalScorerService:
             char_info = f"{len(analysis_text):,} chars" + (" (full paper)" if len(analysis_text) == len(text) else f" of {len(text):,}")
             yield _sse("progress", {"step": 3, "message": f"Analyzing {char_info}...", "percent": 22})
 
-            features = self._extract_features(analysis_text, field, field_config)
+            features = self._extract_features(analysis_text, field, scoring_field_config, paper_type=paper_type)
 
             yield _sse("features_extracted", {
                 "features": features,
@@ -304,7 +398,7 @@ class JournalScorerService:
             # ── Step 4: Consistency Check (3× scoring) ──────────────────
             yield _sse("progress", {"step": 4, "message": "Running consistency checks...", "percent": 32})
 
-            consistency_result = self._run_consistency_check(analysis_text, field, field_config, features)
+            consistency_result = self._run_consistency_check(analysis_text, field, scoring_field_config, features, paper_type=paper_type)
 
             yield _sse("consistency", consistency_result)
 
@@ -314,7 +408,7 @@ class JournalScorerService:
             # ── Step 5: Calculate Score ──────────────────────────────────
             yield _sse("progress", {"step": 5, "message": "Calculating overall score...", "percent": 50})
 
-            score_result = self._calculate_score(features, field_config)
+            score_result = self._calculate_score(features, scoring_field_config)
             overall_score = score_result["overall_score"]
             tier = score_result["tier"]
             tier_label = score_result["tier_label"]
@@ -326,10 +420,10 @@ class JournalScorerService:
                 "score_breakdown": score_result["breakdown"],
             })
 
-            # ── Step 5.5: Methodology Gap Detection ─────────────────
+            # ── Step 5.5: Methodology Gap Detection (type-aware) ─────────
             yield _sse("progress", {"step": 5, "message": "Checking for methodology gaps...", "percent": 54})
 
-            methodology_gaps = self._detect_methodology_gaps(text, field)
+            methodology_gaps = self._detect_methodology_gaps(text, field, paper_type=paper_type)
 
             yield _sse("methodology_gaps", {
                 "gaps": methodology_gaps,
@@ -337,23 +431,15 @@ class JournalScorerService:
             })
 
             # ── Step 5.7: Deep Paper Analysis ──────────────────────
-            # Paper type detection, type-specific deep analysis,
-            # research gap detection, and paper-type-aware experiment suggestions
-            paper_type_result = None
+            # Type-specific deep analysis, research gap detection, and
+            # paper-type-aware experiment suggestions (paper type already detected above)
             deep_analysis_result = None
             experiment_suggestions = []
             research_gaps_result = []
+            related_literature = []
+            related_protocols = []
 
             try:
-                yield _sse("progress", {"step": 5, "message": "Detecting paper type...", "percent": 55})
-
-                from services.paper_type_detector import PaperTypeDetector
-                detector = PaperTypeDetector(openai_client=self.openai)
-                paper_type_result = detector.detect(text, title=text[:200].split('\n')[0] if text else '')
-                paper_type = paper_type_result.get('paper_type', 'experimental')
-
-                yield _sse("paper_type", paper_type_result)
-
                 # Type-specific deep analysis via PaperAnalysisService
                 yield _sse("progress", {"step": 5, "message": f"Running {paper_type} deep analysis...", "percent": 56})
 
@@ -379,12 +465,71 @@ class JournalScorerService:
                     "analysis": deep_analysis_result or {},
                 })
 
+                # ── OpenAlex related literature search ──
+                try:
+                    yield _sse("progress", {"step": 5, "message": "Searching related literature...", "percent": 56})
+                    related_literature = paper_svc._search_related_literature(text, title_guess)
+                    if related_literature:
+                        yield _sse("related_literature", {
+                            "papers": related_literature,
+                            "count": len(related_literature),
+                        })
+                except Exception as e:
+                    print(f"[JournalScorer] Related literature search failed (non-critical): {e}")
+
+                # ── Related protocols search ──
+                try:
+                    related_protocols = paper_svc._search_related_protocols(text)
+                    if related_protocols:
+                        yield _sse("related_protocols", {
+                            "protocols": related_protocols,
+                            "count": len(related_protocols),
+                        })
+                except Exception as e:
+                    print(f"[JournalScorer] Related protocols search failed (non-critical): {e}")
+
                 # Paper-type-aware experiment/follow-up suggestions
                 yield _sse("progress", {"step": 5, "message": "Generating follow-up suggestions...", "percent": 57})
 
                 experiment_suggestions = self._generate_paper_type_aware_suggestions(
                     text, title_guess, paper_type, deep_analysis_result
                 )
+
+                # ── Feasibility check for experimental paper suggestions ──
+                if paper_type in ('experimental', 'protocol') and experiment_suggestions:
+                    try:
+                        from services.feasibility_checker import FeasibilityChecker
+                        feasibility_checker = FeasibilityChecker(
+                            llm_client=self.openai.client if self.openai else None,
+                        )
+                        # Extract biological context from deep analysis if available
+                        bio_context = None
+                        if deep_analysis_result and isinstance(deep_analysis_result, dict):
+                            bio_context = deep_analysis_result.get('biological_context') or {}
+
+                        for suggestion in experiment_suggestions:
+                            try:
+                                feasibility = feasibility_checker.check(
+                                    experiment={
+                                        'title': suggestion.get('title', ''),
+                                        'methodology': suggestion.get('methodology', ''),
+                                        'hypothesis': suggestion.get('hypothesis', ''),
+                                        'required_resources': suggestion.get('controls', []),
+                                    },
+                                    biological_context=bio_context if bio_context else None,
+                                )
+                                suggestion['feasibility'] = {
+                                    'score': feasibility.get('score', 0.5),
+                                    'tier': feasibility.get('tier', 'medium'),
+                                    'issues': feasibility.get('issues', [])[:3],
+                                    'modifications': feasibility.get('modifications', [])[:2],
+                                    'reasoning': feasibility.get('reasoning', ''),
+                                }
+                            except Exception:
+                                # Skip feasibility for this suggestion silently
+                                pass
+                    except Exception as e:
+                        print(f"[JournalScorer] Feasibility check failed (non-critical): {e}")
 
                 yield _sse("experiment_suggestions", {
                     "paper_type": paper_type,
@@ -415,12 +560,11 @@ class JournalScorerService:
                 traceback.print_exc()
                 print(f"[JournalScorer] Deep paper analysis failed (non-critical): {e}")
                 # Emit empty results so frontend doesn't hang
-                if not paper_type_result:
-                    yield _sse("paper_type", {"paper_type": "experimental", "confidence": "low", "signals": ["Detection failed"], "all_scores": {}})
+                # paper_type_result is already emitted above (Step 2.5)
                 if not deep_analysis_result:
-                    yield _sse("deep_analysis", {"paper_type": "experimental", "analysis": {}})
+                    yield _sse("deep_analysis", {"paper_type": paper_type, "analysis": {}})
                 if not experiment_suggestions:
-                    yield _sse("experiment_suggestions", {"paper_type": "experimental", "suggestions": []})
+                    yield _sse("experiment_suggestions", {"paper_type": paper_type, "suggestions": []})
                 if not research_gaps_result:
                     yield _sse("research_gaps", {"gaps": [], "stats": {}})
 
@@ -439,7 +583,7 @@ class JournalScorerService:
             # ── Step 8: Detect Red Flags ────────────────────────────────
             yield _sse("progress", {"step": 8, "message": "Checking for red flags...", "percent": 68})
 
-            flags_result = self._detect_red_flags(text, word_count, ref_count)
+            flags_result = self._detect_red_flags(text, word_count, ref_count, paper_type=paper_type)
             yield _sse("red_flags", flags_result)
 
             # Adjust score for penalties
@@ -513,10 +657,10 @@ class JournalScorerService:
 
             rec_buffer = ""
             for chunk in self._generate_recommendations_stream(
-                field_config["label"], overall_score, tier, features,
+                scoring_field_config["label"], overall_score, tier, features,
                 flags_result["flags"], journals, landscape, citation_result,
                 keywords=keywords, subfield=field_result.get("subfield", ""),
-                paper_type=paper_type_result.get("paper_type") if paper_type_result else None,
+                paper_type=paper_type,
                 research_gaps=research_gaps_result if research_gaps_result else None,
             ):
                 rec_buffer += chunk
@@ -531,9 +675,11 @@ class JournalScorerService:
                 "analysis_time_seconds": elapsed,
                 "methodology_gaps": methodology_gaps,
                 "citation_neighbor_journals": citation_neighbor_journals,
-                "paper_type": paper_type_result.get("paper_type") if paper_type_result else None,
+                "paper_type": paper_type,
                 "research_gaps_count": len(research_gaps_result) if research_gaps_result else 0,
                 "experiment_suggestions_count": len(experiment_suggestions) if experiment_suggestions else 0,
+                "related_literature_count": len(related_literature) if related_literature else 0,
+                "related_protocols_count": len(related_protocols) if related_protocols else 0,
             }
             if manuscript_url:
                 done_data["manuscript_url"] = manuscript_url
@@ -588,14 +734,43 @@ class JournalScorerService:
             return result
         return {"field": "economics", "confidence": 0.5, "subfield": "General", "keywords": ["general"], "reasoning": "Could not classify — defaulting to Economics"}
 
-    def _extract_features(self, text_excerpt: str, field: str, field_config: dict) -> dict:
+    def _extract_features(self, text_excerpt: str, field: str, field_config: dict, paper_type: str = 'experimental') -> dict:
         feature_list = "\n".join(
             f"- {key}: {info['label']} (weight: {info['weight']*100:.0f}%)"
             for key, info in field_config["features"].items()
         )
 
+        # Build paper-type-aware context for the reviewer prompt
+        paper_type_context = ""
+        if paper_type == 'review':
+            paper_type_context = (
+                "\nIMPORTANT: This is a REVIEW paper. Score it on review-specific criteria "
+                "(comprehensiveness, synthesis quality, literature coverage, narrative clarity). "
+                "Do NOT penalize it for lacking original experiments, statistical methods, or raw data. "
+                "Reviews synthesize existing literature — evaluate whether that synthesis is done well.\n"
+            )
+        elif paper_type == 'meta_analysis':
+            paper_type_context = (
+                "\nIMPORTANT: This is a META-ANALYSIS. Score it on meta-analytic criteria "
+                "(search strategy, study selection, statistical pooling, heterogeneity assessment). "
+                "This paper combines data from multiple studies — evaluate the quality of that combination.\n"
+            )
+        elif paper_type == 'case_report':
+            paper_type_context = (
+                "\nIMPORTANT: This is a CASE REPORT. Score it on case report criteria "
+                "(clinical detail, diagnostic reasoning, literature context, educational value). "
+                "Do NOT penalize it for small sample size or lack of controlled experiments.\n"
+            )
+        elif paper_type == 'protocol':
+            paper_type_context = (
+                "\nIMPORTANT: This is a PROTOCOL paper. Score it on protocol criteria "
+                "(procedural completeness, reproducibility, validation, safety documentation). "
+                "Evaluate whether someone could reproduce the procedure from this description alone.\n"
+            )
+
         prompt = (
-            f"You are a peer reviewer in {field_config['label']}. Score this manuscript on each feature below.\n\n"
+            f"You are a peer reviewer in {field_config['label']}. Score this manuscript on each feature below.\n"
+            f"{paper_type_context}\n"
             f"FEATURES TO SCORE (each 0-100):\n{feature_list}\n\n"
             "Respond ONLY in valid JSON — a dict where each key is the feature name and value is:\n"
             '{"score": 0-100, "details": "justification (2-3 sentences)", "citations": [{"text": "quoted or paraphrased evidence from the manuscript", "section": "which section it appears in"}], "suggested_references": [{"title": "Seminal paper title", "authors": "Author et al.", "year": "YYYY", "url": "DOI or URL if known", "relevance": "why this reference matters"}]}\n\n'
@@ -640,11 +815,22 @@ class JournalScorerService:
                 }
         return result
 
-    def _run_consistency_check(self, text: str, field: str, field_config: dict, initial_features: dict) -> dict:
+    def _run_consistency_check(self, text: str, field: str, field_config: dict, initial_features: dict, paper_type: str = 'experimental') -> dict:
         """Run 2 additional scoring rounds and average with the initial to get consistent scores."""
         all_runs = [
             {k: v["score"] for k, v in initial_features.items()}
         ]
+
+        # Build paper-type context for consistency runs
+        type_hint = ""
+        if paper_type == 'review':
+            type_hint = " This is a REVIEW paper — score on review quality (synthesis, coverage, clarity), NOT experimental rigor."
+        elif paper_type == 'meta_analysis':
+            type_hint = " This is a META-ANALYSIS — score on meta-analytic quality (search strategy, pooling, heterogeneity)."
+        elif paper_type == 'case_report':
+            type_hint = " This is a CASE REPORT — score on clinical completeness, diagnostic reasoning, educational value."
+        elif paper_type == 'protocol':
+            type_hint = " This is a PROTOCOL — score on procedural completeness, reproducibility, detail level."
 
         # Run 2 more scoring rounds with slightly different temperature
         for run_idx in range(CONSISTENCY_RUNS - 1):
@@ -655,7 +841,7 @@ class JournalScorerService:
                 )
                 prompt = (
                     f"You are a peer reviewer in {field_config['label']}. "
-                    f"Score this manuscript on each feature (0-100). "
+                    f"Score this manuscript on each feature (0-100).{type_hint} "
                     f"Respond ONLY in JSON: {{\"feature_key\": score_number, ...}}\n\n"
                     f"Features:\n{feature_list}\n\n"
                     f"MANUSCRIPT:\n{text[:CONSISTENCY_CHUNK]}"
@@ -1025,11 +1211,16 @@ class JournalScorerService:
                 "tier2_threshold": 65,
             }
 
-    def _detect_red_flags(self, text: str, word_count: int, ref_count: int) -> dict:
+    def _detect_red_flags(self, text: str, word_count: int, ref_count: int, paper_type: str = 'experimental') -> dict:
         flags = []
         total_penalty = 0
 
         for check in RED_FLAG_CHECKS:
+            # Skip flags that don't apply to this paper type
+            excluded_types = check.get("paper_type_exclude", [])
+            if paper_type in excluded_types:
+                continue
+
             triggered = False
 
             if check["check"] == "missing" and check["pattern"]:
@@ -1157,71 +1348,250 @@ class JournalScorerService:
         best = max(counts) if counts else 0
         return best
 
-    def _detect_methodology_gaps(self, text: str, field: str) -> list:
+    def _detect_methodology_gaps(self, text: str, field: str, paper_type: str = 'experimental') -> list:
         """Detect common methodology gaps that journal reviewers will flag.
+
+        Paper-type-aware: review papers get review-specific checks, experimental
+        papers get experimental checks, etc.
 
         Args:
             text: Full manuscript text
             field: Academic field (e.g., 'biomedical', 'psychology', 'economics')
+            paper_type: Detected paper type
 
         Returns:
             List of gap dicts with name, severity, recommendation, detected status
         """
         text_lower = text.lower()
 
-        checks = [
-            {
-                'name': 'Sample Size Justification',
-                'keywords': ['sample size', 'power analysis', 'power calculation', 'n =', 'participants were', 'sample of'],
-                'severity': 'high',
-                'recommendation': 'Add a power analysis or sample size justification in the Methods section.',
-            },
-            {
-                'name': 'Blinding/Randomization',
-                'keywords': ['blind', 'randomiz', 'double-blind', 'single-blind', 'allocation conceal', 'random assignment'],
-                'severity': 'high' if field in ('biomedical', 'psychology', 'biology') else 'medium',
-                'recommendation': 'Describe blinding and randomization procedures, or explain why they were not applicable.',
-            },
-            {
-                'name': 'Ethics Statement',
-                'keywords': ['ethics', 'irb', 'institutional review', 'informed consent', 'ethics committee', 'iacuc', 'ethical approval'],
-                'severity': 'high' if field in ('biomedical', 'psychology', 'biology') else 'low',
-                'recommendation': 'Include IRB/ethics committee approval number and informed consent details.',
-            },
-            {
-                'name': 'Data Availability',
-                'keywords': ['data availab', 'data sharing', 'openly available', 'repository', 'supplementary data', 'upon request', 'data access'],
-                'severity': 'medium',
-                'recommendation': 'Add a Data Availability Statement specifying where data can be accessed.',
-            },
-            {
-                'name': 'Conflict of Interest',
-                'keywords': ['conflict of interest', 'competing interest', 'disclosure', 'no conflict', 'declare no'],
-                'severity': 'medium',
-                'recommendation': 'Include a Conflict of Interest / Competing Interests declaration.',
-            },
-            {
-                'name': 'Statistical Methods',
-                'keywords': ['t-test', 'anova', 'regression', 'chi-square', 'p-value', 'confidence interval',
-                            'mann-whitney', 'statistical analys', 'significance level', 'alpha ='],
-                'severity': 'high',
-                'recommendation': 'Describe statistical tests used, significance thresholds, and software/versions.',
-            },
-            {
-                'name': 'Limitations',
-                'keywords': ['limitation', 'caveat', 'shortcoming', 'weakness', 'future work should address',
-                            'acknowledge that', 'despite these'],
-                'severity': 'medium',
-                'recommendation': 'Add a Limitations section discussing study constraints and their impact.',
-            },
-            {
-                'name': 'Reproducibility Details',
-                'keywords': ['protocol', 'code availab', 'software version', 'package version', 'reproducib',
-                            'materials and methods', 'detailed in supplementa'],
-                'severity': 'medium' if field in ('biomedical', 'biology', 'cs_data_science') else 'low',
-                'recommendation': 'Provide sufficient detail for independent replication: software versions, parameter settings, protocol steps.',
-            },
-        ]
+        # ── Review-specific checks ───────────────────────────────────────
+        if paper_type == 'review':
+            checks = [
+                {
+                    'name': 'Search Strategy',
+                    'keywords': ['search strategy', 'databases searched', 'pubmed', 'web of science', 'scopus',
+                                'search terms', 'search string', 'systematic search', 'literature search'],
+                    'severity': 'high',
+                    'recommendation': 'Describe the literature search strategy: databases, search terms, date range, inclusion/exclusion criteria.',
+                },
+                {
+                    'name': 'Scope Definition',
+                    'keywords': ['scope', 'aim of this review', 'this review focuses', 'we review', 'purpose of this review',
+                                'objective', 'in this review we'],
+                    'severity': 'medium',
+                    'recommendation': 'Clearly define the scope and objectives of the review in the introduction.',
+                },
+                {
+                    'name': 'Critical Analysis',
+                    'keywords': ['limitation', 'however', 'in contrast', 'conflicting', 'debate', 'controversy',
+                                'drawback', 'caveat', 'shortcoming', 'critique', 'critically'],
+                    'severity': 'medium',
+                    'recommendation': 'Go beyond summarizing -- include critical analysis of conflicting findings, methodological limitations of reviewed studies.',
+                },
+                {
+                    'name': 'Future Directions',
+                    'keywords': ['future', 'remain to be', 'further research', 'unanswered', 'open question',
+                                'future directions', 'future studies', 'warrant further'],
+                    'severity': 'medium',
+                    'recommendation': 'Include a section on future research directions and unanswered questions.',
+                },
+                {
+                    'name': 'Conflict of Interest',
+                    'keywords': ['conflict of interest', 'competing interest', 'disclosure', 'no conflict', 'declare no'],
+                    'severity': 'medium',
+                    'recommendation': 'Include a Conflict of Interest / Competing Interests declaration.',
+                },
+                {
+                    'name': 'PRISMA / Reporting Guidelines',
+                    'keywords': ['prisma', 'reporting guideline', 'preferred reporting', 'moose', 'prospero',
+                                'registration'],
+                    'severity': 'low',
+                    'recommendation': 'For systematic reviews, follow PRISMA guidelines. Consider registering the review protocol in PROSPERO.',
+                },
+            ]
+
+        # ── Meta-analysis-specific checks ────────────────────────────────
+        elif paper_type == 'meta_analysis':
+            checks = [
+                {
+                    'name': 'Search Strategy',
+                    'keywords': ['search strategy', 'databases searched', 'pubmed', 'web of science', 'scopus',
+                                'search terms', 'systematic search'],
+                    'severity': 'high',
+                    'recommendation': 'Describe the comprehensive literature search strategy.',
+                },
+                {
+                    'name': 'Heterogeneity Assessment',
+                    'keywords': ['heterogeneity', 'i-squared', 'i2', 'q statistic', 'tau-squared', 'cochran'],
+                    'severity': 'high',
+                    'recommendation': 'Report heterogeneity metrics (I-squared, Q statistic, tau-squared).',
+                },
+                {
+                    'name': 'Publication Bias',
+                    'keywords': ['publication bias', 'funnel plot', 'egger', 'begg', 'trim and fill', 'asymmetry'],
+                    'severity': 'high',
+                    'recommendation': 'Assess publication bias using funnel plots and statistical tests (Egger, Begg).',
+                },
+                {
+                    'name': 'Quality Assessment',
+                    'keywords': ['quality assessment', 'risk of bias', 'newcastle-ottawa', 'nos', 'cochrane',
+                                'jadad', 'rob 2', 'robins'],
+                    'severity': 'high',
+                    'recommendation': 'Use a validated tool (Cochrane RoB, Newcastle-Ottawa) to assess study quality.',
+                },
+                {
+                    'name': 'PRISMA Adherence',
+                    'keywords': ['prisma', 'preferred reporting', 'prospero', 'registration'],
+                    'severity': 'medium',
+                    'recommendation': 'Follow PRISMA guidelines for reporting. Register the protocol in PROSPERO.',
+                },
+                {
+                    'name': 'Sensitivity Analysis',
+                    'keywords': ['sensitivity analysis', 'leave-one-out', 'subgroup analysis', 'sensitivity'],
+                    'severity': 'medium',
+                    'recommendation': 'Perform sensitivity analyses to test robustness of pooled results.',
+                },
+                {
+                    'name': 'Conflict of Interest',
+                    'keywords': ['conflict of interest', 'competing interest', 'disclosure', 'no conflict', 'declare no'],
+                    'severity': 'medium',
+                    'recommendation': 'Include a Conflict of Interest / Competing Interests declaration.',
+                },
+            ]
+
+        # ── Case report-specific checks ──────────────────────────────────
+        elif paper_type == 'case_report':
+            checks = [
+                {
+                    'name': 'Patient Consent',
+                    'keywords': ['informed consent', 'patient consent', 'written consent', 'verbal consent',
+                                'consent obtained', 'approved by'],
+                    'severity': 'high',
+                    'recommendation': 'Include a statement about informed patient consent for publication.',
+                },
+                {
+                    'name': 'Clinical Timeline',
+                    'keywords': ['timeline', 'day 1', 'on admission', 'hospital day', 'week', 'month',
+                                'follow-up', 'at presentation'],
+                    'severity': 'medium',
+                    'recommendation': 'Provide a clear clinical timeline of events.',
+                },
+                {
+                    'name': 'Differential Diagnosis',
+                    'keywords': ['differential diagnosis', 'differential', 'ruled out', 'excluded',
+                                'considered', 'alternative diagnosis'],
+                    'severity': 'medium',
+                    'recommendation': 'Discuss the differential diagnosis and why alternatives were excluded.',
+                },
+                {
+                    'name': 'CARE Guidelines',
+                    'keywords': ['care guideline', 'care checklist', 'case report guidelines'],
+                    'severity': 'low',
+                    'recommendation': 'Follow the CARE (CAse REport) guidelines for structured case reporting.',
+                },
+                {
+                    'name': 'Literature Comparison',
+                    'keywords': ['similar case', 'previously reported', 'literature', 'published case',
+                                'in the literature', 'our case differs'],
+                    'severity': 'medium',
+                    'recommendation': 'Compare this case with similar cases in the literature.',
+                },
+            ]
+
+        # ── Protocol-specific checks ─────────────────────────────────────
+        elif paper_type == 'protocol':
+            checks = [
+                {
+                    'name': 'Reagent Details',
+                    'keywords': ['catalog', 'vendor', 'supplier', 'manufacturer', 'cat#', 'cat. no',
+                                'purchased from', 'obtained from'],
+                    'severity': 'high',
+                    'recommendation': 'Provide vendor names and catalog numbers for all reagents.',
+                },
+                {
+                    'name': 'Equipment Settings',
+                    'keywords': ['rpm', 'temperature', 'voltage', 'watt', 'settings', 'parameters',
+                                'conditions'],
+                    'severity': 'high',
+                    'recommendation': 'Specify exact equipment settings (RPM, temperature, voltage, etc.).',
+                },
+                {
+                    'name': 'Timing Details',
+                    'keywords': ['minutes', 'hours', 'seconds', 'overnight', 'incubat'],
+                    'severity': 'medium',
+                    'recommendation': 'Provide exact durations for all incubation and processing steps.',
+                },
+                {
+                    'name': 'Troubleshooting Section',
+                    'keywords': ['troubleshoot', 'common problem', 'if this fails', 'tips', 'notes',
+                                'caution', 'warning', 'critical step'],
+                    'severity': 'medium',
+                    'recommendation': 'Add a troubleshooting section with common problems and solutions.',
+                },
+                {
+                    'name': 'Safety Information',
+                    'keywords': ['safety', 'hazard', 'ppe', 'fume hood', 'gloves', 'goggles',
+                                'biohazard', 'waste disposal'],
+                    'severity': 'medium',
+                    'recommendation': 'Include safety precautions and waste disposal instructions.',
+                },
+            ]
+
+        # ── Experimental paper checks (default) ──────────────────────────
+        else:
+            checks = [
+                {
+                    'name': 'Sample Size Justification',
+                    'keywords': ['sample size', 'power analysis', 'power calculation', 'n =', 'participants were', 'sample of'],
+                    'severity': 'high',
+                    'recommendation': 'Add a power analysis or sample size justification in the Methods section.',
+                },
+                {
+                    'name': 'Blinding/Randomization',
+                    'keywords': ['blind', 'randomiz', 'double-blind', 'single-blind', 'allocation conceal', 'random assignment'],
+                    'severity': 'high' if field in ('biomedical', 'psychology', 'biology') else 'medium',
+                    'recommendation': 'Describe blinding and randomization procedures, or explain why they were not applicable.',
+                },
+                {
+                    'name': 'Ethics Statement',
+                    'keywords': ['ethics', 'irb', 'institutional review', 'informed consent', 'ethics committee', 'iacuc', 'ethical approval'],
+                    'severity': 'high' if field in ('biomedical', 'psychology', 'biology') else 'low',
+                    'recommendation': 'Include IRB/ethics committee approval number and informed consent details.',
+                },
+                {
+                    'name': 'Data Availability',
+                    'keywords': ['data availab', 'data sharing', 'openly available', 'repository', 'supplementary data', 'upon request', 'data access'],
+                    'severity': 'medium',
+                    'recommendation': 'Add a Data Availability Statement specifying where data can be accessed.',
+                },
+                {
+                    'name': 'Conflict of Interest',
+                    'keywords': ['conflict of interest', 'competing interest', 'disclosure', 'no conflict', 'declare no'],
+                    'severity': 'medium',
+                    'recommendation': 'Include a Conflict of Interest / Competing Interests declaration.',
+                },
+                {
+                    'name': 'Statistical Methods',
+                    'keywords': ['t-test', 'anova', 'regression', 'chi-square', 'p-value', 'confidence interval',
+                                'mann-whitney', 'statistical analys', 'significance level', 'alpha ='],
+                    'severity': 'high',
+                    'recommendation': 'Describe statistical tests used, significance thresholds, and software/versions.',
+                },
+                {
+                    'name': 'Limitations',
+                    'keywords': ['limitation', 'caveat', 'shortcoming', 'weakness', 'future work should address',
+                                'acknowledge that', 'despite these'],
+                    'severity': 'medium',
+                    'recommendation': 'Add a Limitations section discussing study constraints and their impact.',
+                },
+                {
+                    'name': 'Reproducibility Details',
+                    'keywords': ['protocol', 'code availab', 'software version', 'package version', 'reproducib',
+                                'materials and methods', 'detailed in supplementa'],
+                    'severity': 'medium' if field in ('biomedical', 'biology', 'cs_data_science') else 'low',
+                    'recommendation': 'Provide sufficient detail for independent replication: software versions, parameter settings, protocol steps.',
+                },
+            ]
 
         gaps = []
         for check in checks:
@@ -1470,14 +1840,12 @@ class JournalScorerService:
         if subfield:
             keywords_info += f"\n- Specific subfield: {subfield}"
 
-        # Paper type context (Step 5 enrichment)
+        # Paper type context
         paper_type_info = ""
         if paper_type:
             paper_type_info = f"\n- Paper type: {paper_type}"
-            if paper_type in ('review', 'meta_analysis'):
-                paper_type_info += " (DO NOT suggest wet-lab experiments — suggest editorial/analytical follow-ups instead)"
 
-        # Research gaps context (Step 5 enrichment)
+        # Research gaps context
         gaps_info = ""
         if research_gaps:
             gap_summaries = []
@@ -1486,6 +1854,72 @@ class JournalScorerService:
                 gap_summaries.append(f"  - {gap_title}")
             if gap_summaries:
                 gaps_info = f"\n- Research gaps detected:\n" + "\n".join(gap_summaries)
+
+        # ── Build paper-type-specific Section 1 ──────────────────────────
+        if paper_type in ('review', 'meta_analysis'):
+            section1 = (
+                "## SECTION 1: Specific Improvements to Strengthen This Review\n\n"
+                "List exactly 3-5 specific improvements as a numbered list. "
+                "This is a REVIEW/META-ANALYSIS — do NOT suggest wet-lab experiments.\n\n"
+                "For EACH improvement, include:\n"
+                "- **Improvement title** — clear, specific\n"
+                "- **Type** — one of: coverage gap, synthesis improvement, methodological addition, "
+                "visualization/figure suggestion, updated analysis\n"
+                "- **What to do** — specific action (e.g., 'Add a section on emerging ferroptosis-iron interactions "
+                "covering the 15+ papers published since 2022', NOT 'expand the review')\n"
+                "- **Why this matters** — how this strengthens the review for journal acceptance\n"
+                "- **Key references to add** — cite 2-3 specific papers with DOI links that should be incorporated\n\n"
+                "Types of improvements to suggest:\n"
+                "- Missing subtopics or recent developments not covered\n"
+                "- Sections where synthesis is weak (just listing studies vs. critically comparing them)\n"
+                "- Summary tables or figures that would improve clarity\n"
+                "- If a narrative review: sections that could become a quantitative meta-analysis\n"
+                "- Updated literature searches (papers published after the review's search date)\n\n"
+                "CRITICAL: These must be specific to THIS review's topic "
+                f"({', '.join(keywords[:4]) if keywords else field_label}). "
+                "Do NOT suggest running Western blots, doing cell culture, or any bench experiments.\n\n"
+            )
+        elif paper_type == 'case_report':
+            section1 = (
+                "## SECTION 1: Specific Improvements to Strengthen This Case Report\n\n"
+                "List exactly 3-5 specific improvements as a numbered list. For EACH:\n"
+                "- **Improvement title**\n"
+                "- **Type** — clinical detail, differential diagnosis, literature comparison, "
+                "follow-up data, educational value\n"
+                "- **What to do** — specific action\n"
+                "- **Why this matters** — how this improves the case report\n"
+                "- **Reference** — cite a relevant similar case or clinical guideline with DOI\n\n"
+            )
+        elif paper_type == 'protocol':
+            section1 = (
+                "## SECTION 1: Specific Validation Experiments for This Protocol\n\n"
+                "List exactly 3-5 specific validation/optimization experiments. For EACH:\n"
+                "- **Experiment name**\n"
+                "- **What to test** — specific parameter or condition\n"
+                "- **Methodology** — exact approach\n"
+                "- **Controls** — positive and negative controls\n"
+                "- **Expected outcome** — what success looks like\n"
+                "- **Reference** — cite the gold standard method for comparison\n\n"
+            )
+        else:
+            # Experimental papers — original experiment suggestions
+            section1 = (
+                "## SECTION 1: Specific Experiments to Strengthen This Paper\n\n"
+                "List exactly 3-5 specific experiments as a numbered list. For EACH experiment, you MUST include ALL of:\n"
+                "- **Experiment name** — a clear, specific title\n"
+                "- **Model system** — exact cell lines (e.g., 'HCT116 and SW480 colorectal cancer cells'), "
+                "animal models (e.g., 'C57BL/6 xenograft mice'), databases (e.g., 'TCGA-COAD cohort'), "
+                "or clinical datasets to use\n"
+                "- **Technique/Protocol** — exact method (e.g., 'LC-MS/MS with TMT 16-plex labeling', "
+                "'Western blot for cleaved caspase-3', 'ChIP-seq for H3K27ac')\n"
+                "- **Controls** — what positive/negative controls to include\n"
+                "- **Expected outcome** — what result would strengthen the paper and why\n"
+                "- **Reference** — cite the seminal paper that established this method with DOI link\n\n"
+                "CRITICAL: These must be experiments that are directly relevant to THIS paper's specific topic "
+                f"({', '.join(keywords[:4]) if keywords else field_label}). "
+                "Do NOT give generic advice like 'do dose-response studies'. "
+                "Give the exact experiment a PI would assign to a grad student.\n\n"
+            )
 
         prompt = (
             f"You are a senior research advisor specializing in {field_label}"
@@ -1501,21 +1935,7 @@ class JournalScorerService:
             f"{landscape_info}"
             f"{citation_info}\n\n"
 
-            "## SECTION 1: Specific Experiments to Strengthen This Paper\n\n"
-            "List exactly 3-5 specific experiments as a numbered list. For EACH experiment, you MUST include ALL of:\n"
-            "- **Experiment name** — a clear, specific title\n"
-            "- **Model system** — exact cell lines (e.g., 'HCT116 and SW480 colorectal cancer cells'), "
-            "animal models (e.g., 'C57BL/6 xenograft mice'), databases (e.g., 'TCGA-COAD cohort'), "
-            "or clinical datasets to use\n"
-            "- **Technique/Protocol** — exact method (e.g., 'LC-MS/MS with TMT 16-plex labeling', "
-            "'Western blot for cleaved caspase-3', 'ChIP-seq for H3K27ac')\n"
-            "- **Controls** — what positive/negative controls to include\n"
-            "- **Expected outcome** — what result would strengthen the paper and why\n"
-            "- **Reference** — cite the seminal paper that established this method with DOI link\n\n"
-            "CRITICAL: These must be experiments that are directly relevant to THIS paper's specific topic "
-            f"({', '.join(keywords[:4]) if keywords else field_label}). "
-            "Do NOT give generic advice like 'do dose-response studies'. "
-            "Give the exact experiment a PI would assign to a grad student.\n\n"
+            f"{section1}"
 
             "## SECTION 2: Missing Key References\n\n"
             "List 5-8 specific papers that MUST be cited in this manuscript. For each:\n"
@@ -1527,7 +1947,7 @@ class JournalScorerService:
             "2-3 specific structural changes to improve acceptance chances.\n\n"
 
             "FORMATTING RULES:\n"
-            "- Use markdown with numbered lists for experiments\n"
+            "- Use markdown with numbered lists\n"
             "- Every paper citation MUST include a DOI link: [Author et al. (Year)](https://doi.org/...)\n"
             "- Be extremely specific — no vague advice\n"
         )

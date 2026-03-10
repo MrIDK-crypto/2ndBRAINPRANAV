@@ -34,18 +34,50 @@ GDRIVE_SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
 ]
 
-# Supported MIME types (regular files only - Google Workspace types handled by dedicated connectors)
+# Google Workspace MIME types → export format for content extraction
+GOOGLE_WORKSPACE_TYPES = {
+    'application/vnd.google-apps.document': 'text/plain',
+    'application/vnd.google-apps.spreadsheet': 'text/csv',
+    'application/vnd.google-apps.presentation': 'text/plain',
+    'application/vnd.google-apps.drawing': 'image/png',
+    'application/vnd.google-apps.form': 'text/plain',
+}
+
+# Non-Workspace file types we can extract content from
 EXTRACTABLE_TYPES = {
     'application/pdf': None,
     'text/plain': None,
     'text/markdown': None,
     'text/html': None,
+    'text/csv': None,
+    'text/xml': None,
     'application/json': None,
+    'application/xml': None,
+    'application/rtf': None,
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': None,
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': None,
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': None,
+    'application/msword': None,
+    'application/vnd.ms-excel': None,
+    'application/vnd.ms-powerpoint': None,
     'image/png': None,
     'image/jpeg': None,
+    'image/gif': None,
+    'image/webp': None,
+    'image/tiff': None,
     'video/mp4': None,
+    'video/quicktime': None,
+    'audio/mpeg': None,
+    'audio/wav': None,
+}
+
+# MIME types to EXCLUDE from file listing (non-file objects)
+EXCLUDED_TYPES = {
+    'application/vnd.google-apps.folder',
+    'application/vnd.google-apps.shortcut',
+    'application/vnd.google-apps.fusiontable',
+    'application/vnd.google-apps.map',
+    'application/vnd.google-apps.site',
 }
 
 
@@ -155,9 +187,9 @@ class GDriveConnector(BaseConnector):
             # Build query
             query_parts = []
 
-            # Filter by MIME types
-            mime_queries = [f"mimeType='{mt}'" for mt in EXTRACTABLE_TYPES.keys()]
-            query_parts.append(f"({' or '.join(mime_queries)})")
+            # Exclude folders, shortcuts, and other non-file types
+            for excluded_type in EXCLUDED_TYPES:
+                query_parts.append(f"mimeType!='{excluded_type}'")
 
             if not include_trashed:
                 query_parts.append("trashed=false")
@@ -257,16 +289,12 @@ class GDriveConnector(BaseConnector):
             name = file['name']
             mime_type = file['mimeType']
 
-            # Skip Google Workspace files — they're handled by dedicated connectors (GDocs, GSheets, GSlides)
-            if mime_type.startswith('application/vnd.google-apps.'):
-                print(f"[GDrive] Skipping Google Workspace file: {name} ({mime_type}) — use dedicated connector", flush=True)
-                return None
-
             content = self._extract_content(file_id, mime_type, name)
 
             if not content:
-                print(f"[GDrive] No content extracted for {name}, skipping", flush=True)
-                return None
+                # Still include the file with a placeholder so it appears in the selection modal
+                content = f"[File: {name}] (Content extraction not available for type: {mime_type})"
+                print(f"[GDrive] No content extracted for {name} ({mime_type}), using placeholder", flush=True)
 
             owners = file.get('owners', [])
             owner_names = [o.get('displayName', o.get('emailAddress', '')) for o in owners]
@@ -321,7 +349,7 @@ class GDriveConnector(BaseConnector):
         try:
             # Google Workspace files - export as text
             if mime_type.startswith('application/vnd.google-apps.'):
-                export_type = EXTRACTABLE_TYPES.get(mime_type)
+                export_type = GOOGLE_WORKSPACE_TYPES.get(mime_type)
                 if export_type:
                     response = self.service.files().export(
                         fileId=file_id,
@@ -345,7 +373,9 @@ class GDriveConnector(BaseConnector):
             file_content = file_buffer.getvalue()
 
             # Handle based on type
-            if mime_type in ['text/plain', 'text/markdown', 'application/json']:
+            # Plain text types (txt, md, json, csv, xml, rtf)
+            if mime_type in ['text/plain', 'text/markdown', 'application/json', 'text/csv',
+                             'text/xml', 'application/xml', 'application/rtf']:
                 return file_content.decode('utf-8', errors='ignore')
 
             elif mime_type == 'text/html':
@@ -358,8 +388,11 @@ class GDriveConnector(BaseConnector):
                     text = file_content.decode('utf-8', errors='ignore')
                     return re.sub('<[^<]+?>', '', text)
 
-            elif mime_type in ('application/pdf', ) or 'wordprocessingml' in mime_type or 'spreadsheetml' in mime_type:
-                # Use Mistral Document AI (with local fallback) for PDF, DOCX, XLSX
+            elif (mime_type in ('application/pdf',) or
+                  'wordprocessingml' in mime_type or 'spreadsheetml' in mime_type or
+                  'presentationml' in mime_type or
+                  mime_type in ('application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-powerpoint')):
+                # Use Mistral Document AI (with local fallback) for PDF, DOCX, XLSX, PPTX, DOC, XLS, PPT
                 try:
                     from parsers.document_parser import DocumentParser
                     parser = DocumentParser()
@@ -369,7 +402,7 @@ class GDriveConnector(BaseConnector):
                 except Exception as e:
                     print(f"[GDrive] Mistral parse failed for {filename}: {e}")
                 # Fallback for DOCX
-                if 'wordprocessingml' in mime_type:
+                if 'wordprocessingml' in mime_type or mime_type == 'application/msword':
                     try:
                         import docx
                         doc = docx.Document(io.BytesIO(file_content))
@@ -377,11 +410,24 @@ class GDriveConnector(BaseConnector):
                     except Exception:
                         pass
                 # Fallback for XLSX
-                if 'spreadsheetml' in mime_type:
+                if 'spreadsheetml' in mime_type or mime_type == 'application/vnd.ms-excel':
                     try:
                         import pandas as pd
                         df = pd.read_excel(io.BytesIO(file_content))
                         return df.to_string()
+                    except Exception:
+                        pass
+                # Fallback for PPTX
+                if 'presentationml' in mime_type:
+                    try:
+                        from pptx import Presentation
+                        prs = Presentation(io.BytesIO(file_content))
+                        text_parts = []
+                        for slide in prs.slides:
+                            for shape in slide.shapes:
+                                if hasattr(shape, "text"):
+                                    text_parts.append(shape.text)
+                        return '\n'.join(text_parts)
                     except Exception:
                         pass
                 return None
@@ -399,8 +445,8 @@ class GDriveConnector(BaseConnector):
                     print(f"[GDrive] Image OCR failed for {filename}: {e}")
                 return None
 
-            elif mime_type and mime_type.startswith('video/'):
-                # Whisper transcription
+            elif mime_type and (mime_type.startswith('video/') or mime_type.startswith('audio/')):
+                # Whisper transcription for audio and video
                 try:
                     from services.knowledge_service import KnowledgeService
                     from database.models import SessionLocal

@@ -3732,12 +3732,17 @@ def _run_connector_sync(
                     since = connector.last_sync_at
 
                 # === PRE-FETCH DEDUP SETS for incremental saving ===
-                deleted_external_ids = set(
-                    d.external_id for d in db.query(DeletedDocument.external_id).filter(
-                        DeletedDocument.tenant_id == tenant_id,
-                        DeletedDocument.connector_id == connector.id
-                    ).all()
-                )
+                # For selection-required connectors, don't skip previously deleted files
+                # so they re-appear in the selection modal for the user to re-import
+                if connector_type in SELECTION_REQUIRED_CONNECTORS:
+                    deleted_external_ids = set()  # Allow all files through to selection modal
+                else:
+                    deleted_external_ids = set(
+                        d.external_id for d in db.query(DeletedDocument.external_id).filter(
+                            DeletedDocument.tenant_id == tenant_id,
+                            DeletedDocument.connector_id == connector.id
+                        ).all()
+                    )
                 existing_docs_query = db.query(Document).filter(
                     Document.tenant_id == tenant_id,
                     Document.connector_id == connector.id,
