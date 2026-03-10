@@ -336,6 +336,94 @@ class JournalScorerService:
                 "gaps_found": len(methodology_gaps),
             })
 
+            # ── Step 5.7: Deep Paper Analysis ──────────────────────
+            # Paper type detection, type-specific deep analysis,
+            # research gap detection, and paper-type-aware experiment suggestions
+            paper_type_result = None
+            deep_analysis_result = None
+            experiment_suggestions = []
+            research_gaps_result = []
+
+            try:
+                yield _sse("progress", {"step": 5, "message": "Detecting paper type...", "percent": 55})
+
+                from services.paper_type_detector import PaperTypeDetector
+                detector = PaperTypeDetector(openai_client=self.openai)
+                paper_type_result = detector.detect(text, title=text[:200].split('\n')[0] if text else '')
+                paper_type = paper_type_result.get('paper_type', 'experimental')
+
+                yield _sse("paper_type", paper_type_result)
+
+                # Type-specific deep analysis via PaperAnalysisService
+                yield _sse("progress", {"step": 5, "message": f"Running {paper_type} deep analysis...", "percent": 56})
+
+                from services.paper_analysis_service import PaperAnalysisService
+                paper_svc = PaperAnalysisService()
+                title_guess = text[:200].split('\n')[0].strip() if text else ''
+
+                if paper_type == 'experimental':
+                    deep_analysis_result = paper_svc._analyze_experimental(text, title_guess)
+                elif paper_type == 'review':
+                    deep_analysis_result = paper_svc._analyze_review(text, title_guess)
+                elif paper_type == 'meta_analysis':
+                    deep_analysis_result = paper_svc._analyze_meta_analysis(text, title_guess)
+                elif paper_type == 'case_report':
+                    deep_analysis_result = paper_svc._analyze_case_report(text, title_guess)
+                elif paper_type == 'protocol':
+                    deep_analysis_result = paper_svc._analyze_protocol(text, title_guess)
+                else:
+                    deep_analysis_result = paper_svc._analyze_experimental(text, title_guess)
+
+                yield _sse("deep_analysis", {
+                    "paper_type": paper_type,
+                    "analysis": deep_analysis_result or {},
+                })
+
+                # Paper-type-aware experiment/follow-up suggestions
+                yield _sse("progress", {"step": 5, "message": "Generating follow-up suggestions...", "percent": 57})
+
+                experiment_suggestions = self._generate_paper_type_aware_suggestions(
+                    text, title_guess, paper_type, deep_analysis_result
+                )
+
+                yield _sse("experiment_suggestions", {
+                    "paper_type": paper_type,
+                    "suggestions": experiment_suggestions,
+                })
+
+                # Research gap detection
+                yield _sse("progress", {"step": 5, "message": "Detecting research gaps...", "percent": 58})
+
+                from services.research_gap_detector import ResearchGapDetector
+                gap_detector = ResearchGapDetector()
+                gap_detector.add_document(
+                    doc_id='manuscript',
+                    title=title_guess or 'Uploaded Manuscript',
+                    content=text,
+                    doc_type='paper' if paper_type in ('experimental', 'review', 'meta_analysis') else paper_type,
+                )
+                gap_result = gap_detector.analyze()
+                research_gaps_result = gap_result.get('gaps', [])[:10]
+
+                yield _sse("research_gaps", {
+                    "gaps": research_gaps_result,
+                    "stats": gap_result.get('stats', {}),
+                })
+
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"[JournalScorer] Deep paper analysis failed (non-critical): {e}")
+                # Emit empty results so frontend doesn't hang
+                if not paper_type_result:
+                    yield _sse("paper_type", {"paper_type": "experimental", "confidence": "low", "signals": ["Detection failed"], "all_scores": {}})
+                if not deep_analysis_result:
+                    yield _sse("deep_analysis", {"paper_type": "experimental", "analysis": {}})
+                if not experiment_suggestions:
+                    yield _sse("experiment_suggestions", {"paper_type": "experimental", "suggestions": []})
+                if not research_gaps_result:
+                    yield _sse("research_gaps", {"gaps": [], "stats": {}})
+
             # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
             yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
 
@@ -427,7 +515,9 @@ class JournalScorerService:
             for chunk in self._generate_recommendations_stream(
                 field_config["label"], overall_score, tier, features,
                 flags_result["flags"], journals, landscape, citation_result,
-                keywords=keywords, subfield=field_result.get("subfield", "")
+                keywords=keywords, subfield=field_result.get("subfield", ""),
+                paper_type=paper_type_result.get("paper_type") if paper_type_result else None,
+                research_gaps=research_gaps_result if research_gaps_result else None,
             ):
                 rec_buffer += chunk
                 yield _sse("recommendations", {"content": chunk})
@@ -441,6 +531,9 @@ class JournalScorerService:
                 "analysis_time_seconds": elapsed,
                 "methodology_gaps": methodology_gaps,
                 "citation_neighbor_journals": citation_neighbor_journals,
+                "paper_type": paper_type_result.get("paper_type") if paper_type_result else None,
+                "research_gaps_count": len(research_gaps_result) if research_gaps_result else 0,
+                "experiment_suggestions_count": len(experiment_suggestions) if experiment_suggestions else 0,
             }
             if manuscript_url:
                 done_data["manuscript_url"] = manuscript_url
@@ -1143,6 +1236,160 @@ class JournalScorerService:
 
         return gaps
 
+    def _generate_paper_type_aware_suggestions(self, text: str, title: str,
+                                                paper_type: str,
+                                                deep_analysis: dict = None) -> list:
+        """Generate follow-up suggestions that are appropriate for the paper type.
+
+        CRITICAL: Review/meta-analysis papers get editorial/analytical suggestions,
+        NOT wet-lab experiment suggestions. This prevents hallucinations where a
+        review paper is told to run Western blots.
+
+        Args:
+            text: Full manuscript text
+            title: Manuscript title
+            paper_type: Detected type (experimental, review, meta_analysis, case_report, protocol)
+            deep_analysis: Type-specific analysis results from PaperAnalysisService
+
+        Returns:
+            List of suggestion dicts
+        """
+        sample = text[:10000]
+        analysis_context = ""
+        if deep_analysis and not deep_analysis.get('error'):
+            analysis_context = f"\nDeep analysis findings: {json.dumps(deep_analysis, default=str)[:3000]}"
+
+        # Build the prompt based on paper type
+        if paper_type in ('review', 'meta_analysis'):
+            # EDITORIAL/ANALYTICAL suggestions — NOT lab experiments
+            type_label = "review" if paper_type == "review" else "meta-analysis"
+            prompt = (
+                f"You are a research methodology expert. This is a {type_label} paper.\n\n"
+                f"PAPER: {title or 'Untitled'}\n"
+                f"TEXT:\n{sample}\n"
+                f"{analysis_context}\n\n"
+                "Since this is a REVIEW or META-ANALYSIS paper, suggest 3-4 EDITORIAL/ANALYTICAL follow-up "
+                "opportunities. Do NOT suggest wet-lab experiments — that would be nonsensical for a review paper.\n\n"
+                "Suggest from these categories:\n"
+                "1. SYSTEMATIC REVIEW EXTENSION: Expand the review scope (new databases, updated time range, "
+                "additional inclusion criteria)\n"
+                "2. META-ANALYSIS OPPORTUNITY: If this is a narrative review, suggest converting specific "
+                "sections into a quantitative meta-analysis\n"
+                "3. EDITORIAL PERSPECTIVE: Write a focused commentary or editorial on the most impactful "
+                "finding from this review\n"
+                "4. GAP-FILLING PRIMARY STUDY: Identify the most critical research gap found in this review "
+                "and suggest a specific primary study design to address it\n"
+                "5. METHODOLOGICAL CRITIQUE: Suggest a methodological quality assessment of the studies reviewed\n\n"
+                "Return JSON:\n"
+                '{"suggestions": [\n'
+                '  {\n'
+                '    "title": "Suggestion title",\n'
+                '    "type": "systematic_review_extension|meta_analysis_opportunity|editorial_perspective|gap_filling_study|methodological_critique",\n'
+                '    "description": "What to do and why",\n'
+                '    "methodology": "Step-by-step approach (3-5 steps)",\n'
+                '    "expected_outcome": "What this would produce",\n'
+                '    "effort_level": "low|medium|high",\n'
+                '    "impact": "How this advances the field"\n'
+                '  }\n'
+                ']}'
+            )
+        elif paper_type == 'case_report':
+            prompt = (
+                f"You are a clinical research advisor. This is a case report.\n\n"
+                f"PAPER: {title or 'Untitled'}\n"
+                f"TEXT:\n{sample}\n"
+                f"{analysis_context}\n\n"
+                "Suggest 3-4 follow-up studies that build on this case report. Categories:\n"
+                "1. CASE SERIES: Expand to a multi-patient retrospective case series\n"
+                "2. COMPARATIVE STUDY: Design a controlled study comparing treatments/approaches\n"
+                "3. LITERATURE SEARCH: Systematic search for similar reported cases\n"
+                "4. MECHANISTIC INVESTIGATION: Lab study to investigate the mechanism behind the clinical observation\n"
+                "5. REGISTRY PROPOSAL: Propose a patient registry for this condition\n\n"
+                "Return JSON:\n"
+                '{"suggestions": [\n'
+                '  {\n'
+                '    "title": "Study title",\n'
+                '    "type": "case_series|comparative_study|literature_search|mechanistic_investigation|registry_proposal",\n'
+                '    "description": "What to do and why",\n'
+                '    "methodology": "Step-by-step approach",\n'
+                '    "expected_outcome": "What this would produce",\n'
+                '    "effort_level": "low|medium|high",\n'
+                '    "impact": "How this advances clinical knowledge"\n'
+                '  }\n'
+                ']}'
+            )
+        elif paper_type == 'protocol':
+            prompt = (
+                f"You are a lab methods expert. This is a protocol paper.\n\n"
+                f"PAPER: {title or 'Untitled'}\n"
+                f"TEXT:\n{sample}\n"
+                f"{analysis_context}\n\n"
+                "Suggest 3-4 validation/optimization experiments for this protocol:\n"
+                "1. VALIDATION EXPERIMENT: Test protocol reproducibility across labs/conditions\n"
+                "2. OPTIMIZATION: Identify parameters to optimize (temperature, concentration, timing)\n"
+                "3. COMPARISON: Compare this protocol against the current gold standard\n"
+                "4. ADAPTATION: Adapt the protocol for a different model system or application\n"
+                "5. TROUBLESHOOTING GUIDE: Systematic testing of failure modes\n\n"
+                "Return JSON:\n"
+                '{"suggestions": [\n'
+                '  {\n'
+                '    "title": "Experiment title",\n'
+                '    "type": "validation|optimization|comparison|adaptation|troubleshooting",\n'
+                '    "description": "What to do and why",\n'
+                '    "methodology": "Step-by-step approach with specific parameters",\n'
+                '    "expected_outcome": "What success looks like",\n'
+                '    "effort_level": "low|medium|high",\n'
+                '    "impact": "How this improves the protocol"\n'
+                '  }\n'
+                ']}'
+            )
+        else:
+            # experimental or unknown — standard lab experiment suggestions
+            prompt = (
+                f"You are a research methodology expert. This is an experimental paper.\n\n"
+                f"PAPER: {title or 'Untitled'}\n"
+                f"TEXT:\n{sample}\n"
+                f"{analysis_context}\n\n"
+                "Suggest 3-4 specific follow-up experiments that build on this paper's findings:\n"
+                "1. Reference specific results/data from the paper\n"
+                "2. Include exact model systems, techniques, and controls\n"
+                "3. Explain how each experiment extends the current findings\n\n"
+                "Return JSON:\n"
+                '{"suggestions": [\n'
+                '  {\n'
+                '    "title": "Experiment title",\n'
+                '    "type": "validation|extension|mechanistic|translational|methodology",\n'
+                '    "hypothesis": "What this tests — reference specific paper findings",\n'
+                '    "methodology": "Step-by-step approach (3-5 steps) with specific techniques",\n'
+                '    "controls": ["Required controls"],\n'
+                '    "expected_outcome": "What success looks like",\n'
+                '    "effort_level": "low|medium|high",\n'
+                '    "impact": "How this strengthens or extends the paper"\n'
+                '  }\n'
+                ']}'
+            )
+
+        try:
+            resp = self.openai.chat_completion(
+                messages=[
+                    {"role": "system", "content": "You are a research advisor. Respond only with valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=3000,
+                response_format={"type": "json_object"},
+            )
+            raw = resp.choices[0].message.content.strip()
+            result = json.loads(raw)
+            suggestions = result.get('suggestions', [])
+            # Tag each suggestion with the paper type for frontend awareness
+            for s in suggestions:
+                s['paper_type'] = paper_type
+            return suggestions
+        except Exception as e:
+            print(f"[JournalScorer] Paper-type-aware suggestions failed: {e}")
+            return []
+
     def _find_citation_neighbor_journals(self, references: list, field: str) -> list:
         """Find journals that frequently publish papers in the same citation neighborhood.
 
@@ -1186,7 +1433,7 @@ class JournalScorerService:
             'source': 'citation_neighborhood',
         } for name, count in neighbor_journals]
 
-    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield=""):
+    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield="", paper_type=None, research_gaps=None):
         feature_summary = "\n".join(
             f"- {f['label']}: {f['score']}/100 — {f.get('details', '')}"
             for f in features.values()
@@ -1223,6 +1470,23 @@ class JournalScorerService:
         if subfield:
             keywords_info += f"\n- Specific subfield: {subfield}"
 
+        # Paper type context (Step 5 enrichment)
+        paper_type_info = ""
+        if paper_type:
+            paper_type_info = f"\n- Paper type: {paper_type}"
+            if paper_type in ('review', 'meta_analysis'):
+                paper_type_info += " (DO NOT suggest wet-lab experiments — suggest editorial/analytical follow-ups instead)"
+
+        # Research gaps context (Step 5 enrichment)
+        gaps_info = ""
+        if research_gaps:
+            gap_summaries = []
+            for g in research_gaps[:5]:
+                gap_title = g.get('title', '') if isinstance(g, dict) else str(g)
+                gap_summaries.append(f"  - {gap_title}")
+            if gap_summaries:
+                gaps_info = f"\n- Research gaps detected:\n" + "\n".join(gap_summaries)
+
         prompt = (
             f"You are a senior research advisor specializing in {field_label}"
             f"{(' / ' + subfield) if subfield else ''}. "
@@ -1232,6 +1496,8 @@ class JournalScorerService:
             f"- Red flags:\n{flag_summary}\n"
             f"- Target journals: {journal_names}"
             f"{keywords_info}"
+            f"{paper_type_info}"
+            f"{gaps_info}"
             f"{landscape_info}"
             f"{citation_info}\n\n"
 

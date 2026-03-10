@@ -56,7 +56,7 @@ class EmailForwardingConnector(BaseConnector):
         short_hash = hashlib.sha256(tenant_id.encode()).hexdigest()[:12]
         return f"tenant_{short_hash}@inbox.yourdomain.com"
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """
         'Connect' for email forwarding just validates the configuration.
         No actual connection needed since we receive emails passively.
@@ -80,16 +80,16 @@ class EmailForwardingConnector(BaseConnector):
             self._set_error(f"Connection error: {str(e)}")
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """Disconnect (no-op for email forwarding)"""
         self.status = ConnectorStatus.DISCONNECTED
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """Test if forwarding email is valid"""
         return self.status == ConnectorStatus.CONNECTED and bool(self.forwarding_email)
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """
         Sync is handled by SMTP server receiving emails in real-time.
         This method is called when manually triggering sync.
@@ -110,7 +110,7 @@ class EmailForwardingConnector(BaseConnector):
         self.status = ConnectorStatus.CONNECTED
         return documents
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """Get specific document by ID (from database)"""
         # Would query database for document
         return None

@@ -521,7 +521,7 @@ class GitHubConnector(BaseConnector):
     # BASE CONNECTOR INTERFACE IMPLEMENTATION
     # =========================================================================
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """
         Establish connection to GitHub.
         Returns True if successful, False otherwise.
@@ -547,7 +547,7 @@ class GitHubConnector(BaseConnector):
             self.last_error = str(e)
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """
         Disconnect from GitHub.
         """
@@ -556,7 +556,7 @@ class GitHubConnector(BaseConnector):
         self.headers.pop('Authorization', None)
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """
         Test if the connection is valid.
         """
@@ -566,7 +566,7 @@ class GitHubConnector(BaseConnector):
         except Exception:
             return False
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """
         Get a specific document by ID.
         GitHub connector doesn't support fetching individual documents after sync.
@@ -575,7 +575,7 @@ class GitHubConnector(BaseConnector):
         # This method would require database access which the connector doesn't have
         return None
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """
         Sync and analyze GitHub repository code.
 

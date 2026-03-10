@@ -49,7 +49,7 @@ class QuartzyConnector(BaseConnector):
             "Accept": "application/json"
         }
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """Validate access token against Quartzy API"""
         if not REQUESTS_AVAILABLE:
             self._set_error("requests library not installed")
@@ -87,23 +87,23 @@ class QuartzyConnector(BaseConnector):
             self._set_error(f"Connection failed: {str(e)}")
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """Disconnect from Quartzy"""
         self.status = ConnectorStatus.DISCONNECTED
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """Test if connection is valid"""
-        return await self.connect()
+        return self.connect()
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """
         Fetch inventory items and order requests from Quartzy API.
 
         Returns list of Document objects ready for embedding.
         """
         if self.status != ConnectorStatus.CONNECTED:
-            if not await self.connect():
+            if not self.connect():
                 return []
 
         self.status = ConnectorStatus.SYNCING
@@ -139,7 +139,7 @@ class QuartzyConnector(BaseConnector):
 
         return documents
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a specific document by ID"""
         return None
 

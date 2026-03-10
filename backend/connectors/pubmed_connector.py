@@ -50,7 +50,7 @@ class PubMedConnector(BaseConnector):
         self.api_key = config.settings.get("api_key") or os.getenv("PUBMED_API_KEY")
         self.rate_limit_delay = 0.1 if self.api_key else 0.34  # 10/sec with key, 3/sec without
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """Test PubMed API connection"""
         if not REQUESTS_AVAILABLE:
             self._set_error("requests library not installed")
@@ -89,16 +89,16 @@ class PubMedConnector(BaseConnector):
             self._set_error(f"Failed to connect: {str(e)}")
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """Disconnect from PubMed"""
         self.status = ConnectorStatus.DISCONNECTED
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """Test PubMed connection"""
-        return await self.connect()
+        return self.connect()
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """
         Search PubMed and fetch papers based on configured query.
 
@@ -109,7 +109,7 @@ class PubMedConnector(BaseConnector):
             List of Document objects with paper metadata and abstracts
         """
         if self.status != ConnectorStatus.CONNECTED:
-            if not await self.connect():
+            if not self.connect():
                 return []
 
         self.status = ConnectorStatus.SYNCING
@@ -134,7 +134,7 @@ class PubMedConnector(BaseConnector):
                 print(f"[PubMed] Date range: {start_year}-{current_year}")
 
             # Step 1: Search for paper IDs
-            pmids = await self._search_papers(search_query, max_results)
+            pmids = self._search_papers(search_query, max_results)
             if not pmids:
                 print("[PubMed] No papers found matching query")
                 self.status = ConnectorStatus.CONNECTED
@@ -143,7 +143,7 @@ class PubMedConnector(BaseConnector):
             print(f"[PubMed] Found {len(pmids)} papers")
 
             # Step 2: Fetch paper details in batches
-            documents = await self._fetch_papers(pmids, since)
+            documents = self._fetch_papers(pmids, since)
 
             # Filter out papers without abstracts if configured
             if self.config.settings.get("include_abstracts_only", True):
@@ -166,7 +166,7 @@ class PubMedConnector(BaseConnector):
 
         return documents
 
-    async def _search_papers(self, query: str, max_results: int) -> List[str]:
+    def _search_papers(self, query: str, max_results: int) -> List[str]:
         """
         Search PubMed for papers matching query.
 
@@ -196,7 +196,7 @@ class PubMedConnector(BaseConnector):
             print(f"[PubMed] Search error: {e}")
             return []
 
-    async def _fetch_papers(self, pmids: List[str], since: Optional[datetime] = None) -> List[Document]:
+    def _fetch_papers(self, pmids: List[str], since: Optional[datetime] = None) -> List[Document]:
         """
         Fetch detailed metadata and abstracts for papers.
 
@@ -401,11 +401,11 @@ class PubMedConnector(BaseConnector):
         }
         return month_map.get(month_str, 1)
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a specific paper by PMID"""
         if not doc_id.startswith("pubmed_"):
             return None
 
         pmid = doc_id.replace("pubmed_", "")
-        docs = await self._fetch_papers([pmid])
+        docs = self._fetch_papers([pmid])
         return docs[0] if docs else None

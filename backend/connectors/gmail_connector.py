@@ -80,7 +80,7 @@ class GmailConnector(BaseConnector):
         super().__init__(config)
         self.service = None
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """Connect to Gmail API"""
         if not GMAIL_AVAILABLE:
             self._set_error("Gmail dependencies not installed. Run: pip install google-auth google-auth-oauthlib google-api-python-client")
@@ -114,13 +114,13 @@ class GmailConnector(BaseConnector):
             self._set_error(f"Failed to connect: {str(e)}")
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """Disconnect from Gmail API"""
         self.service = None
         self.status = ConnectorStatus.DISCONNECTED
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """Test Gmail connection"""
         if not self.service:
             return False
@@ -153,7 +153,7 @@ class GmailConnector(BaseConnector):
         return auth_url
 
     @classmethod
-    async def exchange_code(cls, code: str, redirect_uri: str) -> Dict[str, Any]:
+    def exchange_code(cls, code: str, redirect_uri: str) -> Dict[str, Any]:
         """Exchange authorization code for tokens"""
         if not GMAIL_AVAILABLE:
             raise ImportError("Gmail dependencies not installed")
@@ -203,10 +203,10 @@ class GmailConnector(BaseConnector):
         except Exception as e:
             return None, str(e)
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """Sync emails from Gmail"""
         if not self.service:
-            await self.connect()
+            self.connect()
 
         if self.status != ConnectorStatus.CONNECTED:
             return []
@@ -300,10 +300,10 @@ class GmailConnector(BaseConnector):
 
         return documents
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a specific email by message ID"""
         if not self.service:
-            await self.connect()
+            self.connect()
 
         try:
             # Extract Gmail message ID from doc_id
@@ -466,7 +466,7 @@ Date: {date_str}
     # PUSH NOTIFICATIONS (Optional - Requires Google Cloud Pub/Sub)
     # ========================================================================
 
-    async def setup_push_notifications(self, topic_name: str) -> Optional[str]:
+    def setup_push_notifications(self, topic_name: str) -> Optional[str]:
         """
         Set up Gmail push notifications via Google Cloud Pub/Sub.
 
@@ -496,7 +496,7 @@ Date: {date_str}
             5. Create subscription pointing to your webhook endpoint
         """
         if not self.service:
-            await self.connect()
+            self.connect()
 
         try:
             from utils.logger import log_info, log_error
@@ -531,7 +531,7 @@ Date: {date_str}
             log_error("GmailConnector", "Push setup error", error=e)
             return None
 
-    async def handle_push_notification(self, history_id: str) -> List[Document]:
+    def handle_push_notification(self, history_id: str) -> List[Document]:
         """
         Handle Gmail push notification by fetching new emails since history_id.
 
@@ -553,12 +553,12 @@ Date: {date_str}
 
                 # Process new emails
                 connector = GmailConnector(config)
-                docs = await connector.handle_push_notification(history_id)
+                docs = connector.handle_push_notification(history_id)
 
                 return jsonify({'status': 'ok', 'processed': len(docs)})
         """
         if not self.service:
-            await self.connect()
+            self.connect()
 
         try:
             from utils.logger import log_info
@@ -593,7 +593,7 @@ Date: {date_str}
                         format='full'
                     ).execute()
 
-                    doc = await self._message_to_document(message)
+                    doc = self._message_to_document(message)
                     if doc:
                         documents.append(doc)
 
@@ -614,7 +614,7 @@ Date: {date_str}
             log_error("GmailConnector", "Push handling error", error=e)
             return []
 
-    async def stop_push_notifications(self) -> bool:
+    def stop_push_notifications(self) -> bool:
         """
         Stop Gmail push notifications (stop watch).
 
@@ -622,7 +622,7 @@ Date: {date_str}
             True if successful, False otherwise
         """
         if not self.service:
-            await self.connect()
+            self.connect()
 
         try:
             from utils.logger import log_info

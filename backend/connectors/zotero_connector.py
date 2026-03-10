@@ -68,7 +68,7 @@ class ZoteroConnector(BaseConnector):
         super().__init__(config)
         self.zot = None  # pyzotero client
 
-    async def connect(self) -> bool:
+    def connect(self) -> bool:
         """Connect to Zotero API"""
         if not PYZOTERO_AVAILABLE:
             self._set_error("pyzotero not installed. Run: pip install pyzotero")
@@ -102,13 +102,13 @@ class ZoteroConnector(BaseConnector):
             self._set_error(f"Failed to connect: {str(e)}")
             return False
 
-    async def disconnect(self) -> bool:
+    def disconnect(self) -> bool:
         """Disconnect from Zotero API"""
         self.zot = None
         self.status = ConnectorStatus.DISCONNECTED
         return True
 
-    async def test_connection(self) -> bool:
+    def test_connection(self) -> bool:
         """Test Zotero connection"""
         if not self.zot:
             return False
@@ -206,10 +206,10 @@ class ZoteroConnector(BaseConnector):
         except Exception as e:
             return None, str(e)
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """Sync items from Zotero library"""
         if not self.zot:
-            await self.connect()
+            self.connect()
 
         if self.status != ConnectorStatus.CONNECTED:
             return []
@@ -234,7 +234,7 @@ class ZoteroConnector(BaseConnector):
 
             # Process each item
             for item in items:
-                doc = await self._item_to_document(item)
+                doc = self._item_to_document(item)
                 if doc:
                     documents.append(doc)
                     if self.on_document_ready:
@@ -276,21 +276,21 @@ class ZoteroConnector(BaseConnector):
 
         return documents
 
-    async def get_document(self, doc_id: str) -> Optional[Document]:
+    def get_document(self, doc_id: str) -> Optional[Document]:
         """Get a specific item by key"""
         if not self.zot:
-            await self.connect()
+            self.connect()
 
         try:
             # Extract Zotero item key from doc_id
             item_key = doc_id.replace("zotero_", "")
             item = self.zot.item(item_key)
-            return await self._item_to_document(item)
+            return self._item_to_document(item)
         except Exception as e:
             self._set_error(f"Failed to get document: {str(e)}")
             return None
 
-    async def _item_to_document(self, item: Dict) -> Optional[Document]:
+    def _item_to_document(self, item: Dict) -> Optional[Document]:
         """Convert Zotero item to Document"""
         try:
             data = item.get('data', {})
@@ -459,7 +459,7 @@ class ZoteroConnector(BaseConnector):
             # Try to get PDF content if enabled - NO LIMITS
             pdf_content = ""
             if self.config.settings.get("sync_pdfs", True):
-                pdf_content = await self._get_pdf_content(item_key)
+                pdf_content = self._get_pdf_content(item_key)
                 if pdf_content:
                     content_parts.append(f"\n\n--- Full Text ---\n{pdf_content}")
                     print(f"[Zotero] Added {len(pdf_content)} chars of PDF content", flush=True)
@@ -527,7 +527,7 @@ class ZoteroConnector(BaseConnector):
             # Last resort: just use the item key
             return f"https://www.zotero.org/items/{item_key}"
 
-    async def _get_pdf_content(self, item_key: str) -> str:
+    def _get_pdf_content(self, item_key: str) -> str:
         """Download and extract text from PDF attachment - NO LIMITS"""
         if not PYPDF2_AVAILABLE:
             print(f"[Zotero] PyPDF2 not available, skipping PDF extraction", flush=True)

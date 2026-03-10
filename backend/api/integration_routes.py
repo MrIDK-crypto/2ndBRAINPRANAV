@@ -1405,32 +1405,33 @@ def box_folders():
 
             box = BoxConnector(config)
 
+            connected = box.connect_sync() if hasattr(box, 'connect_sync') else box.connect()
+            if not connected:
+                return jsonify({
+                    "success": False,
+                    "error": "Failed to connect to Box"
+                }), 400
+
+            folder_id = request.args.get('folder_id', '0')
+            depth = int(request.args.get('depth', '2'))
+
+            # get_folder_structure is still async but does only blocking I/O
+            # Call it via a simple event loop wrapper or use sync alternative
             import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
             try:
-                connected = loop.run_until_complete(box.connect())
-                if not connected:
-                    return jsonify({
-                        "success": False,
-                        "error": "Failed to connect to Box"
-                    }), 400
-
-                folder_id = request.args.get('folder_id', '0')
-                depth = int(request.args.get('depth', '2'))
-
+                loop = asyncio.new_event_loop()
                 folders = loop.run_until_complete(
                     box.get_folder_structure(folder_id, depth)
                 )
-
-                return jsonify({
-                    "success": True,
-                    "folders": folders
-                })
-
-            finally:
                 loop.close()
+            except RuntimeError:
+                # Under gevent, fall back to sync folder listing
+                folders = box._get_folder_tree_sync(folder_id, depth) if hasattr(box, '_get_folder_tree_sync') else {"id": folder_id, "name": "Root", "subfolders": []}
+
+            return jsonify({
+                "success": True,
+                "folders": folders
+            })
 
         finally:
             db.close()
@@ -3689,7 +3690,7 @@ def _run_connector_sync(
 
             # List of synchronous connectors that don't need event loop
             # Note: firecrawl uses `async def sync()` but internally uses synchronous requests library
-            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar', 'firecrawl'}
+            sync_connectors = {'slack', 'webscraper', 'notion', 'gdrive', 'gdocs', 'gsheets', 'gslides', 'gcalendar', 'firecrawl', 'gmail', 'github', 'pubmed', 'quartzy', 'zotero'}
 
             if connector_type not in sync_connectors:
                 print(f"[Sync] Creating event loop for async connector: {connector_type}")
@@ -3771,98 +3772,117 @@ def _run_connector_sync(
                 _incremental_count = [0]
                 _incremental_batch = [0]
                 _incremental_skipped = [0]
+                _incremental_errors = [0]
                 _incremental_db = [db]  # Mutable ref for session refresh
                 _INCREMENTAL_BATCH_SIZE = 10
+                # Lock protects the shared session + counters — connectors
+                # like Box call this callback from multiple ThreadPoolExecutor
+                # threads, which would otherwise cause batch-size overruns and
+                # concurrent session access.
+                _incremental_lock = threading.Lock()
 
                 # Capture connector_id for use in closure (avoid nonlocal issues)
                 _connector_id = connector.id
 
                 def _on_document_ready(doc):
-                    """Save a single document to DB immediately when connector parses it."""
-                    # Dedup check
-                    if doc.doc_id in deleted_external_ids or doc.doc_id in existing_external_ids:
-                        _incremental_skipped[0] += 1
-                        return
+                    """Save a single document to DB immediately when connector parses it.
 
-                    # Auto-classify
-                    research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv', 'firecrawl'}
-                    is_research = (
-                        doc.source.lower() in research_sources or
-                        getattr(doc, 'doc_type', None) == 'research_paper'
-                    )
-                    if is_research:
-                        classification = DocumentClassification.WORK
-                        status = DocumentStatus.CONFIRMED
-                        classification_confidence = 1.0
-                        classification_reason = f"Auto-classified as WORK: {doc.source} research content"
-                    elif doc.source in ('onedrive', 'gdrive', 'box', 'notion', 'github'):
-                        if connector_type in SELECTION_REQUIRED_CONNECTORS:
+                    Thread-safe: a lock serialises session.add() and commit()
+                    so parallel connector threads don't over-accumulate rows.
+                    """
+                    with _incremental_lock:
+                        # Dedup check
+                        if doc.doc_id in deleted_external_ids or doc.doc_id in existing_external_ids:
+                            _incremental_skipped[0] += 1
+                            return
+
+                        # Auto-classify
+                        research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv', 'firecrawl'}
+                        is_research = (
+                            doc.source.lower() in research_sources or
+                            getattr(doc, 'doc_type', None) == 'research_paper'
+                        )
+                        if is_research:
+                            classification = DocumentClassification.WORK
+                            status = DocumentStatus.CONFIRMED
+                            classification_confidence = 1.0
+                            classification_reason = f"Auto-classified as WORK: {doc.source} research content"
+                        elif doc.source in ('onedrive', 'gdrive', 'box', 'notion', 'github'):
+                            if connector_type in SELECTION_REQUIRED_CONNECTORS:
+                                classification = DocumentClassification.UNKNOWN
+                                status = DocumentStatus.PENDING
+                                classification_confidence = None
+                                classification_reason = "Awaiting user selection"
+                            else:
+                                classification = DocumentClassification.WORK
+                                status = DocumentStatus.CONFIRMED
+                                classification_confidence = 0.9
+                                classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
+                        else:
                             classification = DocumentClassification.UNKNOWN
                             status = DocumentStatus.PENDING
                             classification_confidence = None
-                            classification_reason = "Awaiting user selection"
-                        else:
-                            classification = DocumentClassification.WORK
-                            status = DocumentStatus.CONFIRMED
-                            classification_confidence = 0.9
-                            classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
-                    else:
-                        classification = DocumentClassification.UNKNOWN
-                        status = DocumentStatus.PENDING
-                        classification_confidence = None
-                        classification_reason = None
+                            classification_reason = None
 
-                    db_doc = Document(
-                        tenant_id=tenant_id,
-                        connector_id=_connector_id,
-                        external_id=doc.doc_id,
-                        source_type=doc.source,
-                        title=doc.title,
-                        content=doc.content,
-                        doc_metadata=doc.metadata,
-                        sender=doc.author,
-                        source_url=doc.url,
-                        source_created_at=doc.timestamp,
-                        source_updated_at=doc.timestamp,
-                        status=status,
-                        classification=classification,
-                        classification_confidence=classification_confidence,
-                        classification_reason=classification_reason
-                    )
-                    _incremental_db[0].add(db_doc)
-                    _incremental_batch[0] += 1
-                    _incremental_count[0] += 1
-
-                    # Commit in batches
-                    if _incremental_batch[0] >= _INCREMENTAL_BATCH_SIZE:
                         try:
-                            _incremental_db[0].commit()
-                            print(f"[Sync] Incremental save: committed batch ({_incremental_count[0]} total, {_incremental_skipped[0]} skipped)", flush=True)
-                        except Exception as commit_err:
-                            print(f"[Sync] Incremental commit error: {commit_err}", flush=True)
-                            try:
-                                _incremental_db[0].rollback()
-                            except Exception:
-                                pass
-                            try:
-                                _incremental_db[0].close()
-                            except Exception:
-                                pass
-                            _incremental_db[0] = get_db()
-                        _incremental_batch[0] = 0
+                            db_doc = Document(
+                                tenant_id=tenant_id,
+                                connector_id=_connector_id,
+                                external_id=doc.doc_id,
+                                source_type=doc.source,
+                                title=doc.title,
+                                content=doc.content,
+                                doc_metadata=doc.metadata,
+                                sender=doc.author,
+                                source_url=doc.url,
+                                source_created_at=doc.timestamp,
+                                source_updated_at=doc.timestamp,
+                                status=status,
+                                classification=classification,
+                                classification_confidence=classification_confidence,
+                                classification_reason=classification_reason
+                            )
+                        except Exception as doc_err:
+                            doc_title = doc.title[:50] if doc.title else doc.doc_id
+                            print(f"[Sync] Error creating Document object for '{doc_title}': {doc_err}", flush=True)
+                            _incremental_errors[0] += 1
+                            return
 
-                    # Update progress
-                    current_doc_name = doc.title[:50] if doc.title else f"Document {_incremental_count[0]}"
-                    sync_progress[progress_key]["documents_parsed"] = _incremental_count[0]
-                    sync_progress[progress_key]["current_file"] = current_doc_name
-                    if sync_id:
-                        progress_service.update_progress(
-                            sync_id,
-                            status='syncing',
-                            stage=f'Parsed {_incremental_count[0]} documents...',
-                            processed_items=_incremental_count[0],
-                            current_item=current_doc_name
-                        )
+                        _incremental_db[0].add(db_doc)
+                        _incremental_batch[0] += 1
+                        _incremental_count[0] += 1
+
+                        # Commit in batches
+                        if _incremental_batch[0] >= _INCREMENTAL_BATCH_SIZE:
+                            try:
+                                _incremental_db[0].commit()
+                                print(f"[Sync] Incremental save: committed batch ({_incremental_count[0]} total, {_incremental_skipped[0]} skipped, {_incremental_errors[0]} errors)", flush=True)
+                            except Exception as commit_err:
+                                print(f"[Sync] Incremental commit error: {commit_err}", flush=True)
+                                _incremental_errors[0] += _incremental_batch[0]
+                                try:
+                                    _incremental_db[0].rollback()
+                                except Exception:
+                                    pass
+                                try:
+                                    _incremental_db[0].close()
+                                except Exception:
+                                    pass
+                                _incremental_db[0] = get_db()
+                            _incremental_batch[0] = 0
+
+                        # Update progress
+                        current_doc_name = doc.title[:50] if doc.title else f"Document {_incremental_count[0]}"
+                        sync_progress[progress_key]["documents_parsed"] = _incremental_count[0]
+                        sync_progress[progress_key]["current_file"] = current_doc_name
+                        if sync_id:
+                            progress_service.update_progress(
+                                sync_id,
+                                status='syncing',
+                                stage=f'Parsed {_incremental_count[0]} documents...',
+                                processed_items=_incremental_count[0],
+                                current_item=current_doc_name
+                            )
 
                 # Set callback on connector instance
                 instance.on_document_ready = _on_document_ready
@@ -3957,15 +3977,14 @@ def _run_connector_sync(
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=False)
                     print(f"[Sync] OneDrive sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'github':
-                    # GitHub sync does LLM analysis which takes time - update progress at each stage
+                    # GitHub is now fully synchronous — no asyncio needed
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Connecting to GitHub...')
                     print(f"[Sync] Starting GitHub sync with LLM analysis...")
 
-                    # Run sync (which includes fetching code and LLM analysis)
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching repository code...', total_items=1)
-                    documents = loop.run_until_complete(instance.sync(since))
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
 
                     if sync_id:
                         progress_service.update_progress(
@@ -3977,11 +3996,11 @@ def _run_connector_sync(
                         )
                     print(f"[Sync] GitHub sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'zotero':
-                    # Zotero uses async methods - needs event loop with heartbeat
+                    # Zotero is now fully synchronous — no asyncio needed
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching Zotero library...')
                     print(f"[Sync] Starting Zotero sync with heartbeat...")
-                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=True)
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     if sync_id and documents:
                         progress_service.update_progress(
                             sync_id,
@@ -3991,6 +4010,13 @@ def _run_connector_sync(
                             total_items=len(documents)
                         )
                     print(f"[Sync] Zotero sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'gmail':
+                    # Gmail is now fully synchronous — no asyncio needed
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Gmail emails...')
+                    print(f"[Sync] Calling gmail sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
+                    print(f"[Sync] Gmail sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'box':
                     # Box is now fully synchronous — no asyncio needed
                     if sync_id:
@@ -3998,11 +4024,28 @@ def _run_connector_sync(
                     print(f"[Sync] Calling box sync directly (synchronous)")
                     documents = instance.sync(since)
                     print(f"[Sync] Box sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'pubmed':
+                    # PubMed is now fully synchronous — no asyncio needed
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Searching PubMed...')
+                    print(f"[Sync] Calling pubmed sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
+                    print(f"[Sync] PubMed sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'quartzy':
+                    # Quartzy is now fully synchronous — no asyncio needed
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Quartzy inventory...')
+                    print(f"[Sync] Calling quartzy sync with heartbeat (synchronous)")
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
+                    print(f"[Sync] Quartzy sync returned {len(documents) if documents else 0} documents")
                 elif sync_id:
+                    # Fallback for any remaining connectors — try direct sync call
+                    print(f"[Sync] WARNING: Connector {connector_type} using fallback sync dispatch")
                     progress_service.update_progress(sync_id, status='syncing', stage='Fetching documents...')
-                    documents = loop.run_until_complete(instance.sync(since))
+                    documents = instance.sync(since)
                 else:
-                    documents = loop.run_until_complete(instance.sync(since))
+                    print(f"[Sync] WARNING: Connector {connector_type} using fallback sync dispatch (no sync_id)")
+                    documents = instance.sync(since)
 
                 # === POST-SYNC: Flush incremental saves + handle edge cases ===
                 # Flush any remaining uncommitted docs from incremental callback
@@ -6083,13 +6126,8 @@ def zotero_sync():
                 sync_progress[progress_key]["status"] = "syncing"
                 progress_service.update_progress(sync_id, status='syncing', stage='Fetching Zotero library items...')
 
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    documents = loop.run_until_complete(zotero_connector.sync())
-                finally:
-                    loop.close()
+                # Zotero is now fully synchronous — no asyncio needed
+                documents = zotero_connector.sync()
 
                 print(f"[Zotero Sync BG] Got {len(documents)} documents", flush=True)
 

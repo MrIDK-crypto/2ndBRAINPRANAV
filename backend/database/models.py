@@ -177,6 +177,22 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _deep_strip_nul(obj):
+    """Recursively strip NUL (\\x00) bytes from strings in dicts/lists.
+
+    PostgreSQL JSON columns reject NUL bytes inside string values.
+    This is especially common in metadata extracted from binary files
+    (e.g. .tif EXIF data, scanned PDFs).
+    """
+    if isinstance(obj, str):
+        return obj.replace('\x00', '') if '\x00' in obj else obj
+    if isinstance(obj, dict):
+        return {k: _deep_strip_nul(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_deep_strip_nul(item) for item in obj]
+    return obj
+
+
 def make_aware(dt: datetime) -> datetime:
     """Ensure datetime is timezone-aware (assume UTC if naive)"""
     if dt is None:
@@ -868,11 +884,65 @@ class Document(Base):
         Index('ix_document_created', 'tenant_id', 'created_at'),  # For date-based queries
     )
 
-    @validates('content', 'title', 'content_html', 'summary')
+    @validates('content', 'title', 'content_html', 'summary',
+               'classification_reason', 'sender', 'sender_email', 'source_type', 'source_url')
     def _strip_nul_bytes(self, key, value):
         """PostgreSQL text columns reject NUL (\\x00) bytes — strip them."""
         if isinstance(value, str) and '\x00' in value:
             return value.replace('\x00', '')
+        return value
+
+    @validates('doc_metadata')
+    def _strip_nul_from_json(self, key, value):
+        """Strip NUL bytes from JSON metadata values (nested strings)."""
+        if value is None:
+            return value
+        if isinstance(value, dict):
+            return _deep_strip_nul(value)
+        if isinstance(value, str) and '\x00' in value:
+            return value.replace('\x00', '')
+        return value
+
+    @validates('status')
+    def _coerce_status_enum(self, key, value):
+        """Coerce string status values to DocumentStatus enum members.
+
+        SQLAlchemy Enum columns use member NAMES (uppercase) as PostgreSQL
+        enum values, but code sometimes passes the .value (lowercase string).
+        This validator normalises both forms to the correct enum member so the
+        ORM always emits the uppercase name that PostgreSQL expects.
+        """
+        if value is None:
+            return value
+        if isinstance(value, DocumentStatus):
+            return value
+        if isinstance(value, str):
+            # Try matching by value first (e.g. 'confirmed')
+            for member in DocumentStatus:
+                if member.value == value:
+                    return member
+            # Try matching by name (e.g. 'CONFIRMED')
+            try:
+                return DocumentStatus[value.upper()]
+            except KeyError:
+                pass
+        return value  # fall through — let SQLAlchemy raise if truly invalid
+
+    @validates('classification')
+    def _coerce_classification_enum(self, key, value):
+        """Coerce string classification values to DocumentClassification enum members."""
+        if value is None:
+            return value
+        if isinstance(value, DocumentClassification):
+            return value
+        if isinstance(value, str):
+            for member in DocumentClassification:
+                if member.value == value:
+                    return member
+            try:
+                return DocumentClassification[value.upper()]
+            except KeyError:
+                pass
         return value
 
     def __repr__(self):
@@ -2483,25 +2553,68 @@ def _migrate_enum_values():
     ALTER TYPE ... ADD VALUE cannot run inside a transaction block.
     We use a raw psycopg2 connection with autocommit=True to bypass
     SQLAlchemy's transaction management entirely.
+
+    SQLAlchemy's Enum(PythonEnum) uses member NAMES (uppercase) as the
+    PostgreSQL enum labels.  Older migrations or data imported from SQLite
+    may have created lowercase values.  We add BOTH casings so existing
+    rows remain queryable and new inserts (which use uppercase) also work.
     """
+    # --- ConnectorType ---
     new_connector_types = [
         'GOOGLE_DOCS', 'GOOGLE_SHEETS', 'GOOGLE_SLIDES', 'GOOGLE_CALENDAR', 'FIRECRAWL'
     ]
+
+    # --- DocumentStatus — ensure every member name exists in the PG enum ---
+    # Add both uppercase (what SQLAlchemy emits) AND lowercase (legacy data)
+    document_status_values = []
+    for member in DocumentStatus:
+        document_status_values.append(member.name)   # e.g. 'CONFIRMED'
+        if member.name != member.value:
+            document_status_values.append(member.value)  # e.g. 'confirmed'
+
+    # --- DocumentClassification ---
+    document_classification_values = []
+    for member in DocumentClassification:
+        document_classification_values.append(member.name)
+        if member.name != member.value:
+            document_classification_values.append(member.value)
+
+    # --- ConnectorStatus ---
+    connector_status_values = []
+    for member in ConnectorStatus:
+        connector_status_values.append(member.name)
+        if member.name != member.value:
+            connector_status_values.append(member.value)
+
     try:
         raw_conn = engine.raw_connection()
         raw_conn.set_session(autocommit=True)
         cursor = raw_conn.cursor()
-        for val in new_connector_types:
-            try:
-                cursor.execute(f"ALTER TYPE connectortype ADD VALUE IF NOT EXISTS '{val}'")
-                print(f"  ✓ Added enum value: {val}")
-            except Exception as e:
-                print(f"  - Enum value '{val}': {e}")
+
+        enum_map = {
+            'connectortype': new_connector_types,
+            'documentstatus': document_status_values,
+            'documentclassification': document_classification_values,
+            'connectorstatus': connector_status_values,
+        }
+
+        for enum_name, values in enum_map.items():
+            for val in values:
+                try:
+                    cursor.execute(
+                        f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{val}'"
+                    )
+                except Exception as e:
+                    # Silently skip — value already exists or type doesn't exist yet
+                    if 'does not exist' not in str(e).lower():
+                        print(f"  - Enum {enum_name}.'{val}': {e}")
+
         cursor.close()
         raw_conn.close()
         print("✓ Enum migration complete")
     except Exception as e:
-        print(f"✗ Enum migration failed: {e}")
+        # Non-fatal: create_all() will create enums if they don't exist yet
+        print(f"✗ Enum migration skipped: {e}")
 
 
 # ============================================================================

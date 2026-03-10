@@ -127,6 +127,53 @@ interface CitationVerificationInfo {
   total_dois_found: number
 }
 
+interface PaperTypeInfo {
+  paper_type: string
+  confidence: string
+  signals: string[]
+  all_scores: Record<string, number>
+  detection_method?: string
+}
+
+interface DeepAnalysisInfo {
+  paper_type: string
+  analysis: Record<string, any>
+}
+
+interface ExperimentSuggestion {
+  title: string
+  type: string
+  paper_type: string
+  description?: string
+  hypothesis?: string
+  methodology: string
+  expected_outcome: string
+  effort_level?: string
+  impact?: string
+  controls?: string[]
+}
+
+interface ExperimentSuggestionsInfo {
+  paper_type: string
+  suggestions: ExperimentSuggestion[]
+}
+
+interface ResearchGap {
+  gap_type: string
+  title: string
+  description: string
+  evidence: string[]
+  source_docs: string[]
+  questions: string[]
+  priority: number
+  category: string
+}
+
+interface ResearchGapsInfo {
+  gaps: ResearchGap[]
+  stats: Record<string, any>
+}
+
 type AppState = 'idle' | 'analyzing' | 'results'
 
 // ── Main Component ─────────────────────────────────────────────────────────
@@ -145,6 +192,10 @@ export default function HighImpactJournal() {
   const [landscapeInfo, setLandscapeInfo] = useState<LandscapeInfo | null>(null)
   const [citationInfo, setCitationInfo] = useState<CitationVerificationInfo | null>(null)
   const [manuscriptUrl, setManuscriptUrl] = useState<string | null>(null)
+  const [paperTypeInfo, setPaperTypeInfo] = useState<PaperTypeInfo | null>(null)
+  const [deepAnalysis, setDeepAnalysis] = useState<DeepAnalysisInfo | null>(null)
+  const [experimentSuggestions, setExperimentSuggestions] = useState<ExperimentSuggestionsInfo | null>(null)
+  const [researchGaps, setResearchGaps] = useState<ResearchGapsInfo | null>(null)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -161,6 +212,10 @@ export default function HighImpactJournal() {
     setLandscapeInfo(null)
     setCitationInfo(null)
     setManuscriptUrl(null)
+    setPaperTypeInfo(null)
+    setDeepAnalysis(null)
+    setExperimentSuggestions(null)
+    setResearchGaps(null)
     setError('')
   }, [])
 
@@ -240,6 +295,18 @@ export default function HighImpactJournal() {
                   break
                 case 'citation_verification':
                   setCitationInfo(data)
+                  break
+                case 'paper_type':
+                  setPaperTypeInfo(data)
+                  break
+                case 'deep_analysis':
+                  setDeepAnalysis(data)
+                  break
+                case 'experiment_suggestions':
+                  setExperimentSuggestions(data)
+                  break
+                case 'research_gaps':
+                  setResearchGaps(data)
                   break
                 case 'recommendations':
                   setRecommendations(prev => prev + data.content)
@@ -929,6 +996,295 @@ export default function HighImpactJournal() {
               </div>
             )}
 
+            {/* Paper Type Badge + Deep Analysis */}
+            {paperTypeInfo && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                backgroundColor: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary }}>Paper Type Analysis</h3>
+                  <PaperTypeBadge paperType={paperTypeInfo.paper_type} confidence={paperTypeInfo.confidence} />
+                </div>
+
+                {/* Detection signals */}
+                {paperTypeInfo.signals && paperTypeInfo.signals.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Detection Signals
+                    </span>
+                    <div style={{ marginTop: 6 }}>
+                      {paperTypeInfo.signals.map((s, i) => (
+                        <div key={i} style={{
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          backgroundColor: theme.primaryLight,
+                          marginBottom: 4,
+                          fontSize: 12,
+                          color: theme.textSecondary,
+                        }}>
+                          {s}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Deep analysis results */}
+                {deepAnalysis && deepAnalysis.analysis && !deepAnalysis.analysis.error && (
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Type-Specific Insights
+                    </span>
+                    <div style={{ marginTop: 8 }}>
+                      {/* Summary */}
+                      {deepAnalysis.analysis.summary && (
+                        <p style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
+                          {deepAnalysis.analysis.summary}
+                        </p>
+                      )}
+
+                      {/* Research question or review type */}
+                      {deepAnalysis.analysis.research_question && (
+                        <div style={{
+                          padding: '10px 14px',
+                          borderRadius: 8,
+                          backgroundColor: theme.primaryLight,
+                          borderLeft: `3px solid ${theme.primary}`,
+                          marginBottom: 10,
+                          fontSize: 13,
+                        }}>
+                          <span style={{ fontWeight: 600, color: theme.textPrimary }}>Research Question: </span>
+                          <span style={{ color: theme.textSecondary }}>{deepAnalysis.analysis.research_question}</span>
+                        </div>
+                      )}
+
+                      {/* Key findings / themes / takeaways */}
+                      {(deepAnalysis.analysis.key_findings || deepAnalysis.analysis.key_themes || deepAnalysis.analysis.key_takeaways || deepAnalysis.analysis.main_findings) && (
+                        <div style={{ marginBottom: 10 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: theme.textPrimary }}>
+                            {deepAnalysis.analysis.key_findings ? 'Key Findings' :
+                             deepAnalysis.analysis.key_themes ? 'Key Themes' :
+                             deepAnalysis.analysis.key_takeaways ? 'Key Takeaways' : 'Main Findings'}
+                          </span>
+                          <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                            {(deepAnalysis.analysis.key_findings || deepAnalysis.analysis.key_themes || deepAnalysis.analysis.key_takeaways || deepAnalysis.analysis.main_findings || []).map((item: string, i: number) => (
+                              <li key={i} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.6, marginBottom: 4 }}>
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Limitations */}
+                      {deepAnalysis.analysis.limitations && deepAnalysis.analysis.limitations.length > 0 && (
+                        <div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: theme.textPrimary }}>Limitations</span>
+                          <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                            {deepAnalysis.analysis.limitations.map((item: string, i: number) => (
+                              <li key={i} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.6, marginBottom: 4 }}>
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Research Gaps */}
+            {researchGaps && researchGaps.gaps && researchGaps.gaps.length > 0 && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                backgroundColor: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary }}>Research Gaps</h3>
+                  <span style={{
+                    padding: '4px 10px',
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: fontMono,
+                    backgroundColor: '#FEF7E8',
+                    color: '#8B6914',
+                  }}>
+                    {researchGaps.gaps.length} gap{researchGaps.gaps.length !== 1 ? 's' : ''} found
+                  </span>
+                </div>
+                {researchGaps.gaps.map((gap, i) => {
+                  const priorityColor = gap.priority >= 4 ? '#D97B7B' : gap.priority >= 3 ? '#E2A336' : '#9CB896'
+                  const priorityBg = gap.priority >= 4 ? '#FDF2F2' : gap.priority >= 3 ? '#FEF7E8' : '#F0F7EE'
+                  return (
+                    <div key={i} style={{
+                      padding: '12px 16px',
+                      borderRadius: 8,
+                      backgroundColor: priorityBg,
+                      borderLeft: `3px solid ${priorityColor}`,
+                      marginBottom: 8,
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              textTransform: 'uppercase',
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              backgroundColor: `${priorityColor}25`,
+                              color: priorityColor,
+                            }}>
+                              P{gap.priority}
+                            </span>
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 500,
+                              textTransform: 'uppercase',
+                              color: theme.textMuted,
+                            }}>
+                              {gap.category.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: 13, fontWeight: 500, color: theme.textPrimary, marginBottom: 4, lineHeight: 1.4 }}>
+                            {gap.title}
+                          </p>
+                          {gap.questions && gap.questions.length > 0 && (
+                            <p style={{ fontSize: 12, color: theme.textSecondary, fontStyle: 'italic' }}>
+                              {gap.questions[0]}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Experiment / Follow-up Suggestions */}
+            {experimentSuggestions && experimentSuggestions.suggestions && experimentSuggestions.suggestions.length > 0 && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                backgroundColor: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary }}>
+                    {experimentSuggestions.paper_type === 'review' || experimentSuggestions.paper_type === 'meta_analysis'
+                      ? 'Follow-up Opportunities'
+                      : experimentSuggestions.paper_type === 'case_report'
+                        ? 'Follow-up Studies'
+                        : experimentSuggestions.paper_type === 'protocol'
+                          ? 'Validation Experiments'
+                          : 'Experiment Suggestions'}
+                  </h3>
+                  <PaperTypeBadge paperType={experimentSuggestions.paper_type} confidence="" small />
+                </div>
+                {experimentSuggestions.suggestions.map((s, i) => (
+                  <div key={i} style={{
+                    padding: '16px 18px',
+                    borderRadius: 10,
+                    backgroundColor: theme.pageBg,
+                    border: `1px solid ${theme.border}`,
+                    marginBottom: 10,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>
+                          {i + 1}. {s.title}
+                        </p>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            backgroundColor: `${theme.primary}15`,
+                            color: theme.primary,
+                          }}>
+                            {s.type?.replace(/_/g, ' ') || 'suggestion'}
+                          </span>
+                          {s.effort_level && (
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 500,
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              backgroundColor: s.effort_level === 'low' ? '#F0F7EE' : s.effort_level === 'high' ? '#FDF2F2' : '#FEF7E8',
+                              color: s.effort_level === 'low' ? '#3D6B35' : s.effort_level === 'high' ? '#9B4D4D' : '#8B6914',
+                            }}>
+                              {s.effort_level} effort
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Description or hypothesis */}
+                    {(s.description || s.hypothesis) && (
+                      <p style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.6, marginBottom: 8 }}>
+                        {s.description || s.hypothesis}
+                      </p>
+                    )}
+
+                    {/* Methodology */}
+                    {s.methodology && (
+                      <div style={{ marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted }}>Methodology: </span>
+                        <span style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.6 }}>
+                          {s.methodology}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Expected outcome */}
+                    {s.expected_outcome && (
+                      <div style={{ marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted }}>Expected Outcome: </span>
+                        <span style={{ fontSize: 12, color: theme.textSecondary }}>
+                          {s.expected_outcome}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Impact */}
+                    {s.impact && (
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted }}>Impact: </span>
+                        <span style={{ fontSize: 12, color: theme.textSecondary }}>
+                          {s.impact}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Controls (for experimental) */}
+                    {s.controls && s.controls.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted }}>Controls: </span>
+                        <span style={{ fontSize: 12, color: theme.textSecondary }}>
+                          {s.controls.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Recommendations */}
             {recommendations && (
               <div style={{
@@ -1001,6 +1357,51 @@ function FieldBadge({ field, label, subfield, confidence }: { field: string; lab
       <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: fontMono }}>
         {(confidence * 100).toFixed(0)}% confidence
       </span>
+    </div>
+  )
+}
+
+const paperTypeStyles: Record<string, { bg: string; text: string; dot: string; label: string }> = {
+  experimental: { bg: '#ECFDF5', text: '#065F46', dot: '#10B981', label: 'Experimental' },
+  review: { bg: '#EEF2FF', text: '#4338CA', dot: '#6366F1', label: 'Review' },
+  meta_analysis: { bg: '#FAF5FF', text: '#6B21A8', dot: '#A855F7', label: 'Meta-Analysis' },
+  case_report: { bg: '#FFF7ED', text: '#9A3412', dot: '#F97316', label: 'Case Report' },
+  protocol: { bg: '#F0F9FF', text: '#0C4A6E', dot: '#0EA5E9', label: 'Protocol' },
+}
+
+function PaperTypeBadge({ paperType, confidence, small }: { paperType: string; confidence: string; small?: boolean }) {
+  const style = paperTypeStyles[paperType] || paperTypeStyles.experimental
+  const confColor = confidence === 'high' ? '#3D6B35' : confidence === 'moderate' ? '#8B6914' : '#9B4D4D'
+  const confBg = confidence === 'high' ? '#F0F7EE' : confidence === 'moderate' ? '#FEF7E8' : '#FDF2F2'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: small ? '2px 8px' : '4px 12px',
+        borderRadius: 20,
+        backgroundColor: style.bg,
+        color: style.text,
+        fontSize: small ? 11 : 13,
+        fontWeight: 600,
+      }}>
+        <span style={{ width: small ? 6 : 8, height: small ? 6 : 8, borderRadius: '50%', backgroundColor: style.dot }} />
+        {style.label}
+      </span>
+      {confidence && (
+        <span style={{
+          fontSize: small ? 10 : 11,
+          fontWeight: 500,
+          padding: '2px 8px',
+          borderRadius: 10,
+          backgroundColor: confBg,
+          color: confColor,
+          fontFamily: fontMono,
+        }}>
+          {confidence}
+        </span>
+      )}
     </div>
   )
 }
