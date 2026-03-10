@@ -222,49 +222,77 @@ PAPER_TYPE_FEATURE_OVERRIDES = {
     "review": {
         "label_suffix": " (Review)",
         "features": {
-            "scope_coverage": {"label": "Scope & Coverage Breadth", "weight": 0.25},
-            "synthesis_quality": {"label": "Synthesis & Critical Analysis", "weight": 0.25},
-            "literature_completeness": {"label": "Literature Completeness & Recency", "weight": 0.20},
-            "organization_clarity": {"label": "Organization & Narrative Flow", "weight": 0.15},
-            "writing": {"label": "Writing Quality", "weight": 0.10},
-            "impact_utility": {"label": "Impact & Utility for Readers", "weight": 0.05},
+            "literature_scope": {"label": "Literature Scope & Comprehensiveness", "weight": 0.25, "criteria": "Does it cover the breadth of the field? Recent + foundational papers?"},
+            "synthesis_quality": {"label": "Synthesis & Integration", "weight": 0.25, "criteria": "Does it connect disparate findings into coherent narrative?"},
+            "critical_analysis": {"label": "Critical Analysis", "weight": 0.20, "criteria": "Does it critique methodologies, identify contradictions, evaluate evidence?"},
+            "gap_identification": {"label": "Gap Identification & Future Directions", "weight": 0.15, "criteria": "Does it identify unstudied areas and propose research directions?"},
+            "writing": {"label": "Writing Quality & Organization", "weight": 0.10, "criteria": "Clear structure, logical flow, accessible to target audience?"},
+            "practical_applicability": {"label": "Practical Applicability", "weight": 0.05, "criteria": "Is the perspective actionable for researchers/practitioners?"},
         },
     },
     "meta_analysis": {
         "label_suffix": " (Meta-Analysis)",
         "features": {
-            "search_methodology": {"label": "Search Strategy & Methodology", "weight": 0.25},
-            "statistical_rigor": {"label": "Statistical Rigor (Pooling, Heterogeneity)", "weight": 0.25},
-            "study_selection": {"label": "Study Selection & Quality Assessment", "weight": 0.20},
-            "results_interpretation": {"label": "Results Interpretation & Bias Assessment", "weight": 0.15},
-            "writing": {"label": "Writing Quality", "weight": 0.10},
-            "clinical_relevance": {"label": "Clinical / Practical Relevance", "weight": 0.05},
+            "search_methodology": {"label": "Search Strategy & Methodology", "weight": 0.25, "criteria": "PRISMA compliance, databases searched, inclusion/exclusion criteria"},
+            "statistical_synthesis": {"label": "Statistical Synthesis Quality", "weight": 0.25, "criteria": "Effect size calculations, heterogeneity assessment (I²), forest plots"},
+            "bias_assessment": {"label": "Bias & Quality Assessment", "weight": 0.20, "criteria": "Risk of bias tools used, publication bias tested (funnel plot, Egger's)"},
+            "study_selection": {"label": "Study Selection & Inclusion", "weight": 0.15, "criteria": "Appropriate inclusion criteria, sufficient studies included"},
+            "interpretation": {"label": "Interpretation & Clinical Significance", "weight": 0.10, "criteria": "Meaningful conclusions, limitations acknowledged"},
+            "writing": {"label": "Writing Quality", "weight": 0.05},
         },
     },
     "case_report": {
         "label_suffix": " (Case Report)",
         "features": {
-            "clinical_detail": {"label": "Clinical Detail & Completeness", "weight": 0.25},
-            "diagnostic_reasoning": {"label": "Diagnostic Reasoning", "weight": 0.20},
-            "literature_context": {"label": "Literature Context & Comparison", "weight": 0.20},
-            "educational_value": {"label": "Educational Value & Takeaways", "weight": 0.15},
-            "writing": {"label": "Writing Quality", "weight": 0.10},
-            "care_adherence": {"label": "CARE Guideline Adherence", "weight": 0.10},
+            "clinical_presentation": {"label": "Clinical Presentation Completeness", "weight": 0.25, "criteria": "History, symptoms, exam findings, timeline clearly documented"},
+            "diagnostic_workup": {"label": "Diagnostic Workup", "weight": 0.20, "criteria": "Appropriate tests ordered, results interpreted correctly"},
+            "management_rationale": {"label": "Management & Rationale", "weight": 0.20, "criteria": "Treatment choices justified, alternatives discussed"},
+            "educational_value": {"label": "Educational Value & Novelty", "weight": 0.20, "criteria": "Does this case teach something new or rare?"},
+            "literature_context": {"label": "Literature Context", "weight": 0.10, "criteria": "Similar cases referenced, placed in clinical context"},
+            "writing": {"label": "Writing Quality", "weight": 0.05},
         },
     },
     "protocol": {
         "label_suffix": " (Protocol)",
         "features": {
-            "completeness": {"label": "Procedural Completeness", "weight": 0.30},
-            "reproducibility": {"label": "Reproducibility & Detail Level", "weight": 0.25},
-            "validation": {"label": "Validation & Controls", "weight": 0.15},
-            "safety_documentation": {"label": "Safety & Troubleshooting", "weight": 0.10},
-            "writing": {"label": "Writing Clarity", "weight": 0.10},
-            "novelty": {"label": "Novelty vs. Existing Protocols", "weight": 0.10},
+            "reproducibility": {"label": "Reproducibility & Detail", "weight": 0.30, "criteria": "Can another lab replicate this exactly? All steps, quantities, timing?"},
+            "validation": {"label": "Validation & Controls", "weight": 0.25, "criteria": "Positive/negative controls, validation experiments, troubleshooting"},
+            "applicability": {"label": "Broad Applicability", "weight": 0.20, "criteria": "Useful to multiple labs/contexts? Equipment commonly available?"},
+            "optimization": {"label": "Optimization Evidence", "weight": 0.15, "criteria": "Were conditions optimized? Data shown?"},
+            "safety_ethics": {"label": "Safety & Ethics", "weight": 0.10, "criteria": "Safety considerations, ethical approvals mentioned"},
         },
     },
 }
 
+
+# ── Type-Specific Red Flag Checks ──────────────────────────────────────────
+# Supplements the generic RED_FLAG_CHECKS with paper-type-aware regex checks.
+
+RED_FLAGS_BY_TYPE = {
+    "experimental": [
+        {"id": "no_methods", "pattern": r"\b(methods?|methodology|materials?\s+and\s+methods?)\b", "check": "missing", "issue": "No methods section", "penalty": -20, "fix": "Add a detailed methods section"},
+        {"id": "no_stats", "pattern": r"\b(p\s*[<>=]|statistical|significance|ANOVA|t-test|chi-square|regression|confidence interval)\b", "check": "missing", "issue": "No statistical analysis", "penalty": -15, "fix": "Add statistical analysis of your results"},
+        {"id": "small_n", "pattern": r"\bn\s*=\s*[1-9]\b", "check": "present", "issue": "Very small sample size (n < 10)", "penalty": -10, "fix": "Increase sample size or justify small N"},
+    ],
+    "review": [
+        {"id": "no_synthesis", "pattern": r"\b(synthesiz|integrat|taken together|collectively|overall|in summary)\b", "check": "missing", "issue": "Lists papers without synthesis", "penalty": -20, "fix": "Add synthesis paragraphs connecting findings across studies"},
+        {"id": "outdated_refs", "pattern": r"\b202[3-6]\b", "check": "missing", "issue": "No references from last 2 years", "penalty": -10, "fix": "Include recent publications from the last 2 years"},
+        {"id": "no_gaps", "pattern": r"\b(future\s+(research|direction|stud)|gap|remain|unanswered|unexplored)\b", "check": "missing", "issue": "No future directions identified", "penalty": -10, "fix": "Add a section on research gaps and future directions"},
+    ],
+    "meta_analysis": [
+        {"id": "no_prisma", "pattern": r"\b(PRISMA|flow\s+diagram|study\s+selection)\b", "check": "missing", "issue": "No PRISMA flow diagram", "penalty": -15, "fix": "Add PRISMA flow diagram showing study selection"},
+        {"id": "no_heterogeneity", "pattern": r"\b(heterogeneity|I²|I-squared|Q\s+statistic|random.effects)\b", "check": "missing", "issue": "No heterogeneity assessment", "penalty": -20, "fix": "Assess and report heterogeneity (I², Q statistic)"},
+        {"id": "few_studies", "pattern": r"\b(\d+)\s+stud(y|ies)\s+(included|met|selected)\b", "check": "count_low", "issue": "Fewer than 5 studies included", "penalty": -15, "fix": "Consider broadening inclusion criteria"},
+    ],
+    "case_report": [
+        {"id": "no_consent", "pattern": r"\b(consent|permission|IRB|ethics)\b", "check": "missing", "issue": "No patient consent mentioned", "penalty": -10, "fix": "Add statement about patient consent"},
+        {"id": "no_differential", "pattern": r"\b(differential|rule\s+out|alternative\s+diagnos)\b", "check": "missing", "issue": "No differential diagnosis discussed", "penalty": -10, "fix": "Discuss differential diagnoses considered"},
+    ],
+    "protocol": [
+        {"id": "no_reagents", "pattern": r"\b(catalog|supplier|vendor|manufacturer|concentration|dilut)\b", "check": "missing", "issue": "Missing reagent details", "penalty": -10, "fix": "Add supplier, catalog numbers, and concentrations for all reagents"},
+        {"id": "no_troubleshooting", "pattern": r"\b(troubleshoot|common\s+error|pitfall|tip|caution|warning|note)\b", "check": "missing", "issue": "No troubleshooting section", "penalty": -10, "fix": "Add troubleshooting tips for common issues"},
+    ],
+}
 
 # ── Red Flag Checks ────────────────────────────────────────────────────────
 # Note: paper_type_exclude lists paper types for which this flag should NOT apply
@@ -276,6 +304,44 @@ RED_FLAG_CHECKS = [
     {"id": "too_short", "pattern": None, "check": "word_count_low", "severity": "warning", "issue": "Manuscript under 3,000 words", "penalty": -10, "fix": "Expand methodology and results sections for journal-length depth", "paper_type_exclude": ["case_report"]},
     {"id": "no_tables", "pattern": r"\btable\s+\d+\b|\btable\s+[ivx]+\b", "check": "missing", "severity": "info", "issue": "No tables detected", "penalty": -3, "fix": "Add summary statistics, regression results, or comparison tables", "paper_type_exclude": ["review", "protocol"]},
 ]
+
+JOURNAL_TARGETS_BY_TYPE = {
+    "experimental": {
+        "filter": "type:article",
+        "hint": "journals accepting original research",
+        "include_keywords": [],
+        "exclude_keywords": ["review", "survey"],
+        "example_journals": [],
+    },
+    "review": {
+        "filter": "type:review",
+        "hint": "journals with review sections",
+        "include_keywords": ["review", "reviews", "trends", "current opinion", "annual review", "progress in", "advances in"],
+        "exclude_keywords": [],
+        "example_journals": ["Nature Reviews", "Annual Review of", "Trends in", "Current Opinion in", "Progress in", "Advances in"],
+    },
+    "meta_analysis": {
+        "filter": "type:review",
+        "hint": "journals accepting systematic reviews and meta-analyses",
+        "include_keywords": ["systematic", "evidence", "cochrane", "meta"],
+        "exclude_keywords": [],
+        "example_journals": ["Cochrane Database of Systematic Reviews", "JAMA", "BMJ", "Annals of Internal Medicine", "Lancet", "Systematic Reviews"],
+    },
+    "case_report": {
+        "filter": "type:article",
+        "hint": "journals accepting case reports",
+        "include_keywords": ["case", "clinical", "report"],
+        "exclude_keywords": [],
+        "example_journals": ["BMJ Case Reports", "Journal of Medical Case Reports", "Cureus", "American Journal of Case Reports", "Case Reports in Medicine"],
+    },
+    "protocol": {
+        "filter": "type:article",
+        "hint": "journals publishing protocols and methods",
+        "include_keywords": ["protocol", "method", "technique", "procedure", "jove", "bio-protocol"],
+        "exclude_keywords": [],
+        "example_journals": ["Nature Protocols", "STAR Protocols", "JoVE", "Bio-protocol", "Methods in Molecular Biology", "Current Protocols"],
+    },
+}
 
 MAX_FEATURE_CHARS = 100000  # max chars sent for feature extraction (~25K tokens)
 CONSISTENCY_CHUNK = 12000   # chars sent for each consistency run (cheaper)
@@ -438,6 +504,7 @@ class JournalScorerService:
             research_gaps_result = []
             related_literature = []
             related_protocols = []
+            novelty_result = None
 
             try:
                 # Type-specific deep analysis via PaperAnalysisService
@@ -531,6 +598,47 @@ class JournalScorerService:
                     except Exception as e:
                         print(f"[JournalScorer] Feasibility check failed (non-critical): {e}")
 
+                # ── Novelty verification ──
+                try:
+                    yield _sse("progress", {"step": 5, "message": "Verifying novelty claims...", "percent": 57})
+
+                    from services.novelty_verifier import NoveltyVerifier
+                    nv = NoveltyVerifier(openai_client=self.openai)
+
+                    # Get the LLM novelty score from features (look for 'novelty' key or similar)
+                    llm_novelty = 50
+                    for key, feat in features.items():
+                        if 'novelty' in key.lower() or 'contribution' in key.lower():
+                            llm_novelty = feat.get('score', 50)
+                            break
+
+                    title_guess = text[:200].split('\n')[0].strip() if text else ''
+                    novelty_result = nv.verify(
+                        text=text,
+                        title=title_guess,
+                        llm_novelty_score=llm_novelty,
+                        paper_type=paper_type,
+                    )
+
+                    yield _sse("novelty_verification", novelty_result)
+
+                    # If novelty was verified as lower, adjust the features score
+                    if novelty_result and novelty_result.get('verified_score') is not None:
+                        verified = novelty_result['verified_score']
+                        for key in features:
+                            if 'novelty' in key.lower() or 'contribution' in key.lower():
+                                old_score = features[key]['score']
+                                # Blend: keep 30% of original LLM score, 70% of verified score
+                                features[key]['score'] = round(old_score * 0.3 + verified * 0.7)
+                                if old_score != features[key]['score']:
+                                    features[key]['details'] = (
+                                        features[key].get('details', '') +
+                                        f" [Novelty verified: {verified}/100 via literature check]"
+                                    )
+                                break
+                except Exception as e:
+                    print(f"[JournalScorer] Novelty verification failed (non-critical): {e}")
+
                 yield _sse("experiment_suggestions", {
                     "paper_type": paper_type,
                     "suggestions": experiment_suggestions,
@@ -571,7 +679,7 @@ class JournalScorerService:
             # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
             yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
 
-            journals = self._match_journals_by_keywords(keywords, field, tier)
+            journals = self._match_journals_by_keywords(keywords, field, tier, paper_type=paper_type)
             yield _sse("journals", journals)
 
             # ── Step 7: Landscape Position ──────────────────────────────
@@ -676,6 +784,7 @@ class JournalScorerService:
                 "methodology_gaps": methodology_gaps,
                 "citation_neighbor_journals": citation_neighbor_journals,
                 "paper_type": paper_type,
+                "novelty_verified": bool(novelty_result),
                 "research_gaps_count": len(research_gaps_result) if research_gaps_result else 0,
                 "experiment_suggestions_count": len(experiment_suggestions) if experiment_suggestions else 0,
                 "related_literature_count": len(related_literature) if related_literature else 0,
@@ -939,7 +1048,7 @@ class JournalScorerService:
         "heliyon", "ieee access", "sage open", "peerj",
     }
 
-    def _match_journals_by_keywords(self, keywords: list, field: str, tier: int) -> dict:
+    def _match_journals_by_keywords(self, keywords: list, field: str, tier: int, paper_type: str = 'experimental') -> dict:
         """Professor-based journal discovery pipeline:
         1) Extract 20 keywords from paper (done upstream)
         2) Find top-cited papers matching keywords → extract top 100 authors
@@ -965,6 +1074,10 @@ class JournalScorerService:
             # Use multiple keyword combinations for broad coverage
             all_author_ids = Counter()  # author_id -> total citations across matches
 
+            # Use paper-type-aware filter from JOURNAL_TARGETS_BY_TYPE
+            type_target = JOURNAL_TARGETS_BY_TYPE.get(paper_type, JOURNAL_TARGETS_BY_TYPE["experimental"])
+            type_filter = type_target["filter"]
+
             search_queries = [
                 " ".join(keywords[:8]),   # broad combined
                 " ".join(keywords[:4]),   # tighter combo
@@ -978,7 +1091,7 @@ class JournalScorerService:
                 url = (
                     f"{OPENALEX_BASE}/works"
                     f"?search={req.utils.quote(query)}"
-                    f"&filter=type:article,publication_year:2020-2026"
+                    f"&filter={type_filter},publication_year:2020-2026"
                     f"&sort=cited_by_count:desc"
                     f"&per_page=50"
                     f"&select=id,authorships,cited_by_count"
@@ -1014,7 +1127,7 @@ class JournalScorerService:
                 url = (
                     f"{OPENALEX_BASE}/works"
                     f"?filter=authorships.author.id:{author_filter},"
-                    f"type:article,"
+                    f"{type_filter},"
                     f"primary_location.source.type:journal,"
                     f"publication_year:2022-2026"
                     f"&group_by=primary_location.source.id"
@@ -1113,8 +1226,20 @@ class JournalScorerService:
             quality = [j for j in enriched if not _is_mega(j["name"])]
             megas = [j for j in enriched if _is_mega(j["name"])]
 
-            # Sort quality journals by citedness (quality indicator)
-            quality.sort(key=lambda j: j["citedness_2yr"], reverse=True)
+            # Apply paper-type-aware journal filtering
+            type_target = JOURNAL_TARGETS_BY_TYPE.get(paper_type, JOURNAL_TARGETS_BY_TYPE["experimental"])
+            include_kws = type_target.get("include_keywords", [])
+            exclude_kws = type_target.get("exclude_keywords", [])
+
+            # Boost journals matching include keywords
+            for j in quality:
+                name_lower = j["name"].lower()
+                boost = sum(1 for kw in include_kws if kw.lower() in name_lower)
+                demote = sum(1 for kw in exclude_kws if kw.lower() in name_lower)
+                j["type_relevance_boost"] = boost - demote
+
+            # Sort quality journals by type relevance then citedness (quality indicator)
+            quality.sort(key=lambda j: (j.get("type_relevance_boost", 0), j["citedness_2yr"]), reverse=True)
 
             # Stretch = top 5 most prestigious (aspirational — Nature, Cell, etc.)
             stretch = quality[:5]
@@ -1250,6 +1375,20 @@ class JournalScorerService:
                     "fix": fix_text,
                 })
                 total_penalty += check["penalty"]
+
+        # Type-specific red flags
+        type_flags = RED_FLAGS_BY_TYPE.get(paper_type, [])
+        for flag in type_flags:
+            pattern = flag.get("pattern")
+            check = flag.get("check", "missing")
+            if pattern:
+                found = bool(re.search(pattern, text, re.IGNORECASE))
+                if check == "missing" and not found:
+                    flags.append({"id": flag["id"], "issue": flag["issue"], "penalty": flag["penalty"], "fix": flag.get("fix", ""), "severity": "warning"})
+                    total_penalty += flag["penalty"]
+                elif check == "present" and found:
+                    flags.append({"id": flag["id"], "issue": flag["issue"], "penalty": flag["penalty"], "fix": flag.get("fix", ""), "severity": "warning"})
+                    total_penalty += flag["penalty"]
 
         return {"flags": flags, "total_penalty": total_penalty, "reference_count": ref_count}
 
