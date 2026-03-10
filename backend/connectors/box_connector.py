@@ -135,7 +135,7 @@ class BoxConnector(BaseConnector):
 
     # Concurrency limits for parallel file processing
     MAX_CONCURRENT_FILES = 20   # Parallel file downloads + parses
-    MAX_CONCURRENT_FOLDERS = 5  # Parallel subfolder traversals
+    # Subfolder traversal is sequential to avoid semaphore deadlock in deep trees
 
     def __init__(self, config: ConnectorConfig):
         super().__init__(config)
@@ -143,7 +143,6 @@ class BoxConnector(BaseConnector):
         self.oauth = None  # BoxOAuth or OAuth2 depending on SDK version
         self._user_info: Optional[Dict] = None
         self._file_semaphore: Optional[asyncio.Semaphore] = None
-        self._folder_semaphore: Optional[asyncio.Semaphore] = None
         # Shared thread pool for ALL folder traversals (avoids per-folder executor explosion)
         self._file_executor: Optional[Any] = None
 
@@ -491,9 +490,6 @@ class BoxConnector(BaseConnector):
         # Initialize semaphores on first call
         if self._file_semaphore is None:
             self._file_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_FILES)
-        if self._folder_semaphore is None:
-            self._folder_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_FOLDERS)
-
         try:
             print(f"[BoxConnector] _sync_folder folder_id={folder_id}, SDK={BOX_SDK_VERSION}", flush=True)
 
@@ -615,26 +611,21 @@ class BoxConnector(BaseConnector):
 
                 print(f"[BoxConnector] Parallel processed {len(file_items)} files → {len(documents)} docs in {folder_path}", flush=True)
 
-            # === STEP 3: Recurse into subfolders in PARALLEL ===
-            async def _recurse_folder_with_semaphore(subfolder):
-                async with self._folder_semaphore:
-                    return await self._sync_folder(
+            # === STEP 3: Recurse into subfolders SEQUENTIALLY ===
+            # Sequential to avoid semaphore deadlock in deep folder trees
+            # (parent holds permit, children need permits → deadlock)
+            # File processing within each folder is still parallel (STEP 2)
+            for subfolder in folder_items:
+                try:
+                    sub_docs = await self._sync_folder(
                         folder_id=subfolder.id, since=since,
                         max_file_size=max_file_size, file_extensions=file_extensions,
                         exclude_folders=exclude_folders, recursive=True,
                         current_path=folder_path
                     )
-
-            if folder_items:
-                folder_results = await asyncio.gather(
-                    *[_recurse_folder_with_semaphore(f) for f in folder_items],
-                    return_exceptions=True
-                )
-                for result in folder_results:
-                    if isinstance(result, list):
-                        documents.extend(result)
-                    elif isinstance(result, Exception):
-                        print(f"[BoxConnector] Subfolder task exception: {result}")
+                    documents.extend(sub_docs)
+                except Exception as e:
+                    print(f"[BoxConnector] Subfolder {getattr(subfolder, 'id', '?')} exception: {e}", flush=True)
 
             print(f"[BoxConnector] Finished folder {folder_id}, total {len(documents)} documents", flush=True)
             return documents
