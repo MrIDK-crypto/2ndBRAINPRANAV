@@ -26,7 +26,7 @@ except ImportError:
     GDOCS_AVAILABLE = False
 
 GDOCS_SCOPES = [
-    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive.readonly',
 ]
 
 GDOCS_MIME = 'application/vnd.google-apps.document'
