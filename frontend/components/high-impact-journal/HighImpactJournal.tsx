@@ -25,7 +25,7 @@ interface SuggestedReference {
   title: string
   authors: string
   year: string
-  url: string
+  url?: string
   relevance: string
 }
 
@@ -310,6 +310,10 @@ export default function HighImpactJournal() {
                   break
                 case 'recommendations':
                   setRecommendations(prev => prev + data.content)
+                  break
+                case 'recommendations_done':
+                  // Replace streamed content with sanitized version (fake DOIs stripped)
+                  if (data.full_text) setRecommendations(data.full_text)
                   break
                 case 'done':
                   if (data.manuscript_url) setManuscriptUrl(data.manuscript_url)

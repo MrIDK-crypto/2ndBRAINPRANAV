@@ -926,7 +926,11 @@ class JournalScorerService:
                     "label": info["label"],
                     "details": parsed[key].get("details", ""),
                     "citations": parsed[key].get("citations", []),
-                    "suggested_references": parsed[key].get("suggested_references", []),
+                    "suggested_references": [
+                        {k: v for k, v in ref.items() if k in ("title", "authors", "year", "relevance")}
+                        for ref in parsed[key].get("suggested_references", [])
+                        if isinstance(ref, dict)
+                    ],
                 }
             else:
                 result[key] = {
