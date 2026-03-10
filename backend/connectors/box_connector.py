@@ -144,6 +144,8 @@ class BoxConnector(BaseConnector):
         self._user_info: Optional[Dict] = None
         self._file_semaphore: Optional[asyncio.Semaphore] = None
         self._folder_semaphore: Optional[asyncio.Semaphore] = None
+        # Shared thread pool for ALL folder traversals (avoids per-folder executor explosion)
+        self._file_executor: Optional[Any] = None
 
     # ========================================================================
     # OAUTH FLOW
@@ -449,6 +451,11 @@ class BoxConnector(BaseConnector):
                 print(f"[BoxConnector] Got {len(folder_docs)} documents from folder {folder_id}")
                 documents.extend(folder_docs)
 
+            # Cleanup shared thread pool
+            if self._file_executor:
+                self._file_executor.shutdown(wait=False)
+                self._file_executor = None
+
             # Update stats
             self.sync_stats["last_sync"] = datetime.now(timezone.utc).isoformat()
             self.sync_stats["items_synced"] = len(documents)
@@ -488,7 +495,7 @@ class BoxConnector(BaseConnector):
             self._folder_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_FOLDERS)
 
         try:
-            print(f"[BoxConnector] _sync_folder folder_id={folder_id}, SDK={BOX_SDK_VERSION}")
+            print(f"[BoxConnector] _sync_folder folder_id={folder_id}, SDK={BOX_SDK_VERSION}", flush=True)
 
             # === STEP 1: List all items in folder ===
             file_items = []
@@ -554,13 +561,15 @@ class BoxConnector(BaseConnector):
                         break
                     offset += limit
 
-            print(f"[BoxConnector] Folder {folder_id}: {len(file_items)} files, {len(folder_items)} subfolders")
+            print(f"[BoxConnector] Folder {folder_id}: {len(file_items)} files, {len(folder_items)} subfolders", flush=True)
 
             # === STEP 2: Process all files in PARALLEL using thread pool ===
             # Box SDK and document parsers use synchronous/blocking I/O,
             # so we use run_in_executor for true parallelism
             from concurrent.futures import ThreadPoolExecutor
-            _executor = ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT_FILES)
+            if self._file_executor is None:
+                self._file_executor = ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT_FILES)
+            _executor = self._file_executor
             _loop = asyncio.get_event_loop()
 
             def _process_file_sync(item):
@@ -604,8 +613,7 @@ class BoxConnector(BaseConnector):
                     elif isinstance(result, Exception):
                         print(f"[BoxConnector] File task exception: {result}")
 
-                _executor.shutdown(wait=False)
-                print(f"[BoxConnector] Parallel processed {len(file_items)} files → {len(documents)} docs in {folder_path}")
+                print(f"[BoxConnector] Parallel processed {len(file_items)} files → {len(documents)} docs in {folder_path}", flush=True)
 
             # === STEP 3: Recurse into subfolders in PARALLEL ===
             async def _recurse_folder_with_semaphore(subfolder):
@@ -628,7 +636,7 @@ class BoxConnector(BaseConnector):
                     elif isinstance(result, Exception):
                         print(f"[BoxConnector] Subfolder task exception: {result}")
 
-            print(f"[BoxConnector] Finished folder {folder_id}, total {len(documents)} documents")
+            print(f"[BoxConnector] Finished folder {folder_id}, total {len(documents)} documents", flush=True)
             return documents
 
         except BoxAPIError as e:
