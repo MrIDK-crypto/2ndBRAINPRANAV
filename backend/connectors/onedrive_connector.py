@@ -5,6 +5,7 @@ Connects to Microsoft OneDrive/SharePoint to extract PowerPoint, Excel, and Word
 
 import os
 import io
+import asyncio
 import mimetypes
 from datetime import datetime
 from typing import List, Dict, Optional, Any
@@ -261,47 +262,79 @@ class OneDriveConnector(BaseConnector):
 
             print(f"[OneDrive] Found {len(items)} items in folder {folder_id}", flush=True)
 
-            # Process files
+            # Separate files and folders
             file_types = self.config.settings.get("file_types") or self.OPTIONAL_SETTINGS["file_types"]
             max_size = self.config.settings.get("max_file_size_mb") or self.OPTIONAL_SETTINGS["max_file_size_mb"]
+
+            eligible_files = []
+            folder_list = []
 
             for item in items:
                 if "file" in item:
                     name = item.get("name", "")
-
                     if any(name.lower().endswith(ext) for ext in file_types):
                         size_mb = item.get("size", 0) / (1024 * 1024)
-
                         if size_mb > max_size:
-                            print(f"[OneDrive] Skipping {name} - too large ({size_mb:.1f}MB)", flush=True)
                             continue
-
                         modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
-
                         if since and modified < since:
                             continue
+                        eligible_files.append(item)
+                elif "folder" in item:
+                    folder_list.append(item)
 
-                        doc = await self._download_and_parse(item)
-                        if doc:
-                            documents.append(doc)
-                            if self.on_document_ready:
-                                try:
-                                    self.on_document_ready(doc)
-                                except Exception as cb_err:
-                                    print(f"[OneDrive] on_document_ready callback error: {cb_err}")
-                            print(f"[OneDrive] Parsed {len(documents)} files so far...", flush=True)
+            # Process files in PARALLEL using thread pool (blocking I/O)
+            from concurrent.futures import ThreadPoolExecutor
+            _executor = ThreadPoolExecutor(max_workers=20)
+            _loop = asyncio.get_event_loop()
 
-            # Recurse into subfolders
-            for item in items:
-                if "folder" in item:
+            def _parse_file_sync(file_item):
+                try:
+                    inner_loop = asyncio.new_event_loop()
                     try:
-                        import time
-                        time.sleep(0.5)  # Rate limit protection
-                        subfolder_docs = await self._sync_folder(item["id"], since)
-                        documents.extend(subfolder_docs)
-                    except Exception as folder_err:
-                        print(f"[OneDrive] Skipping folder {item.get('name')}: {folder_err}", flush=True)
-                        continue
+                        doc = inner_loop.run_until_complete(self._download_and_parse(file_item))
+                    finally:
+                        inner_loop.close()
+                    if doc and self.on_document_ready:
+                        try:
+                            self.on_document_ready(doc)
+                        except Exception:
+                            pass
+                    return doc
+                except Exception as e:
+                    print(f"[OneDrive] Error parsing {file_item.get('name')}: {e}", flush=True)
+                    return None
+
+            if eligible_files:
+                results = await asyncio.gather(
+                    *[_loop.run_in_executor(_executor, _parse_file_sync, f) for f in eligible_files],
+                    return_exceptions=True
+                )
+                for r in results:
+                    if isinstance(r, Document):
+                        documents.append(r)
+                _executor.shutdown(wait=False)
+                print(f"[OneDrive] Parallel processed {len(eligible_files)} files → {len(documents)} docs", flush=True)
+
+            # Recurse into subfolders in PARALLEL
+            _folder_executor = ThreadPoolExecutor(max_workers=5)
+
+            def _recurse_folder_sync(folder_item):
+                inner_loop = asyncio.new_event_loop()
+                try:
+                    return inner_loop.run_until_complete(self._sync_folder(folder_item["id"], since))
+                finally:
+                    inner_loop.close()
+
+            if folder_list:
+                folder_results = await asyncio.gather(
+                    *[_loop.run_in_executor(_folder_executor, _recurse_folder_sync, f) for f in folder_list],
+                    return_exceptions=True
+                )
+                for r in folder_results:
+                    if isinstance(r, list):
+                        documents.extend(r)
+                _folder_executor.shutdown(wait=False)
 
         except Exception as e:
             print(f"[OneDrive] Error syncing folder {folder_id}: {e}", flush=True)

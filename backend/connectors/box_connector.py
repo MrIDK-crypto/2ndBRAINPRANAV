@@ -7,6 +7,7 @@ Supports OAuth2, webhooks, and incremental sync.
 import os
 import io
 import hashlib
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Any, Tuple
 from pathlib import Path
@@ -132,11 +133,17 @@ class BoxConnector(BaseConnector):
             "redirect_uri": os.getenv("BOX_REDIRECT_URI", "http://localhost:5003/api/connectors/box/callback")
         }
 
+    # Concurrency limits for parallel file processing
+    MAX_CONCURRENT_FILES = 20   # Parallel file downloads + parses
+    MAX_CONCURRENT_FOLDERS = 5  # Parallel subfolder traversals
+
     def __init__(self, config: ConnectorConfig):
         super().__init__(config)
         self.client = None  # BoxClient or Client depending on SDK version
         self.oauth = None  # BoxOAuth or OAuth2 depending on SDK version
         self._user_info: Optional[Dict] = None
+        self._file_semaphore: Optional[asyncio.Semaphore] = None
+        self._folder_semaphore: Optional[asyncio.Semaphore] = None
 
     # ========================================================================
     # OAUTH FLOW
@@ -471,174 +478,164 @@ class BoxConnector(BaseConnector):
         recursive: bool = True,
         current_path: str = ""
     ) -> List[Document]:
-        """Recursively sync a folder"""
+        """Recursively sync a folder with parallel file processing"""
         documents = []
 
+        # Initialize semaphores on first call
+        if self._file_semaphore is None:
+            self._file_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_FILES)
+        if self._folder_semaphore is None:
+            self._folder_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_FOLDERS)
+
         try:
-            print(f"[BoxConnector] _sync_folder called with folder_id={folder_id}, SDK version={BOX_SDK_VERSION}")
+            print(f"[BoxConnector] _sync_folder folder_id={folder_id}, SDK={BOX_SDK_VERSION}")
+
+            # === STEP 1: List all items in folder ===
+            file_items = []
+            folder_items = []
 
             if BOX_SDK_VERSION == "new":
-                # New SDK (v10+) - uses different API
-                print(f"[BoxConnector] Using new SDK to get folder {folder_id}")
                 folder = self.client.folders.get_folder_by_id(folder_id)
-                print(f"[BoxConnector] Got folder: name={folder.name}, id={folder.id}")
                 folder_path = f"{current_path}/{folder.name}" if current_path else folder.name
-
-                # Get folder items with pagination
                 offset = 0
                 limit = 100
 
                 while True:
-                    print(f"[BoxConnector] Getting folder items: folder_id={folder_id}, offset={offset}, limit={limit}")
-                    items_response = self.client.folders.get_folder_items(
-                        folder_id,
-                        limit=limit,
-                        offset=offset
-                    )
-
-                    print(f"[BoxConnector] items_response type: {type(items_response)}")
-                    print(f"[BoxConnector] items_response: {items_response}")
-
+                    items_response = self.client.folders.get_folder_items(folder_id, limit=limit, offset=offset)
                     items_list = items_response.entries if items_response.entries else []
-                    print(f"[BoxConnector] Got {len(items_list)} items in folder {folder_id}")
-
                     if not items_list:
-                        print(f"[BoxConnector] No items found in folder {folder_id}, breaking")
                         break
 
                     for item in items_list:
-                        print(f"[BoxConnector] Processing item: type={type(item)}, item={item}")
-                        # item.type is an enum like FolderBaseTypeField.FOLDER or FileBaseTypeField.FILE
-                        # Use .value to get the string "folder" or "file"
                         item_type_raw = item.type if hasattr(item, 'type') else None
                         if item_type_raw and hasattr(item_type_raw, 'value'):
-                            item_type = item_type_raw.value  # Gets "folder" or "file"
+                            item_type = item_type_raw.value
                         else:
                             item_type = str(item_type_raw).lower() if item_type_raw else type(item).__name__.lower()
-                        print(f"[BoxConnector] Item: id={item.id}, name={item.name}, type={item_type}")
 
                         if item_type == "folder":
-                            # Skip known junk directories entirely
                             if item.name and item.name.lower() in self.SKIP_DIRS:
-                                print(f"[BoxConnector] Skipping junk directory: {item.name}")
                                 continue
                             if recursive and item.id not in exclude_folders:
-                                print(f"[BoxConnector] Recursing into subfolder: {item.name}")
-                                sub_docs = await self._sync_folder(
-                                    folder_id=item.id,
-                                    since=since,
-                                    max_file_size=max_file_size,
-                                    file_extensions=file_extensions,
-                                    exclude_folders=exclude_folders,
-                                    recursive=True,
-                                    current_path=folder_path
-                                )
-                                documents.extend(sub_docs)
-                                print(f"[BoxConnector] Got {len(sub_docs)} docs from subfolder {item.name}")
-
+                                folder_items.append(item)
                         elif item_type == "file":
-                            print(f"[BoxConnector] Processing file: {item.name}")
-                            doc = await self._process_file_new_sdk(
-                                file_id=item.id,
-                                file_name=item.name,
-                                folder_path=folder_path,
-                                since=since,
-                                max_file_size=max_file_size,
-                                file_extensions=file_extensions
-                            )
-                            if doc:
-                                documents.append(doc)
-                                # Emit document immediately for incremental saving
-                                if self.on_document_ready:
-                                    try:
-                                        self.on_document_ready(doc)
-                                    except Exception as cb_err:
-                                        print(f"[BoxConnector] on_document_ready callback error: {cb_err}")
-                                print(f"[BoxConnector] Added document: {doc.title}")
-                            else:
-                                print(f"[BoxConnector] File {item.name} was skipped (returned None)")
+                            file_items.append(item)
 
                     if len(items_list) < limit:
-                        print(f"[BoxConnector] Reached end of folder items (got {len(items_list)} < {limit})")
                         break
                     offset += limit
-
             else:
-                # Legacy SDK (v3.x)
-                print(f"[BoxConnector] Using legacy SDK to get folder {folder_id}")
+                # Legacy SDK
                 folder = self.client.folder(folder_id).get()
-                print(f"[BoxConnector] Got folder: name={folder.name}, id={folder.id}")
                 folder_path = f"{current_path}/{folder.name}" if current_path else folder.name
-
-                # Get folder items with pagination
                 offset = 0
                 limit = 100
 
                 while True:
-                    print(f"[BoxConnector] Getting folder items (legacy): folder_id={folder_id}, offset={offset}, limit={limit}")
                     items = folder.get_items(
-                        limit=limit,
-                        offset=offset,
+                        limit=limit, offset=offset,
                         fields=["id", "name", "type", "size", "modified_at", "created_at",
                                "description", "parent", "path_collection", "sha1", "extension"]
                     )
-
                     items_list = list(items)
-                    print(f"[BoxConnector] Got {len(items_list)} items from folder {folder_id} (legacy SDK)")
                     if not items_list:
-                        print(f"[BoxConnector] No items found, breaking pagination loop")
                         break
 
                     for item in items_list:
-                        print(f"[BoxConnector] Item (legacy): id={item.id}, name={item.name}, type={item.type}")
                         if item.type == "folder":
-                            # Skip known junk directories entirely
                             if item.name and item.name.lower() in self.SKIP_DIRS:
-                                print(f"[BoxConnector] Skipping junk directory: {item.name}")
                                 continue
                             if recursive and item.id not in exclude_folders:
-                                sub_docs = await self._sync_folder(
-                                    folder_id=item.id,
-                                    since=since,
-                                    max_file_size=max_file_size,
-                                    file_extensions=file_extensions,
-                                    exclude_folders=exclude_folders,
-                                    recursive=True,
-                                    current_path=folder_path
-                                )
-                                documents.extend(sub_docs)
-
+                                folder_items.append(item)
                         elif item.type == "file":
-                            doc = await self._process_file(
-                                file_item=item,
-                                folder_path=folder_path,
-                                since=since,
-                                max_file_size=max_file_size,
-                                file_extensions=file_extensions
-                            )
-                            if doc:
-                                documents.append(doc)
-                                # Emit document immediately for incremental saving
-                                if self.on_document_ready:
-                                    try:
-                                        self.on_document_ready(doc)
-                                    except Exception as cb_err:
-                                        print(f"[BoxConnector] on_document_ready callback error: {cb_err}")
+                            file_items.append(item)
 
                     if len(items_list) < limit:
                         break
                     offset += limit
 
-            print(f"[BoxConnector] Finished syncing folder {folder_id}, found {len(documents)} documents")
+            print(f"[BoxConnector] Folder {folder_id}: {len(file_items)} files, {len(folder_items)} subfolders")
+
+            # === STEP 2: Process all files in PARALLEL using thread pool ===
+            # Box SDK and document parsers use synchronous/blocking I/O,
+            # so we use run_in_executor for true parallelism
+            from concurrent.futures import ThreadPoolExecutor
+            _executor = ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT_FILES)
+            _loop = asyncio.get_event_loop()
+
+            def _process_file_sync(item):
+                """Synchronous wrapper for file processing (runs in thread pool)"""
+                try:
+                    inner_loop = asyncio.new_event_loop()
+                    try:
+                        if BOX_SDK_VERSION == "new":
+                            doc = inner_loop.run_until_complete(self._process_file_new_sdk(
+                                file_id=item.id, file_name=item.name,
+                                folder_path=folder_path, since=since,
+                                max_file_size=max_file_size, file_extensions=file_extensions
+                            ))
+                        else:
+                            doc = inner_loop.run_until_complete(self._process_file(
+                                file_item=item, folder_path=folder_path,
+                                since=since, max_file_size=max_file_size,
+                                file_extensions=file_extensions
+                            ))
+                    finally:
+                        inner_loop.close()
+
+                    if doc and self.on_document_ready:
+                        try:
+                            self.on_document_ready(doc)
+                        except Exception as cb_err:
+                            print(f"[BoxConnector] on_document_ready error: {cb_err}")
+                    return doc
+                except Exception as e:
+                    print(f"[BoxConnector] Error processing {getattr(item, 'name', '?')}: {e}")
+                    return None
+
+            if file_items:
+                file_results = await asyncio.gather(
+                    *[_loop.run_in_executor(_executor, _process_file_sync, item) for item in file_items],
+                    return_exceptions=True
+                )
+                for result in file_results:
+                    if isinstance(result, Document):
+                        documents.append(result)
+                    elif isinstance(result, Exception):
+                        print(f"[BoxConnector] File task exception: {result}")
+
+                _executor.shutdown(wait=False)
+                print(f"[BoxConnector] Parallel processed {len(file_items)} files → {len(documents)} docs in {folder_path}")
+
+            # === STEP 3: Recurse into subfolders in PARALLEL ===
+            async def _recurse_folder_with_semaphore(subfolder):
+                async with self._folder_semaphore:
+                    return await self._sync_folder(
+                        folder_id=subfolder.id, since=since,
+                        max_file_size=max_file_size, file_extensions=file_extensions,
+                        exclude_folders=exclude_folders, recursive=True,
+                        current_path=folder_path
+                    )
+
+            if folder_items:
+                folder_results = await asyncio.gather(
+                    *[_recurse_folder_with_semaphore(f) for f in folder_items],
+                    return_exceptions=True
+                )
+                for result in folder_results:
+                    if isinstance(result, list):
+                        documents.extend(result)
+                    elif isinstance(result, Exception):
+                        print(f"[BoxConnector] Subfolder task exception: {result}")
+
+            print(f"[BoxConnector] Finished folder {folder_id}, total {len(documents)} documents")
             return documents
 
         except BoxAPIError as e:
-            print(f"[BoxConnector] BoxAPIError syncing folder {folder_id}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"[BoxConnector] BoxAPIError syncing folder {folder_id}: {e}")
             return documents
         except Exception as e:
-            print(f"[BoxConnector] Exception syncing folder {folder_id}: {str(e)}")
+            print(f"[BoxConnector] Exception syncing folder {folder_id}: {e}")
             import traceback
             traceback.print_exc()
             return documents
