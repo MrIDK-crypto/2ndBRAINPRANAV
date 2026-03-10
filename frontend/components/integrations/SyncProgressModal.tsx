@@ -133,34 +133,35 @@ export default function SyncProgressModal({ syncId, connectorType, onClose, onCl
     let lastUpdateTime = Date.now()
     let sseConnected = false
 
-    // Polling fallback
+    // Polling fallback — uses sync_id endpoint (not connector-type, which has stale data)
     const pollProgress = async () => {
       try {
         const response = await fetch(
-          `${API_BASE}/integrations/${connectorType}/sync/status`,
+          `${API_BASE}/sync-progress/${syncId}/status`,
           { headers: { Authorization: `Bearer ${token}` } }
         )
         if (response.ok) {
           const data = await response.json()
-          if (data.success && data.status) {
+          if (data.success) {
+            const status = data.status === 'completed' ? 'complete' : data.status
             const mappedProgress: ProgressData = {
               sync_id: syncId,
               connector_type: connectorType,
-              status: data.status.status === 'completed' ? 'complete' : data.status.status,
-              stage: data.status.current_file || data.status.status || 'Processing...',
-              total_items: data.status.documents_found || 0,
-              processed_items: data.status.documents_parsed || 0,
-              failed_items: 0,
-              current_item: data.status.current_file,
-              overall_percent: data.status.overall_percent ?? data.status.progress ?? 0,
-              percent_complete: data.status.overall_percent ?? data.status.progress ?? 0
+              status,
+              stage: data.stage || data.current_item || status || 'Processing...',
+              total_items: data.total_items || 0,
+              processed_items: data.processed_items || 0,
+              failed_items: data.failed_items || 0,
+              current_item: data.current_item,
+              overall_percent: data.overall_percent ?? data.percent_complete ?? 0,
+              percent_complete: data.overall_percent ?? data.percent_complete ?? 0
             }
             setProgress(mappedProgress)
             lastUpdateTime = Date.now()
 
-            if (data.status.status === 'completed' || data.status.status === 'complete' || data.status.status === 'error') {
+            if (status === 'complete' || status === 'error') {
               if (pollingInterval) clearInterval(pollingInterval)
-              if (data.status.status !== 'error') {
+              if (status !== 'error') {
                 setTimeout(() => onCloseRef.current(), 3000)
               }
             }

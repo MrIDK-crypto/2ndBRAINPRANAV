@@ -3383,6 +3383,21 @@ def sync_connector(connector_type: str):
         except Exception as e:
             print(f"[Sync] Warning: Failed to persist sync_id to connector: {e}")
 
+        # Clear stale progress from previous sync BEFORE submitting to thread pool.
+        # Without this, the frontend polls and gets "completed" from the PREVIOUS sync
+        # before the background thread has a chance to reinitialize sync_progress.
+        progress_key = f"{tenant}:{connector_type}"
+        sync_progress[progress_key] = {
+            "status": "syncing",
+            "progress": 5,
+            "documents_found": 0,
+            "documents_parsed": 0,
+            "documents_embedded": 0,
+            "current_file": "Starting sync...",
+            "error": None,
+            "started_at": utc_now().isoformat()
+        }
+
         # Submit sync to thread pool (bounded concurrency, prevents server OOM)
         _sync_executor.submit(
             _run_connector_sync,
@@ -5064,6 +5079,48 @@ def get_sync_status(connector_type: str):
             # Ensure overall_percent is present
             if 'overall_percent' not in status_data:
                 status_data['overall_percent'] = status_data.get('progress', 0)
+
+            # Guard against stale "completed" data from a previous sync.
+            # If the dict says completed/complete but the DB connector is SYNCING,
+            # the dict is stale — return "syncing" so the frontend doesn't auto-close.
+            if status_data.get('status') in ('completed', 'complete'):
+                try:
+                    db_check = get_db()
+                    type_map_check = {
+                        "gmail": ConnectorType.GMAIL, "slack": ConnectorType.SLACK,
+                        "box": ConnectorType.BOX, "github": ConnectorType.GITHUB,
+                        "pubmed": ConnectorType.PUBMED, "webscraper": ConnectorType.WEBSCRAPER,
+                        "firecrawl": ConnectorType.FIRECRAWL, "notion": ConnectorType.NOTION,
+                        "gdrive": ConnectorType.GOOGLE_DRIVE, "zotero": ConnectorType.ZOTERO,
+                        "onedrive": ConnectorType.ONEDRIVE, "quartzy": ConnectorType.QUARTZY,
+                    }
+                    ct_enum = type_map_check.get(connector_type)
+                    if ct_enum:
+                        conn = db_check.query(Connector).filter(
+                            Connector.tenant_id == g.tenant_id,
+                            Connector.connector_type == ct_enum,
+                            Connector.is_active == True
+                        ).first()
+                        if conn and conn.status == ConnectorStatus.SYNCING:
+                            # Stale! Return syncing status instead
+                            db_check.close()
+                            return jsonify({
+                                "success": True,
+                                "status": {
+                                    "status": "syncing",
+                                    "progress": 5,
+                                    "overall_percent": 5,
+                                    "documents_found": 0,
+                                    "documents_parsed": 0,
+                                    "documents_embedded": 0,
+                                    "current_file": "Starting sync...",
+                                    "error": None
+                                }
+                            })
+                    db_check.close()
+                except Exception:
+                    pass  # If DB check fails, return the dict as-is
+
             return jsonify({
                 "success": True,
                 "status": status_data

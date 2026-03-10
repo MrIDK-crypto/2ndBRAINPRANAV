@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import TopNav from '@/components/shared/TopNav'
 import { useAuth } from '@/contexts/AuthContext'
+import { useSyncProgress } from '@/contexts/SyncProgressContext'
 
 // ---------- constants ----------
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api'
@@ -92,15 +93,42 @@ export default function DragDropUploadPage() {
   const router = useRouter()
   const { token } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { activeSyncs, addLocalSync, updateSync, removeSync } = useSyncProgress()
 
   const [files, setFiles] = useState<FileEntry[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'uploading' | 'complete'>('idle')
   const [uploadError, setUploadError] = useState<string | null>(null)
 
+  // Track the current upload's ID in the global sync context
+  const uploadSyncIdRef = useRef<string | null>(null)
+
   // Counter to track nested drag events
   const dragCounterRef = useRef(0)
   const folderInputRef = useRef<HTMLInputElement>(null)
+
+  // Restore upload state from global context when navigating back to this page
+  useEffect(() => {
+    for (const sync of Array.from(activeSyncs.values())) {
+      if (sync.connectorType !== 'manual_upload') continue
+
+      uploadSyncIdRef.current = sync.syncId
+      const isComplete = sync.status === 'complete' || sync.status === 'completed'
+      const isError = sync.status === 'error'
+
+      if (isComplete) {
+        setPhase('complete')
+      } else if (isError) {
+        setPhase('idle')
+        setUploadError(sync.errorMessage || 'Upload failed')
+      } else {
+        setPhase('uploading')
+      }
+      break // only handle one manual upload at a time
+    }
+    // Only run on mount to restore state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ---------- file handling ----------
   const addFiles = useCallback((incoming: FileList | File[]) => {
@@ -247,6 +275,17 @@ export default function DragDropUploadPage() {
     setPhase('uploading')
     setUploadError(null)
 
+    // Register this upload in the global sync context so progress persists across navigation
+    const syncId = `manual_upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    uploadSyncIdRef.current = syncId
+    addLocalSync(syncId, 'manual_upload', {
+      status: 'syncing',
+      stage: `Uploading ${files.length} file${files.length !== 1 ? 's' : ''}...`,
+      totalItems: files.length,
+      processedItems: 0,
+      percentComplete: 0
+    })
+
     // Mark all pending as uploading
     setFiles((prev) =>
       prev.map((f) => (f.status === 'pending' ? { ...f, status: 'uploading' as const, progress: 0 } : f))
@@ -266,6 +305,13 @@ export default function DragDropUploadPage() {
         setFiles((prev) =>
           prev.map((f) => (f.status === 'uploading' ? { ...f, progress: pct } : f))
         )
+        // Update global sync context with progress
+        updateSync(syncId, {
+          percentComplete: pct,
+          stage: pct < 100
+            ? `Uploading ${files.length} file${files.length !== 1 ? 's' : ''}... ${pct}%`
+            : 'Processing files...'
+        })
       }
     })
 
@@ -273,6 +319,18 @@ export default function DragDropUploadPage() {
       if (xhr.status >= 200 && xhr.status < 300) {
         setFiles((prev) => prev.map((f) => ({ ...f, status: 'done' as const, progress: 100 })))
         setPhase('complete')
+        // Mark complete in global context — auto-removal will handle cleanup after 5s
+        updateSync(syncId, {
+          status: 'complete',
+          stage: `${files.length} file${files.length !== 1 ? 's' : ''} uploaded`,
+          percentComplete: 100,
+          processedItems: files.length
+        })
+        // Auto-remove from global context after delay (matches SyncProgressContext pattern)
+        setTimeout(() => {
+          removeSync(syncId)
+          uploadSyncIdRef.current = null
+        }, 5000)
       } else {
         let errMsg = `Upload failed (${xhr.status})`
         try {
@@ -286,6 +344,16 @@ export default function DragDropUploadPage() {
         )
         setUploadError(errMsg)
         setPhase('idle')
+        // Mark error in global context
+        updateSync(syncId, {
+          status: 'error',
+          stage: 'Upload failed',
+          errorMessage: errMsg
+        })
+        setTimeout(() => {
+          removeSync(syncId)
+          uploadSyncIdRef.current = null
+        }, 5000)
       }
     })
 
@@ -298,20 +366,35 @@ export default function DragDropUploadPage() {
       )
       setUploadError(errMsg)
       setPhase('idle')
+      // Mark error in global context
+      updateSync(syncId, {
+        status: 'error',
+        stage: 'Network error',
+        errorMessage: errMsg
+      })
+      setTimeout(() => {
+        removeSync(syncId)
+        uploadSyncIdRef.current = null
+      }, 5000)
     })
 
     xhr.open('POST', `${API_BASE}/documents/upload`)
     xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.send(formData)
-  }, [files, token])
+  }, [files, token, addLocalSync, updateSync, removeSync])
 
   // ---------- reset ----------
   const handleReset = useCallback(() => {
+    // Clean up global sync context if there's an active upload entry
+    if (uploadSyncIdRef.current) {
+      removeSync(uploadSyncIdRef.current)
+      uploadSyncIdRef.current = null
+    }
     setFiles([])
     setPhase('idle')
     setUploadError(null)
     dragCounterRef.current = 0
-  }, [])
+  }, [removeSync])
 
   // ---------- status icon for file list ----------
   const statusIcon = (status: FileEntry['status']) => {

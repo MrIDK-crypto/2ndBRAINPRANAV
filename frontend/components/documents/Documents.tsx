@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Image from 'next/image'
 import axios from 'axios'
 import { useAuth, useAuthHeaders } from '@/contexts/AuthContext'
+import { useSyncProgress } from '@/contexts/SyncProgressContext'
 import { useRouter, useSearchParams } from 'next/navigation'
 import DocumentViewer from './DocumentViewer'
 import TopNav from '../shared/TopNav'
@@ -289,6 +290,7 @@ export default function Documents() {
 
   const authHeaders = useAuthHeaders()
   const { token, user, logout } = useAuth()
+  const { activeSyncs } = useSyncProgress()
   const router = useRouter()
   const searchParams = useSearchParams()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -309,6 +311,29 @@ export default function Documents() {
       loadSmartFolders()
     }
   }, [token])
+
+  // Auto-refresh documents when a sync completes
+  const prevSyncsRef = useRef<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (!hasLoadedRef.current) return
+    // Check if any sync just transitioned to 'complete'/'completed'
+    let shouldRefresh = false
+    activeSyncs.forEach((sync, syncId) => {
+      const prevStatus = prevSyncsRef.current.get(syncId)
+      if ((sync.status === 'complete' || sync.status === 'completed') && prevStatus && prevStatus !== 'complete' && prevStatus !== 'completed') {
+        shouldRefresh = true
+      }
+    })
+    // Update previous statuses
+    const newPrev = new Map<string, string>()
+    activeSyncs.forEach((sync, syncId) => {
+      newPrev.set(syncId, sync.status)
+    })
+    prevSyncsRef.current = newPrev
+    if (shouldRefresh) {
+      loadDocuments()
+    }
+  }, [activeSyncs])
 
   // Auto-open a specific document when navigated from Knowledge Gaps
   const highlightHandledRef = useRef(false)

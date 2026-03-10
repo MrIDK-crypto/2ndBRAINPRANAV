@@ -21,6 +21,7 @@ interface SyncProgress {
 interface SyncProgressContextType {
   activeSyncs: Map<string, SyncProgress>
   startSync: (syncId: string, connectorType: string, emailWhenDone?: boolean) => void
+  addLocalSync: (syncId: string, connectorType: string, initialState?: Partial<SyncProgress>) => void
   updateSync: (syncId: string, updates: Partial<SyncProgress>) => void
   removeSync: (syncId: string) => void
   setEmailWhenDone: (syncId: string, value: boolean) => void
@@ -322,6 +323,29 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
 
   }, [cleanupSync, sendEmailNotification, pollSyncStatus])
 
+  // Add a locally-tracked sync (no SSE/polling — caller manages updates via updateSync)
+  // Used for manual uploads where progress is tracked client-side (e.g. XHR progress events)
+  const addLocalSync = useCallback((syncId: string, connectorType: string, initialState?: Partial<SyncProgress>) => {
+    console.log('[GlobalSync] Adding local sync:', syncId, connectorType)
+    setActiveSyncs(prev => {
+      const next = new Map(prev)
+      next.set(syncId, {
+        syncId,
+        connectorType,
+        status: 'syncing',
+        stage: 'Uploading...',
+        totalItems: 0,
+        processedItems: 0,
+        failedItems: 0,
+        percentComplete: 0,
+        emailWhenDone: false,
+        startedAt: Date.now(),
+        ...initialState
+      })
+      return next
+    })
+  }, [])
+
   // Update sync
   const updateSync = useCallback((syncId: string, updates: Partial<SyncProgress>) => {
     setActiveSyncs(prev => {
@@ -379,7 +403,8 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
     if (!hasRestoredRef.current) return
     const syncs: Array<{syncId: string, connectorType: string, startedAt: number}> = []
     Array.from(activeSyncs.entries()).forEach(([syncId, sync]) => {
-      if (sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error') {
+      if (sync.status !== 'complete' && sync.status !== 'completed' && sync.status !== 'error'
+          && sync.connectorType !== 'manual_upload') {
         syncs.push({ syncId, connectorType: sync.connectorType, startedAt: sync.startedAt })
       }
     })
@@ -405,6 +430,9 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
       for (const { syncId, connectorType, startedAt } of syncs) {
         if (now - startedAt > 30 * 60 * 1000) continue // Skip stale (>30 min)
         if (syncResourcesRef.current.has(syncId)) continue
+        // Skip manual uploads — they have no backend sync-progress endpoint
+        // and the XHR connection is lost on page refresh
+        if (connectorType === 'manual_upload') continue
 
         // Add to state
         setActiveSyncs(prev => {
@@ -429,7 +457,7 @@ export function SyncProgressProvider({ children }: { children: React.ReactNode }
   }, [])
 
   return (
-    <SyncProgressContext.Provider value={{ activeSyncs, startSync, updateSync, removeSync, setEmailWhenDone }}>
+    <SyncProgressContext.Provider value={{ activeSyncs, startSync, addLocalSync, updateSync, removeSync, setEmailWhenDone }}>
       {children}
     </SyncProgressContext.Provider>
   )

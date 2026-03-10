@@ -28,6 +28,7 @@ const connectorConfig: Record<string, { logo: string; name: string }> = {
   gsheets: { logo: '/gsheets.png', name: 'Google Sheets' },
   gslides: { logo: '/gslides.png', name: 'Google Slides' },
   webscraper: { logo: '/docs.png', name: 'Website' },
+  manual_upload: { logo: '/owl.png', name: 'File Upload' },
   default: { logo: '/owl.png', name: 'Integration' }
 }
 
