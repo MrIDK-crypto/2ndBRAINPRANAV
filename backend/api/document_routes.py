@@ -3,6 +3,7 @@ Document API Routes
 REST endpoints for document management and classification.
 """
 
+import time
 import zipfile
 import io
 import mimetypes
@@ -480,6 +481,272 @@ def reclassify_document(document_id: str):
             "success": False,
             "error": str(e)
         }), 500
+
+
+# ============================================================================
+# CHUNKED BATCH UPLOAD (for large file sets)
+# ============================================================================
+
+@document_bp.route('/upload-batch', methods=['POST'])
+@require_auth
+def upload_batch():
+    """
+    Upload a batch of files (for large uploads that send files in chunks).
+
+    Frontend sends files in batches of 50. Each batch is parsed, saved, and
+    the response includes batch progress so the frontend can track overall status.
+
+    Request (multipart/form-data):
+    - files: Up to 50 files per batch
+    - batch_index: Which batch this is (0-based)
+    - total_batches: Total number of batches
+    - upload_session_id: Unique ID for this upload session (for progress tracking)
+
+    Response:
+    {
+        "success": true,
+        "batch_index": 0,
+        "documents": [...],
+        "batch_count": 45,
+        "errors": ["file.xyz: unsupported format"],
+        "upload_session_id": "..."
+    }
+    """
+    try:
+        db = get_db()
+
+        batch_index = int(request.form.get('batch_index', 0))
+        total_batches = int(request.form.get('total_batches', 1))
+        upload_session_id = request.form.get('upload_session_id', f'batch_{int(time.time())}')
+
+        try:
+            files = request.files.getlist('files')
+        except werkzeug.exceptions.RequestEntityTooLarge:
+            raise
+
+        if not files:
+            return jsonify({"success": False, "error": "No files in this batch"}), 400
+
+        from parsers.document_parser import DocumentParser
+        parser = DocumentParser()
+
+        tenant_id = getattr(g, 'tenant_id', 'local-tenant')
+        user_id = getattr(g, 'user_id', 'local-test-user')
+
+        # Prepare files (handle zips inline)
+        files_to_process = []
+        for file in files:
+            if file.filename == '':
+                continue
+            file_content = file.read()
+
+            if file.filename.lower().endswith('.zip'):
+                try:
+                    with zipfile.ZipFile(io.BytesIO(file_content)) as zf:
+                        for zip_entry in zf.infolist():
+                            if zip_entry.is_dir():
+                                continue
+                            entry_name = zip_entry.filename
+                            basename = entry_name.split('/')[-1]
+                            if basename.startswith('.') or '__MACOSX' in entry_name:
+                                continue
+                            ext = '.' + basename.rsplit('.', 1)[-1].lower() if '.' in basename else ''
+                            if ext not in ZIP_SUPPORTED_EXTENSIONS:
+                                continue
+                            entry_bytes = zf.read(zip_entry.filename)
+                            if len(entry_bytes) > 0:
+                                files_to_process.append((basename, entry_bytes, None))
+                except Exception as ze:
+                    pass  # Skip bad zips
+            else:
+                files_to_process.append((file.filename, file_content, file.content_type))
+
+        # Parse in parallel (reuse existing _parse_single_file pattern)
+        parsing_errors = []
+        documents_created = []
+
+        def _parse_single(filename, file_content, content_type):
+            """Thread-safe: parse file text + upload to S3. No DB access."""
+            lower_name = filename.lower()
+            if len(file_content) > MAX_FILE_SIZE:
+                return {'filename': filename, 'error': f'File exceeds 100 MB limit'}
+
+            text = None
+            try:
+                if lower_name.endswith('.pdf'):
+                    text = parser.parse_pdf_bytes(file_content)
+                elif lower_name.endswith(('.docx', '.doc')):
+                    text = parser.parse_word_bytes(file_content)
+                elif lower_name.endswith(('.csv', '.tsv')):
+                    text = parser.parse_file_bytes(file_content, filename)
+                elif lower_name.endswith(('.txt', '.md', '.json', '.xml', '.html', '.htm', '.r', '.rmd')):
+                    text = file_content.decode('utf-8', errors='ignore')
+                elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.ods', '.numbers', '.rtf')):
+                    text = parser.parse_file_bytes(file_content, filename)
+                elif lower_name.endswith(IMAGE_EXTENSIONS):
+                    try:
+                        text = parser.parse_file_bytes(file_content, filename)
+                    except Exception:
+                        text = f"[Image file: {filename}]"
+                elif lower_name.endswith(MEDIA_EXTENSIONS):
+                    text = f"[Media file: {filename}]"  # Skip transcription in batch mode for speed
+                else:
+                    try:
+                        text = file_content.decode('utf-8')
+                    except Exception:
+                        return {'filename': filename, 'error': f"Unsupported file type: {filename}"}
+
+                if not text or len(text.strip()) == 0:
+                    if lower_name.endswith(IMAGE_EXTENSIONS):
+                        text = f"[Image file: {filename}]"
+                    elif lower_name.endswith(MEDIA_EXTENSIONS):
+                        text = f"[Media file: {filename}]"
+                    else:
+                        return {'filename': filename, 'error': f"No text extracted from: {filename}"}
+
+                # S3 upload
+                s3_file_key = None
+                if S3_AVAILABLE:
+                    try:
+                        s3_service = get_s3_service()
+                        s3_key_candidate = s3_service.generate_s3_key(
+                            tenant_id=tenant_id, file_type='documents', filename=filename
+                        )
+                        ct = content_type or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+                        uploaded_key, _ = s3_service.upload_bytes(
+                            file_bytes=file_content, s3_key=s3_key_candidate, content_type=ct
+                        )
+                        if uploaded_key:
+                            s3_file_key = uploaded_key
+                    except Exception:
+                        pass
+
+                return {
+                    'filename': filename, 'text': text,
+                    's3_key': s3_file_key, 'file_size': len(file_content), 'error': None
+                }
+            except Exception as e:
+                return {'filename': filename, 'error': f"Parse failed: {str(e)}"}
+
+        # Parallel parse (cap at 10 workers)
+        max_workers = min(10, max(1, len(files_to_process)))
+        parsed_results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_parse_single, fn, fc, ct): fn
+                for fn, fc, ct in files_to_process
+            }
+            for future in as_completed(futures):
+                parsed_results.append(future.result())
+
+        # Save to DB
+        for result in parsed_results:
+            if result.get('error'):
+                parsing_errors.append(result['error'])
+                continue
+
+            clean_text = result['text'].replace('\x00', '') if result['text'] else ''
+            metadata = {
+                'filename': result['filename'],
+                'uploaded_by': user_id,
+                'file_size': result.get('file_size', 0),
+                'upload_session_id': upload_session_id,
+                'batch_index': batch_index,
+            }
+            if result.get('s3_key'):
+                metadata['s3_key'] = result['s3_key']
+
+            doc = Document(
+                tenant_id=tenant_id,
+                title=result['filename'],
+                content=clean_text,
+                source_type='manual_upload',
+                classification=DocumentClassification.UNKNOWN,
+                status=DocumentStatus.PENDING,
+                doc_metadata=metadata
+            )
+            db.add(doc)
+            db.flush()
+            documents_created.append({
+                'id': doc.id,
+                'title': doc.title,
+                'status': doc.status.value
+            })
+
+        db.commit()
+
+        # On LAST batch, kick off background extraction + embedding for ALL session docs
+        if batch_index == total_batches - 1:
+            import threading
+
+            def _process_session_background(session_id, tid):
+                try:
+                    bg_db = SessionLocal()
+                    # Find all docs from this upload session
+                    from sqlalchemy import cast, String
+                    all_docs = bg_db.query(Document).filter(
+                        Document.tenant_id == tid,
+                        Document.source_type == 'manual_upload',
+                        Document.doc_metadata['upload_session_id'].astext == session_id
+                    ).all()
+
+                    if not all_docs:
+                        return
+
+                    print(f"[Upload] Background processing {len(all_docs)} docs from session {session_id}", flush=True)
+
+                    # Extract
+                    try:
+                        from services.extraction_service import get_extraction_service
+                        extraction_service = get_extraction_service()
+                        extraction_service.extract_documents(all_docs, bg_db, force=False)
+                    except Exception as e:
+                        print(f"[Upload] Session extraction error: {e}", flush=True)
+
+                    # Embed
+                    try:
+                        embedding_service = get_embedding_service()
+                        embedding_service.embed_documents(
+                            documents=all_docs, tenant_id=tid,
+                            db=bg_db, force_reembed=False
+                        )
+                    except Exception as e:
+                        print(f"[Upload] Session embedding error: {e}", flush=True)
+                except Exception as e:
+                    print(f"[Upload] Session background error: {e}", flush=True)
+                finally:
+                    try:
+                        bg_db.close()
+                    except:
+                        pass
+
+            thread = threading.Thread(
+                target=_process_session_background,
+                args=(upload_session_id, tenant_id),
+                daemon=True
+            )
+            thread.start()
+
+        return jsonify({
+            "success": True,
+            "batch_index": batch_index,
+            "total_batches": total_batches,
+            "upload_session_id": upload_session_id,
+            "documents": documents_created,
+            "batch_count": len(documents_created),
+            "errors": parsing_errors,
+        })
+
+    except Exception as e:
+        print(f"[Upload] Batch error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        try:
+            db.close()
+        except:
+            pass
 
 
 # ============================================================================

@@ -268,19 +268,23 @@ export default function DragDropUploadPage() {
     setFiles((prev) => prev.filter((f) => f.id !== id))
   }, [])
 
-  // ---------- upload ----------
+  // ---------- upload (chunked batches) ----------
+  const BATCH_SIZE = 50
+
   const handleUpload = useCallback(async () => {
     if (files.length === 0 || !token) return
 
     setPhase('uploading')
     setUploadError(null)
 
-    // Register this upload in the global sync context so progress persists across navigation
-    const syncId = `manual_upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    uploadSyncIdRef.current = syncId
-    addLocalSync(syncId, 'manual_upload', {
+    const sessionId = `manual_upload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    uploadSyncIdRef.current = sessionId
+
+    const totalBatches = Math.ceil(files.length / BATCH_SIZE)
+
+    addLocalSync(sessionId, 'manual_upload', {
       status: 'syncing',
-      stage: `Uploading ${files.length} file${files.length !== 1 ? 's' : ''}...`,
+      stage: `Uploading ${files.length} file${files.length !== 1 ? 's' : ''} (batch 1/${totalBatches})...`,
       totalItems: files.length,
       processedItems: 0,
       percentComplete: 0
@@ -291,96 +295,91 @@ export default function DragDropUploadPage() {
       prev.map((f) => (f.status === 'pending' ? { ...f, status: 'uploading' as const, progress: 0 } : f))
     )
 
-    const formData = new FormData()
-    files.forEach((entry) => {
-      formData.append('files', entry.file)
-    })
+    let totalProcessed = 0
+    let totalErrors: string[] = []
+    let allDocs: Array<{ id: string; title: string; status: string }> = []
 
-    // Use XMLHttpRequest for upload progress tracking
-    const xhr = new XMLHttpRequest()
+    // Send files in batches of BATCH_SIZE
+    for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
+      const start = batchIdx * BATCH_SIZE
+      const end = Math.min(start + BATCH_SIZE, files.length)
+      const batchFiles = files.slice(start, end)
 
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100)
+      const formData = new FormData()
+      batchFiles.forEach((entry) => formData.append('files', entry.file))
+      formData.append('batch_index', String(batchIdx))
+      formData.append('total_batches', String(totalBatches))
+      formData.append('upload_session_id', sessionId)
+
+      try {
+        const resp = await fetch(`${API_BASE}/documents/upload-batch`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData,
+        })
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({ error: `Batch ${batchIdx + 1} failed (${resp.status})` }))
+          throw new Error(errData.error || `Batch ${batchIdx + 1} failed`)
+        }
+
+        const data = await resp.json()
+        totalProcessed += data.batch_count || 0
+        if (data.errors) totalErrors.push(...data.errors)
+        if (data.documents) allDocs.push(...data.documents)
+
+        // Update per-file progress for this batch
+        const batchFileIds = new Set(batchFiles.map(f => f.id))
         setFiles((prev) =>
-          prev.map((f) => (f.status === 'uploading' ? { ...f, progress: pct } : f))
+          prev.map((f) => batchFileIds.has(f.id) ? { ...f, status: 'done' as const, progress: 100 } : f)
         )
-        // Update global sync context with progress
-        updateSync(syncId, {
-          percentComplete: pct,
-          stage: pct < 100
-            ? `Uploading ${files.length} file${files.length !== 1 ? 's' : ''}... ${pct}%`
-            : 'Processing files...'
-        })
-      }
-    })
 
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        setFiles((prev) => prev.map((f) => ({ ...f, status: 'done' as const, progress: 100 })))
-        setPhase('complete')
-        // Mark complete in global context — auto-removal will handle cleanup after 5s
-        updateSync(syncId, {
-          status: 'complete',
-          stage: `${files.length} file${files.length !== 1 ? 's' : ''} uploaded`,
-          percentComplete: 100,
-          processedItems: files.length
+        // Update global progress
+        const pct = Math.round(((batchIdx + 1) / totalBatches) * 100)
+        updateSync(sessionId, {
+          percentComplete: pct,
+          processedItems: totalProcessed,
+          stage: batchIdx < totalBatches - 1
+            ? `Uploading batch ${batchIdx + 2}/${totalBatches} (${totalProcessed} files done)...`
+            : `Processing ${totalProcessed} files...`
         })
-        // Auto-remove from global context after delay (matches SyncProgressContext pattern)
-        setTimeout(() => {
-          removeSync(syncId)
-          uploadSyncIdRef.current = null
-        }, 5000)
-      } else {
-        let errMsg = `Upload failed (${xhr.status})`
-        try {
-          const data = JSON.parse(xhr.responseText)
-          errMsg = data.error || data.message || errMsg
-        } catch {}
+      } catch (err: any) {
+        // Mark remaining batch files as error
+        const batchFileIds = new Set(batchFiles.map(f => f.id))
         setFiles((prev) =>
-          prev.map((f) =>
-            f.status === 'uploading' ? { ...f, status: 'error' as const, error: errMsg } : f
+          prev.map((f) => batchFileIds.has(f.id) && f.status === 'uploading'
+            ? { ...f, status: 'error' as const, error: err.message }
+            : f
           )
         )
-        setUploadError(errMsg)
-        setPhase('idle')
-        // Mark error in global context
-        updateSync(syncId, {
-          status: 'error',
-          stage: 'Upload failed',
-          errorMessage: errMsg
-        })
-        setTimeout(() => {
-          removeSync(syncId)
-          uploadSyncIdRef.current = null
-        }, 5000)
+        totalErrors.push(err.message)
+        // Continue with next batch instead of stopping entirely
       }
-    })
+    }
 
-    xhr.addEventListener('error', () => {
-      const errMsg = 'Network error during upload'
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.status === 'uploading' ? { ...f, status: 'error' as const, error: errMsg } : f
-        )
-      )
-      setUploadError(errMsg)
-      setPhase('idle')
-      // Mark error in global context
-      updateSync(syncId, {
-        status: 'error',
-        stage: 'Network error',
-        errorMessage: errMsg
+    // All batches done
+    if (totalProcessed > 0) {
+      setPhase('complete')
+      updateSync(sessionId, {
+        status: 'complete',
+        stage: `${totalProcessed} file${totalProcessed !== 1 ? 's' : ''} uploaded${totalErrors.length > 0 ? ` (${totalErrors.length} errors)` : ''}`,
+        percentComplete: 100,
+        processedItems: totalProcessed
       })
-      setTimeout(() => {
-        removeSync(syncId)
-        uploadSyncIdRef.current = null
-      }, 5000)
-    })
+    } else {
+      setUploadError(totalErrors.join('; ') || 'All files failed to upload')
+      setPhase('idle')
+      updateSync(sessionId, {
+        status: 'error',
+        stage: 'Upload failed',
+        errorMessage: totalErrors[0] || 'Unknown error'
+      })
+    }
 
-    xhr.open('POST', `${API_BASE}/documents/upload`)
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-    xhr.send(formData)
+    setTimeout(() => {
+      removeSync(sessionId)
+      uploadSyncIdRef.current = null
+    }, 5000)
   }, [files, token, addLocalSync, updateSync, removeSync])
 
   // ---------- reset ----------
