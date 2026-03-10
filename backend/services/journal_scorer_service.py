@@ -12,6 +12,7 @@ from typing import Generator, Dict, List, Optional
 
 from parsers.document_parser import DocumentParser
 from services.openai_client import get_openai_client
+from services.openalex_search_service import OpenAlexSearchService
 
 
 # ── 18 Field Configurations with Scoring Weights ────────────────────────────
@@ -356,6 +357,7 @@ class JournalScorerService:
     def __init__(self):
         self.openai = get_openai_client()
         self.parser = DocumentParser()
+        self.openalex = OpenAlexSearchService()
 
     def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None) -> Generator[str, None, None]:
         """10-step pipeline — yields SSE events as analysis progresses.
@@ -761,7 +763,15 @@ class JournalScorerService:
                 print(f"[JournalScorer] Citation neighborhood matching failed (non-critical): {e}")
 
             # ── Step 10: Generate Recommendations ───────────────────────
-            yield _sse("progress", {"step": 10, "message": "Generating recommendations...", "percent": 82})
+            yield _sse("progress", {"step": 10, "message": "Fetching verified references & generating recommendations...", "percent": 82})
+
+            # Part A: Pre-fetch real references from OpenAlex
+            reference_bank = []
+            try:
+                reference_bank = self._fetch_reference_bank(keywords, field)
+                print(f"[JournalScorer] Reference bank: fetched {len(reference_bank)} verified papers from OpenAlex")
+            except Exception as e:
+                print(f"[JournalScorer] Reference bank fetch failed (non-critical): {e}")
 
             rec_buffer = ""
             for chunk in self._generate_recommendations_stream(
@@ -770,9 +780,14 @@ class JournalScorerService:
                 keywords=keywords, subfield=field_result.get("subfield", ""),
                 paper_type=paper_type,
                 research_gaps=research_gaps_result if research_gaps_result else None,
+                reference_bank=reference_bank,
             ):
                 rec_buffer += chunk
                 yield _sse("recommendations", {"content": chunk})
+
+            # Part C: Post-process to strip any remaining hallucinated DOIs
+            if reference_bank:
+                rec_buffer = self._sanitize_doi_links(rec_buffer, reference_bank)
 
             yield _sse("recommendations_done", {"full_text": rec_buffer})
 
@@ -882,10 +897,10 @@ class JournalScorerService:
             f"{paper_type_context}\n"
             f"FEATURES TO SCORE (each 0-100):\n{feature_list}\n\n"
             "Respond ONLY in valid JSON — a dict where each key is the feature name and value is:\n"
-            '{"score": 0-100, "details": "justification (2-3 sentences)", "citations": [{"text": "quoted or paraphrased evidence from the manuscript", "section": "which section it appears in"}], "suggested_references": [{"title": "Seminal paper title", "authors": "Author et al.", "year": "YYYY", "url": "DOI or URL if known", "relevance": "why this reference matters"}]}\n\n'
+            '{"score": 0-100, "details": "justification (2-3 sentences)", "citations": [{"text": "quoted or paraphrased evidence from the manuscript", "section": "which section it appears in"}], "suggested_references": [{"title": "Seminal paper title", "authors": "Author et al.", "year": "YYYY", "relevance": "why this reference matters"}]}\n\n'
             "IMPORTANT:\n"
             "- In 'citations', quote specific passages from the manuscript that support your score.\n"
-            "- In 'suggested_references', list 1-2 key papers the authors should cite or benchmark against. Include DOI URLs (https://doi.org/...) when possible.\n"
+            "- In 'suggested_references', list 1-2 key papers the authors should cite or benchmark against. Do NOT include DOI URLs — just the paper title, authors, and year.\n"
             "- If the manuscript already cites important works, mention that positively in 'details'.\n\n"
             f"MANUSCRIPT TEXT:\n{text_excerpt}"
         )
@@ -1942,7 +1957,156 @@ class JournalScorerService:
             'source': 'citation_neighborhood',
         } for name, count in neighbor_journals]
 
-    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield="", paper_type=None, research_gaps=None):
+    # ── Reference Bank: pre-fetch real papers from OpenAlex ─────────────────
+
+    def _fetch_reference_bank(self, keywords: list, field: str) -> list:
+        """Fetch real papers from OpenAlex to use as a verified reference bank.
+
+        Returns up to 15 papers with real DOIs that the LLM can cite,
+        preventing DOI hallucination.
+        """
+        if not keywords:
+            keywords = [field]
+
+        all_papers = []
+        seen_dois = set()
+
+        # Search with top keywords (combine first 3-4 for relevance)
+        primary_query = " ".join(keywords[:4])
+        try:
+            results = self.openalex.search_works(
+                query=primary_query,
+                max_results=10,
+                min_citations=5,
+            )
+            for paper in results:
+                doi = paper.get("doi", "")
+                if doi and doi not in seen_dois:
+                    seen_dois.add(doi)
+                    all_papers.append({
+                        "title": paper.get("title", ""),
+                        "authors": paper.get("authors", []),
+                        "year": paper.get("year"),
+                        "doi": doi,
+                        "journal": paper.get("journal", ""),
+                        "cited_by_count": paper.get("cited_by_count", 0),
+                    })
+        except Exception as e:
+            print(f"[JournalScorer] OpenAlex primary search failed: {e}")
+
+        # If we have fewer than 10, do a secondary search with different keyword combos
+        if len(all_papers) < 10 and len(keywords) > 2:
+            secondary_query = " ".join(keywords[1:5]) if len(keywords) > 4 else " ".join(keywords[:3])
+            try:
+                results2 = self.openalex.search_works(
+                    query=secondary_query,
+                    max_results=8,
+                    min_citations=3,
+                )
+                for paper in results2:
+                    doi = paper.get("doi", "")
+                    if doi and doi not in seen_dois:
+                        seen_dois.add(doi)
+                        all_papers.append({
+                            "title": paper.get("title", ""),
+                            "authors": paper.get("authors", []),
+                            "year": paper.get("year"),
+                            "doi": doi,
+                            "journal": paper.get("journal", ""),
+                            "cited_by_count": paper.get("cited_by_count", 0),
+                        })
+            except Exception as e:
+                print(f"[JournalScorer] OpenAlex secondary search failed: {e}")
+
+        # Sort by citation count (most-cited first) and cap at 15
+        all_papers.sort(key=lambda p: p.get("cited_by_count", 0), reverse=True)
+        return all_papers[:15]
+
+    def _format_reference_bank(self, reference_bank: list) -> str:
+        """Format the reference bank as a numbered list for prompt injection."""
+        if not reference_bank:
+            return "(No verified references available — do NOT cite any papers by name or DOI.)\n"
+
+        lines = ["REFERENCE BANK (verified real papers with real DOIs):\n"]
+        for i, ref in enumerate(reference_bank, 1):
+            authors_str = ", ".join(ref["authors"][:3]) if ref["authors"] else "Unknown"
+            if len(ref.get("authors", [])) > 3:
+                authors_str += " et al."
+            doi = ref["doi"]
+            # Normalize DOI to URL form
+            if doi and not doi.startswith("http"):
+                doi = f"https://doi.org/{doi}"
+            lines.append(
+                f"{i}. {authors_str} ({ref.get('year', 'n.d.')}). "
+                f"\"{ref['title']}\". {ref.get('journal', '')}. "
+                f"DOI: {doi}"
+            )
+        lines.append("")
+        return "\n".join(lines)
+
+    # ── DOI sanitization: strip hallucinated DOIs from output ───────────────
+
+    def _sanitize_doi_links(self, text: str, reference_bank: list) -> str:
+        """Strip any DOI links that were NOT in the verified reference bank.
+
+        Finds markdown links like [text](https://doi.org/...) and plain DOI URLs.
+        If the DOI was not in our reference bank, strips the link but keeps the text.
+        """
+        # Build set of known-good DOIs (normalized to full URL form)
+        valid_dois = set()
+        for ref in reference_bank:
+            doi = ref.get("doi", "")
+            if doi:
+                # Normalize: ensure both forms are covered
+                if doi.startswith("https://doi.org/"):
+                    valid_dois.add(doi)
+                    valid_dois.add(doi.replace("https://doi.org/", ""))
+                elif doi.startswith("http://doi.org/"):
+                    valid_dois.add(doi)
+                    valid_dois.add(doi.replace("http://doi.org/", ""))
+                    valid_dois.add(doi.replace("http://", "https://"))
+                else:
+                    valid_dois.add(doi)
+                    valid_dois.add(f"https://doi.org/{doi}")
+
+        def _is_valid_doi(doi_url: str) -> bool:
+            """Check if a DOI URL matches any paper in the reference bank."""
+            if doi_url in valid_dois:
+                return True
+            # Also check the bare DOI portion
+            bare = doi_url.replace("https://doi.org/", "").replace("http://doi.org/", "")
+            return bare in valid_dois
+
+        # Pattern 1: Markdown links with DOI URLs — [text](https://doi.org/...)
+        def replace_md_doi(match):
+            link_text = match.group(1)
+            doi_url = match.group(2)
+            if _is_valid_doi(doi_url):
+                return match.group(0)  # Keep valid DOI links
+            return link_text  # Strip fake DOI, keep text
+
+        text = re.sub(
+            r'\[([^\]]+)\]\((https?://doi\.org/[^\)]+)\)',
+            replace_md_doi,
+            text,
+        )
+
+        # Pattern 2: Bare DOI URLs not inside markdown links
+        def replace_bare_doi(match):
+            doi_url = match.group(0)
+            if _is_valid_doi(doi_url):
+                return doi_url  # Keep valid
+            return ""  # Strip fake bare DOIs
+
+        text = re.sub(
+            r'(?<!\()(https?://doi\.org/10\.\S+?)(?=[\s,;\)\]\n]|$)',
+            replace_bare_doi,
+            text,
+        )
+
+        return text
+
+    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield="", paper_type=None, research_gaps=None, reference_bank=None):
         feature_summary = "\n".join(
             f"- {f['label']}: {f['score']}/100 — {f.get('details', '')}"
             for f in features.values()
@@ -2007,7 +2171,7 @@ class JournalScorerService:
                 "- **What to do** — specific action (e.g., 'Add a section on emerging ferroptosis-iron interactions "
                 "covering the 15+ papers published since 2022', NOT 'expand the review')\n"
                 "- **Why this matters** — how this strengthens the review for journal acceptance\n"
-                "- **Key references to add** — cite 2-3 specific papers with DOI links that should be incorporated\n\n"
+                "- **Key references to add** — select 2-3 papers from the Reference Bank below that should be incorporated\n\n"
                 "Types of improvements to suggest:\n"
                 "- Missing subtopics or recent developments not covered\n"
                 "- Sections where synthesis is weak (just listing studies vs. critically comparing them)\n"
@@ -2027,7 +2191,7 @@ class JournalScorerService:
                 "follow-up data, educational value\n"
                 "- **What to do** — specific action\n"
                 "- **Why this matters** — how this improves the case report\n"
-                "- **Reference** — cite a relevant similar case or clinical guideline with DOI\n\n"
+                "- **Reference** — select a relevant paper from the Reference Bank below, if applicable\n\n"
             )
         elif paper_type == 'protocol':
             section1 = (
@@ -2038,7 +2202,7 @@ class JournalScorerService:
                 "- **Methodology** — exact approach\n"
                 "- **Controls** — positive and negative controls\n"
                 "- **Expected outcome** — what success looks like\n"
-                "- **Reference** — cite the gold standard method for comparison\n\n"
+                "- **Reference** — select the closest matching method paper from the Reference Bank below\n\n"
             )
         else:
             # Experimental papers — original experiment suggestions
@@ -2053,7 +2217,7 @@ class JournalScorerService:
                 "'Western blot for cleaved caspase-3', 'ChIP-seq for H3K27ac')\n"
                 "- **Controls** — what positive/negative controls to include\n"
                 "- **Expected outcome** — what result would strengthen the paper and why\n"
-                "- **Reference** — cite the seminal paper that established this method with DOI link\n\n"
+                "- **Reference** — select the most relevant paper from the Reference Bank below\n\n"
                 "CRITICAL: These must be experiments that are directly relevant to THIS paper's specific topic "
                 f"({', '.join(keywords[:4]) if keywords else field_label}). "
                 "Do NOT give generic advice like 'do dose-response studies'. "
@@ -2077,17 +2241,20 @@ class JournalScorerService:
             f"{section1}"
 
             "## SECTION 2: Missing Key References\n\n"
-            "List 5-8 specific papers that MUST be cited in this manuscript. For each:\n"
-            "- Full citation: [Author et al. (Year) - Paper Title](https://doi.org/10.xxxx/xxxxx)\n"
+            "Select 5-8 papers from the Reference Bank below that MUST be cited in this manuscript. For each:\n"
+            "- Full citation using the exact title and DOI from the Reference Bank: [Author et al. (Year) - Paper Title](DOI)\n"
             "- One sentence on why this specific paper is essential for this manuscript\n"
             "- Where in the manuscript it should be cited (Introduction, Methods, Discussion)\n\n"
 
             "## SECTION 3: Structural Improvements\n\n"
             "2-3 specific structural changes to improve acceptance chances.\n\n"
 
+            f"{self._format_reference_bank(reference_bank or [])}\n\n"
+
             "FORMATTING RULES:\n"
             "- Use markdown with numbered lists\n"
-            "- Every paper citation MUST include a DOI link: [Author et al. (Year)](https://doi.org/...)\n"
+            "- When citing papers, use the EXACT title and DOI from the Reference Bank above. Do NOT fabricate any DOIs or paper titles.\n"
+            "- ONLY cite papers from the Reference Bank. If no relevant paper exists in the bank, describe the type of paper needed without inventing a citation.\n"
             "- Be extremely specific — no vague advice\n"
         )
 
