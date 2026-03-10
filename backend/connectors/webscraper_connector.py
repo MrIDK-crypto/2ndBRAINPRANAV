@@ -990,6 +990,11 @@ class WebScraperConnector(BaseConnector):
                         doc_type="webpage",
                     )
                     documents.append(doc)
+                    if self.on_document_ready:
+                        try:
+                            self.on_document_ready(doc)
+                        except Exception as cb_err:
+                            print(f"[WebScraper] on_document_ready error: {cb_err}")
                     self.success_count += 1
 
                 except Exception as e:

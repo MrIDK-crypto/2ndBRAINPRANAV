@@ -237,6 +237,11 @@ class ZoteroConnector(BaseConnector):
                 doc = await self._item_to_document(item)
                 if doc:
                     documents.append(doc)
+                    if self.on_document_ready:
+                        try:
+                            self.on_document_ready(doc)
+                        except Exception as cb_err:
+                            print(f"[Zotero] on_document_ready error: {cb_err}")
 
             # Update library version for next sync
             try:

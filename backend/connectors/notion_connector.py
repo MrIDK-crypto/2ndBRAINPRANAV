@@ -139,8 +139,19 @@ class NotionConnector(BaseConnector):
                     doc = self._page_to_document(page)
                     if doc:
                         documents.append(doc)
+                        if self.on_document_ready:
+                            try:
+                                self.on_document_ready(doc)
+                            except Exception as cb_err:
+                                print(f"[Notion] on_document_ready error: {cb_err}")
                         # Add any files embedded in this page as separate documents
                         if self._child_documents:
+                            for child_doc in self._child_documents:
+                                if self.on_document_ready:
+                                    try:
+                                        self.on_document_ready(child_doc)
+                                    except Exception as cb_err:
+                                        print(f"[Notion] on_document_ready error: {cb_err}")
                             documents.extend(self._child_documents)
                             print(f"[Notion]   + {len(self._child_documents)} embedded files as separate documents")
                         page_count += 1

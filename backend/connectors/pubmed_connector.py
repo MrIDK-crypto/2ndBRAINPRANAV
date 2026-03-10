@@ -262,6 +262,11 @@ class PubMedConnector(BaseConnector):
                         if since and doc.timestamp and doc.timestamp < since:
                             continue
                         documents.append(doc)
+                        if self.on_document_ready:
+                            try:
+                                self.on_document_ready(doc)
+                            except Exception as cb_err:
+                                print(f"[PubMed] on_document_ready error: {cb_err}")
                 except Exception as e:
                     print(f"[PubMed] Error parsing article: {e}")
                     continue

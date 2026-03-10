@@ -271,6 +271,11 @@ class GmailConnector(BaseConnector):
                         doc = self._message_to_document(msg, label)
                         if doc:
                             documents.append(doc)
+                            if self.on_document_ready:
+                                try:
+                                    self.on_document_ready(doc)
+                                except Exception as cb_err:
+                                    print(f"[Gmail] on_document_ready error: {cb_err}")
                             total_fetched += 1
 
                     # Check if we should continue pagination

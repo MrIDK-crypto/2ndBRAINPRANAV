@@ -135,6 +135,11 @@ class GSlidesConnector(BaseConnector):
                     doc = self._file_to_document(file)
                     if doc:
                         documents.append(doc)
+                        if self.on_document_ready:
+                            try:
+                                self.on_document_ready(doc)
+                            except Exception as cb_err:
+                                print(f"[GSlides] on_document_ready error: {cb_err}")
                         file_count += 1
                         if file_count >= max_files:
                             break

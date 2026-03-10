@@ -454,6 +454,11 @@ class FirecrawlConnector(BaseConnector):
                 doc = self._page_to_document(page, start_url)
                 if doc:
                     documents.append(doc)
+                    if self.on_document_ready:
+                        try:
+                            self.on_document_ready(doc)
+                        except Exception as cb_err:
+                            print(f"[Firecrawl] on_document_ready error: {cb_err}")
 
                 if (i + 1) % 10 == 0:
                     self._report_progress(i + 1, len(pages), f"Processing {i+1}/{len(pages)} pages...")

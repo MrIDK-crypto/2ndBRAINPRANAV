@@ -266,6 +266,11 @@ class SlackConnector(BaseConnector):
                     doc = await self._message_to_document(message, channel)
                     if doc:
                         documents.append(doc)
+                        if self.on_document_ready:
+                            try:
+                                self.on_document_ready(doc)
+                            except Exception as cb_err:
+                                print(f"[Slack] on_document_ready error: {cb_err}")
                     else:
                         print(f"[Slack] Skipped message (subtype={message.get('subtype')})")
 
@@ -273,6 +278,12 @@ class SlackConnector(BaseConnector):
                     if (self.config.settings.get("include_threads", True) and
                         message.get("reply_count", 0) > 0):
                         thread_docs = await self._sync_thread(channel, message["ts"])
+                        for td in thread_docs:
+                            if self.on_document_ready:
+                                try:
+                                    self.on_document_ready(td)
+                                except Exception as cb_err:
+                                    print(f"[Slack] on_document_ready error: {cb_err}")
                         documents.extend(thread_docs)
 
                 # Check for more pages

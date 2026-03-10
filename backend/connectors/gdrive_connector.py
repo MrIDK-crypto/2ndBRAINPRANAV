@@ -8,6 +8,7 @@ import io
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from urllib.parse import urlencode
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 from connectors.base_connector import (
@@ -53,6 +54,7 @@ class GDriveConnector(BaseConnector):
 
     CONNECTOR_TYPE = "gdrive"
     REQUIRED_CREDENTIALS = ["access_token"]
+    MAX_CONCURRENT_FILES = 20
     OPTIONAL_SETTINGS = {
         "folder_ids": [],              # Specific folders to sync (empty = all)
         "include_shared": True,        # Include shared files
@@ -170,17 +172,17 @@ class GDriveConnector(BaseConnector):
 
             query = " and ".join(query_parts)
 
-            # Fetch files
+            # STEP 1: Collect all eligible file metadata
+            file_items = []
             page_token = None
-            file_count = 0
 
-            while file_count < max_files:
+            while len(file_items) < max_files:
                 response = self.service.files().list(
                     q=query,
                     spaces='drive',
                     fields='nextPageToken, files(id, name, mimeType, size, modifiedTime, createdTime, owners, webViewLink, parents)',
                     pageToken=page_token,
-                    pageSize=min(100, max_files - file_count),
+                    pageSize=min(100, max_files - len(file_items)),
                     includeItemsFromAllDrives=include_shared,
                     supportsAllDrives=True
                 ).execute()
@@ -192,19 +194,34 @@ class GDriveConnector(BaseConnector):
                     size = int(file.get('size', 0) or 0)
                     if size > max_size:
                         continue
-
-                    doc = self._file_to_document(file)
-                    if doc:
-                        documents.append(doc)
-                        file_count += 1
-                        print(f"[GDrive] Processed file {file_count}: {doc.title[:50] if doc.title else 'Untitled'}")
-
-                        if file_count >= max_files:
-                            break
+                    file_items.append(file)
+                    if len(file_items) >= max_files:
+                        break
 
                 page_token = response.get('nextPageToken')
                 if not page_token:
                     break
+
+            print(f"[GDrive] Collected {len(file_items)} files, processing in parallel (max {self.MAX_CONCURRENT_FILES} concurrent)...")
+
+            # STEP 2: Process all files in PARALLEL
+            file_count = 0
+            with ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT_FILES) as executor:
+                futures = {executor.submit(self._file_to_document, f): f for f in file_items}
+                for future in as_completed(futures):
+                    try:
+                        doc = future.result()
+                        if doc:
+                            documents.append(doc)
+                            file_count += 1
+                            if self.on_document_ready:
+                                try:
+                                    self.on_document_ready(doc)
+                                except Exception as cb_err:
+                                    print(f"[GDrive] on_document_ready error: {cb_err}")
+                            print(f"[GDrive] Processed file {file_count}/{len(file_items)}: {doc.title[:50] if doc.title else 'Untitled'}")
+                    except Exception as e:
+                        print(f"[GDrive] Error processing file: {e}")
 
             self.config.last_sync = datetime.now(timezone.utc)
             self.status = ConnectorStatus.CONNECTED

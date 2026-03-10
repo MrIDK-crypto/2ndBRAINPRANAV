@@ -685,6 +685,11 @@ class GitHubConnector(BaseConnector):
                 doc_type="code"
             )
             documents.append(doc_main)
+            if self.on_document_ready:
+                try:
+                    self.on_document_ready(doc_main)
+                except Exception as cb_err:
+                    print(f"[GitHub] on_document_ready error: {cb_err}")
 
             # 2. Repository overview document
             overview = analysis.get('repository_overview', {})
@@ -724,6 +729,11 @@ class GitHubConnector(BaseConnector):
                 doc_type="code"
             )
             documents.append(doc_overview)
+            if self.on_document_ready:
+                try:
+                    self.on_document_ready(doc_overview)
+                except Exception as cb_err:
+                    print(f"[GitHub] on_document_ready error: {cb_err}")
 
             # 3. Create a document for EVERY code file with actual content
             # This ensures all code files appear in the documents tab
@@ -796,6 +806,11 @@ class GitHubConnector(BaseConnector):
                     doc_type="code"
                 )
                 documents.append(doc_file)
+                if self.on_document_ready:
+                    try:
+                        self.on_document_ready(doc_file)
+                    except Exception as cb_err:
+                        print(f"[GitHub] on_document_ready error: {cb_err}")
 
                 if (i + 1) % 20 == 0:
                     print(f"[GitHub] Created {i + 1}/{len(code_files)} file documents")

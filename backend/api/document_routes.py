@@ -7,6 +7,7 @@ import zipfile
 import io
 import mimetypes
 import werkzeug.exceptions
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy.orm import Session, joinedload
@@ -574,95 +575,79 @@ def upload_documents():
                     else:
                         files_to_process.append((file.filename, file_content, file.content_type))
 
-                for filename, file_content, content_type in files_to_process:
+                # ── Parse files in PARALLEL then save to DB ──
+                tenant_id = getattr(g, 'tenant_id', 'local-tenant')
+                user_id = getattr(g, 'user_id', 'local-test-user')
+
+                def _parse_single_file(filename, file_content, content_type):
+                    """Thread-safe: parse file text + upload to S3. No DB access."""
                     lower_name = filename.lower()
 
                     if len(file_content) > MAX_FILE_SIZE:
-                        parsing_errors.append(
-                            f'File exceeds 100 MB limit ({len(file_content) // (1024*1024)} MB): {filename}'
-                        )
-                        continue
+                        return {'filename': filename, 'error': f'File exceeds 100 MB limit ({len(file_content) // (1024*1024)} MB): {filename}'}
 
+                    text = None
                     try:
                         print(f"[Upload] Processing file: {filename} ({len(file_content)} bytes)")
 
                         if lower_name.endswith('.pdf'):
-                            print(f"[Upload] Parsing PDF: {filename}")
                             text = parser.parse_pdf_bytes(file_content)
                         elif lower_name.endswith(('.docx', '.doc')):
-                            print(f"[Upload] Parsing Word doc: {filename}")
                             text = parser.parse_word_bytes(file_content)
                         elif lower_name.endswith(('.csv', '.tsv')):
-                            print(f"[Upload] Parsing spreadsheet: {filename}")
                             text = parser.parse_file_bytes(file_content, filename)
                         elif lower_name.endswith(('.txt', '.md', '.json', '.xml', '.html', '.htm', '.r', '.rmd')):
-                            print(f"[Upload] Parsing text file: {filename}")
                             text = file_content.decode('utf-8', errors='ignore')
                         elif lower_name.endswith('.rdata'):
-                            print(f"[Upload] R data file (binary): {filename}")
                             text = f"[R Data file: {filename}] This is a binary R workspace/data file (.RData). It contains serialized R objects that require R to inspect."
                         elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.ods', '.numbers', '.rtf')):
-                            print(f"[Upload] Parsing binary document: {filename}")
                             text = parser.parse_file_bytes(file_content, filename)
                         elif lower_name.endswith(IMAGE_EXTENSIONS):
-                            print(f"[Upload] Parsing image (OCR): {filename}")
                             try:
                                 text = parser.parse_file_bytes(file_content, filename)
                             except Exception as img_err:
                                 print(f"[Upload] Image OCR failed: {img_err}")
                                 text = ""
                         elif lower_name.endswith(MEDIA_EXTENSIONS):
-                            print(f"[Upload] Transcribing audio/video: {filename}")
                             try:
                                 from services.knowledge_service import KnowledgeService
-                                ks = KnowledgeService(db)
-                                result = ks.transcribe_audio(file_content, filename)
-                                text = result.text if result else ""
+                                media_db = SessionLocal()
+                                try:
+                                    ks = KnowledgeService(media_db)
+                                    result = ks.transcribe_audio(file_content, filename)
+                                    text = result.text if result else ""
+                                finally:
+                                    media_db.close()
                             except Exception as media_err:
                                 print(f"[Upload] Transcription failed: {media_err}")
                                 text = ""
                         else:
-                            # Try to decode as text
                             try:
-                                print(f"[Upload] Attempting to decode as text: {filename}")
                                 text = file_content.decode('utf-8')
-                            except Exception as decode_err:
-                                error_msg = f"Unsupported file type or encoding: {filename}"
-                                print(f"[Upload] {error_msg}: {decode_err}")
-                                parsing_errors.append(error_msg)
-                                continue
+                            except Exception:
+                                return {'filename': filename, 'error': f"Unsupported file type or encoding: {filename}"}
 
                         print(f"[Upload] Extracted text length: {len(text) if text else 0}")
 
                         if not text or len(text.strip()) == 0:
-                            # For images/media, save with placeholder so S3 original is still viewable
                             if lower_name.endswith(IMAGE_EXTENSIONS):
                                 text = f"[Image file: {filename}]"
-                                print(f"[Upload] No OCR text extracted, saving image with placeholder")
                             elif lower_name.endswith(MEDIA_EXTENSIONS):
                                 text = f"[Media file: {filename}]"
-                                print(f"[Upload] No transcription text, saving media with placeholder")
                             else:
-                                error_msg = f"Could not extract text from: {filename}"
-                                print(f"[Upload] {error_msg}")
-                                parsing_errors.append(error_msg)
-                                continue
+                                return {'filename': filename, 'error': f"Could not extract text from: {filename}"}
 
-                        # Upload original file to S3 if available
+                        # Upload to S3 (thread-safe — uses its own HTTP connection)
                         s3_file_key = None
                         if S3_AVAILABLE:
                             try:
                                 s3_service = get_s3_service()
-                                s3_file_key_candidate = s3_service.generate_s3_key(
-                                    tenant_id=getattr(g, 'tenant_id', 'local-tenant'),
-                                    file_type='documents',
-                                    filename=filename
+                                s3_key_candidate = s3_service.generate_s3_key(
+                                    tenant_id=tenant_id, file_type='documents', filename=filename
                                 )
                                 ct = content_type or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
                                 uploaded_key, s3_error = s3_service.upload_bytes(
-                                    file_bytes=file_content,
-                                    s3_key=s3_file_key_candidate,
-                                    content_type=ct
+                                    file_bytes=file_content, s3_key=s3_key_candidate, content_type=ct
                                 )
                                 if uploaded_key:
                                     s3_file_key = uploaded_key
@@ -672,40 +657,60 @@ def upload_documents():
                             except Exception as e:
                                 print(f"[Upload] S3 error: {e}")
 
-                        # Create document
-                        metadata = {
-                            'filename': filename,
-                            'uploaded_by': getattr(g, 'user_id', 'local-test-user'),
-                            'file_size': len(file_content)
+                        return {
+                            'filename': filename, 'text': text,
+                            's3_key': s3_file_key, 'file_content': file_content,
+                            'content_type': content_type, 'error': None
                         }
-                        if s3_file_key:
-                            metadata['s3_key'] = s3_file_key
-
-                        doc = Document(
-                            tenant_id=getattr(g, 'tenant_id', 'local-tenant'),
-                            title=filename,
-                            content=text,
-                            source_type='manual_upload',
-                            classification=DocumentClassification.UNKNOWN,
-                            status=DocumentStatus.PENDING,
-                            doc_metadata=metadata
-                        )
-                        db.add(doc)
-                        db.flush()
-
-                        documents_created.append({
-                            'id': doc.id,
-                            'title': doc.title,
-                            'status': doc.status.value
-                        })
 
                     except Exception as e:
-                        error_msg = f"Failed to parse {filename}: {str(e)}"
-                        print(f"[Upload] {error_msg}")
-                        import traceback
-                        traceback.print_exc()
-                        parsing_errors.append(error_msg)
+                        import traceback; traceback.print_exc()
+                        return {'filename': filename, 'error': f"Failed to parse {filename}: {str(e)}"}
+
+                # Run parsing in parallel (capped at 10 workers)
+                max_workers = min(10, max(1, len(files_to_process)))
+                print(f"[Upload] Parsing {len(files_to_process)} files with {max_workers} parallel workers")
+
+                parsed_results = []
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {
+                        executor.submit(_parse_single_file, fn, fc, ct): fn
+                        for fn, fc, ct in files_to_process
+                    }
+                    for future in as_completed(futures):
+                        parsed_results.append(future.result())
+
+                # Save parsed results to DB (must be on main thread)
+                for result in parsed_results:
+                    if result.get('error'):
+                        parsing_errors.append(result['error'])
                         continue
+
+                    metadata = {
+                        'filename': result['filename'],
+                        'uploaded_by': user_id,
+                        'file_size': len(result.get('file_content', b''))
+                    }
+                    if result.get('s3_key'):
+                        metadata['s3_key'] = result['s3_key']
+
+                    doc = Document(
+                        tenant_id=tenant_id,
+                        title=result['filename'],
+                        content=result['text'],
+                        source_type='manual_upload',
+                        classification=DocumentClassification.UNKNOWN,
+                        status=DocumentStatus.PENDING,
+                        doc_metadata=metadata
+                    )
+                    db.add(doc)
+                    db.flush()
+
+                    documents_created.append({
+                        'id': doc.id,
+                        'title': doc.title,
+                        'status': doc.status.value
+                    })
 
             else:
                 # Handle text paste
