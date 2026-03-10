@@ -284,6 +284,11 @@ class OneDriveConnector(BaseConnector):
                         doc = await self._download_and_parse(item)
                         if doc:
                             documents.append(doc)
+                            if self.on_document_ready:
+                                try:
+                                    self.on_document_ready(doc)
+                                except Exception as cb_err:
+                                    print(f"[OneDrive] on_document_ready callback error: {cb_err}")
                             print(f"[OneDrive] Parsed {len(documents)} files so far...", flush=True)
 
             # Recurse into subfolders

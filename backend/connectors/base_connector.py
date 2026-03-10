@@ -141,6 +141,9 @@ class BaseConnector(ABC):
         self.status = ConnectorStatus.DISCONNECTED
         self.last_error: Optional[str] = None
         self.sync_stats: Dict[str, Any] = {}
+        # Callback for incremental document saving — called as each doc is parsed
+        # Signature: on_document_ready(doc: Document) -> None
+        self.on_document_ready: Optional[Any] = None
 
     @abstractmethod
     async def connect(self) -> bool:

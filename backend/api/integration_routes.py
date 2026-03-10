@@ -3715,6 +3715,143 @@ def _run_connector_sync(
                 elif not since and connector.last_sync_at and not full_sync:
                     since = connector.last_sync_at
 
+                # === PRE-FETCH DEDUP SETS for incremental saving ===
+                deleted_external_ids = set(
+                    d.external_id for d in db.query(DeletedDocument.external_id).filter(
+                        DeletedDocument.tenant_id == tenant_id,
+                        DeletedDocument.connector_id == connector.id
+                    ).all()
+                )
+                existing_docs_query = db.query(Document).filter(
+                    Document.tenant_id == tenant_id,
+                    Document.connector_id == connector.id,
+                    Document.external_id != None,
+                    Document.embedded_at != None
+                ).all()
+                existing_external_ids = set(
+                    doc.external_id for doc in existing_docs_query
+                    if doc.content and len(doc.content.strip()) > 100
+                )
+                print(f"[Sync] Pre-fetched dedup sets: {len(deleted_external_ids)} deleted, {len(existing_external_ids)} existing embedded")
+
+                # Delete documents with empty content so they can be re-synced
+                empty_content_docs = db.query(Document).filter(
+                    Document.tenant_id == tenant_id,
+                    Document.connector_id == connector.id,
+                    Document.external_id != None,
+                    Document.embedded_at == None
+                ).all()
+                empty_content_docs = [doc for doc in empty_content_docs if not doc.content or len(doc.content.strip()) < 10]
+                if empty_content_docs:
+                    print(f"[Sync] Deleting {len(empty_content_docs)} documents with empty content for re-sync")
+                    for doc in empty_content_docs:
+                        db.delete(doc)
+                    db.commit()
+
+                # Save connector ID for session refresh in callbacks
+                connector_id_for_refresh = connector.id
+
+                # === INCREMENTAL SAVE CALLBACK ===
+                # Docs are saved to DB as they're parsed, not all at once at the end
+                _incremental_count = [0]
+                _incremental_batch = [0]
+                _incremental_skipped = [0]
+                _incremental_db = [db]  # Mutable ref for session refresh
+                _INCREMENTAL_BATCH_SIZE = 10
+
+                # Capture connector_id for use in closure (avoid nonlocal issues)
+                _connector_id = connector.id
+
+                def _on_document_ready(doc):
+                    """Save a single document to DB immediately when connector parses it."""
+                    # Dedup check
+                    if doc.doc_id in deleted_external_ids or doc.doc_id in existing_external_ids:
+                        _incremental_skipped[0] += 1
+                        return
+
+                    # Auto-classify
+                    research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv', 'firecrawl'}
+                    is_research = (
+                        doc.source.lower() in research_sources or
+                        getattr(doc, 'doc_type', None) == 'research_paper'
+                    )
+                    if is_research:
+                        classification = DocumentClassification.WORK
+                        status = DocumentStatus.CONFIRMED
+                        classification_confidence = 1.0
+                        classification_reason = f"Auto-classified as WORK: {doc.source} research content"
+                    elif doc.source in ('onedrive', 'gdrive', 'box', 'notion', 'github'):
+                        if connector_type in SELECTION_REQUIRED_CONNECTORS:
+                            classification = DocumentClassification.UNKNOWN
+                            status = DocumentStatus.PENDING
+                            classification_confidence = None
+                            classification_reason = "Awaiting user selection"
+                        else:
+                            classification = DocumentClassification.WORK
+                            status = DocumentStatus.CONFIRMED
+                            classification_confidence = 0.9
+                            classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
+                    else:
+                        classification = DocumentClassification.UNKNOWN
+                        status = DocumentStatus.PENDING
+                        classification_confidence = None
+                        classification_reason = None
+
+                    db_doc = Document(
+                        tenant_id=tenant_id,
+                        connector_id=_connector_id,
+                        external_id=doc.doc_id,
+                        source_type=doc.source,
+                        title=doc.title,
+                        content=doc.content,
+                        doc_metadata=doc.metadata,
+                        sender=doc.author,
+                        source_url=doc.url,
+                        source_created_at=doc.timestamp,
+                        source_updated_at=doc.timestamp,
+                        status=status,
+                        classification=classification,
+                        classification_confidence=classification_confidence,
+                        classification_reason=classification_reason
+                    )
+                    _incremental_db[0].add(db_doc)
+                    _incremental_batch[0] += 1
+                    _incremental_count[0] += 1
+
+                    # Commit in batches
+                    if _incremental_batch[0] >= _INCREMENTAL_BATCH_SIZE:
+                        try:
+                            _incremental_db[0].commit()
+                            print(f"[Sync] Incremental save: committed batch ({_incremental_count[0]} total, {_incremental_skipped[0]} skipped)", flush=True)
+                        except Exception as commit_err:
+                            print(f"[Sync] Incremental commit error: {commit_err}", flush=True)
+                            try:
+                                _incremental_db[0].rollback()
+                            except Exception:
+                                pass
+                            try:
+                                _incremental_db[0].close()
+                            except Exception:
+                                pass
+                            _incremental_db[0] = get_db()
+                        _incremental_batch[0] = 0
+
+                    # Update progress
+                    current_doc_name = doc.title[:50] if doc.title else f"Document {_incremental_count[0]}"
+                    sync_progress[progress_key]["documents_parsed"] = _incremental_count[0]
+                    sync_progress[progress_key]["current_file"] = current_doc_name
+                    if sync_id:
+                        progress_service.update_progress(
+                            sync_id,
+                            status='syncing',
+                            stage=f'Parsed {_incremental_count[0]} documents...',
+                            processed_items=_incremental_count[0],
+                            current_item=current_doc_name
+                        )
+
+                # Set callback on connector instance
+                instance.on_document_ready = _on_document_ready
+
                 # Update progress - fetching (indeterminate phase, no percentage)
                 sync_progress[progress_key]["progress"] = 0
                 sync_progress[progress_key]["status"] = "fetching"
@@ -3845,13 +3982,21 @@ def _run_connector_sync(
                 else:
                     documents = loop.run_until_complete(instance.sync(since))
 
-                # Note: total_items is set AFTER deduplication below for accurate progress
+                # === POST-SYNC: Flush incremental saves + handle edge cases ===
+                # Flush any remaining uncommitted docs from incremental callback
+                if _incremental_batch[0] > 0:
+                    try:
+                        _incremental_db[0].commit()
+                        print(f"[Sync] Flushed final incremental batch ({_incremental_count[0]} total saved)", flush=True)
+                    except Exception as flush_err:
+                        print(f"[Sync] Final incremental flush error: {flush_err}", flush=True)
+                        try: _incremental_db[0].rollback()
+                        except Exception: pass
 
-                # CRITICAL: Refresh database session after long-running sync
-                # The sync can take 3+ minutes for large connectors (GDrive with 147 files)
-                # During this time, the PostgreSQL connection times out (SSL SYSCALL error: EOF)
-                # We need to close the stale session and create a fresh one
-                connector_id_for_refresh = connector.id  # Save connector ID before closing session
+                # Use the incremental DB session going forward
+                db = _incremental_db[0]
+
+                # Refresh DB session (may have gone stale during long sync)
                 elapsed = time.time() - sync_start_time
                 print(f"[Sync] Refreshing database session after sync (elapsed: {elapsed:.1f}s)...", flush=True)
                 try:
@@ -3859,99 +4004,36 @@ def _run_connector_sync(
                 except Exception as e:
                     print(f"[Sync] Warning: Error closing old session: {e}")
 
-                db = get_db()  # Get fresh database session
+                db = get_db()
                 connector = db.query(Connector).filter(Connector.id == connector_id_for_refresh).first()
                 if not connector:
                     raise Exception(f"Failed to re-fetch connector after session refresh")
                 print(f"[Sync] Database session refreshed successfully")
 
-                # Get list of deleted external_ids to skip (user permanently deleted these)
-                deleted_external_ids = set(
-                    d.external_id for d in db.query(DeletedDocument.external_id).filter(
-                        DeletedDocument.tenant_id == tenant_id,
-                        DeletedDocument.connector_id == connector.id
-                    ).all()
-                )
-                print(f"[Sync] Deleted document IDs: {len(deleted_external_ids)}")
-
-                # Get list of existing external_ids to avoid duplicates
-                # CRITICAL: Only skip documents that:
-                # 1. Are fully embedded (embedded_at != None)
-                # 2. AND have actual content (to allow re-processing of empty content docs)
-                existing_docs_query = db.query(Document).filter(
-                    Document.tenant_id == tenant_id,
-                    Document.connector_id == connector.id,
-                    Document.external_id != None,
-                    Document.embedded_at != None  # Only skip if already embedded
-                ).all()
-
-                # Additionally filter out docs with empty/minimal content (likely failed extractions)
-                existing_external_ids = set(
-                    doc.external_id for doc in existing_docs_query
-                    if doc.content and len(doc.content.strip()) > 100  # Must have real content
-                )
-                print(f"[Sync] Existing embedded document IDs with content: {len(existing_external_ids)}")
-
-                # Check un-embedded existing documents for debugging
-                un_embedded_existing = db.query(Document).filter(
-                    Document.tenant_id == tenant_id,
-                    Document.connector_id == connector.id,
-                    Document.external_id != None,
-                    Document.embedded_at == None  # Not embedded
-                ).all()
-                un_embedded_ids = [doc.external_id for doc in un_embedded_existing]
-                print(f"[Sync] Un-embedded existing documents: {len(un_embedded_existing)} - {un_embedded_ids[:5]}")
-
-                # Delete documents with empty content so they can be re-synced
-                empty_content_docs = [doc for doc in un_embedded_existing if not doc.content or len(doc.content.strip()) < 10]
-                if empty_content_docs:
-                    print(f"[Sync] Deleting {len(empty_content_docs)} documents with empty content for re-sync")
-                    for doc in empty_content_docs:
-                        db.delete(doc)
-                    db.commit()
-
-                # Filter out deleted and existing documents
+                # Documents were already saved incrementally via on_document_ready callback
+                # The `documents` list from sync() is only used for counting now
                 original_count = len(documents) if documents else 0
-                documents = [
-                    doc for doc in (documents or [])
-                    if doc.doc_id not in deleted_external_ids and doc.doc_id not in existing_external_ids
-                ]
-                skipped_deleted = original_count - len(documents) - len([
-                    d for d in (documents or []) if d.doc_id in existing_external_ids
-                ])
+                new_doc_count = _incremental_count[0]
+                skipped_count = _incremental_skipped[0]
 
-                # Update progress - documents found (AFTER dedup for accurate total)
-                new_doc_count = len(documents) if documents else 0
+                print(f"[Sync] Sync returned {original_count} docs total, {new_doc_count} saved incrementally, {skipped_count} skipped (dedup)")
+
+                # Update progress
                 sync_progress[progress_key]["documents_found"] = new_doc_count
-                sync_progress[progress_key]["documents_skipped"] = original_count - new_doc_count
-                sync_progress[progress_key]["progress"] = 0
-                sync_progress[progress_key]["status"] = "saving"
-                if sync_id:
-                    progress_service.update_progress(
-                        sync_id,
-                        status='saving',
-                        stage=f'Saving {new_doc_count} new documents...',
-                        total_items=new_doc_count,
-                        processed_items=0,
-                        overall_percent=0.0
-                    )
-                    _persist_progress_to_db(db, connector, 'saving', f'Saving {new_doc_count} new documents...', total_items=new_doc_count, force=True)
-
-                print(f"[Sync] Found {original_count} docs, skipping {original_count - len(documents)} (deleted or existing), processing {len(documents)}")
+                sync_progress[progress_key]["documents_skipped"] = skipped_count
 
                 # Handle case where sync returned 0 documents and connector has error
-                # Check if the connector instance reported an error during sync
                 connector_error = getattr(instance, 'last_error', None)
-                if not documents and original_count == 0 and connector_error:
+                if original_count == 0 and new_doc_count == 0 and connector_error:
                     print(f"[Sync] ERROR: Connector reported error with 0 docs: {connector_error}", flush=True)
                     raise Exception(connector_error)
-                elif not documents and original_count == 0 and connector_type in ('webscraper', 'firecrawl'):
+                elif original_count == 0 and new_doc_count == 0 and connector_type in ('webscraper', 'firecrawl'):
                     error_msg = "Website returned no content. The site may be blocking cloud servers, or the pages may have no extractable text."
                     print(f"[Sync] ERROR: {error_msg}", flush=True)
                     raise Exception(error_msg)
 
-                # Handle case where all documents already exist
-                if not documents and original_count > 0:
+                # Handle case where all documents already exist (nothing new saved)
+                if new_doc_count == 0 and original_count > 0:
                     print(f"[Sync] All {original_count} documents already exist and are embedded. Skipping sync.")
                     if sync_id:
                         progress_service.update_progress(
@@ -3966,166 +4048,46 @@ def _run_connector_sync(
                     sync_progress[progress_key]["status"] = "completed"
                     sync_progress[progress_key]["progress"] = 100
                     sync_progress[progress_key]["message"] = f"All {original_count} documents already synced"
-                    # Note: save_sync_state was removed - state is managed via progress_service
 
-                    # Update connector status to CONNECTED (important for background thread)
                     connector.status = ConnectorStatus.CONNECTED
                     connector.last_sync_status = "success"
                     db.commit()
                     print(f"[Sync] All {original_count} documents already synced, no new content", flush=True)
-                    return  # Exit background thread cleanly (not jsonify - we're in a background thread)
+                    return
 
-                # Save documents to database with progress updates
-                # Commit in small batches to avoid database connection timeouts
-                # Render PostgreSQL drops connections after ~30s idle or on long transactions
-                BATCH_SIZE = 10  # Smaller batches = more frequent commits = less risk of SSL timeout
-                total_docs = len(documents) if documents else 1
-                docs_in_batch = 0
-                total_committed = 0
+                total_committed = new_doc_count
 
                 def _safe_commit(db_session, batch_desc="batch"):
-                    """Commit with error recovery for connection drops.
-                    On failure: rollback, wait for DB recovery, refresh session, and continue.
-                    Lost docs will be picked up on next sync (they won't exist in DB).
-                    """
+                    """Commit with error recovery for connection drops."""
                     try:
                         db_session.commit()
-                        return db_session  # Success, return same session
+                        return db_session
                     except Exception as commit_err:
                         err_name = type(commit_err).__name__
                         print(f"[Sync] ERROR committing {batch_desc}: {err_name}: {commit_err}", flush=True)
-
-                        # Rollback failed transaction
-                        try:
-                            db_session.rollback()
-                            print(f"[Sync] Rolled back failed transaction", flush=True)
-                        except Exception:
-                            pass
-
-                        # Close old session
-                        try:
-                            db_session.close()
-                        except Exception:
-                            pass
-
-                        # Retry with exponential backoff (DB may be in recovery mode)
+                        try: db_session.rollback()
+                        except Exception: pass
+                        try: db_session.close()
+                        except Exception: pass
                         max_retries = 4
                         for attempt in range(max_retries):
-                            wait_secs = 2 ** attempt  # 1, 2, 4, 8 seconds
+                            wait_secs = 2 ** attempt
                             print(f"[Sync] Waiting {wait_secs}s before reconnect attempt {attempt + 1}/{max_retries}...", flush=True)
                             time.sleep(wait_secs)
-
                             try:
                                 db_session = get_db()
-                                # Verify connection works
                                 nonlocal connector
                                 connector = db_session.query(Connector).filter(Connector.id == connector_id_for_refresh).first()
                                 if connector:
-                                    print(f"[Sync] DB reconnected on attempt {attempt + 1} (batch docs lost, will retry on next sync)", flush=True)
+                                    print(f"[Sync] DB reconnected on attempt {attempt + 1}", flush=True)
                                     return db_session
                                 else:
-                                    print(f"[Sync] Reconnected but connector not found, retrying...", flush=True)
                                     db_session.close()
                             except Exception as retry_err:
-                                print(f"[Sync] Reconnect attempt {attempt + 1} failed: {type(retry_err).__name__}: {retry_err}", flush=True)
-                                try:
-                                    db_session.close()
-                                except Exception:
-                                    pass
-
-                        # All retries exhausted
-                        raise Exception(f"DB unavailable after {max_retries} retries (last error: {err_name}: {commit_err})")
-
-                for i, doc in enumerate(documents):
-                    # Phase 1 (Save): 0% - 33%
-                    save_pct = ((i + 1) / total_docs) * 33.0
-                    sync_progress[progress_key]["progress"] = int(save_pct)
-                    sync_progress[progress_key]["documents_parsed"] = i + 1
-                    current_doc_name = doc.title[:50] if doc.title else f"Document {i+1}"
-                    sync_progress[progress_key]["current_file"] = current_doc_name
-
-                    # Update progress service with accurate percent
-                    if sync_id:
-                        progress_service.increment_processed(
-                            sync_id,
-                            current_item=current_doc_name,
-                            overall_percent=save_pct
-                        )
-
-                    # Map connector Document attributes to database Document fields
-                    # Connector Document uses: doc_id, source, content, title, metadata, timestamp, author
-                    # Database Document expects: external_id, source_type, content, title, metadata, source_created_at, etc.
-
-                    # Auto-classify research sources as WORK (they're academic papers, not personal)
-                    research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv', 'firecrawl'}
-                    is_research = (
-                        doc.source.lower() in research_sources or
-                        getattr(doc, 'doc_type', None) == 'research_paper'
-                    )
-
-                    if is_research:
-                        # Research papers are always WORK
-                        classification = DocumentClassification.WORK
-                        status = DocumentStatus.CONFIRMED
-                        classification_confidence = 1.0
-                        classification_reason = f"Auto-classified as WORK: {doc.source} research content"
-                        print(f"[Sync] Auto-classified research document as WORK: {doc.title[:50]}")
-                    elif doc.source in ('onedrive', 'gdrive', 'box', 'notion', 'github'):
-                        # Cloud storage and known work sources
-                        # For selection-required connectors, save as PENDING until user confirms
-                        if connector_type in SELECTION_REQUIRED_CONNECTORS:
-                            classification = DocumentClassification.UNKNOWN
-                            status = DocumentStatus.PENDING
-                            classification_confidence = None
-                            classification_reason = "Awaiting user selection"
-                        else:
-                            classification = DocumentClassification.WORK
-                            status = DocumentStatus.CONFIRMED
-                            classification_confidence = 0.9
-                            classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
-                    else:
-                        # Other sources need AI classification
-                        classification = DocumentClassification.UNKNOWN
-                        status = DocumentStatus.PENDING
-                        classification_confidence = None
-                        classification_reason = None
-
-                    # DEBUG: Log Slack metadata being saved
-                    if doc.source == 'slack' and doc.metadata:
-                        print(f"[Sync] DEBUG Slack doc metadata: team_domain={doc.metadata.get('team_domain')}, channel_id={doc.metadata.get('channel_id')}, message_ts={doc.metadata.get('message_ts')}", flush=True)
-
-                    db_doc = Document(
-                        tenant_id=tenant_id,
-                        connector_id=connector.id,
-                        external_id=doc.doc_id,
-                        source_type=doc.source,
-                        title=doc.title,
-                        content=doc.content,
-                        doc_metadata=doc.metadata,  # Fixed: field is doc_metadata not metadata
-                        sender=doc.author,
-                        source_url=doc.url,  # Added: preserve source URL
-                        source_created_at=doc.timestamp,
-                        source_updated_at=doc.timestamp,
-                        status=status,
-                        classification=classification,
-                        classification_confidence=classification_confidence,
-                        classification_reason=classification_reason
-                    )
-                    db.add(db_doc)
-                    docs_in_batch += 1
-
-                    # Commit in batches to avoid DB connection timeouts
-                    if docs_in_batch >= BATCH_SIZE:
-                        db = _safe_commit(db, batch_desc=f"batch {total_committed+1}-{total_committed+docs_in_batch}/{total_docs}")
-                        total_committed += docs_in_batch
-                        print(f"[Sync] Committed batch of {docs_in_batch} documents ({total_committed}/{total_docs})", flush=True)
-                        docs_in_batch = 0
-
-                # Commit any remaining documents
-                if docs_in_batch > 0:
-                    db = _safe_commit(db, batch_desc=f"final batch {total_committed+1}-{total_committed+docs_in_batch}/{total_docs}")
-                    total_committed += docs_in_batch
-                    print(f"[Sync] Committed final batch of {docs_in_batch} documents ({total_committed} total)", flush=True)
+                                print(f"[Sync] Reconnect attempt {attempt + 1} failed: {retry_err}", flush=True)
+                                try: db_session.close()
+                                except Exception: pass
+                        raise Exception(f"DB unavailable after {max_retries} retries")
 
                 # === SELECTION GATE: Pause for user selection if required ===
                 # Check for ANY un-embedded docs (including from previous interrupted syncs)
@@ -4331,15 +4293,15 @@ def _run_connector_sync(
                 connector.status = ConnectorStatus.CONNECTED
                 connector.last_sync_at = utc_now()
                 connector.last_sync_status = "success"
-                connector.last_sync_items_count = len(documents)
-                connector.total_items_synced += len(documents)
+                connector.last_sync_items_count = new_doc_count
+                connector.total_items_synced += new_doc_count
                 connector.error_message = None
 
                 db = _safe_commit(db, batch_desc="final connector status update")
 
                 # Mark complete
                 elapsed = time.time() - sync_start_time
-                print(f"[Sync] === SYNC COMPLETE === connector_type={connector_type}, documents={len(documents)}, elapsed={elapsed:.1f}s", flush=True)
+                print(f"[Sync] === SYNC COMPLETE === connector_type={connector_type}, new_docs={new_doc_count}, total_fetched={original_count}, elapsed={elapsed:.1f}s", flush=True)
                 sync_progress[progress_key]["status"] = "completed"
                 sync_progress[progress_key]["progress"] = 100
                 sync_progress[progress_key]["current_file"] = None

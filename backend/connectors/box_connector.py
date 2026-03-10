@@ -548,6 +548,12 @@ class BoxConnector(BaseConnector):
                             )
                             if doc:
                                 documents.append(doc)
+                                # Emit document immediately for incremental saving
+                                if self.on_document_ready:
+                                    try:
+                                        self.on_document_ready(doc)
+                                    except Exception as cb_err:
+                                        print(f"[BoxConnector] on_document_ready callback error: {cb_err}")
                                 print(f"[BoxConnector] Added document: {doc.title}")
                             else:
                                 print(f"[BoxConnector] File {item.name} was skipped (returned None)")
@@ -612,6 +618,12 @@ class BoxConnector(BaseConnector):
                             )
                             if doc:
                                 documents.append(doc)
+                                # Emit document immediately for incremental saving
+                                if self.on_document_ready:
+                                    try:
+                                        self.on_document_ready(doc)
+                                    except Exception as cb_err:
+                                        print(f"[BoxConnector] on_document_ready callback error: {cb_err}")
 
                     if len(items_list) < limit:
                         break
