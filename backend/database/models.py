@@ -868,6 +868,13 @@ class Document(Base):
         Index('ix_document_created', 'tenant_id', 'created_at'),  # For date-based queries
     )
 
+    @validates('content', 'title', 'content_html', 'summary')
+    def _strip_nul_bytes(self, key, value):
+        """PostgreSQL text columns reject NUL (\\x00) bytes — strip them."""
+        if isinstance(value, str) and '\x00' in value:
+            return value.replace('\x00', '')
+        return value
+
     def __repr__(self):
         return f"<Document {self.title[:30] if self.title else self.id[:8]}>"
 

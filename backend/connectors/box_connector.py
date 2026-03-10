@@ -571,7 +571,11 @@ class BoxConnector(BaseConnector):
             def _process_file_sync(item):
                 """Synchronous wrapper for file processing (runs in thread pool)"""
                 try:
+                    # Create a fresh event loop for this thread and set it as current
+                    # This prevents "Cannot run the event loop while another loop is running"
+                    # which occurs on ECS/gunicorn when thread inherits parent's loop state
                     inner_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(inner_loop)
                     try:
                         if BOX_SDK_VERSION == "new":
                             doc = inner_loop.run_until_complete(self._process_file_new_sdk(
@@ -587,6 +591,7 @@ class BoxConnector(BaseConnector):
                             ))
                     finally:
                         inner_loop.close()
+                        asyncio.set_event_loop(None)
 
                     if doc and self.on_document_ready:
                         try:

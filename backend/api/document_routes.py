@@ -694,10 +694,13 @@ def upload_documents():
                     if result.get('s3_key'):
                         metadata['s3_key'] = result['s3_key']
 
+                    # Strip NUL bytes — PostgreSQL text columns reject \x00
+                    clean_text = result['text'].replace('\x00', '') if result['text'] else ''
+
                     doc = Document(
                         tenant_id=tenant_id,
                         title=result['filename'],
-                        content=result['text'],
+                        content=clean_text,
                         source_type='manual_upload',
                         classification=DocumentClassification.UNKNOWN,
                         status=DocumentStatus.PENDING,

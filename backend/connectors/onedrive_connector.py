@@ -291,10 +291,12 @@ class OneDriveConnector(BaseConnector):
             def _parse_file_sync(file_item):
                 try:
                     inner_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(inner_loop)
                     try:
                         doc = inner_loop.run_until_complete(self._download_and_parse(file_item))
                     finally:
                         inner_loop.close()
+                        asyncio.set_event_loop(None)
                     if doc and self.on_document_ready:
                         try:
                             self.on_document_ready(doc)
@@ -321,10 +323,12 @@ class OneDriveConnector(BaseConnector):
 
             def _recurse_folder_sync(folder_item):
                 inner_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(inner_loop)
                 try:
                     return inner_loop.run_until_complete(self._sync_folder(folder_item["id"], since))
                 finally:
                     inner_loop.close()
+                    asyncio.set_event_loop(None)
 
             if folder_list:
                 folder_results = await asyncio.gather(

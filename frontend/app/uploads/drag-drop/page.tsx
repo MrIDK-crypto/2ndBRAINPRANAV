@@ -823,7 +823,17 @@ export default function DragDropUploadPage() {
               animation: 'spin 0.8s linear infinite',
             }} />
             <span style={{ fontSize: '14px', color: COLORS.textSecondary, fontWeight: 500 }}>
-              Uploading {files.length} file{files.length !== 1 ? 's' : ''}...
+              {(() => {
+                const count = files.length || (() => {
+                  const sync = Array.from(activeSyncs.values()).find(s => s.connectorType === 'manual_upload')
+                  return sync?.totalItems || 0
+                })()
+                const sync = Array.from(activeSyncs.values()).find(s => s.connectorType === 'manual_upload')
+                const pct = sync?.percentComplete ?? 0
+                return count > 0
+                  ? `Uploading ${count} file${count !== 1 ? 's' : ''}... ${pct > 0 ? `${pct}%` : ''}`
+                  : `Upload in progress... ${pct > 0 ? `${pct}%` : ''}`
+              })()}
             </span>
           </div>
         )}
