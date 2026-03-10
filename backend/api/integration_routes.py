@@ -4010,17 +4010,129 @@ def _run_connector_sync(
                     raise Exception(f"Failed to re-fetch connector after session refresh")
                 print(f"[Sync] Database session refreshed successfully")
 
-                # Documents were already saved incrementally via on_document_ready callback
-                # The `documents` list from sync() is only used for counting now
                 original_count = len(documents) if documents else 0
-                new_doc_count = _incremental_count[0]
-                skipped_count = _incremental_skipped[0]
+                incremental_saved = _incremental_count[0]
+                incremental_skipped = _incremental_skipped[0]
 
-                print(f"[Sync] Sync returned {original_count} docs total, {new_doc_count} saved incrementally, {skipped_count} skipped (dedup)")
+                print(f"[Sync] Sync returned {original_count} docs total, {incremental_saved} saved incrementally, {incremental_skipped} skipped (dedup)")
 
-                # Update progress
+                # === FALLBACK: batch-save for connectors that don't call on_document_ready ===
+                # If connector returned docs but callback wasn't called, save them the old way
+                if original_count > 0 and incremental_saved == 0 and incremental_skipped == 0:
+                    print(f"[Sync] Connector did not use incremental callback, falling back to batch save", flush=True)
+
+                    # Dedup against existing docs (already pre-fetched)
+                    new_documents = [
+                        doc for doc in (documents or [])
+                        if doc.doc_id not in deleted_external_ids and doc.doc_id not in existing_external_ids
+                    ]
+                    batch_skipped = original_count - len(new_documents)
+                    print(f"[Sync] Batch dedup: {len(new_documents)} new, {batch_skipped} skipped")
+
+                    if new_documents:
+                        sync_progress[progress_key]["status"] = "saving"
+                        if sync_id:
+                            progress_service.update_progress(
+                                sync_id, status='saving',
+                                stage=f'Saving {len(new_documents)} new documents...',
+                                total_items=len(new_documents), processed_items=0, overall_percent=0.0
+                            )
+
+                        BATCH_SIZE = 10
+                        batch_count = 0
+                        for i, doc in enumerate(new_documents):
+                            save_pct = ((i + 1) / len(new_documents)) * 33.0
+                            current_doc_name = doc.title[:50] if doc.title else f"Document {i+1}"
+                            sync_progress[progress_key]["documents_parsed"] = i + 1
+                            sync_progress[progress_key]["current_file"] = current_doc_name
+                            if sync_id:
+                                progress_service.increment_processed(sync_id, current_item=current_doc_name, overall_percent=save_pct)
+
+                            # Auto-classify
+                            research_sources = {'pubmed', 'webscraper', 'quartzy', 'quartzy_csv', 'firecrawl'}
+                            is_research = (
+                                doc.source.lower() in research_sources or
+                                getattr(doc, 'doc_type', None) == 'research_paper'
+                            )
+                            if is_research:
+                                classification = DocumentClassification.WORK
+                                status = DocumentStatus.CONFIRMED
+                                classification_confidence = 1.0
+                                classification_reason = f"Auto-classified as WORK: {doc.source} research content"
+                            elif doc.source in ('onedrive', 'gdrive', 'box', 'notion', 'github'):
+                                if connector_type in SELECTION_REQUIRED_CONNECTORS:
+                                    classification = DocumentClassification.UNKNOWN
+                                    status = DocumentStatus.PENDING
+                                    classification_confidence = None
+                                    classification_reason = "Awaiting user selection"
+                                else:
+                                    classification = DocumentClassification.WORK
+                                    status = DocumentStatus.CONFIRMED
+                                    classification_confidence = 0.9
+                                    classification_reason = f"Auto-confirmed as WORK: {doc.source} document"
+                            else:
+                                classification = DocumentClassification.UNKNOWN
+                                status = DocumentStatus.PENDING
+                                classification_confidence = None
+                                classification_reason = None
+
+                            if doc.source == 'slack' and doc.metadata:
+                                print(f"[Sync] DEBUG Slack doc metadata: team_domain={doc.metadata.get('team_domain')}, channel_id={doc.metadata.get('channel_id')}", flush=True)
+
+                            db_doc = Document(
+                                tenant_id=tenant_id,
+                                connector_id=connector.id,
+                                external_id=doc.doc_id,
+                                source_type=doc.source,
+                                title=doc.title,
+                                content=doc.content,
+                                doc_metadata=doc.metadata,
+                                sender=doc.author,
+                                source_url=doc.url,
+                                source_created_at=doc.timestamp,
+                                source_updated_at=doc.timestamp,
+                                status=status,
+                                classification=classification,
+                                classification_confidence=classification_confidence,
+                                classification_reason=classification_reason
+                            )
+                            db.add(db_doc)
+                            batch_count += 1
+
+                            if batch_count >= BATCH_SIZE:
+                                try:
+                                    db.commit()
+                                    print(f"[Sync] Batch saved {i+1}/{len(new_documents)} documents", flush=True)
+                                except Exception as commit_err:
+                                    print(f"[Sync] Batch commit error: {commit_err}", flush=True)
+                                    try: db.rollback()
+                                    except Exception: pass
+                                    try: db.close()
+                                    except Exception: pass
+                                    db = get_db()
+                                    connector = db.query(Connector).filter(Connector.id == connector_id_for_refresh).first()
+                                batch_count = 0
+
+                        if batch_count > 0:
+                            try:
+                                db.commit()
+                                print(f"[Sync] Final batch saved ({len(new_documents)} total)", flush=True)
+                            except Exception as commit_err:
+                                print(f"[Sync] Final batch commit error: {commit_err}", flush=True)
+                                try: db.rollback()
+                                except Exception: pass
+                                try: db.close()
+                                except Exception: pass
+                                db = get_db()
+                                connector = db.query(Connector).filter(Connector.id == connector_id_for_refresh).first()
+
+                        incremental_saved = len(new_documents)
+                        incremental_skipped = batch_skipped
+
+                # Update progress counts
+                new_doc_count = incremental_saved
                 sync_progress[progress_key]["documents_found"] = new_doc_count
-                sync_progress[progress_key]["documents_skipped"] = skipped_count
+                sync_progress[progress_key]["documents_skipped"] = incremental_skipped
 
                 # Handle case where sync returned 0 documents and connector has error
                 connector_error = getattr(instance, 'last_error', None)
