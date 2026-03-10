@@ -331,6 +331,67 @@ class BoxConnector(BaseConnector):
             self._set_error(f"Failed to connect: {str(e)}")
             return False
 
+    def connect_sync(self) -> bool:
+        """Synchronous connect — same logic as connect() (which is already sync internally)."""
+        import asyncio as _asyncio
+        # connect() is async def but has no actual awaits — safe to run directly
+        # by extracting the same logic. For simplicity, reuse the coroutine.
+        try:
+            loop = _asyncio.new_event_loop()
+            result = loop.run_until_complete(self.connect())
+            loop.close()
+            return result
+        except RuntimeError:
+            # If gevent blocks asyncio, do it manually
+            return self._connect_impl()
+
+    def _connect_impl(self) -> bool:
+        """Pure sync connect implementation."""
+        if not BOX_AVAILABLE:
+            self._set_error("Box SDK not installed")
+            return False
+        try:
+            self.status = ConnectorStatus.CONNECTING
+            oauth_config = self._get_oauth_config()
+
+            if BOX_SDK_VERSION == "new":
+                token = AccessToken(
+                    access_token=self.config.credentials.get("access_token"),
+                    refresh_token=self.config.credentials.get("refresh_token"),
+                    token_type="Bearer"
+                )
+                token_storage = InMemoryTokenStorage(token=token)
+                config = OAuthConfig(
+                    client_id=oauth_config["client_id"],
+                    client_secret=oauth_config["client_secret"],
+                    token_storage=token_storage
+                )
+                self.oauth = BoxOAuth(config)
+                self.client = BoxClient(self.oauth)
+                user = self.client.users.get_user_me()
+                self._user_info = {"id": user.id, "name": user.name, "login": user.login,
+                                   "space_used": user.space_used, "space_amount": user.space_amount}
+            else:
+                self.oauth = OAuth2(
+                    client_id=oauth_config["client_id"],
+                    client_secret=oauth_config["client_secret"],
+                    access_token=self.config.credentials.get("access_token"),
+                    refresh_token=self.config.credentials.get("refresh_token"),
+                    store_tokens=self._store_tokens
+                )
+                self.client = Client(self.oauth)
+                user = self.client.user().get()
+                self._user_info = {"id": user.id, "name": user.name, "login": user.login,
+                                   "space_used": user.space_used, "space_amount": user.space_amount}
+
+            self.sync_stats["user"] = self._user_info
+            self.status = ConnectorStatus.CONNECTED
+            self._clear_error()
+            return True
+        except Exception as e:
+            self._set_error(f"Failed to connect: {str(e)}")
+            return False
+
     async def disconnect(self) -> bool:
         """Disconnect from Box API"""
         try:
@@ -390,21 +451,16 @@ class BoxConnector(BaseConnector):
     # SYNC OPERATIONS
     # ========================================================================
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
         """
-        Sync files from Box.
-
-        Args:
-            since: Only sync files modified after this datetime
-
-        Returns:
-            List of Document objects
+        Sync files from Box. Fully synchronous — no asyncio.
+        Safe in gevent/gunicorn workers.
         """
         print(f"[BoxConnector] sync() called with since={since}")
 
         if not self.client:
             print("[BoxConnector] No client, attempting to connect...")
-            connected = await self.connect()
+            connected = self.connect_sync()
             if not connected:
                 print(f"[BoxConnector] Connection failed: {self.last_error}")
                 return []
@@ -424,7 +480,6 @@ class BoxConnector(BaseConnector):
             print(f"[BoxConnector] Settings: folder_ids={folder_ids}, root_folder_id={root_folder_id}")
             print(f"[BoxConnector] file_extensions={file_extensions}, max_file_size={max_file_size}")
 
-            # Get folders to sync
             if folder_ids:
                 folders_to_sync = folder_ids
             else:
@@ -432,14 +487,13 @@ class BoxConnector(BaseConnector):
 
             print(f"[BoxConnector] Folders to sync: {folders_to_sync}")
 
-            # Sync each folder
             for folder_id in folders_to_sync:
                 if folder_id in exclude_folders:
                     print(f"[BoxConnector] Skipping excluded folder: {folder_id}")
                     continue
 
                 print(f"[BoxConnector] Starting sync for folder: {folder_id}")
-                folder_docs = await self._sync_folder(
+                folder_docs = self._sync_folder_sync(
                     folder_id=folder_id,
                     since=since,
                     max_file_size=max_file_size,
@@ -450,12 +504,10 @@ class BoxConnector(BaseConnector):
                 print(f"[BoxConnector] Got {len(folder_docs)} documents from folder {folder_id}")
                 documents.extend(folder_docs)
 
-            # Cleanup shared thread pool
             if self._file_executor:
                 self._file_executor.shutdown(wait=False)
                 self._file_executor = None
 
-            # Update stats
             self.sync_stats["last_sync"] = datetime.now(timezone.utc).isoformat()
             self.sync_stats["items_synced"] = len(documents)
             self.status = ConnectorStatus.CONNECTED
@@ -474,7 +526,7 @@ class BoxConnector(BaseConnector):
             self._set_error(f"Sync failed: {str(e)}")
             return documents
 
-    async def _sync_folder(
+    def _sync_folder_sync(
         self,
         folder_id: str,
         since: Optional[datetime],
@@ -484,12 +536,11 @@ class BoxConnector(BaseConnector):
         recursive: bool = True,
         current_path: str = ""
     ) -> List[Document]:
-        """Recursively sync a folder with parallel file processing"""
+        """Fully synchronous folder sync — no asyncio. Uses ThreadPoolExecutor directly."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         documents = []
 
-        # Initialize semaphores on first call
-        if self._file_semaphore is None:
-            self._file_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_FILES)
         try:
             print(f"[BoxConnector] _sync_folder folder_id={folder_id}, SDK={BOX_SDK_VERSION}", flush=True)
 
@@ -560,39 +611,18 @@ class BoxConnector(BaseConnector):
             print(f"[BoxConnector] Folder {folder_id}: {len(file_items)} files, {len(folder_items)} subfolders", flush=True)
 
             # === STEP 2: Process all files in PARALLEL using thread pool ===
-            # Box SDK and document parsers use synchronous/blocking I/O,
-            # so we use run_in_executor for true parallelism
-            from concurrent.futures import ThreadPoolExecutor
             if self._file_executor is None:
                 self._file_executor = ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT_FILES)
             _executor = self._file_executor
-            _loop = asyncio.get_event_loop()
 
             def _process_file_sync(item):
-                """Synchronous wrapper for file processing (runs in thread pool)"""
+                """Fully synchronous file processing — no asyncio."""
                 try:
-                    # Create a fresh event loop for this thread and set it as current
-                    # This prevents "Cannot run the event loop while another loop is running"
-                    # which occurs on ECS/gunicorn when thread inherits parent's loop state
-                    inner_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(inner_loop)
-                    try:
-                        if BOX_SDK_VERSION == "new":
-                            doc = inner_loop.run_until_complete(self._process_file_new_sdk(
-                                file_id=item.id, file_name=item.name,
-                                folder_path=folder_path, since=since,
-                                max_file_size=max_file_size, file_extensions=file_extensions
-                            ))
-                        else:
-                            doc = inner_loop.run_until_complete(self._process_file(
-                                file_item=item, folder_path=folder_path,
-                                since=since, max_file_size=max_file_size,
-                                file_extensions=file_extensions
-                            ))
-                    finally:
-                        inner_loop.close()
-                        asyncio.set_event_loop(None)
-
+                    doc = self._process_file_sync_impl(
+                        file_item=item, folder_path=folder_path,
+                        since=since, max_file_size=max_file_size,
+                        file_extensions=file_extensions
+                    )
                     if doc and self.on_document_ready:
                         try:
                             self.on_document_ready(doc)
@@ -604,26 +634,23 @@ class BoxConnector(BaseConnector):
                     return None
 
             if file_items:
-                file_results = await asyncio.gather(
-                    *[_loop.run_in_executor(_executor, _process_file_sync, item) for item in file_items],
-                    return_exceptions=True
-                )
-                for result in file_results:
-                    if isinstance(result, Document):
-                        documents.append(result)
-                    elif isinstance(result, Exception):
-                        print(f"[BoxConnector] File task exception: {result}")
+                futures = {_executor.submit(_process_file_sync, item): item for item in file_items}
+                for future in as_completed(futures):
+                    try:
+                        result = future.result()
+                        if isinstance(result, Document):
+                            documents.append(result)
+                    except Exception as e:
+                        print(f"[BoxConnector] File task exception: {e}")
 
                 print(f"[BoxConnector] Parallel processed {len(file_items)} files → {len(documents)} docs in {folder_path}", flush=True)
 
             # === STEP 3: Recurse into subfolders SEQUENTIALLY ===
-            # Sequential to avoid semaphore deadlock in deep folder trees
-            # (parent holds permit, children need permits → deadlock)
-            # File processing within each folder is still parallel (STEP 2)
             for subfolder in folder_items:
                 try:
-                    sub_docs = await self._sync_folder(
-                        folder_id=subfolder.id, since=since,
+                    sub_docs = self._sync_folder_sync(
+                        folder_id=subfolder.id if hasattr(subfolder, 'id') else subfolder.get('id'),
+                        since=since,
                         max_file_size=max_file_size, file_extensions=file_extensions,
                         exclude_folders=exclude_folders, recursive=True,
                         current_path=folder_path
@@ -889,38 +916,29 @@ class BoxConnector(BaseConnector):
             traceback.print_exc()
             return None
 
-    async def _extract_content_new_sdk(self, file_id: str, extension: str, file_name: str = "") -> str:
+    def _extract_content_sync(self, file_id: str, extension: str, file_name: str = "") -> str:
         """
-        Extract text content from a file using LlamaParse API.
-
-        This method uses the universal DocumentParser service which leverages
-        LlamaParse to extract text from PDFs, DOCX, PPTX, and other formats.
-        Works for all tenants in the B2B SaaS platform.
+        Synchronous content extraction — safe in gevent/gunicorn workers.
+        No asyncio. Uses sync DocumentParser methods.
         """
         try:
             extension = extension.lower().lstrip('.')
 
-            # Import the universal document parser
             from services.document_parser import get_document_parser
             parser = get_document_parser()
 
-            # Check if file type is supported
             if not parser.is_supported(f".{extension}"):
                 print(f"[BoxConnector] Unsupported file type: {extension}")
                 return ""
 
-            # Download file content from Box (works with both SDKs)
             print(f"[BoxConnector] Downloading file {file_id} ({file_name}) for parsing...")
 
             if BOX_SDK_VERSION == "new":
-                # New SDK method
                 content_stream = self.client.downloads.download_file(file_id)
                 file_bytes = b""
                 for chunk in content_stream:
                     file_bytes += chunk
             else:
-                # Legacy SDK method
-                import io
                 file_obj = self.client.file(file_id)
                 content_stream = io.BytesIO()
                 file_obj.download_to(content_stream)
@@ -931,10 +949,9 @@ class BoxConnector(BaseConnector):
                 print(f"[BoxConnector] Empty file content for {file_id}")
                 return ""
 
-            print(f"[BoxConnector] Downloaded {len(file_bytes)} bytes, parsing with LlamaParse...")
+            print(f"[BoxConnector] Downloaded {len(file_bytes)} bytes, parsing...")
 
-            # Parse the document using LlamaParse
-            extracted_text = await parser.parse_bytes(
+            extracted_text = parser.parse_bytes_sync(
                 file_bytes=file_bytes,
                 file_name=file_name or f"document.{extension}",
                 file_extension=extension
@@ -952,6 +969,107 @@ class BoxConnector(BaseConnector):
             import traceback
             traceback.print_exc()
             return ""
+
+    async def _extract_content_new_sdk(self, file_id: str, extension: str, file_name: str = "") -> str:
+        """Async version — delegates to sync version (kept for backward compat)."""
+        return self._extract_content_sync(file_id, extension, file_name)
+
+    def _process_file_sync_impl(
+        self,
+        file_item: 'BoxFile',
+        folder_path: str,
+        since: Optional[datetime],
+        max_file_size: int = 50 * 1024 * 1024,
+        file_extensions: List[str] = None
+    ) -> Optional[Document]:
+        """Fully synchronous file processing — no asyncio. Safe in gevent workers."""
+        try:
+            if file_item.size and file_item.size > max_file_size:
+                return None
+
+            file_ext = f".{file_item.extension}" if file_item.extension else ""
+            lower_ext = file_ext.lower()
+            if lower_ext in self.BINARY_SKIP_EXTENSIONS:
+                return None
+
+            full_path_check = f"{folder_path}/{file_item.name}".lower()
+            if any(f"/{skip_dir}/" in full_path_check for skip_dir in self.SKIP_DIRS):
+                return None
+
+            if file_extensions and file_ext.lower() not in [e.lower() for e in file_extensions]:
+                return None
+
+            file_obj = self.client.file(file_item.id).get(
+                fields=["id", "name", "description", "size", "sha1",
+                       "created_at", "modified_at", "created_by", "modified_by",
+                       "parent", "path_collection", "shared_link", "tags",
+                       "extension", "content_created_at", "content_modified_at"]
+            )
+
+            full_path = f"{folder_path}/{file_obj.name}"
+
+            content = ""
+            if file_ext.lower() in self.EXTRACTABLE_TYPES:
+                content = self._extract_content_sync(
+                    file_id=file_obj.id,
+                    extension=file_ext,
+                    file_name=file_obj.name
+                )
+                print(f"[BoxConnector] Extracted {len(content)} chars from {file_obj.name}")
+
+            created_by = file_obj.created_by
+            modified_by = file_obj.modified_by
+
+            metadata = {
+                "box_id": file_obj.id,
+                "sha1": file_obj.sha1,
+                "size": file_obj.size,
+                "extension": file_obj.extension,
+                "path": full_path,
+                "tags": file_obj.tags or [],
+                "shared_link": file_obj.shared_link.url if file_obj.shared_link else None,
+                "created_by": {
+                    "id": created_by.id if created_by else None,
+                    "name": created_by.name if created_by else None,
+                    "login": created_by.login if created_by else None
+                } if created_by else None,
+                "modified_by": {
+                    "id": modified_by.id if modified_by else None,
+                    "name": modified_by.name if modified_by else None,
+                    "login": modified_by.login if modified_by else None
+                } if modified_by else None
+            }
+
+            created_at = file_obj.content_created_at or file_obj.created_at
+            modified_at = file_obj.content_modified_at or file_obj.modified_at
+
+            if isinstance(created_at, str):
+                try:
+                    created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                except Exception:
+                    created_at = None
+            if isinstance(modified_at, str):
+                try:
+                    modified_at = datetime.fromisoformat(modified_at.replace('Z', '+00:00'))
+                except Exception:
+                    modified_at = None
+
+            doc = Document(
+                doc_id=f"box_{file_obj.id}",
+                source="box",
+                content=content,
+                title=file_obj.name,
+                metadata=metadata,
+                timestamp=modified_at or created_at,
+                author=created_by.login if created_by else None,
+                url=f"https://app.box.com/file/{file_obj.id}",
+                doc_type="document"
+            )
+            return doc
+
+        except Exception as e:
+            print(f"[BoxConnector] Error processing file {getattr(file_item, 'id', '?')}: {str(e)}")
+            return None
 
     async def _process_file(
         self,

@@ -3950,11 +3950,11 @@ def _run_connector_sync(
                     documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type)
                     print(f"[Sync] GCalendar sync returned {len(documents) if documents else 0} documents")
                 elif connector_type == 'onedrive':
-                    # OneDrive uses synchronous requests library
+                    # OneDrive is now fully synchronous — no asyncio needed
                     if sync_id:
                         progress_service.update_progress(sync_id, status='syncing', stage='Fetching OneDrive files...')
                     print(f"[Sync] Calling onedrive sync with heartbeat (synchronous)", flush=True)
-                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=True)
+                    documents = _sync_with_heartbeat(instance, since, sync_id, progress_service, connector_type, is_async=False)
                     print(f"[Sync] OneDrive sync returned {len(documents) if documents else 0} documents", flush=True)
                 elif connector_type == 'github':
                     # GitHub sync does LLM analysis which takes time - update progress at each stage
@@ -3991,6 +3991,13 @@ def _run_connector_sync(
                             total_items=len(documents)
                         )
                     print(f"[Sync] Zotero sync returned {len(documents) if documents else 0} documents")
+                elif connector_type == 'box':
+                    # Box is now fully synchronous — no asyncio needed
+                    if sync_id:
+                        progress_service.update_progress(sync_id, status='syncing', stage='Fetching Box files...')
+                    print(f"[Sync] Calling box sync directly (synchronous)")
+                    documents = instance.sync(since)
+                    print(f"[Sync] Box sync returned {len(documents) if documents else 0} documents")
                 elif sync_id:
                     progress_service.update_progress(sync_id, status='syncing', stage='Fetching documents...')
                     documents = loop.run_until_complete(instance.sync(since))

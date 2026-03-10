@@ -561,6 +561,213 @@ class DocumentParser:
             print(f"[DocumentParser] LlamaParse error: {e}")
             return ""
 
+    # ─── Synchronous versions (for gevent/gunicorn workers) ────────
+
+    def parse_bytes_sync(self, file_bytes: bytes, file_name: str, file_extension: str) -> str:
+        """Fully synchronous parse — no asyncio. Safe in gevent workers."""
+        ext = file_extension.lower() if file_extension.startswith('.') else f".{file_extension.lower()}"
+
+        if self.is_plain_text(ext):
+            try:
+                return file_bytes.decode('utf-8', errors='ignore')
+            except Exception:
+                return ""
+
+        if ext in self.IMAGE_EXTENSIONS:
+            return self._parse_image_with_gpt4o_sync(file_bytes, file_name, ext)
+
+        if ext in self.LOCAL_PARSE_EXTENSIONS:
+            content = self._parse_locally(file_bytes, file_name, ext)
+            if content and len(content.strip()) >= MIN_CONTENT_CHARS:
+                return content
+            if ext == ".pdf" and self.openai_client:
+                gpt_content = self._parse_pdf_with_gpt4o_sync(file_bytes, file_name)
+                if gpt_content and len(gpt_content.strip()) >= MIN_CONTENT_CHARS:
+                    return gpt_content
+            if self.llama_api_key:
+                return self._parse_with_llamaparse_sync(file_bytes, file_name, ext)
+            return content or ""
+
+        if ext in self.LLAMAPARSE_EXTENSIONS:
+            if self.llama_api_key:
+                return self._parse_with_llamaparse_sync(file_bytes, file_name, ext)
+            return ""
+
+        return ""
+
+    def _parse_image_with_gpt4o_sync(self, file_bytes: bytes, file_name: str, ext: str) -> str:
+        """Synchronous GPT-4o vision image parsing."""
+        if not self.openai_client:
+            if self.azure_endpoint and self.azure_api_key:
+                return self._parse_with_azure_di_sync(file_bytes, file_name, ext)
+            return ""
+        try:
+            NATIVE_FORMATS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+            if ext not in NATIVE_FORMATS:
+                try:
+                    from PIL import Image as PILImage
+                    img = PILImage.open(io.BytesIO(file_bytes))
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    file_bytes = buf.getvalue()
+                    ext = ".png"
+                except Exception:
+                    return ""
+
+            b64 = base64.b64encode(file_bytes).decode('utf-8')
+            mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+            mime = mime_map.get(ext, "image/png")
+
+            response = self.openai_client.chat.completions.create(
+                model=self.chat_model,
+                messages=[
+                    {"role": "system", "content": "Extract ALL text and content from this image. Return clean text preserving structure. Include tables in markdown format. Do NOT add commentary."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "Extract all content from this image:"},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"}}
+                    ]}
+                ],
+                temperature=0.1, max_tokens=16000,
+            )
+            content = response.choices[0].message.content
+            if content and len(content.strip()) >= 10:
+                print(f"[DocumentParser] GPT-4o vision extracted {len(content)} chars from {file_name}")
+                return content
+        except Exception as e:
+            print(f"[DocumentParser] GPT-4o vision error for {file_name}: {e}")
+
+        if self.azure_endpoint and self.azure_api_key:
+            return self._parse_with_azure_di_sync(file_bytes, file_name, ext)
+        return ""
+
+    def _parse_pdf_with_gpt4o_sync(self, file_bytes: bytes, file_name: str) -> str:
+        """Synchronous GPT-4o PDF parsing (page-to-image)."""
+        if not self.openai_client:
+            return ""
+        try:
+            import fitz
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            all_text = []
+            max_pages = min(len(doc), 20)
+            for page_num in range(max_pages):
+                page = doc[page_num]
+                pix = page.get_pixmap(dpi=150)
+                img_bytes = pix.tobytes("png")
+                b64 = base64.b64encode(img_bytes).decode('utf-8')
+                response = self.openai_client.chat.completions.create(
+                    model=self.chat_model,
+                    messages=[
+                        {"role": "system", "content": "Extract ALL text from this PDF page image. Preserve structure, tables, and formatting. Return only the extracted content."},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": f"Extract all text from page {page_num + 1}:"},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}}
+                        ]}
+                    ],
+                    temperature=0.1, max_tokens=16000,
+                )
+                page_text = response.choices[0].message.content
+                if page_text:
+                    all_text.append(f"[Page {page_num + 1}]\n{page_text}")
+            doc.close()
+            return "\n\n".join(all_text) if all_text else ""
+        except Exception as e:
+            print(f"[DocumentParser] GPT-4o PDF sync error for {file_name}: {e}")
+            return ""
+
+    def _parse_with_llamaparse_sync(self, file_bytes: bytes, file_name: str, extension: str) -> str:
+        """Synchronous LlamaParse using httpx sync client."""
+        try:
+            import httpx as httpx_mod
+            ext = extension.lstrip('.')
+            print(f"[DocumentParser] Parsing {file_name} with LlamaParse (sync)")
+
+            with httpx_mod.Client(timeout=120.0) as client:
+                files = {"file": (file_name, file_bytes, self._get_mime_type(ext))}
+                data = {"gpt4o_mode": "true"}
+                headers = {"Authorization": f"Bearer {self.llama_api_key}"}
+
+                upload_response = client.post(f"{LLAMAPARSE_API_URL}/upload", files=files, data=data, headers=headers)
+                if upload_response.status_code != 200:
+                    print(f"[DocumentParser] LlamaParse upload failed: {upload_response.status_code}")
+                    return ""
+
+                job_id = upload_response.json().get("id")
+                if not job_id:
+                    return ""
+
+                import time
+                for attempt in range(60):
+                    status_response = client.get(f"{LLAMAPARSE_API_URL}/job/{job_id}", headers=headers)
+                    if status_response.status_code != 200:
+                        time.sleep(5)
+                        continue
+                    status_data = status_response.json()
+                    status = status_data.get("status")
+                    if status == "SUCCESS":
+                        break
+                    elif status == "ERROR":
+                        return ""
+                    time.sleep(5)
+                else:
+                    return ""
+
+                result_response = client.get(f"{LLAMAPARSE_API_URL}/job/{job_id}/result/text", headers=headers)
+                if result_response.status_code != 200:
+                    result_response = client.get(f"{LLAMAPARSE_API_URL}/job/{job_id}/result/markdown", headers=headers)
+                if result_response.status_code == 200:
+                    try:
+                        rj = result_response.json()
+                        text = rj.get("text") or rj.get("markdown") or result_response.text if isinstance(rj, dict) else result_response.text
+                    except Exception:
+                        text = result_response.text
+                    print(f"[DocumentParser] LlamaParse sync: {len(text)} chars from {file_name}")
+                    return text
+                return ""
+        except Exception as e:
+            print(f"[DocumentParser] LlamaParse sync error: {e}")
+            return ""
+
+    def _parse_with_azure_di_sync(self, file_bytes: bytes, file_name: str, extension: str) -> str:
+        """Synchronous Azure Document Intelligence."""
+        try:
+            import httpx as httpx_mod
+            import time
+            analyze_url = f"{self.azure_endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=2024-11-30"
+            headers = {
+                "Ocp-Apim-Subscription-Key": self.azure_api_key,
+                "Content-Type": self._get_mime_type(extension.lstrip('.'))
+            }
+            with httpx_mod.Client(timeout=120.0) as client:
+                response = client.post(analyze_url, content=file_bytes, headers=headers)
+                if response.status_code != 202:
+                    return ""
+                operation_location = response.headers.get("Operation-Location")
+                if not operation_location:
+                    return ""
+                poll_headers = {"Ocp-Apim-Subscription-Key": self.azure_api_key}
+                for _ in range(60):
+                    time.sleep(2)
+                    status_response = client.get(operation_location, headers=poll_headers)
+                    if status_response.status_code != 200:
+                        continue
+                    result = status_response.json()
+                    status = result.get("status")
+                    if status == "succeeded":
+                        analyze_result = result.get("analyzeResult", {})
+                        content = analyze_result.get("content", "")
+                        if content:
+                            return content
+                        paragraphs = analyze_result.get("paragraphs", [])
+                        if paragraphs:
+                            return "\n\n".join([p.get("content", "") for p in paragraphs])
+                        return ""
+                    elif status == "failed":
+                        return ""
+                return ""
+        except Exception as e:
+            print(f"[DocumentParser] Azure DI sync error: {e}")
+            return ""
+
     # ─── Utilities ──────────────────────────────────────────────────
 
     def _get_mime_type(self, extension: str) -> str:

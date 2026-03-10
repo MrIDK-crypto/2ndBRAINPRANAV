@@ -173,10 +173,34 @@ class OneDriveConnector(BaseConnector):
         except Exception:
             return False
 
-    async def sync(self, since: Optional[datetime] = None) -> List[Document]:
-        """Sync files from OneDrive"""
+    def connect_sync(self) -> bool:
+        """Synchronous connect — connect() is already sync internally."""
+        if not ONEDRIVE_AVAILABLE:
+            self._set_error("MSAL not installed")
+            return False
+        try:
+            self.status = ConnectorStatus.CONNECTING
+            self.access_token = self.config.credentials.get("access_token")
+            response = requests.get(
+                f"{self.GRAPH_ENDPOINT}/me",
+                headers={"Authorization": f"Bearer {self.access_token}"}
+            )
+            if response.status_code != 200:
+                self._set_error(f"Connection failed: {response.text}")
+                return False
+            user_data = response.json()
+            self.sync_stats["user"] = user_data.get("displayName", "Unknown")
+            self.status = ConnectorStatus.CONNECTED
+            self._clear_error()
+            return True
+        except Exception as e:
+            self._set_error(f"Failed to connect: {str(e)}")
+            return False
+
+    def sync(self, since: Optional[datetime] = None) -> List[Document]:
+        """Sync files from OneDrive. Fully synchronous — no asyncio."""
         if not self.access_token:
-            await self.connect()
+            self.connect_sync()
 
         if self.status != ConnectorStatus.CONNECTED:
             return []
@@ -185,42 +209,36 @@ class OneDriveConnector(BaseConnector):
         documents = []
 
         try:
-            # Get folders to sync
             folder_ids = self.config.settings.get("folder_ids", [])
 
             if folder_ids:
-                # Sync specific folders
                 for folder_id in folder_ids:
-                    folder_docs = await self._sync_folder(folder_id, since)
+                    folder_docs = self._sync_folder_sync(folder_id, since)
                     documents.extend(folder_docs)
             else:
-                # Sync root folder
-                folder_docs = await self._sync_folder("root", since)
+                folder_docs = self._sync_folder_sync("root", since)
                 documents.extend(folder_docs)
 
-            # Update stats
             self.sync_stats = {
                 "documents_synced": len(documents),
                 "sync_time": datetime.now().isoformat()
             }
-
             self.config.last_sync = datetime.now()
             self.status = ConnectorStatus.CONNECTED
 
         except Exception as e:
             self._set_error(f"Sync failed: {str(e)}")
-            raise  # Propagate to caller so sync reports as error
+            raise
 
         return documents
 
-    async def _sync_folder(self, folder_id: str, since: Optional[datetime]) -> List[Document]:
-        """Sync files from a folder recursively"""
+    def _sync_folder_sync(self, folder_id: str, since: Optional[datetime]) -> List[Document]:
+        """Fully synchronous folder sync — no asyncio. Uses ThreadPoolExecutor directly."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         documents = []
 
         try:
-            # Get files in folder
-            # For root folder, use /me/drive/root/children (works for personal OneDrive)
-            # For other folders, use /me/drive/items/{id}/children
             if folder_id == "root":
                 url = f"{self.GRAPH_ENDPOINT}/me/drive/root/children"
             else:
@@ -233,7 +251,6 @@ class OneDriveConnector(BaseConnector):
             if response.status_code != 200:
                 error_text = response.text
                 print(f"[OneDrive] Failed to list folder {folder_id}: {error_text}", flush=True)
-                # Parse error message from Microsoft Graph API response
                 try:
                     error_data = response.json().get("error", {})
                     error_msg = error_data.get("message", error_text[:200])
@@ -241,7 +258,6 @@ class OneDriveConnector(BaseConnector):
                     error_msg = f"HTTP {response.status_code}: {error_text[:200]}"
                 raise Exception(f"OneDrive API error: {error_msg}")
 
-            # Paginate through all items in the folder
             items = []
             page_url = url
             while page_url:
@@ -262,7 +278,6 @@ class OneDriveConnector(BaseConnector):
 
             print(f"[OneDrive] Found {len(items)} items in folder {folder_id}", flush=True)
 
-            # Separate files and folders
             file_types = self.config.settings.get("file_types") or self.OPTIONAL_SETTINGS["file_types"]
             max_size = self.config.settings.get("max_file_size_mb") or self.OPTIONAL_SETTINGS["max_file_size_mb"]
 
@@ -283,70 +298,51 @@ class OneDriveConnector(BaseConnector):
                 elif "folder" in item:
                     folder_list.append(item)
 
-            # Process files in PARALLEL using thread pool (blocking I/O)
-            from concurrent.futures import ThreadPoolExecutor
-            _executor = ThreadPoolExecutor(max_workers=20)
-            _loop = asyncio.get_event_loop()
-
-            def _parse_file_sync(file_item):
-                try:
-                    inner_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(inner_loop)
-                    try:
-                        doc = inner_loop.run_until_complete(self._download_and_parse(file_item))
-                    finally:
-                        inner_loop.close()
-                        asyncio.set_event_loop(None)
-                    if doc and self.on_document_ready:
-                        try:
-                            self.on_document_ready(doc)
-                        except Exception:
-                            pass
-                    return doc
-                except Exception as e:
-                    print(f"[OneDrive] Error parsing {file_item.get('name')}: {e}", flush=True)
-                    return None
-
+            # Process files in PARALLEL using ThreadPoolExecutor directly
             if eligible_files:
-                results = await asyncio.gather(
-                    *[_loop.run_in_executor(_executor, _parse_file_sync, f) for f in eligible_files],
-                    return_exceptions=True
-                )
-                for r in results:
-                    if isinstance(r, Document):
-                        documents.append(r)
+                _executor = ThreadPoolExecutor(max_workers=20)
+
+                def _parse_file_sync(file_item):
+                    try:
+                        doc = self._download_and_parse_sync(file_item)
+                        if doc and self.on_document_ready:
+                            try:
+                                self.on_document_ready(doc)
+                            except Exception:
+                                pass
+                        return doc
+                    except Exception as e:
+                        print(f"[OneDrive] Error parsing {file_item.get('name')}: {e}", flush=True)
+                        return None
+
+                futures = {_executor.submit(_parse_file_sync, f): f for f in eligible_files}
+                for future in as_completed(futures):
+                    try:
+                        r = future.result()
+                        if isinstance(r, Document):
+                            documents.append(r)
+                    except Exception as e:
+                        print(f"[OneDrive] File task exception: {e}", flush=True)
+
                 _executor.shutdown(wait=False)
                 print(f"[OneDrive] Parallel processed {len(eligible_files)} files → {len(documents)} docs", flush=True)
 
-            # Recurse into subfolders in PARALLEL
-            _folder_executor = ThreadPoolExecutor(max_workers=5)
-
-            def _recurse_folder_sync(folder_item):
-                inner_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(inner_loop)
+            # Recurse into subfolders SEQUENTIALLY
+            for subfolder in folder_list:
                 try:
-                    return inner_loop.run_until_complete(self._sync_folder(folder_item["id"], since))
-                finally:
-                    inner_loop.close()
-                    asyncio.set_event_loop(None)
-
-            if folder_list:
-                folder_results = await asyncio.gather(
-                    *[_loop.run_in_executor(_folder_executor, _recurse_folder_sync, f) for f in folder_list],
-                    return_exceptions=True
-                )
-                for r in folder_results:
-                    if isinstance(r, list):
-                        documents.extend(r)
-                _folder_executor.shutdown(wait=False)
+                    sub_docs = self._sync_folder_sync(subfolder["id"], since)
+                    if sub_docs:
+                        documents.extend(sub_docs)
+                except Exception as sub_err:
+                    print(f"[OneDrive] Error syncing subfolder {subfolder.get('name')}: {sub_err}", flush=True)
 
         except Exception as e:
             print(f"[OneDrive] Error syncing folder {folder_id}: {e}", flush=True)
 
         return documents
 
-    async def _download_and_parse(self, item: Dict) -> Optional[Document]:
-        """Download and parse a file"""
+    def _download_and_parse_sync(self, item: Dict) -> Optional[Document]:
+        """Fully synchronous download and parse — no asyncio. Safe in gevent workers."""
         try:
             file_id = item["id"]
             name = item.get("name", "unknown")
@@ -358,22 +354,17 @@ class OneDriveConnector(BaseConnector):
 
             print(f"[OneDrive] Downloading {name}...", flush=True)
 
-            # Download file
             response = requests.get(download_url)
-
             if response.status_code != 200:
                 print(f"[OneDrive] Failed to download {name}", flush=True)
                 return None
 
             file_content = response.content
-
-            # Parse based on file type
-            content_text = await self._parse_file(name, file_content)
+            content_text = self._parse_file_content(name, file_content)
 
             if not content_text:
                 return None
 
-            # Create document
             modified = datetime.fromisoformat(item["lastModifiedDateTime"].replace("Z", "+00:00"))
 
             return Document(
@@ -397,7 +388,15 @@ class OneDriveConnector(BaseConnector):
             print(f"[OneDrive] Error parsing {item.get('name')}: {e}")
             return None
 
-    async def _parse_file(self, filename: str, content: bytes) -> Optional[str]:
+    async def _download_and_parse(self, item: Dict) -> Optional[Document]:
+        """Async version — delegates to sync (kept for backward compat)."""
+        return self._download_and_parse_sync(item)
+
+    def _parse_file_content(self, filename: str, content: bytes) -> Optional[str]:
+        """Synchronous file content parser."""
+        return self._parse_file_sync_inner(filename, content)
+
+    def _parse_file_sync_inner(self, filename: str, content: bytes) -> Optional[str]:
         """Parse file content based on type"""
         try:
             lower_name = filename.lower()
