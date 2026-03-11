@@ -1,0 +1,313 @@
+{
+  "metadata": {
+    "description": "Top 50 oncology journals with h-index and tier assignment",
+    "tier_criteria": {
+      "tier1": "h-index > 300",
+      "tier2": "h-index > 150",
+      "tier3": "everything else"
+    },
+    "source": "Scimago/OpenAlex h-index estimates, March 2026"
+  },
+  "journals": [
+    {
+      "name": "Journal of Clinical Oncology",
+      "aliases": ["J Clin Oncol", "JCO"],
+      "h_index": 562,
+      "tier": 1
+    },
+    {
+      "name": "Nature Reviews Cancer",
+      "aliases": ["Nat Rev Cancer"],
+      "h_index": 410,
+      "tier": 1
+    },
+    {
+      "name": "The Lancet Oncology",
+      "aliases": ["Lancet Oncol"],
+      "h_index": 395,
+      "tier": 1
+    },
+    {
+      "name": "Journal of the National Cancer Institute",
+      "aliases": ["J Natl Cancer Inst", "JNCI"],
+      "h_index": 380,
+      "tier": 1
+    },
+    {
+      "name": "Cancer Cell",
+      "aliases": [],
+      "h_index": 370,
+      "tier": 1
+    },
+    {
+      "name": "Cancer",
+      "aliases": [],
+      "h_index": 360,
+      "tier": 1
+    },
+    {
+      "name": "Cancer Research",
+      "aliases": ["Cancer Res"],
+      "h_index": 355,
+      "tier": 1
+    },
+    {
+      "name": "Clinical Cancer Research",
+      "aliases": ["Clin Cancer Res"],
+      "h_index": 340,
+      "tier": 1
+    },
+    {
+      "name": "Annals of Oncology",
+      "aliases": ["Ann Oncol"],
+      "h_index": 330,
+      "tier": 1
+    },
+    {
+      "name": "International Journal of Radiation Oncology, Biology, Physics",
+      "aliases": ["Int J Radiat Oncol Biol Phys", "Red Journal"],
+      "h_index": 325,
+      "tier": 1
+    },
+    {
+      "name": "British Journal of Cancer",
+      "aliases": ["Br J Cancer"],
+      "h_index": 315,
+      "tier": 1
+    },
+    {
+      "name": "International Journal of Cancer",
+      "aliases": ["Int J Cancer"],
+      "h_index": 305,
+      "tier": 1
+    },
+    {
+      "name": "Cancer Discovery",
+      "aliases": ["Cancer Discov"],
+      "h_index": 280,
+      "tier": 2
+    },
+    {
+      "name": "European Journal of Cancer",
+      "aliases": ["Eur J Cancer"],
+      "h_index": 270,
+      "tier": 2
+    },
+    {
+      "name": "Molecular Cancer",
+      "aliases": ["Mol Cancer"],
+      "h_index": 260,
+      "tier": 2
+    },
+    {
+      "name": "Nature Reviews Clinical Oncology",
+      "aliases": ["Nat Rev Clin Oncol"],
+      "h_index": 255,
+      "tier": 2
+    },
+    {
+      "name": "CA: A Cancer Journal for Clinicians",
+      "aliases": ["CA Cancer J Clin"],
+      "h_index": 250,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Letters",
+      "aliases": ["Cancer Lett"],
+      "h_index": 245,
+      "tier": 2
+    },
+    {
+      "name": "JAMA Oncology",
+      "aliases": ["JAMA Oncol"],
+      "h_index": 240,
+      "tier": 2
+    },
+    {
+      "name": "Annals of Surgical Oncology",
+      "aliases": ["Ann Surg Oncol"],
+      "h_index": 235,
+      "tier": 2
+    },
+    {
+      "name": "Journal of Hematology & Oncology",
+      "aliases": ["J Hematol Oncol"],
+      "h_index": 230,
+      "tier": 2
+    },
+    {
+      "name": "Radiotherapy and Oncology",
+      "aliases": ["Radiother Oncol", "Green Journal"],
+      "h_index": 225,
+      "tier": 2
+    },
+    {
+      "name": "Seminars in Cancer Biology",
+      "aliases": ["Semin Cancer Biol"],
+      "h_index": 220,
+      "tier": 2
+    },
+    {
+      "name": "Gynecologic Oncology",
+      "aliases": ["Gynecol Oncol"],
+      "h_index": 218,
+      "tier": 2
+    },
+    {
+      "name": "Breast Cancer Research and Treatment",
+      "aliases": ["Breast Cancer Res Treat"],
+      "h_index": 215,
+      "tier": 2
+    },
+    {
+      "name": "Journal of Thoracic Oncology",
+      "aliases": ["J Thorac Oncol"],
+      "h_index": 212,
+      "tier": 2
+    },
+    {
+      "name": "Molecular Cancer Therapeutics",
+      "aliases": ["Mol Cancer Ther"],
+      "h_index": 210,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Metastasis Reviews",
+      "aliases": ["Cancer Metastasis Rev"],
+      "h_index": 208,
+      "tier": 2
+    },
+    {
+      "name": "Neuro-Oncology",
+      "aliases": ["Neuro Oncol"],
+      "h_index": 205,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Epidemiology, Biomarkers & Prevention",
+      "aliases": ["Cancer Epidemiol Biomarkers Prev"],
+      "h_index": 200,
+      "tier": 2
+    },
+    {
+      "name": "Breast Cancer Research",
+      "aliases": ["Breast Cancer Res"],
+      "h_index": 198,
+      "tier": 2
+    },
+    {
+      "name": "Biochimica et Biophysica Acta - Reviews on Cancer",
+      "aliases": ["BBA Rev Cancer", "Biochim Biophys Acta Rev Cancer"],
+      "h_index": 195,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Treatment Reviews",
+      "aliases": ["Cancer Treat Rev"],
+      "h_index": 192,
+      "tier": 2
+    },
+    {
+      "name": "Frontiers in Oncology",
+      "aliases": ["Front Oncol"],
+      "h_index": 188,
+      "tier": 2
+    },
+    {
+      "name": "BMC Cancer",
+      "aliases": [],
+      "h_index": 185,
+      "tier": 2
+    },
+    {
+      "name": "Psycho-Oncology",
+      "aliases": ["Psychooncology"],
+      "h_index": 182,
+      "tier": 2
+    },
+    {
+      "name": "Journal of the National Comprehensive Cancer Network",
+      "aliases": ["JNCCN", "J Natl Compr Canc Netw"],
+      "h_index": 178,
+      "tier": 2
+    },
+    {
+      "name": "Lung Cancer",
+      "aliases": [],
+      "h_index": 176,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Science",
+      "aliases": ["Cancer Sci"],
+      "h_index": 174,
+      "tier": 2
+    },
+    {
+      "name": "Journal of Experimental & Clinical Cancer Research",
+      "aliases": ["J Exp Clin Cancer Res"],
+      "h_index": 172,
+      "tier": 2
+    },
+    {
+      "name": "Journal for ImmunoTherapy of Cancer",
+      "aliases": ["J Immunother Cancer", "JITC"],
+      "h_index": 170,
+      "tier": 2
+    },
+    {
+      "name": "Critical Reviews in Oncology/Hematology",
+      "aliases": ["Crit Rev Oncol Hematol"],
+      "h_index": 168,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Causes & Control",
+      "aliases": ["Cancer Causes Control"],
+      "h_index": 165,
+      "tier": 2
+    },
+    {
+      "name": "Advances in Cancer Research",
+      "aliases": ["Adv Cancer Res"],
+      "h_index": 162,
+      "tier": 2
+    },
+    {
+      "name": "Supportive Care in Cancer",
+      "aliases": ["Support Care Cancer"],
+      "h_index": 160,
+      "tier": 2
+    },
+    {
+      "name": "Oral Oncology",
+      "aliases": ["Oral Oncol"],
+      "h_index": 158,
+      "tier": 2
+    },
+    {
+      "name": "Endocrine-Related Cancer",
+      "aliases": ["Endocr Relat Cancer"],
+      "h_index": 156,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Immunology Research",
+      "aliases": ["Cancer Immunol Res"],
+      "h_index": 155,
+      "tier": 2
+    },
+    {
+      "name": "Journal of Neuro-Oncology",
+      "aliases": ["J Neurooncol"],
+      "h_index": 153,
+      "tier": 2
+    },
+    {
+      "name": "Cancer Immunology, Immunotherapy",
+      "aliases": ["Cancer Immunol Immunother"],
+      "h_index": 151,
+      "tier": 2
+    }
+  ]
+}
