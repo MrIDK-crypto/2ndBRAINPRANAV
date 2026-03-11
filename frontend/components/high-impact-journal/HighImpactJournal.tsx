@@ -175,11 +175,14 @@ interface ResearchGapsInfo {
 }
 
 type AppState = 'idle' | 'analyzing' | 'results'
+type InputMode = 'upload' | 'describe'
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function HighImpactJournal() {
   const [state, setState] = useState<AppState>('idle')
+  const [inputMode, setInputMode] = useState<InputMode>('upload')
+  const [researchText, setResearchText] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [progress, setProgress] = useState({ step: 0, message: '', percent: 0 })
   const [fieldInfo, setFieldInfo] = useState<FieldInfo | null>(null)
@@ -217,6 +220,91 @@ export default function HighImpactJournal() {
     setExperimentSuggestions(null)
     setResearchGaps(null)
     setError('')
+    setResearchText('')
+  }, [])
+
+  const processSSEStream = useCallback(async (response: Response) => {
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      let eventType = ''
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.slice(7).trim()
+        } else if (line.startsWith('data: ') && eventType) {
+          try {
+            const data = JSON.parse(line.slice(6))
+            switch (eventType) {
+              case 'progress':
+                setProgress(data)
+                break
+              case 'field_detected':
+                setFieldInfo(data)
+                break
+              case 'features_extracted':
+                setFeaturesInfo(data)
+                break
+              case 'score':
+                setScoreInfo(data)
+                break
+              case 'journals':
+                setJournalsInfo(data)
+                break
+              case 'red_flags':
+                setRedFlags(data)
+                break
+              case 'consistency':
+                setConsistencyInfo(data)
+                break
+              case 'landscape':
+                setLandscapeInfo(data)
+                break
+              case 'citation_verification':
+                setCitationInfo(data)
+                break
+              case 'paper_type':
+                setPaperTypeInfo(data)
+                break
+              case 'deep_analysis':
+                setDeepAnalysis(data)
+                break
+              case 'experiment_suggestions':
+                setExperimentSuggestions(data)
+                break
+              case 'research_gaps':
+                setResearchGaps(data)
+                break
+              case 'recommendations':
+                setRecommendations(prev => prev + data.content)
+                break
+              case 'recommendations_done':
+                if (data.full_text) setRecommendations(data.full_text)
+                break
+              case 'done':
+                if (data.manuscript_url) setManuscriptUrl(data.manuscript_url)
+                setState('results')
+                break
+              case 'error':
+                setError(data.error)
+                setState('idle')
+                break
+            }
+          } catch {
+            // skip unparseable lines
+          }
+          eventType = ''
+        }
+      }
+    }
   }, [])
 
   const handleFile = useCallback(async (file: File) => {
@@ -249,93 +337,45 @@ export default function HighImpactJournal() {
         return
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        let eventType = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim()
-          } else if (line.startsWith('data: ') && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              switch (eventType) {
-                case 'progress':
-                  setProgress(data)
-                  break
-                case 'field_detected':
-                  setFieldInfo(data)
-                  break
-                case 'features_extracted':
-                  setFeaturesInfo(data)
-                  break
-                case 'score':
-                  setScoreInfo(data)
-                  break
-                case 'journals':
-                  setJournalsInfo(data)
-                  break
-                case 'red_flags':
-                  setRedFlags(data)
-                  break
-                case 'consistency':
-                  setConsistencyInfo(data)
-                  break
-                case 'landscape':
-                  setLandscapeInfo(data)
-                  break
-                case 'citation_verification':
-                  setCitationInfo(data)
-                  break
-                case 'paper_type':
-                  setPaperTypeInfo(data)
-                  break
-                case 'deep_analysis':
-                  setDeepAnalysis(data)
-                  break
-                case 'experiment_suggestions':
-                  setExperimentSuggestions(data)
-                  break
-                case 'research_gaps':
-                  setResearchGaps(data)
-                  break
-                case 'recommendations':
-                  setRecommendations(prev => prev + data.content)
-                  break
-                case 'recommendations_done':
-                  // Replace streamed content with sanitized version (fake DOIs stripped)
-                  if (data.full_text) setRecommendations(data.full_text)
-                  break
-                case 'done':
-                  if (data.manuscript_url) setManuscriptUrl(data.manuscript_url)
-                  setState('results')
-                  break
-                case 'error':
-                  setError(data.error)
-                  setState('idle')
-                  break
-              }
-            } catch {
-              // skip unparseable lines
-            }
-            eventType = ''
-          }
-        }
-      }
+      await processSSEStream(response)
     } catch (e) {
       setError('Connection failed. Please check your network and try again.')
       setState('idle')
     }
-  }, [])
+  }, [processSSEStream])
+
+  const handleTextSubmit = useCallback(async () => {
+    const wordCount = researchText.trim().split(/\s+/).filter(Boolean).length
+    if (wordCount < 100) {
+      setError(`Please write at least 100 words describing your research (currently ${wordCount}).`)
+      return
+    }
+
+    setError('')
+    setState('analyzing')
+    setProgress({ step: 1, message: 'Analyzing your research description...', percent: 2 })
+
+    const formData = new FormData()
+    formData.append('text', researchText.trim())
+
+    try {
+      const response = await fetch(`${API_URL}/api/journal/analyze`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok || !response.body) {
+        setError('Server error. Please try again.')
+        setState('idle')
+        return
+      }
+
+      await processSSEStream(response)
+    } catch (e) {
+      setError('Connection failed. Please check your network and try again.')
+      setState('idle')
+    }
+  }, [researchText, processSSEStream])
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -404,53 +444,153 @@ export default function HighImpactJournal() {
               maxWidth: 480,
               margin: '0 auto 48px',
             }}>
-              Upload your manuscript for instant field detection, quality scoring, journal tier predictions, and actionable recommendations.
+              Upload your manuscript or describe your research for instant field detection, quality scoring, journal tier predictions, and actionable recommendations.
             </p>
 
-            {/* Upload Zone */}
-            <div
-              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                border: `2px dashed ${dragOver ? theme.primary : theme.borderDark}`,
-                borderRadius: 16,
-                padding: '60px 40px',
-                backgroundColor: dragOver ? theme.primaryLight : theme.cardBg,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                maxWidth: 520,
-                margin: '0 auto',
-              }}
-            >
-              <div style={{
-                width: 56, height: 56, borderRadius: 14,
-                backgroundColor: theme.primaryLight,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 20px',
-                fontSize: 24,
-              }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                  <polyline points="17 8 12 3 7 8"/>
-                  <line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-              </div>
-              <p style={{ fontWeight: 600, fontSize: 16, marginBottom: 8, color: theme.textPrimary }}>
-                Drop your manuscript here
-              </p>
-              <p style={{ color: theme.textMuted, fontSize: 14 }}>
-                or click to browse — PDF or DOCX up to 50MB
-              </p>
+            {/* Mode Toggle */}
+            <div style={{
+              display: 'inline-flex',
+              borderRadius: 10,
+              border: `1px solid ${theme.border}`,
+              backgroundColor: theme.cardBg,
+              padding: 4,
+              marginBottom: 32,
+            }}>
+              {([
+                { key: 'upload' as InputMode, label: 'Upload Manuscript' },
+                { key: 'describe' as InputMode, label: 'Describe Research' },
+              ]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => { setInputMode(tab.key); setError('') }}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: 7,
+                    border: 'none',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    fontFamily: font,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    backgroundColor: inputMode === tab.key ? theme.primary : 'transparent',
+                    color: inputMode === tab.key ? '#FFFFFF' : theme.textSecondary,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx"
-              onChange={onFileSelect}
-              style={{ display: 'none' }}
-            />
+
+            {inputMode === 'upload' ? (
+              <>
+                {/* Upload Zone */}
+                <div
+                  onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={onDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    border: `2px dashed ${dragOver ? theme.primary : theme.borderDark}`,
+                    borderRadius: 16,
+                    padding: '60px 40px',
+                    backgroundColor: dragOver ? theme.primaryLight : theme.cardBg,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    maxWidth: 520,
+                    margin: '0 auto',
+                  }}
+                >
+                  <div style={{
+                    width: 56, height: 56, borderRadius: 14,
+                    backgroundColor: theme.primaryLight,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 20px',
+                    fontSize: 24,
+                  }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                      <polyline points="17 8 12 3 7 8"/>
+                      <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                  </div>
+                  <p style={{ fontWeight: 600, fontSize: 16, marginBottom: 8, color: theme.textPrimary }}>
+                    Drop your manuscript here
+                  </p>
+                  <p style={{ color: theme.textMuted, fontSize: 14 }}>
+                    or click to browse — PDF or DOCX up to 50MB
+                  </p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx"
+                  onChange={onFileSelect}
+                  style={{ display: 'none' }}
+                />
+              </>
+            ) : (
+              <>
+                {/* Describe Research Text Area */}
+                <div style={{ maxWidth: 520, margin: '0 auto', textAlign: 'left' }}>
+                  <textarea
+                    value={researchText}
+                    onChange={e => setResearchText(e.target.value)}
+                    placeholder="Describe the experiments and research you have conducted. Include details about your methodology, key findings, hypotheses tested, techniques used, and the significance of your results..."
+                    style={{
+                      width: '100%',
+                      minHeight: 220,
+                      padding: '20px',
+                      fontSize: 15,
+                      lineHeight: 1.7,
+                      fontFamily: font,
+                      color: theme.textPrimary,
+                      backgroundColor: theme.cardBg,
+                      border: `1px solid ${theme.borderDark}`,
+                      borderRadius: 16,
+                      outline: 'none',
+                      resize: 'vertical',
+                      transition: 'border-color 0.2s ease',
+                    }}
+                    onFocus={e => e.target.style.borderColor = theme.primary}
+                    onBlur={e => e.target.style.borderColor = theme.borderDark}
+                  />
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginTop: 12,
+                  }}>
+                    <p style={{
+                      fontSize: 13,
+                      color: researchText.trim().split(/\s+/).filter(Boolean).length >= 100
+                        ? theme.success
+                        : theme.textMuted,
+                      fontFamily: fontMono,
+                    }}>
+                      {researchText.trim() ? researchText.trim().split(/\s+/).filter(Boolean).length : 0} / 100 words min
+                    </p>
+                    <button
+                      onClick={handleTextSubmit}
+                      disabled={researchText.trim().split(/\s+/).filter(Boolean).length < 100}
+                      style={{
+                        padding: '12px 32px',
+                        borderRadius: 10,
+                        border: 'none',
+                        fontSize: 15,
+                        fontWeight: 600,
+                        fontFamily: font,
+                        cursor: researchText.trim().split(/\s+/).filter(Boolean).length >= 100 ? 'pointer' : 'not-allowed',
+                        backgroundColor: researchText.trim().split(/\s+/).filter(Boolean).length >= 100 ? theme.primary : theme.border,
+                        color: researchText.trim().split(/\s+/).filter(Boolean).length >= 100 ? '#FFFFFF' : theme.textMuted,
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      Analyze Research
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Features Row */}
             <div style={{

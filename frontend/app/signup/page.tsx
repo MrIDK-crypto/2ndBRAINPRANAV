@@ -679,7 +679,7 @@ export default function SignupPage() {
                     marginBottom: '8px',
                   }}
                 >
-                  Organization name{' '}
+                  Name of lab{' '}
                   <span style={{ color: colors.textMuted, fontWeight: 400 }}>(optional)</span>
                 </label>
                 <input
@@ -687,7 +687,7 @@ export default function SignupPage() {
                   value={organizationName}
                   onChange={(e) => setOrganizationName(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Your company or team name"
+                  placeholder="Your lab name"
                   style={{
                     width: '100%',
                     height: '48px',

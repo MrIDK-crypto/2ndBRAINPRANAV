@@ -19,11 +19,55 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 @journal_bp.route('/analyze', methods=['POST'])
 def analyze_manuscript():
-    """Analyze a manuscript and return SSE stream of results. No auth required."""
+    """Analyze a manuscript (file upload) or research description (text) and return SSE stream of results. No auth required."""
 
+    # Check if this is a text-based submission
+    research_text = request.form.get('text', '').strip()
+
+    if research_text:
+        # Text-based research description
+        word_count = len(research_text.split())
+        if word_count < 100:
+            def error_gen():
+                yield f"event: error\ndata: {json.dumps({'error': f'Please provide at least 100 words describing your research (currently {word_count}).'})}\n\n"
+            return Response(error_gen(), mimetype='text/event-stream')
+
+        def generate():
+            try:
+                service = get_journal_scorer_service()
+                yield from service.analyze_manuscript(None, 'research_description.txt', manuscript_url=None, raw_text=research_text)
+            except Exception as e:
+                print(f"[Journal] Stream error: {e}", flush=True)
+                traceback.print_exc()
+                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+        def byte_generator():
+            yield b": padding to force flush\n\n"
+            for chunk in generate():
+                yield chunk.encode('utf-8')
+                yield b""
+
+        response = Response(
+            stream_with_context(byte_generator()),
+            mimetype='text/event-stream',
+            direct_passthrough=True,
+            headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no',
+                'Content-Type': 'text/event-stream; charset=utf-8',
+                'Transfer-Encoding': 'chunked',
+            }
+        )
+        response.implicit_sequence_conversion = False
+        return response
+
+    # File-based submission
     if 'file' not in request.files:
         def error_gen():
-            yield f"event: error\ndata: {json.dumps({'error': 'No file provided. Please upload a PDF or DOCX file.'})}\n\n"
+            yield f"event: error\ndata: {json.dumps({'error': 'No file or research description provided. Please upload a PDF/DOCX or describe your research.'})}\n\n"
         return Response(error_gen(), mimetype='text/event-stream')
 
     file = request.files['file']

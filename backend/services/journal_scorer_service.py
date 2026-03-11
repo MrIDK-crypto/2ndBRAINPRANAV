@@ -359,12 +359,14 @@ class JournalScorerService:
         self.parser = DocumentParser()
         self.openalex = OpenAlexSearchService()
 
-    def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None) -> Generator[str, None, None]:
+    def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None, raw_text: str = None) -> Generator[str, None, None]:
         """10-step pipeline — yields SSE events as analysis progresses.
 
         IMPORTANT: Paper type detection runs BEFORE feature extraction so that
         scoring criteria are appropriate for the paper type (review papers get
         review criteria, not experimental criteria).
+
+        If raw_text is provided, skip file parsing and use it directly.
         """
         start_time = time.time()
 
@@ -372,9 +374,12 @@ class JournalScorerService:
             # ── Step 1: Parse Document ──────────────────────────────────
             yield _sse("progress", {"step": 1, "message": "Parsing document...", "percent": 5})
 
-            text = self.parser.parse_file_bytes(file_bytes, filename)
+            if raw_text:
+                text = raw_text
+            else:
+                text = self.parser.parse_file_bytes(file_bytes, filename)
             if not text or len(text.strip()) < 100:
-                yield _sse("error", {"error": "Could not extract text from the document. Please ensure it's a valid PDF or DOCX file with readable text."})
+                yield _sse("error", {"error": "Could not extract enough text. Please provide more detail about your research or upload a valid PDF/DOCX file."})
                 return
 
             word_count = len(text.split())
