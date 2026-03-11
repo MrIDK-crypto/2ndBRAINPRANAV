@@ -943,11 +943,9 @@ class JournalScorerService:
                     "label": info["label"],
                     "details": parsed[key].get("details", ""),
                     "citations": parsed[key].get("citations", []),
-                    "suggested_references": [
-                        {k: v for k, v in ref.items() if k in ("title", "authors", "year", "relevance")}
-                        for ref in parsed[key].get("suggested_references", [])
-                        if isinstance(ref, dict)
-                    ],
+                    "suggested_references": self._enrich_suggested_references(
+                        parsed[key].get("suggested_references", [])
+                    ),
                 }
             else:
                 result[key] = {
@@ -1980,6 +1978,48 @@ class JournalScorerService:
             'match_reason': f'Found in {count} of your references\' citation neighborhoods',
             'source': 'citation_neighborhood',
         } for name, count in neighbor_journals]
+
+    # ── Enrich suggested references with real DOIs from OpenAlex ─────────────
+
+    def _enrich_suggested_references(self, refs: list) -> list:
+        """Strip hallucinated URLs from LLM-suggested references and look up real DOIs.
+
+        For each reference, search OpenAlex by title to find the real paper and DOI.
+        Returns cleaned references with verified DOI URLs where found.
+        """
+        if not refs:
+            return []
+
+        enriched = []
+        for ref in refs:
+            if not isinstance(ref, dict):
+                continue
+            # Only keep safe fields
+            clean = {k: v for k, v in ref.items() if k in ("title", "authors", "year", "relevance")}
+            title = clean.get("title", "")
+            if not title:
+                enriched.append(clean)
+                continue
+
+            # Search OpenAlex for this paper by title
+            try:
+                results = self.openalex.search_works(title, max_results=1, min_citations=0)
+                if results:
+                    paper = results[0]
+                    paper_title = paper.get("title", "")
+                    # Basic fuzzy match — first 40 chars of title should overlap
+                    if paper_title and title[:40].lower().strip() in paper_title.lower() or paper_title[:40].lower().strip() in title.lower():
+                        doi = paper.get("doi", "")
+                        if doi:
+                            if not doi.startswith("http"):
+                                doi = f"https://doi.org/{doi}"
+                            clean["url"] = doi
+            except Exception:
+                pass  # Non-critical — just won't have a link
+
+            enriched.append(clean)
+
+        return enriched
 
     # ── Reference Bank: pre-fetch real papers from OpenAlex ─────────────────
 
