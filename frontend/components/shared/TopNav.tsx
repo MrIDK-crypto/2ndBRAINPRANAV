@@ -61,7 +61,6 @@ const navStructure: NavEntry[] = [
     label: 'more',
     items: [
       { label: 'training videos', description: 'Guided walkthroughs and tutorials', href: '/training-guides' },
-      { label: 'knowledge gaps', description: 'Identify missing organizational knowledge', href: '/knowledge-gaps' },
       { label: 'analytics', description: 'Usage metrics and insights', href: '/analytics', adminOnly: true },
       { label: 'inventory', description: 'Browse your indexed knowledge base', href: '/inventory' },
     ],

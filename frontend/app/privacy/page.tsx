@@ -148,7 +148,6 @@ export default function PrivacyPage() {
               <li>Provide and maintain the Service</li>
               <li>Process and classify documents using AI</li>
               <li>Generate vector embeddings for semantic search</li>
-              <li>Identify knowledge gaps in your organization</li>
               <li>Generate training videos and materials</li>
               <li>Improve our AI models and services</li>
               <li>Send service-related communications</li>
@@ -161,7 +160,6 @@ export default function PrivacyPage() {
             <p>Your data is processed using Azure OpenAI services for:</p>
             <ul>
               <li>Document classification (work vs. personal)</li>
-              <li>Knowledge gap analysis</li>
               <li>RAG (Retrieval-Augmented Generation) responses</li>
               <li>Content summarization</li>
             </ul>

@@ -131,6 +131,14 @@ class GDriveConnector(BaseConnector):
                 try:
                     self.credentials.refresh(Request())
                     self.config.credentials["access_token"] = self.credentials.token
+                    # Persist refreshed token to DB so other workers see it
+                    if hasattr(self, 'db') and self.db and hasattr(self, 'connector_model') and self.connector_model:
+                        try:
+                            self.connector_model.credentials = dict(self.config.credentials)
+                            self.db.commit()
+                            print(f"[GDrive] Refreshed token persisted to DB")
+                        except Exception as db_err:
+                            print(f"[GDrive] Failed to persist refreshed token: {db_err}")
                 except Exception as e:
                     print(f"[GDrive] Token refresh failed: {e}")
 

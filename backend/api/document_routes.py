@@ -328,9 +328,10 @@ def view_document(document_id: str):
                     print(f"[VIEW] Error generating presigned URL for {document_id}: {e}")
 
             # Otherwise, render an HTML view
-            title = document.title or document_id
-            content = document.content or "No content available"
-            source = document.source_type or "unknown"
+            from markupsafe import escape
+            title = str(escape(document.title or document_id))
+            content = str(escape(document.content or "No content available"))
+            source = str(escape(document.source_type or "unknown"))
 
             html = f"""
             <!DOCTYPE html>
@@ -1069,7 +1070,7 @@ def upload_documents():
                 """Run extraction + embedding in a background thread after response is sent."""
                 try:
                     bg_db = SessionLocal()
-                    docs = bg_db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    docs = bg_db.query(Document).filter(Document.id.in_(doc_ids), Document.tenant_id == tenant_id).all()
                     if not docs:
                         return
 
@@ -1879,9 +1880,10 @@ def confirm_document(document_id: str):
                     "error": error
                 }), 400
 
-            # Get updated document
+            # Get updated document (with tenant isolation)
             document = db.query(Document).filter(
-                Document.id == document_id
+                Document.id == document_id,
+                Document.tenant_id == getattr(g, 'tenant_id', 'local-tenant')
             ).first()
 
             # Embed newly confirmed WORK docs that haven't been embedded yet

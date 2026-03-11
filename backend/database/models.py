@@ -882,6 +882,7 @@ class Document(Base):
         Index('ix_document_embedded', 'tenant_id', 'embedded_at'),  # For embedding status
         Index('ix_document_confidence', 'classification_confidence'),  # For sorting
         Index('ix_document_created', 'tenant_id', 'created_at'),  # For date-based queries
+        Index('ix_document_tenant_deleted_status', 'tenant_id', 'is_deleted', 'status', 'created_at'),  # Common list query
     )
 
     @validates('content', 'title', 'content_html', 'summary',
@@ -1129,6 +1130,10 @@ class KnowledgeGap(Base):
     tenant = relationship("Tenant", back_populates="knowledge_gaps")
     project = relationship("Project", back_populates="knowledge_gaps")
     answers = relationship("GapAnswer", back_populates="knowledge_gap", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('ix_gap_tenant_status_created', 'tenant_id', 'status', 'created_at'),
+    )
 
     def __repr__(self):
         return f"<KnowledgeGap {self.title[:30]}>"
@@ -2836,6 +2841,42 @@ def init_database():
     _migrate_enum_values()
     Base.metadata.create_all(bind=engine)
     print("✓ Database tables created successfully")
+
+
+class SearchFeedback(Base):
+    """
+    Tracks user feedback on RAG search quality.
+    Used to improve retrieval and answer generation over time.
+    """
+    __tablename__ = "search_feedback"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    tenant_id = Column(String(36), ForeignKey("tenants.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+
+    # Search context
+    query = Column(Text, nullable=False)
+    answer = Column(Text)
+    confidence = Column(Float)
+    source_count = Column(Integer)
+
+    # User feedback
+    rating = Column(Integer)  # 1-5 or thumbs up/down (1 or 5)
+    feedback_text = Column(Text)  # Optional free-text feedback
+
+    # Metadata for analysis
+    response_mode = Column(Integer)  # 1=Sources, 2=Brief, 3=In-Depth
+    search_time_ms = Column(Integer)
+    features_used = Column(JSON)  # {expansion, reranking, mmr, etc.}
+
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+
+    __table_args__ = (
+        Index('ix_search_feedback_tenant_created', 'tenant_id', 'created_at'),
+    )
+
+    def __repr__(self):
+        return f"<SearchFeedback {self.id[:8]} rating={self.rating}>"
 
 
 def drop_database():

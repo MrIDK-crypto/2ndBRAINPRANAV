@@ -98,7 +98,6 @@ export default function Sidebar({
     if (pathname === '/documents') return 'Documents'
     if (pathname === '/co-work' || pathname === '/chat') return 'Co-Work'
     if (pathname === '/training-guides') return 'Training Videos'
-    if (pathname === '/knowledge-gaps') return 'Knowledge Gaps'
     if (pathname === '/analytics') return 'Analytics'
     if (pathname === '/inventory') return 'Inventory'
     return 'Co-Work'
@@ -160,7 +159,6 @@ export default function Sidebar({
       id: 'more',
       items: [
         { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false, comingSoon: true },
-        { id: 'Knowledge Gaps', label: 'Knowledge Gaps', href: '/knowledge-gaps', icon: 'gaps', adminOnly: false },
         { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
         { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
       ],
@@ -209,14 +207,6 @@ export default function Sidebar({
             <circle cx="12" cy="10" r="1" />
             <circle cx="8" cy="10" r="1" />
             <circle cx="16" cy="10" r="1" />
-          </svg>
-        )
-      case 'gaps':
-        return (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
         )
       case 'training':

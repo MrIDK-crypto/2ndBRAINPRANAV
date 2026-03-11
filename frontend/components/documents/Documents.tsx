@@ -251,8 +251,6 @@ export default function Documents() {
   const [activeFilters, setActiveFilters] = useState<string[]>([])
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set())
-  const [analyzingGaps, setAnalyzingGaps] = useState(false)
-  const [showGapsMenu, setShowGapsMenu] = useState(false)
   const [sourceFilter, setSourceFilter] = useState<string>('all')
   const [activeIntegration, setActiveIntegration] = useState<string | null>(null)
   const [connectedIntegrations, setConnectedIntegrations] = useState<ConnectedIntegration[]>([])
@@ -295,7 +293,6 @@ export default function Documents() {
   const searchParams = useSearchParams()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const gapsMenuRef = useRef<HTMLDivElement>(null)
   const notifRef = useRef<HTMLDivElement>(null)
   const integrationSliderRef = useRef<HTMLDivElement>(null)
 
@@ -335,7 +332,7 @@ export default function Documents() {
     }
   }, [activeSyncs])
 
-  // Auto-open a specific document when navigated from Knowledge Gaps
+  // Auto-open a specific document when navigated with highlight param
   const highlightHandledRef = useRef(false)
   useEffect(() => {
     const highlightId = searchParams.get('highlight')
@@ -613,9 +610,6 @@ export default function Documents() {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setOpenMenuId(null)
-      }
-      if (gapsMenuRef.current && !gapsMenuRef.current.contains(event.target as Node)) {
-        setShowGapsMenu(false)
       }
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
         setShowNotifications(false)
@@ -924,7 +918,7 @@ export default function Documents() {
   }
 
   const handleCleanupAllData = async () => {
-    if (!confirm('This will DELETE ALL your documents and knowledge gaps. This cannot be undone. Continue?')) return
+    if (!confirm('This will DELETE ALL your documents. This cannot be undone. Continue?')) return
     if (!confirm('Are you REALLY sure? All data will be permanently deleted.')) return
 
     try {
@@ -986,39 +980,6 @@ export default function Documents() {
     } catch (error) {
       console.error('Error bulk updating categories:', error)
       loadDocuments()
-    }
-  }
-
-  const handleFindGaps = async (mode: 'simple' | 'code' = 'simple') => {
-    if (documents.length === 0) return
-
-    setShowGapsMenu(false)
-    setAnalyzingGaps(true)
-    try {
-      console.log(`[FindGaps] Using ${mode} mode`)
-
-      // First, analyze the documents to create knowledge gaps
-      const response = await axios.post(`${API_BASE}/knowledge/analyze`, {
-        force: true,
-        include_pending: true,
-        mode: mode
-      }, { headers: authHeaders })
-
-      if (response.data.success) {
-        console.log(`Created ${response.data.gaps_created} knowledge gaps (mode: ${mode})`)
-        if (response.data.result?.gaps_by_category) {
-          console.log('Gaps by category:', response.data.result.gaps_by_category)
-        }
-      }
-
-      // Then redirect to knowledge gaps page
-      router.push('/knowledge-gaps')
-    } catch (error) {
-      console.error('Error analyzing documents:', error)
-      // Still redirect even if analysis fails - user can retry from knowledge gaps page
-      router.push('/knowledge-gaps')
-    } finally {
-      setAnalyzingGaps(false)
     }
   }
 
@@ -1802,101 +1763,6 @@ export default function Documents() {
               </svg>
               {uploading ? 'Uploading...' : 'Add Document'}
             </button>
-            {/* Find Gaps Dropdown */}
-            <div ref={gapsMenuRef} style={{ position: 'relative' }}>
-              <button
-                onClick={() => setShowGapsMenu(!showGapsMenu)}
-                disabled={documents.length === 0 || analyzingGaps}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '10px 20px',
-                  backgroundColor: (documents.length === 0 || analyzingGaps) ? colors.textMuted : colors.primary,
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  cursor: (documents.length === 0 || analyzingGaps) ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  if (documents.length > 0 && !analyzingGaps) e.currentTarget.style.backgroundColor = colors.primaryHover
-                }}
-                onMouseLeave={(e) => {
-                  if (documents.length > 0 && !analyzingGaps) e.currentTarget.style.backgroundColor = colors.primary
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="m21 21-4.35-4.35"/>
-                </svg>
-                {analyzingGaps ? 'Analyzing...' : 'Find Gaps'}
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ marginLeft: '4px' }}>
-                  <path d="M3 4.5L6 7.5L9 4.5H3Z"/>
-                </svg>
-              </button>
-
-              {/* Dropdown Menu */}
-              {showGapsMenu && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    marginTop: '4px',
-                    backgroundColor: colors.pageBg,
-                    borderRadius: '8px',
-                    boxShadow: shadows.md,
-                    border: `1px solid ${colors.border}`,
-                    minWidth: '160px',
-                    zIndex: Z_INDEX.dropdown,
-                    overflow: 'hidden'
-                  }}
-                >
-                  <button
-                    onClick={() => handleFindGaps('simple')}
-                    style={{
-                      width: '100%',
-                      padding: '10px 16px',
-                      border: 'none',
-                      backgroundColor: 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      color: colors.textPrimary,
-                      textAlign: 'left',
-                      transition: 'background-color 0.15s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.primaryLight}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  >
-                    Find Gaps
-                  </button>
-                  <div style={{ height: '1px', backgroundColor: colors.border }} />
-                  <button
-                    onClick={() => handleFindGaps('code')}
-                    style={{
-                      width: '100%',
-                      padding: '10px 16px',
-                      border: 'none',
-                      backgroundColor: 'transparent',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      color: colors.textPrimary,
-                      textAlign: 'left',
-                      transition: 'background-color 0.15s'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.primaryLight}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  >
-                    Find Code Gaps
-                  </button>
-                </div>
-              )}
-            </div>
             {user?.role === 'admin' && (
             <button
               onClick={() => { setShowInviteModal(true); fetchInvitations() }}

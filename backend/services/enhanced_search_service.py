@@ -891,8 +891,8 @@ class CrossEncoderReranker:
             content = result.get('content', '') or result.get('content_preview', '')
             if not content:
                 continue
-            # Only use first 512 chars for speed (covers most relevant info)
-            pairs.append((query, content[:512]))
+            # Use first 2000 chars for better relevance scoring (ms-marco handles up to ~512 tokens)
+            pairs.append((query, content[:2000]))
             result_indices.append(i)
 
         if not pairs:
@@ -2048,6 +2048,9 @@ End with "Sources Used: [list numbers]"."""
         # Merge chunks from same document before building context
         results = self._merge_doc_chunks(results)
 
+        # Compress sources: extract only query-relevant sentences from long content
+        results = ContextCompressor.compress_sources(query, results)
+
         # Build context with FULL content (not just 500 chars)
         # Only include sources with meaningful relevance scores
         context_parts = []
@@ -2196,7 +2199,8 @@ CURRENT QUESTION: {query}
         validate: bool = True,
         conversation_history: list = None,
         boost_doc_ids: list = None,
-        response_mode: int = 3
+        response_mode: int = 3,
+        user_context: dict = None
     ) -> Dict:
         """
         Complete enhanced RAG pipeline with conversation history support.
@@ -2261,13 +2265,14 @@ CURRENT QUESTION: {query}
             boost_doc_ids=boost_doc_ids
         )
 
-        # Generate answer with conversation context
+        # Generate answer with conversation context and user context
         answer_result = self.generate_answer(
             query=query,
             search_results=search_results,
             validate=validate,
             conversation_history=conversation_history or [],
-            response_mode=response_mode
+            response_mode=response_mode,
+            user_context=user_context
         )
 
         return {
@@ -2310,6 +2315,9 @@ CURRENT QUESTION: {query}
 
         # Merge chunks from same document before building context
         results = self._merge_doc_chunks(results)
+
+        # Compress sources: extract only query-relevant sentences from long content
+        results = ContextCompressor.compress_sources(query, results)
 
         # Build context (same as non-streaming)
         context_parts = []

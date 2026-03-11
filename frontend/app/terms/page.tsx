@@ -113,7 +113,6 @@ export default function TermsPage() {
             <ul>
               <li>Integration with third-party services (Gmail, Slack, Box, GitHub, Microsoft OneDrive)</li>
               <li>AI-powered document classification and analysis</li>
-              <li>Knowledge gap identification and analysis</li>
               <li>Voice transcription and recording capabilities</li>
               <li>RAG (Retrieval-Augmented Generation) search functionality</li>
               <li>Training video generation</li>

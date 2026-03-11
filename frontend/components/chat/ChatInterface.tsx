@@ -70,7 +70,7 @@ if (typeof window !== 'undefined') {
   mermaid.initialize({
     startOnLoad: false,
     theme: 'neutral',
-    securityLevel: 'loose',
+    securityLevel: 'strict',
     fontFamily: 'Avenir, "Avenir Next", "DM Sans", system-ui, sans-serif',
   })
 }

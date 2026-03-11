@@ -98,7 +98,7 @@ export default function LandingPage() {
             organizational <em>knowledge</em>
           </h1>
           <p className="hero-p">
-            capture emails, documents, and messages from every team. make it all searchable with ai. identify knowledge gaps before they become problems.
+            capture emails, documents, and messages from every team. make it all searchable with ai. never lose critical knowledge again.
           </p>
           <div className="hero-cta">
             <Link href="/signup" className="btn-solid btn-accent btn-lg">get started free</Link>
@@ -136,11 +136,6 @@ export default function LandingPage() {
               <div><span className="t-dim">searching 2,847 documents...</span></div>
               <div><span className="t-green">✓</span> <span className="t-dim">found 14 relevant sources (0.94 relevance)</span></div>
               <div><span className="t-green">✓</span> <span className="t-dim">generating answer with citations...</span></div>
-              <div>&nbsp;</div>
-              <div><span className="t-prompt">~ $</span> <span className="t-cmd">2brain gaps --analyze</span></div>
-              <div>&nbsp;</div>
-              <div><span className="t-green">✓</span> <span className="t-dim">12 knowledge gaps identified across 5 topics</span></div>
-              <div><span className="t-green">✓</span> <span className="t-dim">targeted questions generated</span></div>
               <div>&nbsp;</div>
               <div><span className="t-prompt">&gt;</span> <span className="term-cursor" /></div>
             </div>
@@ -240,27 +235,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* 04 Knowledge Gaps */}
-          <div className="agent-card reveal reveal-delay-1">
-            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
-              <rect x={50} y={30} width={100} height={140} rx={2} strokeWidth={2} />
-              <path d="M50 50 L150 50" strokeWidth={1} />
-              <line x1={70} y1={70} x2={130} y2={70} strokeLinecap="round" />
-              <line x1={70} y1={90} x2={120} y2={90} strokeLinecap="round" />
-              <line x1={70} y1={110} x2={130} y2={110} strokeLinecap="round" />
-              <line x1={70} y1={130} x2={100} y2={130} strokeLinecap="round" />
-              <rect x={65} y={80} width={60} height={20} fill="var(--accent)" stroke="none" opacity={0.12} rx={4} />
-              <path d="M140 120 L160 100 L170 110 L150 130 Z" fill="var(--paper)" stroke="currentColor" strokeWidth={1.5} />
-              <path d="M140 120 L130 135 L150 130 Z" fill="currentColor" />
-            </svg>
-            <div className="agent-card-content">
-              <span className="bento-num">04</span>
-              <h3 className="bento-name">knowledge gaps</h3>
-              <p className="bento-desc">automatically identifies missing documentation and undocumented processes. generates targeted questions, accepts text or voice answers.</p>
-            </div>
-          </div>
-
-          {/* 05 Grant Finder */}
+          {/* 04 Grant Finder */}
           <div className="agent-card reveal">
             <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
               <rect x={30} y={50} width={140} height={100} rx={6} strokeWidth={2} />
@@ -351,13 +326,6 @@ export default function LandingPage() {
         </div>
         <div className="cloud-card reveal reveal-delay-2">
           <svg className="cloud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
-          </svg>
-          <h3 className="cloud-name">knowledge gap detection</h3>
-          <p className="cloud-desc">150+ nlp patterns detect missing docs, bus-factor risks, and contradictions. generates targeted questions to fill gaps.</p>
-        </div>
-        <div className="cloud-card reveal reveal-delay-3">
-          <svg className="cloud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
           </svg>
           <h3 className="cloud-name">grant monitoring</h3>
@@ -391,19 +359,19 @@ export default function LandingPage() {
           </div>
           <div className="showcase-screenshot">
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.8, color: 'var(--ink-2)', position: 'relative', zIndex: 1 }}>
-              <div style={{ color: 'var(--ink-3)', marginBottom: 8 }}>knowledge gap analysis</div>
-              <div>▸ <span style={{ color: 'var(--accent)' }}>bus factor risk</span>: sarah manages deployments,</div>
-              <div>&nbsp;&nbsp;monitoring, and incident response alone</div>
+              <div style={{ color: 'var(--ink-3)', marginBottom: 8 }}>ai-powered search</div>
+              <div>▸ <span style={{ color: 'var(--accent)' }}>query</span>: &ldquo;what was the deployment process</div>
+              <div>&nbsp;&nbsp;for the redis migration?&rdquo;</div>
               <div>&nbsp;</div>
-              <div>▸ <span style={{ color: 'var(--accent)' }}>missing rationale</span>: &ldquo;we switched from</div>
-              <div>&nbsp;&nbsp;redis to memcached&rdquo; — no reason documented</div>
+              <div>▸ <span style={{ color: 'var(--accent)' }}>14 sources</span> found across emails, slack,</div>
+              <div>&nbsp;&nbsp;and drive documents</div>
               <div>&nbsp;</div>
-              <div>▸ <span style={{ color: 'var(--accent)' }}>implicit process</span>: &ldquo;the usual deploy</div>
-              <div>&nbsp;&nbsp;steps&rdquo; referenced but never written down</div>
+              <div>▸ <span style={{ color: 'var(--accent)' }}>confidence</span>: 0.94 — claims verified</div>
+              <div>&nbsp;&nbsp;against source documents</div>
               <div>&nbsp;</div>
               <div style={{ color: 'var(--ink-3)' }}>━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
-              <div>gaps found: <span style={{ color: '#9CB896' }}>12</span> | questions: <span style={{ color: '#9CB896' }}>24</span></div>
-              <div>quality score: <span style={{ color: '#9CB896' }}>0.87</span></div>
+              <div>sources: <span style={{ color: '#9CB896' }}>14</span> | citations: <span style={{ color: '#9CB896' }}>8</span></div>
+              <div>hallucination check: <span style={{ color: '#9CB896' }}>passed</span></div>
             </div>
           </div>
         </div>
@@ -520,7 +488,6 @@ export default function LandingPage() {
                 <li>up to 10 users</li>
                 <li>all 15+ integrations</li>
                 <li>ai-powered search &amp; classification</li>
-                <li>knowledge gap analysis</li>
                 <li>automatic indexing</li>
                 <li>email support</li>
               </ul>
@@ -572,7 +539,7 @@ export default function LandingPage() {
               <a href="mailto:team@2ndbrain.ai" className="btn-ghost btn-full">contact us</a>
             </div>
           </div>
-          <p className="pricing-note">all plans include all integrations &middot; ai search &middot; document classification &middot; knowledge gaps</p>
+          <p className="pricing-note">all plans include all integrations &middot; ai search &middot; document classification &middot; training videos</p>
         </div>
       </section>
 

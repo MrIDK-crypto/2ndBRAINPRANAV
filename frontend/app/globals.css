@@ -22,7 +22,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Knowledge Gaps Page Animations */
+/* Shared Animations */
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 8px rgba(201, 165, 152, 0.2), 0 0 0 16px rgba(201, 165, 152, 0.1); }
   50% { box-shadow: 0 0 0 12px rgba(201, 165, 152, 0.3), 0 0 0 24px rgba(201, 165, 152, 0.15); }

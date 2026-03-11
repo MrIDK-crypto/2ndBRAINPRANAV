@@ -41,10 +41,13 @@ app.config['MAX_CONTENT_LENGTH'] = None  # No upload size limit
 
 # CORS configuration - use CORS_ORIGINS env var or defaults
 _cors_origins = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+if os.getenv('FLASK_ENV') != 'production':
+    _cors_origins.extend([
+        "http://localhost:3000",
+        "http://localhost:3006",
+        "http://localhost:3007",
+    ])
 _cors_origins.extend([
-    "http://localhost:3000",
-    "http://localhost:3006",
-    "http://localhost:3007",
     "https://use2ndbrain.com",
     "https://www.use2ndbrain.com",
     "https://api.use2ndbrain.com",
@@ -71,7 +74,10 @@ _app_logger = setup_logger("app")
 def handle_exception(e):
     """Global exception handler - logs all unhandled errors."""
     log_error("app", f"Unhandled exception on {request.method} {request.path}", error=e)
-    return jsonify({"error": "Internal server error", "message": str(e)}), 500
+    # Never leak exception details to clients in production
+    if os.getenv('FLASK_ENV') == 'development':
+        return jsonify({"error": "Internal server error", "message": str(e)}), 500
+    return jsonify({"error": "Internal server error"}), 500
 
 @app.errorhandler(413)
 def handle_413(e):
@@ -141,6 +147,10 @@ def ensure_connector_enum_values():
 
                     if not result.fetchone():
                         # Add the value if it doesn't exist
+                        # Validate against whitelist to prevent SQL injection
+                        if not value.isalpha():
+                            print(f"⚠ Skipping invalid enum value: {value}")
+                            continue
                         conn.execute(text(f"ALTER TYPE connectortype ADD VALUE '{value}'"))
                         conn.commit()
                         print(f"✓ Added '{value}' to connectortype enum")
@@ -437,7 +447,6 @@ def root():
             },
             "integrations": "GET /api/integrations",
             "documents": "GET /api/documents",
-            "knowledge_gaps": "GET /api/knowledge/gaps",
             "search": "POST /api/search"
         }
     })
@@ -469,7 +478,6 @@ def health_check():
             "auth": True,
             "integrations": True,
             "classification": True,
-            "knowledge_gaps": True,
             "video_generation": True,
             "rag_search": AZURE_OPENAI_API_KEY is not None
         }
@@ -1246,6 +1254,44 @@ def _check_hardcoded_answer(query: str):
     return None
 
 
+@app.route('/api/search/feedback', methods=['POST'])
+@require_auth
+def search_feedback():
+    """Submit feedback on search quality (thumbs up/down or 1-5 rating)."""
+    from database.models import SearchFeedback
+    data = request.get_json() or {}
+    tenant_id = g.tenant_id
+
+    rating = data.get('rating')
+    if rating not in (1, 2, 3, 4, 5):
+        return jsonify({"error": "rating must be 1-5"}), 400
+
+    query = data.get('query', '')
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+
+    try:
+        feedback = SearchFeedback(
+            tenant_id=tenant_id,
+            user_id=getattr(g, 'user_id', None),
+            query=query,
+            answer=data.get('answer', '')[:5000],
+            confidence=data.get('confidence'),
+            source_count=data.get('source_count'),
+            rating=rating,
+            feedback_text=data.get('feedback_text', '')[:1000],
+            response_mode=data.get('response_mode'),
+            search_time_ms=data.get('search_time_ms'),
+            features_used=data.get('features_used'),
+        )
+        db.add(feedback)
+        db.commit()
+        return jsonify({"success": True, "id": feedback.id})
+    except Exception as e:
+        log_error("app", "Search feedback error", error=e)
+        return jsonify({"error": "Failed to save feedback"}), 500
+
+
 @app.route('/api/search', methods=['POST'])
 @require_auth
 def search():
@@ -1380,6 +1426,48 @@ def search():
 
             print(f"[SEARCH] Using ENHANCED search for tenant {tenant_id} (mode={response_mode}): '{query}'", flush=True)
 
+            # Build user context for RAG personalization (same as streaming endpoint)
+            user_context = {}
+            try:
+                user_obj = db.query(User).filter(User.id == g.user_id).first()
+                if user_obj:
+                    user_context['user_name'] = user_obj.full_name
+                _tenant_obj = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+                if _tenant_obj:
+                    user_context['organization'] = _tenant_obj.name
+
+                from sqlalchemy import func as sqlfunc
+                doc_counts = db.query(
+                    Document.source_type,
+                    sqlfunc.count(Document.id)
+                ).filter(
+                    Document.tenant_id == tenant_id
+                ).group_by(Document.source_type).all()
+
+                if doc_counts:
+                    summary_parts = []
+                    type_labels = {
+                        'email': 'emails', 'message': 'Slack messages',
+                        'file': 'uploaded files', 'document': 'documents',
+                        'grant': 'grant documents',
+                    }
+                    for source_type, count in doc_counts:
+                        label = type_labels.get(source_type, f'{source_type} items')
+                        summary_parts.append(f"{count} {label}")
+                    user_context['data_summary'] = ", ".join(summary_parts)
+
+                recent_docs = db.query(Document.title).filter(
+                    Document.tenant_id == tenant_id
+                ).order_by(Document.created_at.desc()).limit(25).all()
+                user_context['recent_doc_titles'] = [d.title for d in recent_docs if d.title]
+
+                total_docs = db.query(sqlfunc.count(Document.id)).filter(
+                    Document.tenant_id == tenant_id
+                ).scalar() or 0
+                user_context['total_documents'] = total_docs
+            except Exception as uctx_err:
+                print(f"[SEARCH] Error building user context: {uctx_err}", flush=True)
+
             enhanced_service = get_enhanced_search_service()
             result = enhanced_service.search_and_answer(
                 query=query,
@@ -1387,9 +1475,10 @@ def search():
                 vector_store=vector_store,
                 top_k=top_k,
                 validate=True,
-                conversation_history=conversation_history,  # Pass conversation history
-                boost_doc_ids=boost_doc_ids,  # Boost newly uploaded docs
-                response_mode=response_mode
+                conversation_history=conversation_history,
+                boost_doc_ids=boost_doc_ids,
+                response_mode=response_mode,
+                user_context=user_context
             )
 
             # Format sources for response — enrich with source_url from DB

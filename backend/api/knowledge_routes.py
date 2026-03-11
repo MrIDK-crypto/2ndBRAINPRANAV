@@ -532,7 +532,8 @@ def list_gaps():
                     doc_ids = context.get('analyzed_documents') or context.get('source_docs') or []
                     if doc_ids:
                         source_docs = db.query(Document.id, Document.title).filter(
-                            Document.id.in_(doc_ids)
+                            Document.id.in_(doc_ids),
+                            Document.tenant_id == tenant_id
                         ).all()
                         gap_dict['source_documents'] = [
                             {'id': doc.id, 'title': doc.title or 'Untitled'}
@@ -682,7 +683,8 @@ def get_gap_context(gap_id: str):
             source_excerpts = ""
             if source_doc_ids:
                 source_docs = db.query(Document).filter(
-                    Document.id.in_(source_doc_ids[:5])
+                    Document.id.in_(source_doc_ids[:5]),
+                    Document.tenant_id == tenant_id
                 ).all()
                 for sdoc in source_docs:
                     content_snippet = (sdoc.content or '')[:500]

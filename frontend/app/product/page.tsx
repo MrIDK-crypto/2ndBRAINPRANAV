@@ -50,7 +50,7 @@ export default function ProductPage() {
             transfer platform
           </h1>
           <p className="product-subtitle">
-            from ingestion to insight in four steps. connect your tools, let ai classify and index everything, then search with precision and fill knowledge gaps automatically.
+            from ingestion to insight in four steps. connect your tools, let ai classify and index everything, then search with precision.
           </p>
           <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link href="/signup" className="btn-solid btn-accent btn-lg">start free trial</Link>
@@ -109,7 +109,7 @@ export default function ProductPage() {
               </svg>
             </div>
             <h3 className="step-title">search</h3>
-            <p className="step-desc">ask anything. get answers with citations, verified claims, and confidence scores. knowledge gaps auto-detected.</p>
+            <p className="step-desc">ask anything. get answers with citations, verified claims, and confidence scores.</p>
           </div>
         </div>
       </section>
@@ -166,44 +166,6 @@ export default function ProductPage() {
               <div>
                 confidence: <span style={{ color: '#22C55E' }}>0.94</span>
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Knowledge Gaps */}
-        <div className="feature-row feature-row-reverse reveal">
-          <div className="feature-text">
-            <div className="feature-badge">nlp engine</div>
-            <h3 className="feature-h3">intelligent knowledge gap detection</h3>
-            <p className="feature-desc">
-              six-layer nlp architecture that finds what&apos;s missing, not just what&apos;s there. no llm calls required — pure pattern matching.
-            </p>
-            <ul className="feature-list">
-              <li>150+ trigger patterns across 8 frame types</li>
-              <li>semantic role labeling (agent, patient, cause)</li>
-              <li>knowledge graph with entity normalization</li>
-              <li>cross-document contradiction detection</li>
-              <li>bus factor risk analysis</li>
-              <li>fingerprint-based deduplication</li>
-            </ul>
-          </div>
-          <div className="feature-visual">
-            <div className="feature-terminal">
-              <div style={{ color: 'var(--ink-3)', marginBottom: 12 }}>gap analysis — 6 layers</div>
-              <div><span style={{ color: 'var(--accent)' }}>layer 1</span> frame extraction</div>
-              <div>&nbsp;&nbsp;→ 847 frames from 120 documents</div>
-              <div><span style={{ color: 'var(--accent)' }}>layer 2</span> semantic role labeling</div>
-              <div>&nbsp;&nbsp;→ 312 missing agents identified</div>
-              <div><span style={{ color: 'var(--accent)' }}>layer 3</span> discourse analysis</div>
-              <div>&nbsp;&nbsp;→ 45 unsupported claims</div>
-              <div><span style={{ color: 'var(--accent)' }}>layer 4</span> knowledge graph</div>
-              <div>&nbsp;&nbsp;→ 2 bus factor risks detected</div>
-              <div><span style={{ color: 'var(--accent)' }}>layer 5</span> cross-doc verification</div>
-              <div>&nbsp;&nbsp;→ 3 contradictions found</div>
-              <div><span style={{ color: 'var(--accent)' }}>layer 6</span> question generation</div>
-              <div>&nbsp;&nbsp;→ 24 grounded questions</div>
-              <div>&nbsp;</div>
-              <div>quality score: <span style={{ color: '#22C55E' }}>0.87</span></div>
             </div>
           </div>
         </div>

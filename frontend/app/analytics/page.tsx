@@ -28,10 +28,7 @@ interface Metrics {
     embedded_documents: number
     total_conversations: number
     total_messages: number
-    total_gaps: number
-    answered_gaps: number
     embedding_coverage: number
-    gap_resolution_rate: number
   }
   chat: {
     conversations_last_period: number
@@ -43,10 +40,6 @@ interface Metrics {
     added_last_period: number
     by_source: Record<string, number>
     by_classification: Record<string, number>
-  }
-  knowledge_gaps: {
-    detected_last_period: number
-    by_category: Record<string, number>
   }
   slack_bot: {
     questions_asked: number
@@ -89,10 +82,7 @@ const emptyMetrics = (days: number): Metrics => ({
     embedded_documents: 0,
     total_conversations: 0,
     total_messages: 0,
-    total_gaps: 0,
-    answered_gaps: 0,
     embedding_coverage: 0,
-    gap_resolution_rate: 0,
   },
   chat: {
     conversations_last_period: 0,
@@ -104,10 +94,6 @@ const emptyMetrics = (days: number): Metrics => ({
     added_last_period: 0,
     by_source: {},
     by_classification: {},
-  },
-  knowledge_gaps: {
-    detected_last_period: 0,
-    by_category: {},
   },
   slack_bot: {
     questions_asked: 0,
@@ -362,12 +348,6 @@ export default function AnalyticsPage() {
                 icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>}
               />
               <StatCard
-                title="Knowledge Gaps"
-                value={m.overview.total_gaps}
-                subtitle={`${m.overview.gap_resolution_rate}% resolved`}
-                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
-              />
-              <StatCard
                 title="Conversations"
                 value={m.overview.total_conversations}
                 subtitle={`Avg ${m.chat.avg_messages_per_conversation} msgs each`}
@@ -394,12 +374,6 @@ export default function AnalyticsPage() {
                 value={m.documents.added_last_period}
                 subtitle={`Last ${period} days`}
                 icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>}
-              />
-              <StatCard
-                title="Gaps Detected"
-                value={m.knowledge_gaps.detected_last_period}
-                subtitle={`Last ${period} days`}
-                icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
               />
             </div>
 
@@ -552,42 +526,6 @@ export default function AnalyticsPage() {
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Knowledge Gaps by Category */}
-            <div style={{
-              padding: '28px',
-              backgroundColor: colors.cardBg,
-              borderRadius: '16px',
-              border: `1px solid ${colors.border}`,
-              marginBottom: '24px',
-            }}>
-              <h3 style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, margin: '0 0 20px' }}>
-                Knowledge Gaps by Category
-              </h3>
-              {Object.entries(m.knowledge_gaps.by_category).length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                  {Object.entries(m.knowledge_gaps.by_category)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([category, count]) => (
-                      <div key={category} style={{
-                        padding: '8px 16px',
-                        backgroundColor: colors.primaryLight,
-                        borderRadius: '20px',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        color: colors.primary,
-                      }}>
-                        {category}: {count}
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <div style={{ padding: '16px 0', textAlign: 'center' }}>
-                  <p style={{ fontSize: '14px', color: colors.textMuted, margin: 0 }}>No knowledge gaps detected yet</p>
-                  <p style={{ fontSize: '12px', color: colors.textMuted, margin: '4px 0 0' }}>Run a gap analysis from the Knowledge Gaps page</p>
-                </div>
-              )}
             </div>
 
             {/* Embedding Coverage */}
