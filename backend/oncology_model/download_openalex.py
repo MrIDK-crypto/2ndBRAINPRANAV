@@ -280,7 +280,7 @@ def download_papers(output_dir: Path, target: int) -> None:
     try:
         while total_collected < target:
             params: dict[str, Any] = {
-                "filter": f"concepts.id:{CONCEPT_ONCOLOGY},has_abstract:true",
+                "filter": f"concepts.id:{CONCEPT_ONCOLOGY}",
                 "select": SELECT_FIELDS,
                 "per_page": PER_PAGE,
                 "cursor": cursor,

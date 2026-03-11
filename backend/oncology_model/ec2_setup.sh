@@ -37,8 +37,8 @@ echo "[4/7] Starting OpenAlex data download..."
 echo "This will download ~1M oncology papers. ETA: ~19 hours."
 mkdir -p /tmp/oncology_data
 python3 -m backend.oncology_model.download_openalex \
-    --output_dir /tmp/oncology_data \
-    --max_papers 1000000 \
+    --output-dir /tmp/oncology_data \
+    --target 1000000 \
     2>&1 | tee /tmp/oncology_download.log
 
 # 5. Enrich with PubMed data
