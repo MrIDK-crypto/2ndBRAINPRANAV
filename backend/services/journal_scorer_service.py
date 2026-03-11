@@ -847,7 +847,10 @@ class JournalScorerService:
         raw = resp.choices[0].message.content.strip()
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
         if json_match:
-            result = json.loads(json_match.group())
+            try:
+                result = json.loads(json_match.group())
+            except json.JSONDecodeError:
+                return {"field": "economics", "confidence": 0.5, "subfield": "General", "keywords": ["general"], "reasoning": "JSON parse error in field detection"}
             # Validate the field is in our config
             if result.get("field") not in FIELD_CONFIGS:
                 result["field"] = "economics"
@@ -908,12 +911,26 @@ class JournalScorerService:
         resp = self.openai.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
-            max_tokens=3000,
+            max_tokens=4500,
         )
         raw = resp.choices[0].message.content.strip()
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
         if json_match:
-            parsed = json.loads(json_match.group())
+            try:
+                parsed = json.loads(json_match.group())
+            except json.JSONDecodeError as je:
+                print(f"[JournalScorer] Feature scoring JSON truncated (max_tokens hit?): {je}")
+                # Try to repair by closing open strings/braces
+                truncated = json_match.group()
+                # Close any open string and braces
+                if truncated.count('"') % 2 == 1:
+                    truncated += '"'
+                open_braces = truncated.count('{') - truncated.count('}')
+                truncated += '}' * max(0, open_braces)
+                try:
+                    parsed = json.loads(truncated)
+                except json.JSONDecodeError:
+                    parsed = {}
         else:
             parsed = {}
 
@@ -982,7 +999,10 @@ class JournalScorerService:
                 raw = resp.choices[0].message.content.strip()
                 json_match = re.search(r'\{.*\}', raw, re.DOTALL)
                 if json_match:
-                    scores = json.loads(json_match.group())
+                    try:
+                        scores = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        continue  # Skip this consistency run
                     run = {}
                     for key in field_config["features"]:
                         val = scores.get(key, 50)
