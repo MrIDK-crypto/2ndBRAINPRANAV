@@ -30,7 +30,8 @@ htmlcov
 # Data files (will be in Cloud SQL / Pinecone)
 *.db
 *.sqlite
-data/
+data/*
+!data/protocol_models/
 *.log
 
 # OS
