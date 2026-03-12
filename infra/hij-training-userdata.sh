@@ -1,13 +1,12 @@
 #!/bin/bash
-set -euo pipefail
 exec > /var/log/hij-training.log 2>&1
+set -euxo pipefail
 
 echo "=== HIJ Training Bootstrap ==="
 date
 
-# Install system deps
-yum update -y
-yum install -y python3.12 python3.12-pip git
+# AL2023 ships python3.9; install 3.12 from extras
+dnf install -y python3.12 python3.12-pip git
 
 # Clone repo
 cd /opt
@@ -15,7 +14,7 @@ git clone https://github.com/MrIDK-crypto/2ndBRAINPRANAV.git app
 cd app/backend
 
 # Install Python deps (only what's needed for training)
-pip3.12 install scikit-learn requests boto3 numpy
+python3.12 -m pip install scikit-learn requests boto3 numpy
 
 # Set AWS credentials (passed via instance profile or env)
 export HIJ_MODEL_BUCKET="${HIJ_MODEL_BUCKET:-secondbrain-models}"

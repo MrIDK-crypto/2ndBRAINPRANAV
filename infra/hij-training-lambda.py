@@ -21,25 +21,26 @@ SNS_TOPIC_ARN = os.environ.get("HIJ_SNS_TOPIC_ARN", "")
 S3_BUCKET = os.environ.get("HIJ_MODEL_BUCKET", "secondbrain-models")
 
 USER_DATA_TEMPLATE = """#!/bin/bash
-set -euo pipefail
 exec > /var/log/hij-training.log 2>&1
+set -euxo pipefail
 
 echo "=== HIJ Training Bootstrap ==="
 date
 
-yum update -y
-yum install -y python3.12 python3.12-pip git
+# AL2023 ships python3.9; install 3.12 from extras
+dnf install -y python3.12 python3.12-pip git
 
 cd /opt
 git clone https://github.com/MrIDK-crypto/2ndBRAINPRANAV.git app
 cd app/backend
 
-pip3.12 install scikit-learn requests boto3 numpy
+python3.12 -m pip install scikit-learn requests boto3 numpy
 
 export HIJ_MODEL_BUCKET="{s3_bucket}"
 export AWS_S3_REGION="us-east-2"
 export HIJ_SNS_TOPIC_ARN="{sns_topic}"
 
+echo "=== Starting Training ==="
 python3.12 -m scripts.ec2_train_and_upload --target {target} --workers 8
 
 echo "=== Training Complete ==="
