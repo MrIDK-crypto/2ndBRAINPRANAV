@@ -942,6 +942,79 @@ def trigger_hij_training():
         db.close()
 
 
+@admin_bp.route('/unembedded-docs', methods=['GET'])
+@require_auth
+def get_unembedded_docs():
+    """
+    Diagnostic: list unembedded documents for a tenant.
+    Super admin only.
+
+    GET /api/admin/unembedded-docs?tenant_id=...&limit=50
+    """
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        tenant_id = request.args.get('tenant_id', g.tenant_id)
+        limit = int(request.args.get('limit', 50))
+
+        from sqlalchemy import func
+
+        docs = db.query(Document).filter(
+            Document.tenant_id == tenant_id,
+            Document.embedded_at == None,
+            Document.is_deleted == False,
+        ).limit(limit).all()
+
+        results = []
+        null_content = 0
+        empty_content = 0
+        has_content = 0
+
+        for d in docs:
+            content_status = 'null' if d.content is None else ('empty' if d.content.strip() == '' else 'has_content')
+            if content_status == 'null':
+                null_content += 1
+            elif content_status == 'empty':
+                empty_content += 1
+            else:
+                has_content += 1
+
+            results.append({
+                'id': d.id,
+                'title': d.title[:100] if d.title else None,
+                'source': d.source,
+                'content_status': content_status,
+                'content_length': len(d.content) if d.content else 0,
+                'created_at': d.created_at.isoformat() if d.created_at else None,
+            })
+
+        total_unembedded = db.query(Document).filter(
+            Document.tenant_id == tenant_id,
+            Document.embedded_at == None,
+            Document.is_deleted == False,
+        ).count()
+
+        return jsonify({
+            "success": True,
+            "tenant_id": tenant_id,
+            "total_unembedded": total_unembedded,
+            "showing": len(results),
+            "summary": {
+                "null_content": null_content,
+                "empty_content": empty_content,
+                "has_content": has_content,
+            },
+            "documents": results,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @admin_bp.route('/slack-connect/channels', methods=['POST'])
 @require_auth
 def register_slack_connect_channel():
