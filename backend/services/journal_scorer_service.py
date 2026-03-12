@@ -279,7 +279,7 @@ RED_FLAGS_BY_TYPE = {
     "review": [
         {"id": "no_synthesis", "pattern": r"\b(synthesiz|integrat|taken together|collectively|overall|in summary)\b", "check": "missing", "issue": "Lists papers without synthesis", "penalty": -20, "fix": "Add synthesis paragraphs connecting findings across studies"},
         {"id": "outdated_refs", "pattern": None, "check": "recency_dynamic", "issue": "No references from last 2 years", "penalty": -10, "fix": "Include recent publications from the last 2 years"},
-        {"id": "no_gaps", "pattern": r"\b(future\s+(research|direction|stud)|gap|remain|unanswered|unexplored)\b", "check": "missing", "issue": "No future directions identified", "penalty": -10, "fix": "Add a section on research gaps and future directions"},
+        {"id": "no_gaps", "pattern": r"\b(future\s+(research|direction|stud)|gap|remain|unanswered|unexplored)\b", "check": "missing", "issue": "No future directions identified", "penalty": -3, "fix": "Consider adding a brief section on research gaps and future directions"},
     ],
     "meta_analysis": [
         {"id": "no_prisma", "pattern": r"\b(PRISMA|flow\s+diagram|study\s+selection)\b", "check": "missing", "issue": "No PRISMA flow diagram", "penalty": -15, "fix": "Add PRISMA flow diagram showing study selection"},
@@ -508,7 +508,7 @@ class JournalScorerService:
 
         return False
 
-    def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None, raw_text: str = None) -> Generator[str, None, None]:
+    def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None, raw_text: str = None, user_publication_year: int = None) -> Generator[str, None, None]:
         """10-step pipeline — yields SSE events as analysis progresses.
 
         IMPORTANT: Paper type detection runs BEFORE feature extraction so that
@@ -538,11 +538,16 @@ class JournalScorerService:
             has_tables = bool(re.search(r'\btable\s+\d+\b|\btable\s+[ivx]+\b', text, re.IGNORECASE))
 
             # Extract the paper's own publication year (for date-relative checks)
-            publication_year = self._extract_publication_year(text)
-            if publication_year:
-                print(f"[JournalScorer] Detected paper publication year: {publication_year}")
+            # User-provided year takes priority over auto-detected
+            if user_publication_year:
+                publication_year = user_publication_year
+                print(f"[JournalScorer] Using user-provided publication year: {publication_year}")
             else:
-                print("[JournalScorer] Could not detect publication year, using current year as baseline")
+                publication_year = self._extract_publication_year(text)
+                if publication_year:
+                    print(f"[JournalScorer] Detected paper publication year: {publication_year}")
+                else:
+                    print("[JournalScorer] Could not detect publication year, using current year as baseline")
 
             # Extract the paper's title (first non-empty line) for self-reference filtering
             manuscript_title = ''

@@ -24,6 +24,15 @@ def analyze_manuscript():
     # Check if this is a text-based submission
     research_text = request.form.get('text', '').strip()
 
+    # Optional: user-provided publication year (overrides auto-detection)
+    user_publication_year = None
+    pub_year_str = request.form.get('publication_year', '').strip()
+    if pub_year_str:
+        try:
+            user_publication_year = int(pub_year_str)
+        except ValueError:
+            pass
+
     if research_text:
         # Text-based research description
         word_count = len(research_text.split())
@@ -35,7 +44,7 @@ def analyze_manuscript():
         def generate():
             try:
                 service = get_journal_scorer_service()
-                yield from service.analyze_manuscript(None, 'research_description.txt', manuscript_url=None, raw_text=research_text)
+                yield from service.analyze_manuscript(None, 'research_description.txt', manuscript_url=None, raw_text=research_text, user_publication_year=user_publication_year)
             except Exception as e:
                 print(f"[Journal] Stream error: {e}", flush=True)
                 traceback.print_exc()
@@ -112,7 +121,7 @@ def analyze_manuscript():
     def generate():
         try:
             service = get_journal_scorer_service()
-            yield from service.analyze_manuscript(file_bytes, filename, manuscript_url=manuscript_url)
+            yield from service.analyze_manuscript(file_bytes, filename, manuscript_url=manuscript_url, user_publication_year=user_publication_year)
         except Exception as e:
             print(f"[Journal] Stream error: {e}", flush=True)
             traceback.print_exc()
