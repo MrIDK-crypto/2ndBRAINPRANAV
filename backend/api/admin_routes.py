@@ -716,6 +716,7 @@ def track_event():
 @require_auth
 def embed_tenant_docs():
     """Super admin: embed all unindexed documents for a specific tenant.
+    Runs in background thread to avoid ALB timeout.
 
     POST /api/admin/embed-tenant
     {
@@ -723,6 +724,7 @@ def embed_tenant_docs():
         "force": false  // true = re-embed ALL docs, false = only unindexed
     }
     """
+    import threading
     db = get_db()
     try:
         user = db.query(User).filter(User.id == g.user_id).first()
@@ -736,23 +738,42 @@ def embed_tenant_docs():
         if not target_tenant_id:
             return jsonify({"success": False, "error": "tenant_id required"}), 400
 
-        # Verify tenant exists
         tenant = db.query(Tenant).filter(Tenant.id == target_tenant_id).first()
         if not tenant:
             return jsonify({"success": False, "error": f"Tenant {target_tenant_id} not found"}), 404
 
-        from services.embedding_service import get_embedding_service
-        embedding_service = get_embedding_service()
-        result = embedding_service.embed_tenant_documents(
-            tenant_id=target_tenant_id,
-            db=db,
-            force_reembed=force
-        )
+        tenant_name = tenant.name
+
+        # Count unembedded docs
+        unembedded = db.query(Document).filter(
+            Document.tenant_id == target_tenant_id,
+            Document.embedded_at == None,
+            Document.is_deleted == False,
+            Document.content != None,
+            Document.content != ''
+        ).count()
+
+        # Run embedding in background thread
+        def _embed_bg(tid, force_flag):
+            from database.models import SessionLocal as BgSession
+            from services.embedding_service import get_embedding_service
+            bg_db = BgSession()
+            try:
+                svc = get_embedding_service()
+                result = svc.embed_tenant_documents(tenant_id=tid, db=bg_db, force_reembed=force_flag)
+                print(f"[AdminEmbed] Tenant '{tenant_name}': embedded={result.get('embedded', 0)}, errors={len(result.get('errors', []))}", flush=True)
+            except Exception as e:
+                print(f"[AdminEmbed] Tenant '{tenant_name}' failed: {e}", flush=True)
+            finally:
+                bg_db.close()
+
+        threading.Thread(target=_embed_bg, args=(target_tenant_id, force), daemon=True).start()
 
         return jsonify({
             "success": True,
-            "tenant_name": tenant.name,
-            "result": result
+            "tenant_name": tenant_name,
+            "unembedded_docs": unembedded,
+            "message": f"Embedding started in background for {unembedded} docs"
         })
     except Exception as e:
         import traceback
@@ -766,59 +787,57 @@ def embed_tenant_docs():
 @require_auth
 def embed_all_tenants():
     """Super admin: embed unindexed documents across ALL tenants.
+    Runs in background thread to avoid ALB timeout.
 
     POST /api/admin/embed-all-tenants
-    Returns summary of what was embedded per tenant.
     """
+    import threading
     db = get_db()
     try:
         user = db.query(User).filter(User.id == g.user_id).first()
         if not user or user.email not in SUPER_ADMIN_EMAILS:
             return jsonify({"success": False, "error": "Forbidden"}), 403
 
-        from services.embedding_service import get_embedding_service
-        embedding_service = get_embedding_service()
-
+        # Collect summary of what needs embedding
         tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
-        results = []
-
+        pending = []
         for tenant in tenants:
-            unembedded_count = db.query(Document).filter(
+            count = db.query(Document).filter(
                 Document.tenant_id == tenant.id,
                 Document.embedded_at == None,
                 Document.is_deleted == False,
                 Document.content != None,
                 Document.content != ''
             ).count()
+            if count > 0:
+                pending.append({"tenant_name": tenant.name, "tenant_id": tenant.id, "unembedded": count})
 
-            if unembedded_count == 0:
-                continue
+        if not pending:
+            return jsonify({"success": True, "message": "All tenants fully indexed", "tenants_processed": 0})
 
+        # Run in background
+        def _embed_all_bg(tenant_list):
+            from database.models import SessionLocal as BgSession
+            from services.embedding_service import get_embedding_service
+            bg_db = BgSession()
             try:
-                result = embedding_service.embed_tenant_documents(
-                    tenant_id=tenant.id,
-                    db=db,
-                    force_reembed=False
-                )
-                results.append({
-                    "tenant_name": tenant.name,
-                    "tenant_id": tenant.id,
-                    "unembedded_found": unembedded_count,
-                    "embedded": result.get('embedded', 0),
-                    "errors": len(result.get('errors', [])),
-                })
-            except Exception as e:
-                results.append({
-                    "tenant_name": tenant.name,
-                    "tenant_id": tenant.id,
-                    "unembedded_found": unembedded_count,
-                    "error": str(e),
-                })
+                svc = get_embedding_service()
+                for t in tenant_list:
+                    try:
+                        result = svc.embed_tenant_documents(tenant_id=t["tenant_id"], db=bg_db, force_reembed=False)
+                        print(f"[AdminEmbed] {t['tenant_name']}: embedded={result.get('embedded', 0)}, errors={len(result.get('errors', []))}", flush=True)
+                    except Exception as e:
+                        print(f"[AdminEmbed] {t['tenant_name']} failed: {e}", flush=True)
+                print("[AdminEmbed] All tenants complete", flush=True)
+            finally:
+                bg_db.close()
+
+        threading.Thread(target=_embed_all_bg, args=(pending,), daemon=True).start()
 
         return jsonify({
             "success": True,
-            "tenants_processed": len(results),
-            "results": results
+            "message": f"Embedding started in background for {len(pending)} tenants",
+            "pending": pending
         })
     except Exception as e:
         import traceback
