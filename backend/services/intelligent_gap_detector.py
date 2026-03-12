@@ -1946,17 +1946,27 @@ class IntelligentGapDetector:
 
         content = content[:100000]
 
-        # Auto-detect protocol content
-        if _PROTOCOL_PATTERNS_LOADED:
-            try:
-                from services.protocol_classifier import is_protocol_content
-                is_protocol, confidence = is_protocol_content(content)
-                if is_protocol:
-                    self.has_protocol_content = True
-                    self.protocol_doc_ids.append(doc_id)
-                    logger.info(f"  - Protocol content detected (confidence: {confidence:.2f})")
-            except ImportError:
-                pass
+        # Auto-detect protocol content using ML classifier (with heuristic fallback)
+        try:
+            from services.ml_protocol_service import get_ml_protocol_service
+            ml_service = get_ml_protocol_service()
+            is_protocol, confidence = ml_service.classify_content(content)
+            if is_protocol:
+                self.has_protocol_content = True
+                self.protocol_doc_ids.append(doc_id)
+                logger.info(f"  - Protocol content detected via ML (confidence: {confidence:.2f})")
+        except Exception:
+            # Fallback to pattern-based detection if ML service fails
+            if _PROTOCOL_PATTERNS_LOADED:
+                try:
+                    from services.protocol_classifier import is_protocol_content
+                    is_protocol, confidence = is_protocol_content(content)
+                    if is_protocol:
+                        self.has_protocol_content = True
+                        self.protocol_doc_ids.append(doc_id)
+                        logger.info(f"  - Protocol content detected (confidence: {confidence:.2f})")
+                except ImportError:
+                    pass
 
         # Layer 1: Frame Extraction
         frames = self.frame_extractor.extract_frames(content, doc_id)
@@ -2029,7 +2039,7 @@ class IntelligentGapDetector:
             contradictions=sorted_contradictions
         )
 
-        # Protocol-specific: reference corpus comparison
+        # Protocol-specific: reference corpus comparison + ML-based detection
         protocol_ref_gaps = []
         if self.has_protocol_content and _PROTOCOL_PATTERNS_LOADED:
             try:
@@ -2063,11 +2073,94 @@ class IntelligentGapDetector:
             except Exception as e:
                 logger.debug(f"[IntelligentGap] Reference comparison skipped: {e}")
 
+            # ML-based missing step detection (uses trained missing_step_detector)
+            try:
+                from services.protocol_classifier import detect_missing_steps_in_sequence
+                for doc_id in self.protocol_doc_ids[:10]:
+                    doc_steps = [
+                        f.source_sentence for f in self.all_frames
+                        if f.source_doc_id == doc_id and f.frame_type == "PROTOCOL_STEP"
+                    ]
+                    if len(doc_steps) >= 2:
+                        step_gaps = detect_missing_steps_in_sequence(doc_steps)
+                        for sg in step_gaps:
+                            if sg['is_missing']:
+                                before_trunc = sg['step_before'][:80]
+                                after_trunc = sg['step_after'][:80]
+                                gap = Gap(
+                                    gap_type="ML_MISSING_STEP",
+                                    description=f"ML model detected a likely missing step between \"{before_trunc}...\" and \"{after_trunc}...\" (confidence: {sg['confidence']:.0%}).",
+                                    evidence=[sg['step_before'], sg['step_after']],
+                                    related_entities=[],
+                                    confidence=sg['confidence'],
+                                    grounded_questions=[
+                                        f"Is there a step missing between \"{before_trunc}\" and \"{after_trunc}\"? What should happen in between?"
+                                    ],
+                                    priority=3,
+                                    category="reproducibility",
+                                    source_pattern="ML_STEP_DETECTOR",
+                                    quality_score=round(sg['confidence'] * 0.8, 2),
+                                    fingerprint=hashlib.md5(
+                                        f"ml_step:{sg['step_before'][:50]}:{sg['step_after'][:50]}".encode()
+                                    ).hexdigest()[:16],
+                                    source_doc_ids=[doc_id]
+                                )
+                                protocol_ref_gaps.append(gap)
+            except Exception as e:
+                logger.debug(f"[IntelligentGap] ML step detection skipped: {e}")
+
+            # ML-based completeness scoring (uses trained completeness_scorer.joblib)
+            try:
+                from services.ml_protocol_service import get_ml_protocol_service
+                ml_svc = get_ml_protocol_service()
+                for doc_id in self.protocol_doc_ids[:10]:
+                    # Use full document content from all frames of this doc,
+                    # not just PROTOCOL_STEP frames, for more accurate scoring
+                    doc_sentences = [
+                        f.source_sentence for f in self.all_frames
+                        if f.source_doc_id == doc_id
+                    ]
+                    # Also include PROTOCOL_STEP frames specifically
+                    doc_steps = [
+                        f.source_sentence for f in self.all_frames
+                        if f.source_doc_id == doc_id and f.frame_type == "PROTOCOL_STEP"
+                    ]
+                    if doc_sentences:
+                        protocol_text = ' '.join(doc_sentences)
+                        completeness = ml_svc.score_completeness(protocol_text)
+                        if completeness < 0.5:
+                            gap = Gap(
+                                gap_type="LOW_COMPLETENESS",
+                                description=f"Protocol completeness score is low ({completeness:.0%}). Key sections may be missing (e.g., reagent list, safety notes, equipment, or detailed parameters).",
+                                evidence=[
+                                    f"ML completeness score: {completeness:.2f} (threshold: 0.50)",
+                                    f"ML model used: {ml_svc._completeness_scorer is not None}",
+                                    f"Protocol steps found: {len(doc_steps)}"
+                                ],
+                                related_entities=[],
+                                confidence=1.0 - completeness,
+                                grounded_questions=[
+                                    "Does this protocol include all required sections (reagents, equipment, safety notes, detailed parameters)?",
+                                    "Are there any preparation or cleanup steps that should be documented?"
+                                ],
+                                priority=2 if completeness < 0.3 else 3,
+                                category="reproducibility",
+                                source_pattern="ML_COMPLETENESS_SCORER",
+                                quality_score=round(0.7 * (1.0 - completeness), 2),
+                                fingerprint=hashlib.md5(
+                                    f"completeness:{doc_id}:{completeness:.2f}".encode()
+                                ).hexdigest()[:16],
+                                source_doc_ids=[doc_id]
+                            )
+                            protocol_ref_gaps.append(gap)
+            except Exception as e:
+                logger.debug(f"[IntelligentGap] Completeness scoring skipped: {e}")
+
         all_gaps = gaps + protocol_ref_gaps
         all_gaps.sort(key=lambda g: (-g.priority, -g.quality_score))
 
         logger.info(f"[IntelligentGap] Complete: {len(all_gaps)} gaps"
-                     f"{f' ({len(protocol_ref_gaps)} from protocol reference)' if protocol_ref_gaps else ''}")
+                     f"{f' ({len(protocol_ref_gaps)} from protocol reference/ML)' if protocol_ref_gaps else ''}")
 
         return {
             "gaps": all_gaps,

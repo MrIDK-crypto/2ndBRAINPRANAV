@@ -609,7 +609,7 @@ Extract and respond in JSON:
                 similar = store.find_similar_protocols(text[:5000], top_k=5)
                 result['similar_protocols'] = similar
 
-                # Find missing steps
+                # Find missing steps (reference corpus)
                 import re
                 steps = re.findall(r'^\s*\d+\.\s+(.+)$', text[:10000], re.MULTILINE)
                 if steps:
@@ -617,6 +617,26 @@ Extract and respond in JSON:
                     result['potentially_missing_steps'] = missing
         except Exception as e:
             logger.debug(f"[PaperAnalysis] Reference store failed: {e}")
+
+        # ML-based missing step detection
+        try:
+            from services.protocol_classifier import detect_missing_steps_in_sequence
+            import re
+            steps = re.findall(r'^\s*\d+\.\s+(.+)$', text[:10000], re.MULTILINE)
+            if len(steps) >= 2:
+                step_gaps = detect_missing_steps_in_sequence(steps)
+                if step_gaps:
+                    result['ml_missing_steps'] = step_gaps
+        except Exception as e:
+            logger.debug(f"[PaperAnalysis] ML step detection failed: {e}")
+
+        # ML-based completeness scoring
+        try:
+            from services.protocol_classifier import score_completeness
+            completeness = score_completeness(text[:5000])
+            result['completeness_score'] = completeness
+        except Exception as e:
+            logger.debug(f"[PaperAnalysis] Completeness scoring failed: {e}")
 
         # LLM analysis of protocol structure
         if self.openai_client:

@@ -88,6 +88,22 @@ def train_protocol_models(self):
 
     try:
         results = train_all()
+
+        # Reload the runtime ML service so it picks up the newly trained models
+        try:
+            from services.ml_protocol_service import reload_ml_protocol_service
+            reload_ml_protocol_service()
+            logger.info('[ProtocolTask] Reloaded ML protocol service with new models')
+        except Exception as reload_err:
+            logger.warning(f'[ProtocolTask] Failed to reload ML service: {reload_err}')
+
+        # Also reload the legacy protocol_classifier module
+        try:
+            from services.protocol_classifier import reload_model
+            reload_model()
+        except Exception:
+            pass
+
         return {
             name: (path is not None)
             for name, path in results.items()

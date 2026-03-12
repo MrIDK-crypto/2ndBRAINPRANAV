@@ -165,6 +165,7 @@ class ExtractionService:
     ) -> bool:
         """
         Extract structured summary for a single document and save to DB.
+        Also runs ML protocol classification to auto-tag protocol documents.
 
         Args:
             document: Document model instance
@@ -193,6 +194,10 @@ class ExtractionService:
         if result:
             document.structured_summary = result
             document.structured_summary_at = utc_now()
+
+            # Run ML protocol classification to auto-tag protocol documents
+            _apply_protocol_classification(document)
+
             db.commit()
             print(f"[ExtractionService] Extracted {len(result.get('key_topics', []))} topics, "
                   f"{len(result.get('decisions', []))} decisions")
@@ -295,6 +300,9 @@ class ExtractionService:
                             topics = len(result.get('key_topics', []))
                             decisions = len(result.get('decisions', []))
                             print(f"[ExtractionService] Extracted {topics} topics, {decisions} decisions", flush=True)
+
+                            # Run ML protocol classification to auto-tag
+                            _apply_protocol_classification(doc_obj)
                     else:
                         errors += 1
 
@@ -356,6 +364,44 @@ class ExtractionService:
         print(f"[ExtractionService] Found {len(documents)} documents to extract for tenant {tenant_id}")
 
         return self.extract_documents(documents, db, force=force)
+
+
+# ============================================================================
+# ML PROTOCOL CLASSIFICATION (auto-tag documents during extraction)
+# ============================================================================
+
+def _apply_protocol_classification(document: Document) -> None:
+    """
+    Run ML protocol content classifier + completeness scorer on a document
+    and store results in doc_metadata. Degrades gracefully if models are
+    unavailable (no-op in that case).
+
+    Called during document extraction to auto-tag protocol documents without
+    requiring an additional API call or manual classification step.
+    """
+    if not document.content or len(document.content) < 50:
+        return
+
+    try:
+        from services.ml_protocol_service import get_ml_protocol_service
+        service = get_ml_protocol_service()
+
+        protocol_meta = service.analyze_document_protocol_metadata(document.content)
+
+        if protocol_meta:
+            # Merge into existing doc_metadata (don't overwrite other fields)
+            existing_meta = document.doc_metadata or {}
+            if not isinstance(existing_meta, dict):
+                existing_meta = {}
+            existing_meta.update(protocol_meta)
+            document.doc_metadata = existing_meta
+            print(f"[ProtocolML] Tagged as protocol: {document.title or document.id[:8]} "
+                  f"(confidence={protocol_meta['protocol_confidence']:.2f}, "
+                  f"completeness={protocol_meta['protocol_completeness_score']:.2f})",
+                  flush=True)
+    except Exception as e:
+        # Graceful degradation: log but don't fail extraction
+        print(f"[ProtocolML] Classification skipped for {document.title or document.id[:8]}: {e}", flush=True)
 
 
 # Singleton instance

@@ -4,15 +4,20 @@ Paper Type Detector
 Classifies uploaded papers into types: review, experimental, meta_analysis,
 case_report, protocol.
 
-Uses LLM (Azure OpenAI) on the first ~5K characters for classification,
-with a heuristic fallback when LLM is unavailable.
+Detection pipeline (in order of preference):
+1. TF-IDF ML model (fast, no API cost) — if trained model exists
+2. LLM (Azure OpenAI) on first ~5K characters — if LLM available
+3. Heuristic regex-based fallback — always available
 
 Returns: { paper_type, confidence, signals }
 """
 
+import os
 import re
 import json
 import logging
+import pickle
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -28,13 +33,25 @@ PAPER_TYPES = {
 # Confidence levels (categorical, not fake percentages)
 CONFIDENCE_LEVELS = ('high', 'moderate', 'low')
 
+# ML model confidence thresholds
+# If ML model confidence is below this, fall through to LLM for verification
+ML_HIGH_CONFIDENCE_THRESHOLD = 0.85
+ML_MODERATE_CONFIDENCE_THRESHOLD = 0.60
+
 
 class PaperTypeDetector:
     """Detect paper type from text content."""
 
+    # Class-level model cache (loaded once, shared across instances)
+    _ml_tfidf = None
+    _ml_logreg = None
+    _ml_model_checked = False
+    _ml_model_available = False
+
     def __init__(self, openai_client=None, chat_deployment: str = None):
         self._client = openai_client
         self._chat_deployment = chat_deployment
+        self._ensure_ml_model_loaded()
 
     @property
     def client(self):
@@ -53,9 +70,55 @@ class PaperTypeDetector:
             self._chat_deployment = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-5-chat")
         return self._chat_deployment
 
+    @classmethod
+    def _ensure_ml_model_loaded(cls):
+        """Load the TF-IDF + LogReg ML model if available (one-time class-level load)."""
+        if cls._ml_model_checked:
+            return
+
+        cls._ml_model_checked = True
+
+        # Check multiple possible model locations
+        backend_dir = Path(__file__).resolve().parent.parent
+        possible_paths = [
+            backend_dir / "models" / "paper_type_classifier" / "tfidf_primary",
+            backend_dir / "oncology_model" / "models" / "paper_type_classifier" / "tfidf_primary",
+        ]
+
+        for model_dir in possible_paths:
+            tfidf_path = model_dir / "tfidf_vectorizer.pkl"
+            logreg_path = model_dir / "logreg_model.pkl"
+
+            if tfidf_path.exists() and logreg_path.exists():
+                try:
+                    with open(tfidf_path, "rb") as f:
+                        cls._ml_tfidf = pickle.load(f)
+                    with open(logreg_path, "rb") as f:
+                        cls._ml_logreg = pickle.load(f)
+                    cls._ml_model_available = True
+                    logger.info(
+                        f"[PaperTypeDetector] ML model loaded from {model_dir}"
+                    )
+                    return
+                except Exception as e:
+                    logger.warning(
+                        f"[PaperTypeDetector] Failed to load ML model from {model_dir}: {e}"
+                    )
+                    cls._ml_tfidf = None
+                    cls._ml_logreg = None
+
+        logger.info(
+            "[PaperTypeDetector] No trained ML model found, will use LLM/heuristic"
+        )
+
     def detect(self, text: str, title: str = '') -> Dict[str, Any]:
         """
         Detect paper type from text content.
+
+        Pipeline:
+        1. Try ML model (TF-IDF + LogReg) if available and confident
+        2. Try LLM classification if ML unavailable or low confidence
+        3. Fall back to heuristic regex matching
 
         Args:
             text: Full text content of the paper (first 5K chars used for LLM)
@@ -77,13 +140,79 @@ class PaperTypeDetector:
                 'all_scores': {},
             }
 
-        # Try LLM classification first
+        # Step 1: Try ML model (fast, no cost)
+        ml_result = self._classify_with_ml(text, title)
+        if ml_result:
+            return ml_result
+
+        # Step 2: Try LLM classification
         llm_result = self._classify_with_llm(text, title)
         if llm_result:
             return llm_result
 
-        # Fallback to heuristic
+        # Step 3: Fallback to heuristic
         return self._classify_heuristic(text, title)
+
+    def _classify_with_ml(self, text: str, title: str) -> Optional[Dict[str, Any]]:
+        """Classify using the trained TF-IDF + LogReg model.
+
+        Returns result only if confidence exceeds threshold; otherwise returns
+        None to let the pipeline fall through to LLM.
+        """
+        if not self._ml_model_available or self._ml_tfidf is None:
+            return None
+
+        try:
+            # Build input text (matches training format: title + abstract)
+            input_text = f"{title} {text[:5000]}" if title else text[:5000]
+
+            X = self._ml_tfidf.transform([input_text])
+            probs = self._ml_logreg.predict_proba(X)[0]
+            pred_idx = int(probs.argmax())
+            pred_label = self._ml_logreg.classes_[pred_idx]
+            confidence_score = float(probs[pred_idx])
+
+            # Validate the predicted label
+            if pred_label not in PAPER_TYPES:
+                logger.warning(
+                    f"[PaperTypeDetector] ML model predicted unknown type: {pred_label}"
+                )
+                return None
+
+            # Map numeric confidence to categorical
+            if confidence_score >= ML_HIGH_CONFIDENCE_THRESHOLD:
+                confidence = 'high'
+            elif confidence_score >= ML_MODERATE_CONFIDENCE_THRESHOLD:
+                confidence = 'moderate'
+            else:
+                # Low confidence: let LLM verify
+                logger.info(
+                    f"[PaperTypeDetector] ML confidence too low ({confidence_score:.2f}), "
+                    f"falling through to LLM"
+                )
+                return None
+
+            # Build all_scores from probabilities
+            all_scores = {}
+            for i, cls_name in enumerate(self._ml_logreg.classes_):
+                if probs[i] > 0.01:
+                    all_scores[cls_name] = round(float(probs[i]), 3)
+
+            return {
+                'paper_type': pred_label,
+                'confidence': confidence,
+                'signals': [
+                    f"ML model prediction (confidence: {confidence_score:.1%})",
+                    f"Top class: {pred_label} ({confidence_score:.1%})",
+                ],
+                'all_scores': all_scores,
+                'detection_method': 'ml_tfidf',
+                'ml_confidence': confidence_score,
+            }
+
+        except Exception as e:
+            logger.warning(f"[PaperTypeDetector] ML classification failed: {e}")
+            return None
 
     def _classify_with_llm(self, text: str, title: str) -> Optional[Dict[str, Any]]:
         """Classify using LLM on the first ~5K characters."""

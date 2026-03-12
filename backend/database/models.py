@@ -973,7 +973,10 @@ class Document(Base):
             "is_deleted": self.is_deleted,
             "embedded_at": self.embedded_at.isoformat() if self.embedded_at else None,
             "has_structured_summary": self.structured_summary is not None,
-            "file_size": self.doc_metadata.get("file_size") if isinstance(self.doc_metadata, dict) else None
+            "file_size": self.doc_metadata.get("file_size") if isinstance(self.doc_metadata, dict) else None,
+            "is_protocol": self.doc_metadata.get("is_protocol", False) if isinstance(self.doc_metadata, dict) else False,
+            "protocol_confidence": self.doc_metadata.get("protocol_confidence") if isinstance(self.doc_metadata, dict) else None,
+            "protocol_completeness_score": self.doc_metadata.get("protocol_completeness_score") if isinstance(self.doc_metadata, dict) else None,
         }
         if include_content:
             data["content"] = self.content

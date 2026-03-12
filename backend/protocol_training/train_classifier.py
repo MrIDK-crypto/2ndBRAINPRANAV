@@ -277,8 +277,19 @@ def train_missing_step_detector() -> Optional[str]:
     labels = []
 
     for instance in ordering_data[:5000]:
-        steps = instance.get('steps', instance.get('input', ''))
-        if isinstance(steps, list):
+        # BioProtocolBench uses 'correct_steps' / 'wrong_steps' keys
+        steps = instance.get('correct_steps',
+                             instance.get('steps',
+                                          instance.get('input', '')))
+        # Handle stringified lists (e.g. "['step1', 'step2']")
+        if isinstance(steps, str) and steps.startswith('['):
+            try:
+                import ast
+                steps = ast.literal_eval(steps)
+            except (ValueError, SyntaxError):
+                continue
+
+        if isinstance(steps, list) and len(steps) >= 2:
             # Correct order = no missing step (label 0)
             for i in range(len(steps) - 1):
                 s1 = str(steps[i]) if not isinstance(steps[i], str) else steps[i]

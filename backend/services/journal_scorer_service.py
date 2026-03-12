@@ -360,6 +360,20 @@ class JournalScorerService:
         self.parser = DocumentParser()
         self.openalex = OpenAlexSearchService()
 
+        # Lazy-load ML tier predictor (supplements LLM-based scoring)
+        self._ml_tier_predictor = None
+
+    @property
+    def ml_tier_predictor(self):
+        """Lazy-load the ML tier predictor (returns None if unavailable)."""
+        if self._ml_tier_predictor is None:
+            try:
+                from services.ml_tier_predictor import get_ml_tier_predictor
+                self._ml_tier_predictor = get_ml_tier_predictor()
+            except Exception as e:
+                print(f"[JournalScorer] ML tier predictor unavailable: {e}")
+        return self._ml_tier_predictor
+
     # ── Publication Year Extraction ────────────────────────────────────────
 
     @staticmethod
@@ -637,11 +651,29 @@ class JournalScorerService:
             tier = score_result["tier"]
             tier_label = score_result["tier_label"]
 
+            # ── ML Tier Cross-Check (if model available) ──────────────
+            ml_tier_result = None
+            if self.ml_tier_predictor and self.ml_tier_predictor.is_available:
+                try:
+                    ml_tier_result = self.ml_tier_predictor.predict_tier(
+                        title=manuscript_title,
+                        abstract=text[:3000],
+                        paper_type=paper_type,
+                        author_count=0,  # not extracted yet
+                        ref_count=ref_count,
+                    )
+                    if ml_tier_result:
+                        print(f"[JournalScorer] ML tier prediction: {ml_tier_result['tier']} "
+                              f"(confidence: {ml_tier_result['confidence']:.2f})")
+                except Exception as e:
+                    print(f"[JournalScorer] ML tier prediction failed (non-critical): {e}")
+
             yield _sse("score", {
                 "overall_score": overall_score,
                 "tier": tier,
                 "tier_label": tier_label,
                 "score_breakdown": score_result["breakdown"],
+                "ml_tier_prediction": ml_tier_result,
             })
 
             # ── Step 5.5: Methodology Gap Detection (type-aware) ─────────
