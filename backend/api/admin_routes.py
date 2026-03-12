@@ -1015,6 +1015,53 @@ def get_unembedded_docs():
         db.close()
 
 
+@admin_bp.route('/refresh-models', methods=['POST'])
+@require_auth
+def refresh_models():
+    """
+    Download latest models from S3 and hot-swap in memory.
+    Super admin only. Zero downtime.
+
+    POST /api/admin/refresh-models
+    {"force": false}
+    """
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        data = request.get_json(silent=True) or {}
+        force = data.get('force', False)
+
+        # Step 1: Sync from S3
+        from scripts.sync_models_from_s3 import sync_models
+        sync_result = sync_models(force=force)
+
+        # Step 2: Reload in-memory models
+        from services.paper_type_detector import PaperTypeDetector
+        from services.ml_tier_predictor import reload_ml_tier_predictor
+
+        pt_available = PaperTypeDetector.reload_ml_model()
+        tier_available = reload_ml_tier_predictor()
+
+        return jsonify({
+            "success": True,
+            "s3_sync": sync_result,
+            "models_reloaded": {
+                "paper_type_detector": pt_available,
+                "tier_predictor": tier_available,
+            },
+            "metadata": sync_result.get("metadata", {}),
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @admin_bp.route('/slack-connect/channels', methods=['POST'])
 @require_auth
 def register_slack_connect_channel():

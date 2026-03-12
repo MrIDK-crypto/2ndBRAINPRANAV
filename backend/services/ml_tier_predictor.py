@@ -184,3 +184,11 @@ def get_ml_tier_predictor() -> MLTierPredictor:
     if _instance is None:
         _instance = MLTierPredictor()
     return _instance
+
+
+def reload_ml_tier_predictor():
+    """Force reload tier predictor from disk (for hot-swap after S3 sync)."""
+    global _instance
+    _instance = None
+    new = get_ml_tier_predictor()
+    return new.is_available

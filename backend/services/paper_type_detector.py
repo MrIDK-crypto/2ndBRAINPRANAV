@@ -111,6 +111,16 @@ class PaperTypeDetector:
             "[PaperTypeDetector] No trained ML model found, will use LLM/heuristic"
         )
 
+    @classmethod
+    def reload_ml_model(cls):
+        """Force reload ML model from disk (for hot-swap after S3 sync)."""
+        cls._ml_tfidf = None
+        cls._ml_logreg = None
+        cls._ml_model_checked = False
+        cls._ml_model_available = False
+        cls._ensure_ml_model_loaded()
+        return cls._ml_model_available
+
     def detect(self, text: str, title: str = '') -> Dict[str, Any]:
         """
         Detect paper type from text content.
