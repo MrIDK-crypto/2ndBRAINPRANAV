@@ -494,9 +494,9 @@ class AuthService:
                 # Increment failed attempts
                 user.failed_login_attempts += 1
 
-                # Lock account after 5 failed attempts
-                if user.failed_login_attempts >= 5:
-                    user.locked_until = utc_now() + timedelta(minutes=15)
+                # Lock account after 10 failed attempts
+                if user.failed_login_attempts >= 10:
+                    user.locked_until = utc_now() + timedelta(minutes=5)
                     self._log_action(
                         tenant_id=user.tenant_id,
                         user_id=user.id,
