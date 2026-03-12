@@ -1604,3 +1604,43 @@ def get_invitation_info(token):
             "success": False,
             "error": str(e)
         }), 500
+
+
+# ============================================================================
+# ADMIN PASSWORD RESET (secret-key protected, no auth required)
+# ============================================================================
+
+@auth_bp.route('/admin-reset-password', methods=['POST'])
+def admin_reset_password():
+    """Reset password for a user by email. Protected by server secret key."""
+    import os
+    db = SessionLocal()
+    try:
+        data = request.get_json() or {}
+        email = data.get('email', '').strip()
+        new_password = data.get('new_password', '')
+        secret = data.get('secret', '')
+
+        jwt_secret = os.environ.get('JWT_SECRET_KEY', '')
+        if not secret or secret != jwt_secret[:16]:
+            return jsonify({"success": False, "error": "Invalid secret"}), 403
+
+        if not email or not new_password:
+            return jsonify({"success": False, "error": "email and new_password required"}), 400
+
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        from services.auth_service import PasswordUtils
+        user.password_hash = PasswordUtils.hash_password(new_password)
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        db.commit()
+
+        return jsonify({"success": True, "message": f"Password reset for {email}"})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
