@@ -847,6 +847,101 @@ def embed_all_tenants():
         db.close()
 
 
+@admin_bp.route('/train-hij-models', methods=['POST'])
+@require_auth
+def trigger_hij_training():
+    """
+    Trigger HIJ (High Impact Journal) model training pipeline.
+    Super admin only. Runs data generation + both model trainers.
+
+    POST /api/admin/train-hij-models
+    {
+        "target_papers": 5000   // optional, default 5000
+    }
+
+    Response:
+    {
+        "success": true,
+        "task_id": "...",       // Celery task ID (if Celery available)
+        "message": "HIJ model training started"
+    }
+    """
+    db = get_db()
+    try:
+        # Super admin check
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        data = request.get_json(silent=True) or {}
+        target_papers = data.get('target_papers', 5000)
+
+        # Try Celery first
+        try:
+            from tasks.hij_training_tasks import train_hij_models
+            task = train_hij_models.delay(target_papers=target_papers)
+            return jsonify({
+                "success": True,
+                "task_id": task.id,
+                "message": f"HIJ model training started (target: {target_papers} papers)",
+            })
+        except Exception as celery_err:
+            print(f"[Admin] Celery unavailable, falling back to background thread: {celery_err}", flush=True)
+
+        # Fallback: run in background thread if Celery is not available
+        import threading
+        import uuid
+
+        fake_task_id = f"bg-hij-{uuid.uuid4().hex[:12]}"
+
+        def _train_bg(target):
+            import sys
+            import os
+            from pathlib import Path
+
+            backend_dir = Path(__file__).resolve().parent.parent
+            if str(backend_dir) not in sys.path:
+                sys.path.insert(0, str(backend_dir))
+
+            try:
+                from scripts.generate_training_data import generate_training_data
+                from scripts.train_hij_models import train_paper_type_classifier, train_tier_predictor
+
+                data_dir = backend_dir / 'data' / 'oncology_training'
+                model_dir = backend_dir / 'models'
+
+                print(f"[Admin] HIJ training started (thread, target={target})", flush=True)
+
+                generate_training_data(data_dir, target_total=target)
+                print("[Admin] HIJ data generation complete", flush=True)
+
+                pt = train_paper_type_classifier(data_dir, model_dir)
+                print(f"[Admin] Paper type classifier: {pt}", flush=True)
+
+                tier = train_tier_predictor(data_dir, model_dir)
+                print(f"[Admin] Tier predictor: {tier}", flush=True)
+
+                print("[Admin] HIJ training pipeline complete", flush=True)
+            except Exception as e:
+                print(f"[Admin] HIJ training failed: {e}", flush=True)
+
+        threading.Thread(target=_train_bg, args=(target_papers,), daemon=True).start()
+
+        return jsonify({
+            "success": True,
+            "task_id": fake_task_id,
+            "message": f"HIJ model training started in background thread (target: {target_papers} papers)",
+            "note": "Celery unavailable — running in background thread. Check server logs for progress.",
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @admin_bp.route('/slack-connect/channels', methods=['POST'])
 @require_auth
 def register_slack_connect_channel():

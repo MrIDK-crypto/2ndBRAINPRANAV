@@ -27,9 +27,12 @@ wheels/
 *.egg
 
 # Data directories
-data/
+data/*
+!data/protocol_models/
 output/
-models/
+models/*
+!models/paper_type_classifier/
+!models/tier_predictor/
 
 # IDE
 .vscode/

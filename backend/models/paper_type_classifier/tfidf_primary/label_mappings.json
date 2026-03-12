@@ -1,0 +1,12 @@
+{
+  "classes": [
+    "experimental",
+    "review",
+    "meta_analysis",
+    "case_report",
+    "protocol"
+  ],
+  "best_C": 0.5,
+  "test_accuracy": 0.7910447761194029,
+  "test_f1_macro": 0.799224305106658
+}

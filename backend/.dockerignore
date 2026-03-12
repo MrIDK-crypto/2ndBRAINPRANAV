@@ -32,6 +32,9 @@ htmlcov
 *.sqlite
 data/*
 !data/protocol_models/
+models/*
+!models/paper_type_classifier/
+!models/tier_predictor/
 *.log
 
 # OS

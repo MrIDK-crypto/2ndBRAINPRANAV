@@ -1,0 +1,10 @@
+{
+  "classes": [
+    "Tier1",
+    "Tier2",
+    "Tier3"
+  ],
+  "best_C": 0.1,
+  "test_accuracy": 0.9253731343283582,
+  "test_f1_macro": 0.3204134366925065
+}

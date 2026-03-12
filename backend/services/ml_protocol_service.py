@@ -377,6 +377,8 @@ class MLProtocolService:
 
     def get_model_status(self) -> Dict[str, Any]:
         """Get status of loaded models."""
+        # Eagerly check joblib so status endpoint always returns a boolean
+        self._check_joblib()
         return {
             'content_classifier': {
                 'path': CONTENT_CLASSIFIER_PATH,

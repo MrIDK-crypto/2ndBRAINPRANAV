@@ -21,7 +21,8 @@ celery = Celery(
         'tasks.embedding_tasks',
         'tasks.video_tasks',
         'tasks.grant_scrape_tasks',
-        'tasks.protocol_training_tasks'
+        'tasks.protocol_training_tasks',
+        'tasks.hij_training_tasks'
     ]
 )
 
@@ -71,6 +72,7 @@ celery.conf.update(
         'tasks.video_tasks.*': {'queue': 'low_priority'},
         'tasks.grant_scrape_tasks.*': {'queue': 'low_priority'},
         'tasks.protocol_training_tasks.*': {'queue': 'low_priority'},
+        'tasks.hij_training_tasks.*': {'queue': 'low_priority'},
     },
 
     # Monitoring
