@@ -332,6 +332,68 @@ try:
 except Exception as _e:
     print(f"⚠ Journal scheduler skipped: {_e}")
 
+# Auto-embedding scheduler — indexes unembedded documents across ALL tenants every 24h
+def _start_auto_embedding_scheduler():
+    """Background thread that finds and embeds unindexed documents for all tenants."""
+    import time as _time
+    from database.models import SessionLocal, Document, Tenant
+    from services.embedding_service import get_embedding_service
+
+    def _embedding_loop():
+        while True:
+            _time.sleep(86400)  # run every 24 hours
+            print("[AutoEmbed] Starting scheduled embedding check...", flush=True)
+            try:
+                db = SessionLocal()
+                try:
+                    tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+                    total_embedded = 0
+                    total_errors = 0
+
+                    for tenant in tenants:
+                        unembedded_count = db.query(Document).filter(
+                            Document.tenant_id == tenant.id,
+                            Document.embedded_at == None,
+                            Document.is_deleted == False,
+                            Document.content != None,
+                            Document.content != ''
+                        ).count()
+
+                        if unembedded_count == 0:
+                            continue
+
+                        print(f"[AutoEmbed] Tenant '{tenant.name}': {unembedded_count} unindexed docs", flush=True)
+                        try:
+                            embedding_service = get_embedding_service()
+                            result = embedding_service.embed_tenant_documents(
+                                tenant_id=tenant.id,
+                                db=db,
+                                force_reembed=False
+                            )
+                            embedded = result.get('embedded', 0)
+                            errors = len(result.get('errors', []))
+                            total_embedded += embedded
+                            total_errors += errors
+                            print(f"[AutoEmbed] Tenant '{tenant.name}': embedded {embedded} chunks, {errors} errors", flush=True)
+                        except Exception as e:
+                            print(f"[AutoEmbed] Tenant '{tenant.name}' failed: {e}", flush=True)
+                            total_errors += 1
+
+                    print(f"[AutoEmbed] Complete: {total_embedded} total chunks, {total_errors} errors", flush=True)
+                finally:
+                    db.close()
+            except Exception as e:
+                print(f"[AutoEmbed] Scheduler error: {e}", flush=True)
+
+    t = threading.Thread(target=_embedding_loop, daemon=True, name="auto-embedding")
+    t.start()
+    print("✓ Auto-embedding scheduler started (runs every 24h)")
+
+try:
+    _start_auto_embedding_scheduler()
+except Exception as _e:
+    print(f"⚠ Auto-embedding scheduler skipped: {_e}")
+
 # Ensure configured admin users have admin role
 ensure_admins()
 

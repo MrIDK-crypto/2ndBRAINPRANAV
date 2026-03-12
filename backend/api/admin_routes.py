@@ -712,6 +712,122 @@ def track_event():
         db.close()
 
 
+@admin_bp.route('/embed-tenant', methods=['POST'])
+@require_auth
+def embed_tenant_docs():
+    """Super admin: embed all unindexed documents for a specific tenant.
+
+    POST /api/admin/embed-tenant
+    {
+        "tenant_id": "<target-tenant-uuid>",
+        "force": false  // true = re-embed ALL docs, false = only unindexed
+    }
+    """
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        data = request.get_json() or {}
+        target_tenant_id = data.get('tenant_id')
+        force = data.get('force', False)
+
+        if not target_tenant_id:
+            return jsonify({"success": False, "error": "tenant_id required"}), 400
+
+        # Verify tenant exists
+        tenant = db.query(Tenant).filter(Tenant.id == target_tenant_id).first()
+        if not tenant:
+            return jsonify({"success": False, "error": f"Tenant {target_tenant_id} not found"}), 404
+
+        from services.embedding_service import get_embedding_service
+        embedding_service = get_embedding_service()
+        result = embedding_service.embed_tenant_documents(
+            tenant_id=target_tenant_id,
+            db=db,
+            force_reembed=force
+        )
+
+        return jsonify({
+            "success": True,
+            "tenant_name": tenant.name,
+            "result": result
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@admin_bp.route('/embed-all-tenants', methods=['POST'])
+@require_auth
+def embed_all_tenants():
+    """Super admin: embed unindexed documents across ALL tenants.
+
+    POST /api/admin/embed-all-tenants
+    Returns summary of what was embedded per tenant.
+    """
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        from services.embedding_service import get_embedding_service
+        embedding_service = get_embedding_service()
+
+        tenants = db.query(Tenant).filter(Tenant.is_active == True).all()
+        results = []
+
+        for tenant in tenants:
+            unembedded_count = db.query(Document).filter(
+                Document.tenant_id == tenant.id,
+                Document.embedded_at == None,
+                Document.is_deleted == False,
+                Document.content != None,
+                Document.content != ''
+            ).count()
+
+            if unembedded_count == 0:
+                continue
+
+            try:
+                result = embedding_service.embed_tenant_documents(
+                    tenant_id=tenant.id,
+                    db=db,
+                    force_reembed=False
+                )
+                results.append({
+                    "tenant_name": tenant.name,
+                    "tenant_id": tenant.id,
+                    "unembedded_found": unembedded_count,
+                    "embedded": result.get('embedded', 0),
+                    "errors": len(result.get('errors', [])),
+                })
+            except Exception as e:
+                results.append({
+                    "tenant_name": tenant.name,
+                    "tenant_id": tenant.id,
+                    "unembedded_found": unembedded_count,
+                    "error": str(e),
+                })
+
+        return jsonify({
+            "success": True,
+            "tenants_processed": len(results),
+            "results": results
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @admin_bp.route('/slack-connect/channels', methods=['POST'])
 @require_auth
 def register_slack_connect_channel():
