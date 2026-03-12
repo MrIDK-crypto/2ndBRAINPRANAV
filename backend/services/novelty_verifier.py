@@ -166,7 +166,11 @@ class NoveltyVerifier:
 
     def _search_prior_work(self, claims: List[Dict],
                             title: str) -> List[Dict]:
-        """Search OpenAlex for prior work related to each novelty claim."""
+        """Search OpenAlex for prior work related to each novelty claim.
+
+        Uses multi-pass search: if first query returns 0 results, generates
+        alternative queries via LLM and retries.
+        """
         all_prior = []
         seen_dois = set()
 
@@ -175,54 +179,97 @@ class NoveltyVerifier:
             if not query:
                 continue
 
-            try:
-                works = self.openalex.search_works(
-                    query,
-                    max_results=5,
-                    min_citations=2,
-                )
-                for work in works:
-                    doi = work.get("doi", "")
-                    work_title = work.get("title", "")
-                    # Skip self-matches
-                    if work_title and title and (
-                        work_title.lower().strip() == title.lower().strip()
-                    ):
-                        continue
-                    # Dedup by DOI
-                    if doi and doi in seen_dois:
-                        continue
-                    if doi:
-                        seen_dois.add(doi)
+            # Pass 1: Original query
+            works = self._search_openalex(query, title, seen_dois)
 
-                    all_prior.append({
-                        "title": work_title,
-                        "doi": doi,
-                        "year": work.get("year"),
-                        "citations": work.get("cited_by_count", 0),
-                        "authors": work.get("authors", ""),
-                        "journal": work.get("journal", ""),
-                        "related_claim": claim.get("claim", ""),
-                        "search_query": query,
-                    })
-            except Exception as e:
-                print(f"[NoveltyVerifier] OpenAlex search failed for '{query}': {e}")
-                continue
+            # Pass 2: If no results, generate alternative queries and retry
+            if not works:
+                alt_queries = self._generate_alternative_queries(claim, query)
+                for alt_q in alt_queries:
+                    works.extend(self._search_openalex(alt_q, title, seen_dois))
+                    if works:
+                        break
+
+            for work in works:
+                work["related_claim"] = claim.get("claim", "")
+                work["search_query"] = query
+                all_prior.append(work)
 
         return all_prior
+
+    def _search_openalex(self, query: str, title: str,
+                          seen_dois: set) -> List[Dict]:
+        """Single-pass OpenAlex search with dedup."""
+        results = []
+        try:
+            works = self.openalex.search_works(query, max_results=5, min_citations=2)
+            for work in works:
+                doi = work.get("doi", "")
+                work_title = work.get("title", "")
+                if work_title and title and (
+                    work_title.lower().strip() == title.lower().strip()
+                ):
+                    continue
+                if doi and doi in seen_dois:
+                    continue
+                if doi:
+                    seen_dois.add(doi)
+
+                results.append({
+                    "title": work_title,
+                    "doi": doi,
+                    "year": work.get("year"),
+                    "citations": work.get("cited_by_count", 0),
+                    "authors": work.get("authors", ""),
+                    "journal": work.get("journal", ""),
+                    "abstract": work.get("abstract", ""),
+                })
+        except Exception as e:
+            print(f"[NoveltyVerifier] OpenAlex search failed for '{query}': {e}")
+        return results
+
+    def _generate_alternative_queries(self, claim: Dict, original_query: str) -> List[str]:
+        """Generate alternative search queries when the original returns no results."""
+        try:
+            resp = self.openai.chat_completion(
+                messages=[
+                    {"role": "system", "content": "Generate alternative academic search queries. Respond only with valid JSON."},
+                    {"role": "user", "content": (
+                        f"The following search query returned NO results on OpenAlex:\n"
+                        f"Query: \"{original_query}\"\n"
+                        f"Original claim: \"{claim.get('claim', '')}\"\n\n"
+                        f"Generate 2 alternative search queries that might find related prior work. "
+                        f"Use broader terms, synonyms, or different phrasings.\n\n"
+                        f"Return JSON: {{\"queries\": [\"query1\", \"query2\"]}}"
+                    )},
+                ],
+                temperature=0.3,
+                max_tokens=200,
+                response_format={"type": "json_object"},
+            )
+            raw = resp.choices[0].message.content.strip()
+            result = json.loads(raw)
+            return result.get("queries", [])[:2]
+        except Exception:
+            return []
 
     def _verify_claims(self, claims: List[Dict], prior_work: List[Dict],
                         text: str) -> List[Dict]:
         """Verify each novelty claim against the found prior work."""
         if not prior_work:
-            # No prior work found — claims are likely novel
+            # No prior work found even after multi-pass — be skeptical
             return [
                 {
                     **claim,
-                    "status": "likely_novel",
-                    "confidence": "moderate",
+                    "status": "uncertain",
+                    "confidence": "low",
                     "conflicting_papers": [],
-                    "reasoning": "No closely related prior work found in OpenAlex.",
+                    "reasoning": (
+                        "No closely related prior work found in OpenAlex after multiple searches. "
+                        "This may indicate genuine novelty OR incomplete search coverage. "
+                        "Authors should verify their novelty claims against domain-specific databases."
+                    ),
+                    "warning": "Unverified — no prior work found to compare against",
                 }
                 for claim in claims
             ]
@@ -244,30 +291,36 @@ class NoveltyVerifier:
             if not related_papers:
                 verified.append({
                     **claim,
-                    "status": "likely_novel",
-                    "confidence": "moderate",
+                    "status": "uncertain",
+                    "confidence": "low",
                     "conflicting_papers": [],
-                    "reasoning": "No prior work found for this specific claim.",
+                    "reasoning": "No prior work found for this specific claim after multiple searches.",
+                    "warning": "Unverified claim",
                 })
                 continue
 
-            # Format prior work for LLM assessment
-            papers_text = "\n".join(
-                f"- {p['title']} ({p.get('year', '?')}, {p.get('citations', 0)} citations) "
-                f"[{p.get('journal', 'Unknown')}]"
-                for p in related_papers[:5]
-            )
+            # Format prior work for LLM assessment — include abstracts for deeper comparison
+            papers_text = ""
+            for i, p in enumerate(related_papers[:5]):
+                abstract = p.get('abstract', '')
+                abstract_line = f"\n  Abstract: {abstract[:300]}..." if abstract else ""
+                papers_text += (
+                    f"{i}. {p['title']} ({p.get('year', '?')}, {p.get('citations', 0)} citations) "
+                    f"[{p.get('journal', 'Unknown')}]"
+                    f"{abstract_line}\n"
+                )
 
             prompt = (
                 f"NOVELTY CLAIM from manuscript: \"{claim_text}\"\n\n"
                 f"POTENTIALLY RELATED PRIOR WORK:\n{papers_text}\n\n"
-                "Based on the titles and metadata of these prior papers, assess:\n"
+                "Based on the titles, abstracts, and metadata of these prior papers, assess:\n"
                 "1. Does any prior paper appear to have already done what this claim says is novel?\n"
-                "2. Is this claim still likely novel despite related work existing?\n\n"
+                "2. Is this claim still likely novel despite related work existing?\n"
+                "3. Pay attention to methodology and findings in abstracts, not just topic overlap.\n\n"
                 "Respond in JSON:\n"
                 '{"status": "novel|partially_novel|likely_not_novel|uncertain", '
                 '"confidence": "high|moderate|low", '
-                '"reasoning": "1-2 sentence explanation", '
+                '"reasoning": "1-2 sentence explanation referencing specific prior papers", '
                 '"conflicting_paper_indices": [0, 1]}\n\n'
                 "conflicting_paper_indices should list the 0-based indices of papers "
                 "that most directly challenge this novelty claim. Empty list if none."
@@ -325,10 +378,10 @@ class NoveltyVerifier:
 
         status_scores = {
             "novel": 95,
-            "likely_novel": 90,
-            "partially_novel": 68,
-            "likely_not_novel": 30,
-            "uncertain": 55,
+            "likely_novel": 85,
+            "partially_novel": 65,
+            "likely_not_novel": 25,
+            "uncertain": 50,
         }
 
         confidence_multipliers = {

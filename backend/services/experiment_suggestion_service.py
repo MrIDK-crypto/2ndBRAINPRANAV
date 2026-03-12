@@ -159,10 +159,110 @@ Do NOT invent experiments without evidence. Every suggestion MUST cite specific 
                     "grounded": bool(paper_context or protocol_context),
                 }
 
+            # Validate suggestions against paper content
+            if suggestions and paper_context:
+                suggestions = self._validate_suggestions(suggestions, paper_context)
+
             return suggestions
         except Exception as e:
             print(f"[ExperimentSuggestion] LLM call failed: {e}")
             return []
+
+    def _validate_suggestions(self, suggestions: list, paper_context: str) -> list:
+        """Validate experiment suggestions against paper content using a critical reviewer LLM pass.
+
+        Acts as Model B (skeptical lab manager) reviewing Model A's (creative) suggestions.
+        Flags technical issues and filters out infeasible suggestions.
+        """
+        if not suggestions:
+            return suggestions
+
+        suggestions_text = json.dumps([
+            {
+                "title": s.get("title", ""),
+                "hypothesis": s.get("hypothesis", ""),
+                "methodology": s.get("methodology", ""),
+                "controls": s.get("controls", []),
+                "expected_duration_weeks": s.get("expected_duration_weeks"),
+                "required_resources": s.get("required_resources", []),
+            }
+            for s in suggestions
+        ], indent=2)
+
+        try:
+            response = self.llm_client.chat.completions.create(
+                model=self.chat_deployment,
+                messages=[{
+                    'role': 'system',
+                    'content': '''You are a skeptical, experienced lab manager reviewing proposed experiments.
+Your job is to find technical problems. Be critical but fair.
+
+For each experiment, check:
+1. Are the techniques actually supported by what the paper describes?
+2. Are technique combinations compatible (e.g., no mixing incompatible sample preparations)?
+3. Are controls appropriate (both positive AND negative controls present)?
+4. Is the timeline realistic for the proposed techniques?
+5. Are there any biological impossibilities (wrong organism/cell type for technique)?
+
+Return JSON:
+{
+  "validations": [
+    {
+      "title": "experiment title (must match input exactly)",
+      "valid": true/false,
+      "technical_issues": [
+        {"issue": "description of problem", "severity": "critical|warning|info"}
+      ],
+      "suggested_fixes": ["how to fix each critical/warning issue"]
+    }
+  ]
+}
+
+Mark valid=false ONLY for critical issues (biological impossibility, fundamentally flawed logic).
+Mark valid=true with warning-level issues for experiments that are feasible but need adjustment.'''
+                }, {
+                    'role': 'user',
+                    'content': f'PAPER CONTENT:\n{paper_context[:6000]}\n\nPROPOSED EXPERIMENTS:\n{suggestions_text}'
+                }],
+                temperature=0,
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+            )
+
+            result = json.loads(response.choices[0].message.content)
+            validations = result.get('validations', [])
+
+            # Map validations back to suggestions by title
+            validation_map = {v.get('title', ''): v for v in validations}
+
+            validated = []
+            for s in suggestions:
+                v = validation_map.get(s.get('title', ''))
+                if v:
+                    s['technical_issues'] = v.get('technical_issues', [])
+                    s['suggested_fixes'] = v.get('suggested_fixes', [])
+                    if not v.get('valid', True):
+                        s['validation_status'] = 'infeasible'
+                    elif any(i.get('severity') == 'warning' for i in s['technical_issues']):
+                        s['validation_status'] = 'needs_adjustment'
+                    else:
+                        s['validation_status'] = 'validated'
+                else:
+                    s['technical_issues'] = []
+                    s['validation_status'] = 'unvalidated'
+                validated.append(s)
+
+            # Sort: validated first, needs_adjustment second, infeasible last
+            order = {'validated': 0, 'unvalidated': 1, 'needs_adjustment': 2, 'infeasible': 3}
+            validated.sort(key=lambda s: order.get(s.get('validation_status', 'unvalidated'), 1))
+
+            return validated
+        except Exception as e:
+            logger.warning(f"Suggestion validation failed (non-critical): {e}")
+            for s in suggestions:
+                s['technical_issues'] = []
+                s['validation_status'] = 'unvalidated'
+            return suggestions
 
     def suggest_experiments_with_feasibility(self, research_question: str,
                                              available_resources: list = None,

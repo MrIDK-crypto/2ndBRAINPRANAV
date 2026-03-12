@@ -686,7 +686,7 @@ class JournalScorerService:
             # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
             yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
 
-            journals = self._match_journals_by_keywords(keywords, field, tier, paper_type=paper_type)
+            journals = self._match_journals_by_keywords(keywords, field, tier, paper_type=paper_type, paper_score=overall_score)
             yield _sse("journals", journals)
 
             # ── Step 7: Landscape Position ──────────────────────────────
@@ -1090,7 +1090,7 @@ class JournalScorerService:
         "heliyon", "ieee access", "sage open", "peerj",
     }
 
-    def _match_journals_by_keywords(self, keywords: list, field: str, tier: int, paper_type: str = 'experimental') -> dict:
+    def _match_journals_by_keywords(self, keywords: list, field: str, tier: int, paper_type: str = 'experimental', paper_score: int = 50) -> dict:
         """Professor-based journal discovery pipeline:
         1) Extract 20 keywords from paper (done upstream)
         2) Find top-cited papers matching keywords → extract top 100 authors
@@ -1283,52 +1283,72 @@ class JournalScorerService:
             # Sort quality journals by type relevance then citedness (quality indicator)
             quality.sort(key=lambda j: (j.get("type_relevance_boost", 0), j["citedness_2yr"]), reverse=True)
 
-            # Stretch = top 5 most prestigious (aspirational — Nature, Cell, etc.)
-            stretch = quality[:5]
+            # Quality-aware tier split based on paper score
+            # High-scoring papers get more ambitious stretch targets
+            if paper_score >= 80:
+                stretch_count, target_count = 5, 10
+            elif paper_score >= 60:
+                stretch_count, target_count = 3, 10
+            else:
+                stretch_count, target_count = 2, 8
 
-            # Target = next 10 mid-range journals (realistic for the paper)
-            target = quality[5:15]
+            stretch = quality[:stretch_count]
+            target = quality[stretch_count:stretch_count + target_count]
 
-            # Safe = mega-journals + lower-ranked quality (fallback options)
-            safe = megas[:3]
-            safe.extend(quality[15:17])
+            # Safe = capped mega-journals (max 2) + lower-ranked quality
+            safe = megas[:2]
+            remaining = quality[stretch_count + target_count:]
+            safe.extend(remaining[:3])
 
-            # Add reasoning to each journal
-            def _add_reason(j: dict, category: str) -> dict:
-                pp = j.get("prof_papers", 0)
-                cite = j.get("citedness_2yr", 0)
-                pub = j.get("publisher", "")
-                if category == "stretch":
-                    j["reason"] = (
-                        f"Top-cited researchers in your field publish here. "
-                        f"{pp} recent papers by leading authors in this area. "
-                        f"High citedness ({cite}) makes this aspirational."
-                    )
-                elif category == "target":
-                    j["reason"] = (
-                        f"Frequently chosen by experts working on your topic — "
-                        f"{pp} recent papers by top authors. "
-                        f"Citedness of {cite} suggests a realistic, well-regarded venue."
-                    )
-                elif category == "safe":
-                    if _is_mega(j["name"]):
-                        j["reason"] = (
-                            f"High-volume journal that publishes broadly across fields. "
-                            f"Good fallback with {pp} papers from authors in your area."
-                        )
-                    else:
-                        j["reason"] = (
-                            f"Accessible venue where researchers in your area also publish. "
-                            f"{pp} recent papers from top authors, citedness {cite}."
-                        )
-                return j
+            # Deduplicate across tiers
+            seen_names = set()
+            def _dedup(journals):
+                deduped = []
+                for j in journals:
+                    name = j["name"].lower().strip()
+                    if name not in seen_names:
+                        seen_names.add(name)
+                        deduped.append(j)
+                return deduped
+
+            stretch = _dedup(stretch)
+            target = _dedup(target)
+            safe = _dedup(safe)
+
+            # Add quality-aware reasoning to each journal
+            score_label = "high-scoring" if paper_score >= 75 else "mid-range" if paper_score >= 50 else "developing"
 
             for j in stretch:
-                _add_reason(j, "stretch")
+                pp = j.get("prof_papers", 0)
+                cite = j.get("citedness_2yr", 0)
+                j["reason"] = (
+                    f"Top-cited researchers in your field publish here — "
+                    f"{pp} recent papers by leading authors. "
+                    f"Citedness ({cite}) is aspirational for a {score_label} manuscript."
+                )
+
             for j in target:
-                _add_reason(j, "target")
+                pp = j.get("prof_papers", 0)
+                cite = j.get("citedness_2yr", 0)
+                j["reason"] = (
+                    f"Frequently chosen by experts in your area — "
+                    f"{pp} recent papers by top authors. "
+                    f"Citedness of {cite} suggests a realistic match for your paper."
+                )
+
             for j in safe:
-                _add_reason(j, "safe")
+                pp = j.get("prof_papers", 0)
+                cite = j.get("citedness_2yr", 0)
+                if _is_mega(j["name"]):
+                    j["reason"] = (
+                        f"High-volume journal that publishes broadly. "
+                        f"Good fallback with {pp} papers from authors in your area."
+                    )
+                else:
+                    j["reason"] = (
+                        f"Accessible venue where researchers in your area publish. "
+                        f"Citedness {cite} with {pp} recent papers from top authors."
+                    )
 
             return {
                 "primary_matches": target,

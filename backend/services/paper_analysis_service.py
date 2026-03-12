@@ -336,7 +336,7 @@ Extract and respond in JSON:
             return {'error': str(e)}
 
     def _analyze_review(self, text: str, title: str) -> Dict[str, Any]:
-        """Analyze a review paper."""
+        """Analyze a review paper with predictiveness, practical applicability, and author reputation."""
         if not self.openai_client:
             return {'error': 'LLM unavailable for analysis'}
 
@@ -358,41 +358,140 @@ Extract and respond in JSON:
         "inclusion_criteria": "if mentioned"
     }},
     "key_themes": ["3-5 main themes or topics covered"],
-    "conclusions": ["main conclusions drawn"],
+    "conclusions": [
+        {{
+            "statement": "the conclusion",
+            "type": "predictive|descriptive|prescriptive",
+            "evidence_strength": "strong|moderate|weak"
+        }}
+    ],
     "identified_gaps": ["research gaps identified by the review authors"],
     "coverage_assessment": {{
         "breadth": "comprehensive|moderate|narrow",
         "recency": "up_to_date|somewhat_dated|outdated",
         "bias_concerns": ["potential bias issues noted"]
+    }},
+    "practical_applicability": {{
+        "level": "high|medium|low",
+        "actionable_recommendations": ["specific actionable items for researchers or practitioners"],
+        "reasoning": "why this review is or is not practically useful"
     }}
-}}"""
+}}
+
+For conclusions:
+- "predictive" = makes forward-looking claims about what will happen or what should be expected
+- "descriptive" = summarizes what has been found without prediction
+- "prescriptive" = recommends specific actions or approaches"""
 
         try:
             result = self._llm_json_call(
                 system="You are a literature review expert.",
                 user=prompt,
-                max_tokens=2000,
+                max_tokens=2500,
             )
 
-            # Supplement with OpenAlex search for coverage check
-            if result and self.openalex:
-                topic = (result.get('scope', {}).get('topic', '') or
-                         result.get('summary', '')[:100])
-                if topic:
-                    recent_papers = self.openalex.search_works(
-                        topic, max_results=5, from_year=2023, min_citations=10
-                    )
-                    if recent_papers:
-                        result['recent_related_papers'] = [
-                            {'title': p['title'], 'year': p['year'],
-                             'cited_by': p['cited_by_count']}
-                            for p in recent_papers
-                        ]
+            if result and not result.get('error'):
+                # Supplement with OpenAlex search for coverage check
+                if self.openalex:
+                    topic = (result.get('scope', {}).get('topic', '') or
+                             result.get('summary', '')[:100])
+                    if topic:
+                        recent_papers = self.openalex.search_works(
+                            topic, max_results=5, from_year=2023, min_citations=10
+                        )
+                        if recent_papers:
+                            result['recent_related_papers'] = [
+                                {'title': p['title'], 'year': p['year'],
+                                 'cited_by': p['cited_by_count']}
+                                for p in recent_papers
+                            ]
+
+                # Author reputation lookup via OpenAlex
+                result['author_reputation'] = self._lookup_author_reputation(text)
 
             return result or {'error': 'LLM returned empty response'}
         except Exception as e:
             logger.error(f"[PaperAnalysis] Review analysis failed: {e}")
             return {'error': str(e)}
+
+    def _lookup_author_reputation(self, text: str) -> list:
+        """Look up author h-index and citation count from OpenAlex.
+
+        Extracts author names from the first ~500 chars of the paper and
+        searches OpenAlex authors API.
+        """
+        import requests as req
+
+        # Extract potential author names from the beginning of the paper
+        # (typically after the title, before the abstract)
+        header = text[:1000]
+        authors_info = []
+
+        if not self.openai_client:
+            return authors_info
+
+        try:
+            # Use LLM to extract author names from the header
+            resp = self.openai_client.chat_completion(
+                messages=[
+                    {"role": "system", "content": "Extract author names from this paper header. Return JSON only."},
+                    {"role": "user", "content": (
+                        f"Extract the first 3 author names from this paper header:\n\n{header}\n\n"
+                        'Return JSON: {"authors": ["First Last", "First Last"]}\n'
+                        'If no authors found, return {"authors": []}'
+                    )},
+                ],
+                temperature=0,
+                max_tokens=200,
+                response_format={"type": "json_object"},
+            )
+            raw = resp.choices[0].message.content.strip()
+            author_names = json.loads(raw).get("authors", [])[:3]
+        except Exception:
+            return authors_info
+
+        # Look up each author on OpenAlex
+        OPENALEX_EMAIL = "prmogathala@gmail.com"
+        headers = {"User-Agent": f"2ndBrain/1.0 (mailto:{OPENALEX_EMAIL})"}
+
+        for name in author_names:
+            if not name:
+                continue
+            try:
+                resp = req.get(
+                    "https://api.openalex.org/authors",
+                    params={
+                        "search": name,
+                        "per_page": 1,
+                        "select": "id,display_name,summary_stats,works_count,cited_by_count,last_known_institutions",
+                        "mailto": OPENALEX_EMAIL,
+                    },
+                    headers=headers,
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    continue
+                results = resp.json().get("results", [])
+                if not results:
+                    continue
+                author = results[0]
+                stats = author.get("summary_stats", {})
+                institutions = author.get("last_known_institutions", [])
+                inst_name = institutions[0].get("display_name", "") if institutions else ""
+
+                authors_info.append({
+                    "name": author.get("display_name", name),
+                    "h_index": stats.get("h_index", 0),
+                    "cited_by_count": author.get("cited_by_count", 0),
+                    "works_count": author.get("works_count", 0),
+                    "i10_index": stats.get("i10_index", 0),
+                    "institution": inst_name,
+                })
+            except Exception as e:
+                logger.debug(f"[PaperAnalysis] Author lookup failed for '{name}': {e}")
+                continue
+
+        return authors_info
 
     def _analyze_meta_analysis(self, text: str, title: str) -> Dict[str, Any]:
         """Analyze a meta-analysis paper."""
