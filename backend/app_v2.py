@@ -1323,6 +1323,7 @@ def search():
     include_sources = data.get('include_sources', True)
     use_enhanced = data.get('enhanced', True)  # Enhanced mode on by default
     boost_doc_ids = data.get('boost_doc_ids', [])  # IDs of newly uploaded docs to boost
+    source_types = data.get('source_types', [])  # Folder/source filter from UI
 
     if not query:
         return jsonify({
@@ -1478,7 +1479,8 @@ def search():
                 conversation_history=conversation_history,
                 boost_doc_ids=boost_doc_ids,
                 response_mode=response_mode,
-                user_context=user_context
+                user_context=user_context,
+                source_types=source_types
             )
 
             # Format sources for response — enrich with source_url from DB
@@ -1741,6 +1743,7 @@ def search_stream():
     conversation_history = data.get('conversation_history', [])
     top_k = data.get('top_k', 10)
     boost_doc_ids = data.get('boost_doc_ids', [])
+    source_types = data.get('source_types', [])  # Folder/source filter from UI
 
     if not query:
         def error_gen():
@@ -2048,7 +2051,8 @@ def search_stream():
                 conversation_history=conversation_history,
                 boost_doc_ids=boost_doc_ids,
                 response_mode=response_mode,
-                user_context=user_context
+                user_context=user_context,
+                source_types=source_types
             ):
                 event_type = event.get('type')
 

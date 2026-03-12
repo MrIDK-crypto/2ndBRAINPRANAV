@@ -7,6 +7,7 @@ import CoWorkChat from '@/components/co-work/CoWorkChat'
 import CoWorkPlan from '@/components/co-work/CoWorkPlan'
 import CoWorkContext from '@/components/co-work/CoWorkContext'
 import CoWorkHistory from '@/components/co-work/CoWorkHistory'
+import FolderPicker from '@/components/co-work/FolderPicker'
 
 import type { PlanStep, ThinkingStep, ContextData, ResearchBrief } from '@/components/co-work/CoWorkChat'
 
@@ -34,6 +35,7 @@ export default function CoWorkPage() {
   const [contextSources, setContextSources] = useState<ContextData | null>(null)
   const [researchBrief, setResearchBrief] = useState<ResearchBrief | null>(null)
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [selectedSources, setSelectedSources] = useState<string[]>([])
 
   // ── Right columns resize ──
   const [contextWidth, setContextWidth] = useState(280)
@@ -302,6 +304,7 @@ export default function CoWorkPage() {
             onThinkingStep={handleThinkingStep}
             onContextUpdate={handleContextUpdate}
             onBriefUpdate={handleBriefUpdate}
+            selectedSources={selectedSources}
           />
         </div>
 
@@ -326,12 +329,36 @@ export default function CoWorkPage() {
           height: '100%',
           overflow: 'hidden',
           borderLeft: `1px solid ${COLORS.border}`,
+          display: 'flex',
+          flexDirection: 'column',
         }}>
-          <CoWorkContext
-            thinkingSteps={thinkingSteps}
-            brief={researchBrief}
-            sources={contextSources}
-          />
+          {/* Folder/Source picker bar */}
+          <div style={{
+            padding: '8px 12px',
+            borderBottom: `1px solid ${COLORS.border}`,
+            backgroundColor: '#FFFFFF',
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={COLORS.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+            </svg>
+            <FolderPicker
+              apiBase={API_BASE}
+              token={token}
+              selectedSources={selectedSources}
+              onSourcesChange={setSelectedSources}
+            />
+          </div>
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <CoWorkContext
+              thinkingSteps={thinkingSteps}
+              brief={researchBrief}
+              sources={contextSources}
+            />
+          </div>
         </div>
 
         {/* Plan column resize handle */}

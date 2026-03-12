@@ -75,6 +75,7 @@ interface CoWorkChatProps {
   onBriefUpdate: (brief: ResearchBrief) => void
   conversationId?: string | null
   onConversationChange?: (id: string) => void
+  selectedSources?: string[]
 }
 
 export default function CoWorkChat({
@@ -86,6 +87,7 @@ export default function CoWorkChat({
   onBriefUpdate,
   conversationId: propConversationId,
   onConversationChange,
+  selectedSources = [],
 }: CoWorkChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -335,6 +337,7 @@ export default function CoWorkChat({
           query: queryText,
           conversation_history: history,
           top_k: 15,
+          source_types: selectedSources.length > 0 ? selectedSources : undefined,
         }),
       })
 

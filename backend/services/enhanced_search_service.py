@@ -1489,7 +1489,8 @@ class EnhancedSearchService:
         mmr_lambda: float = 0.7,
         boost_doc_ids: list = None,
         conversation_history: list = None,  # NEW: For coreference resolution
-        use_decomposition: bool = True  # NEW: Decompose complex queries
+        use_decomposition: bool = True,  # NEW: Decompose complex queries
+        source_types: list = None  # Filter by document source types (e.g. ['email', 'slack'])
     ) -> Dict:
         """
         Enhanced search with all features.
@@ -1551,6 +1552,14 @@ class EnhancedSearchService:
         # Step 2: Initial retrieval from Pinecone (get more for reranking)
         retrieve_k = top_k * 3 if use_reranking else top_k * 2
 
+        # Build metadata filter for source_type filtering (folder picker)
+        source_filter = None
+        if source_types and isinstance(source_types, list) and len(source_types) > 0:
+            # Pinecone $in filter for source_type metadata field
+            source_filter = {'source_type': {'$in': source_types}}
+            features_applied['source_filter'] = source_types
+            print(f"[EnhancedSearch] Filtering by source_types: {source_types}")
+
         if len(sub_queries) > 1:
             # Multi-sub-query retrieval: search each sub-query, merge by unique ID
             print(f"[Search] Decomposed into {len(sub_queries)} sub-queries: {sub_queries}")
@@ -1564,13 +1573,15 @@ class EnhancedSearchService:
                     sq_results = vector_store.hybrid_search(
                         query=sq,
                         tenant_id=tenant_id,
-                        top_k=per_sq_k
+                        top_k=per_sq_k,
+                        filter=source_filter
                     )
                 else:
                     sq_results = vector_store.search(
                         query=sq,
                         tenant_id=tenant_id,
-                        top_k=per_sq_k
+                        top_k=per_sq_k,
+                        filter=source_filter
                     )
                 for r in sq_results:
                     rid = r.get('id') or r.get('doc_id') or r.get('metadata', {}).get('doc_id', '')
@@ -1587,13 +1598,15 @@ class EnhancedSearchService:
                 initial_results = vector_store.hybrid_search(
                     query=search_query,
                     tenant_id=tenant_id,
-                    top_k=retrieve_k
+                    top_k=retrieve_k,
+                    filter=source_filter
                 )
             else:
                 initial_results = vector_store.search(
                     query=search_query,
                     tenant_id=tenant_id,
-                    top_k=retrieve_k
+                    top_k=retrieve_k,
+                    filter=source_filter
                 )
 
             print(f"[EnhancedSearch] Initial retrieval: {len(initial_results)} results")
@@ -2200,7 +2213,8 @@ CURRENT QUESTION: {query}
         conversation_history: list = None,
         boost_doc_ids: list = None,
         response_mode: int = 3,
-        user_context: dict = None
+        user_context: dict = None,
+        source_types: list = None
     ) -> Dict:
         """
         Complete enhanced RAG pipeline with conversation history support.
@@ -2262,7 +2276,8 @@ CURRENT QUESTION: {query}
             tenant_id=tenant_id,
             vector_store=vector_store,
             top_k=top_k,
-            boost_doc_ids=boost_doc_ids
+            boost_doc_ids=boost_doc_ids,
+            source_types=source_types
         )
 
         # Generate answer with conversation context and user context
@@ -2615,7 +2630,8 @@ CURRENT QUESTION: {query}
         conversation_history: list = None,
         boost_doc_ids: list = None,
         response_mode: int = 3,
-        user_context: dict = None
+        user_context: dict = None,
+        source_types: list = None
     ):
         """
         Complete RAG pipeline with STREAMING response.
@@ -2660,7 +2676,8 @@ CURRENT QUESTION: {query}
             tenant_id=tenant_id,
             vector_store=vector_store,
             top_k=top_k,
-            boost_doc_ids=boost_doc_ids
+            boost_doc_ids=boost_doc_ids,
+            source_types=source_types
         )
 
         # If journal/methodology mode, run analysis on the top document

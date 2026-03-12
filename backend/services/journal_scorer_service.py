@@ -8,6 +8,7 @@ import json
 import re
 import time
 import statistics
+from datetime import datetime
 from typing import Generator, Dict, List, Optional
 
 from parsers.document_parser import DocumentParser
@@ -277,7 +278,7 @@ RED_FLAGS_BY_TYPE = {
     ],
     "review": [
         {"id": "no_synthesis", "pattern": r"\b(synthesiz|integrat|taken together|collectively|overall|in summary)\b", "check": "missing", "issue": "Lists papers without synthesis", "penalty": -20, "fix": "Add synthesis paragraphs connecting findings across studies"},
-        {"id": "outdated_refs", "pattern": r"\b202[3-6]\b", "check": "missing", "issue": "No references from last 2 years", "penalty": -10, "fix": "Include recent publications from the last 2 years"},
+        {"id": "outdated_refs", "pattern": None, "check": "recency_dynamic", "issue": "No references from last 2 years", "penalty": -10, "fix": "Include recent publications from the last 2 years"},
         {"id": "no_gaps", "pattern": r"\b(future\s+(research|direction|stud)|gap|remain|unanswered|unexplored)\b", "check": "missing", "issue": "No future directions identified", "penalty": -10, "fix": "Add a section on research gaps and future directions"},
     ],
     "meta_analysis": [
@@ -359,6 +360,140 @@ class JournalScorerService:
         self.parser = DocumentParser()
         self.openalex = OpenAlexSearchService()
 
+    # ── Publication Year Extraction ────────────────────────────────────────
+
+    @staticmethod
+    def _extract_publication_year(text: str) -> Optional[int]:
+        """Extract the paper's own publication year from header, copyright, or date lines.
+
+        Searches for common patterns like:
+        - "Published: March 2022", "Received: Jan 2021, Accepted: May 2022"
+        - "Copyright (c) 2022", "(c) 2023"
+        - "Volume 12, Issue 3, 2022"
+        - Year in first few lines (title page)
+
+        Returns the publication year as int, or None if not determinable.
+        """
+        current_year = datetime.now().year
+        # Only consider the first ~3000 chars (header/title page area)
+        # and the last ~1500 chars (copyright/footer area)
+        header = text[:3000]
+        footer = text[-1500:] if len(text) > 1500 else text
+
+        candidates = []
+
+        # Pattern 1: Explicit publication/accepted/received dates
+        date_patterns = [
+            r'(?:published|accepted|received|available\s+online|epub)\s*(?:date)?[:\s]+\w*\s*(\d{4})',
+            r'(?:published|accepted|received)\s*:\s*\d{1,2}\s+\w+\s+(\d{4})',
+            r'(?:published|accepted|received)\s*:\s*\w+\s+\d{1,2},?\s+(\d{4})',
+        ]
+        for pat in date_patterns:
+            for m in re.finditer(pat, header + '\n' + footer, re.IGNORECASE):
+                yr = int(m.group(1))
+                if 1990 <= yr <= current_year:
+                    candidates.append(('explicit_date', yr))
+
+        # Pattern 2: Copyright lines
+        copyright_patterns = [
+            r'(?:copyright|©|\(c\))\s*(?:\d{4}\s*[-–]\s*)?(\d{4})',
+            r'(\d{4})\s*(?:copyright|©)',
+        ]
+        for pat in copyright_patterns:
+            for m in re.finditer(pat, header + '\n' + footer, re.IGNORECASE):
+                yr = int(m.group(1))
+                if 1990 <= yr <= current_year:
+                    candidates.append(('copyright', yr))
+
+        # Pattern 3: Volume/issue lines (e.g., "Volume 12, No. 3, 2022")
+        vol_patterns = [
+            r'(?:vol(?:ume)?|v)\.?\s*\d+.*?(\d{4})',
+        ]
+        for pat in vol_patterns:
+            for m in re.finditer(pat, header, re.IGNORECASE):
+                yr = int(m.group(1))
+                if 1990 <= yr <= current_year:
+                    candidates.append(('volume', yr))
+
+        # Pattern 4: Year in the first 5 non-empty lines (title page)
+        first_lines = [l.strip() for l in header.split('\n') if l.strip()][:8]
+        for line in first_lines:
+            for m in re.finditer(r'\b(20\d{2})\b', line):
+                yr = int(m.group(1))
+                if 1990 <= yr <= current_year:
+                    candidates.append(('header_line', yr))
+
+        if not candidates:
+            return None
+
+        # Prefer explicit dates > copyright > volume > header lines
+        priority = {'explicit_date': 0, 'copyright': 1, 'volume': 2, 'header_line': 3}
+        candidates.sort(key=lambda x: (priority.get(x[0], 99), -x[1]))
+        # For explicit dates, prefer the latest (published > accepted > received)
+        return candidates[0][1]
+
+    # ── Self-Reference Detection ──────────────────────────────────────────
+
+    @staticmethod
+    def _is_self_reference(paper_title: str, candidate_title: str, paper_authors: list = None, candidate_authors: list = None) -> bool:
+        """Check if a candidate reference is the same paper as the uploaded manuscript.
+
+        Uses normalized title similarity. If titles are very similar (>80% overlap),
+        considers it a self-reference. Also checks author overlap if available.
+        """
+        if not paper_title or not candidate_title:
+            return False
+
+        # Normalize titles: lowercase, strip punctuation, collapse whitespace
+        def normalize(t):
+            t = t.lower().strip()
+            t = re.sub(r'[^\w\s]', '', t)
+            t = re.sub(r'\s+', ' ', t)
+            return t
+
+        norm_paper = normalize(paper_title)
+        norm_candidate = normalize(candidate_title)
+
+        if not norm_paper or not norm_candidate:
+            return False
+
+        # Exact match
+        if norm_paper == norm_candidate:
+            return True
+
+        # Check if one title is a substantial substring of the other
+        shorter = norm_paper if len(norm_paper) <= len(norm_candidate) else norm_candidate
+        longer = norm_candidate if len(norm_paper) <= len(norm_candidate) else norm_paper
+
+        if len(shorter) > 15 and shorter in longer:
+            return True
+
+        # Word-level overlap check (Jaccard similarity)
+        words_paper = set(norm_paper.split())
+        words_candidate = set(norm_candidate.split())
+        # Remove very common words
+        stopwords = {'the', 'a', 'an', 'of', 'in', 'on', 'for', 'and', 'or', 'to', 'with', 'by', 'is', 'are', 'was', 'were', 'from', 'at', 'as', 'its', 'this', 'that'}
+        words_paper -= stopwords
+        words_candidate -= stopwords
+
+        if not words_paper or not words_candidate:
+            return False
+
+        overlap = words_paper & words_candidate
+        union = words_paper | words_candidate
+        jaccard = len(overlap) / len(union) if union else 0
+
+        if jaccard > 0.75:
+            return True
+
+        # Check first N significant words match (handles subtitle differences)
+        paper_sig = [w for w in norm_paper.split() if w not in stopwords][:6]
+        cand_sig = [w for w in norm_candidate.split() if w not in stopwords][:6]
+        if len(paper_sig) >= 4 and paper_sig == cand_sig:
+            return True
+
+        return False
+
     def analyze_manuscript(self, file_bytes: bytes, filename: str, manuscript_url: str = None, raw_text: str = None) -> Generator[str, None, None]:
         """10-step pipeline — yields SSE events as analysis progresses.
 
@@ -387,6 +522,22 @@ class JournalScorerService:
             ref_count = self._count_references(ref_section) if ref_section else 0
             has_abstract = bool(re.search(r'\babstract\b', text[:3000], re.IGNORECASE))
             has_tables = bool(re.search(r'\btable\s+\d+\b|\btable\s+[ivx]+\b', text, re.IGNORECASE))
+
+            # Extract the paper's own publication year (for date-relative checks)
+            publication_year = self._extract_publication_year(text)
+            if publication_year:
+                print(f"[JournalScorer] Detected paper publication year: {publication_year}")
+            else:
+                print("[JournalScorer] Could not detect publication year, using current year as baseline")
+
+            # Extract the paper's title (first non-empty line) for self-reference filtering
+            manuscript_title = ''
+            for line in text[:500].split('\n'):
+                line = line.strip()
+                if len(line) > 10 and not line.lower().startswith(('abstract', 'keywords', 'doi', 'http')):
+                    manuscript_title = line
+                    break
+            print(f"[JournalScorer] Manuscript title guess: {manuscript_title[:80]}...")
 
             yield _sse("progress", {"step": 1, "message": f"Parsed {word_count:,} words", "percent": 10})
 
@@ -458,7 +609,7 @@ class JournalScorerService:
             char_info = f"{len(analysis_text):,} chars" + (" (full paper)" if len(analysis_text) == len(text) else f" of {len(text):,}")
             yield _sse("progress", {"step": 3, "message": f"Analyzing {char_info}...", "percent": 22})
 
-            features = self._extract_features(analysis_text, field, scoring_field_config, paper_type=paper_type)
+            features = self._extract_features(analysis_text, field, scoring_field_config, paper_type=paper_type, manuscript_title=manuscript_title)
 
             yield _sse("features_extracted", {
                 "features": features,
@@ -509,6 +660,7 @@ class JournalScorerService:
             deep_analysis_result = None
             experiment_suggestions = []
             research_gaps_result = []
+            review_methodology_result = None
             related_literature = []
             related_protocols = []
             novelty_result = None
@@ -543,6 +695,12 @@ class JournalScorerService:
                 try:
                     yield _sse("progress", {"step": 5, "message": "Searching related literature...", "percent": 56})
                     related_literature = paper_svc._search_related_literature(text, title_guess)
+                    # ── Self-reference filter (ISSUE 6 fix) ──
+                    if related_literature and manuscript_title:
+                        related_literature = [
+                            p for p in related_literature
+                            if not self._is_self_reference(manuscript_title, p.get('title', ''))
+                        ]
                     if related_literature:
                         yield _sse("related_literature", {
                             "papers": related_literature,
@@ -651,24 +809,35 @@ class JournalScorerService:
                     "suggestions": experiment_suggestions,
                 })
 
-                # Research gap detection
-                yield _sse("progress", {"step": 5, "message": "Detecting research gaps...", "percent": 58})
+                # Research gap detection OR review methodology assessment
+                review_methodology_result = None
+                if paper_type in ('review', 'meta_analysis'):
+                    # For review papers, run a Review Methodology Assessment instead of research gaps
+                    yield _sse("progress", {"step": 5, "message": "Assessing review methodology & synthesis quality...", "percent": 58})
 
-                from services.research_gap_detector import ResearchGapDetector
-                gap_detector = ResearchGapDetector()
-                gap_detector.add_document(
-                    doc_id='manuscript',
-                    title=title_guess or 'Uploaded Manuscript',
-                    content=text,
-                    doc_type='paper' if paper_type in ('experimental', 'review', 'meta_analysis') else paper_type,
-                )
-                gap_result = gap_detector.analyze()
-                research_gaps_result = gap_result.get('gaps', [])[:10]
+                    review_methodology_result = self._assess_review_methodology(text, title_guess, paper_type)
+                    yield _sse("review_methodology", review_methodology_result)
 
-                yield _sse("research_gaps", {
-                    "gaps": research_gaps_result,
-                    "stats": gap_result.get('stats', {}),
-                })
+                    # Emit empty research_gaps so frontend doesn't hang waiting
+                    yield _sse("research_gaps", {"gaps": [], "stats": {}})
+                else:
+                    yield _sse("progress", {"step": 5, "message": "Detecting research gaps...", "percent": 58})
+
+                    from services.research_gap_detector import ResearchGapDetector
+                    gap_detector = ResearchGapDetector()
+                    gap_detector.add_document(
+                        doc_id='manuscript',
+                        title=title_guess or 'Uploaded Manuscript',
+                        content=text,
+                        doc_type='paper' if paper_type in ('experimental', 'review', 'meta_analysis') else paper_type,
+                    )
+                    gap_result = gap_detector.analyze()
+                    research_gaps_result = gap_result.get('gaps', [])[:10]
+
+                    yield _sse("research_gaps", {
+                        "gaps": research_gaps_result,
+                        "stats": gap_result.get('stats', {}),
+                    })
 
             except Exception as e:
                 import traceback
@@ -682,6 +851,8 @@ class JournalScorerService:
                     yield _sse("experiment_suggestions", {"paper_type": paper_type, "suggestions": []})
                 if not research_gaps_result:
                     yield _sse("research_gaps", {"gaps": [], "stats": {}})
+                if paper_type in ('review', 'meta_analysis') and not review_methodology_result:
+                    yield _sse("review_methodology", {"search_strategy": {}, "synthesis_quality": {}, "coverage_analysis": {}, "overall_rigor_score": 0, "paper_type": paper_type})
 
             # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
             yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
@@ -698,7 +869,7 @@ class JournalScorerService:
             # ── Step 8: Detect Red Flags ────────────────────────────────
             yield _sse("progress", {"step": 8, "message": "Checking for red flags...", "percent": 68})
 
-            flags_result = self._detect_red_flags(text, word_count, ref_count, paper_type=paper_type)
+            flags_result = self._detect_red_flags(text, word_count, ref_count, paper_type=paper_type, publication_year=publication_year)
             yield _sse("red_flags", flags_result)
 
             # Adjust score for penalties
@@ -773,7 +944,7 @@ class JournalScorerService:
             # Part A: Pre-fetch real references from OpenAlex
             reference_bank = []
             try:
-                reference_bank = self._fetch_reference_bank(keywords, field)
+                reference_bank = self._fetch_reference_bank(keywords, field, manuscript_title=manuscript_title)
                 print(f"[JournalScorer] Reference bank: fetched {len(reference_bank)} verified papers from OpenAlex")
             except Exception as e:
                 print(f"[JournalScorer] Reference bank fetch failed (non-critical): {e}")
@@ -866,7 +1037,7 @@ class JournalScorerService:
             return result
         return {"field": "economics", "confidence": 0.5, "subfield": "General", "keywords": ["general"], "reasoning": "Could not classify — defaulting to Economics"}
 
-    def _extract_features(self, text_excerpt: str, field: str, field_config: dict, paper_type: str = 'experimental') -> dict:
+    def _extract_features(self, text_excerpt: str, field: str, field_config: dict, paper_type: str = 'experimental', manuscript_title: str = '') -> dict:
         feature_list = "\n".join(
             f"- {key}: {info['label']} (weight: {info['weight']*100:.0f}%)"
             for key, info in field_config["features"].items()
@@ -949,7 +1120,8 @@ class JournalScorerService:
                     "details": parsed[key].get("details", ""),
                     "citations": parsed[key].get("citations", []),
                     "suggested_references": self._enrich_suggested_references(
-                        parsed[key].get("suggested_references", [])
+                        parsed[key].get("suggested_references", []),
+                        manuscript_title=manuscript_title,
                     ),
                 }
             else:
@@ -1398,7 +1570,7 @@ class JournalScorerService:
                 "tier2_threshold": 65,
             }
 
-    def _detect_red_flags(self, text: str, word_count: int, ref_count: int, paper_type: str = 'experimental') -> dict:
+    def _detect_red_flags(self, text: str, word_count: int, ref_count: int, paper_type: str = 'experimental', publication_year: int = None) -> dict:
         flags = []
         total_penalty = 0
 
@@ -1442,13 +1614,39 @@ class JournalScorerService:
         type_flags = RED_FLAGS_BY_TYPE.get(paper_type, [])
         for flag in type_flags:
             pattern = flag.get("pattern")
-            check = flag.get("check", "missing")
+            check_type = flag.get("check", "missing")
+
+            # ── Dynamic recency check (ISSUE 4 fix) ──
+            # Instead of hardcoding "202[3-6]", compute the recency window
+            # relative to the paper's own publication year.
+            if check_type == "recency_dynamic":
+                baseline_year = publication_year or datetime.now().year
+                # "Recent" = within 2 years before the paper's publication
+                recent_start = baseline_year - 2
+                recent_end = baseline_year
+
+                # Build a regex that matches any year in [recent_start, recent_end]
+                recent_years = list(range(recent_start, recent_end + 1))
+                year_alts = "|".join(str(y) for y in recent_years)
+                recency_pattern = rf'\b({year_alts})\b'
+
+                found = bool(re.search(recency_pattern, text))
+                if not found:
+                    issue_text = flag["issue"]
+                    fix_text = flag["fix"]
+                    if publication_year:
+                        issue_text = f"No references from {recent_start}-{recent_end} (relative to paper's {baseline_year} publication)"
+                        fix_text = f"Include recent publications from {recent_start}-{recent_end} (the 2 years around your paper's publication date)"
+                    flags.append({"id": flag["id"], "issue": issue_text, "penalty": flag["penalty"], "fix": fix_text, "severity": "warning"})
+                    total_penalty += flag["penalty"]
+                continue
+
             if pattern:
                 found = bool(re.search(pattern, text, re.IGNORECASE))
-                if check == "missing" and not found:
+                if check_type == "missing" and not found:
                     flags.append({"id": flag["id"], "issue": flag["issue"], "penalty": flag["penalty"], "fix": flag.get("fix", ""), "severity": "warning"})
                     total_penalty += flag["penalty"]
-                elif check == "present" and found:
+                elif check_type == "present" and found:
                     flags.append({"id": flag["id"], "issue": flag["issue"], "penalty": flag["penalty"], "fix": flag.get("fix", ""), "severity": "warning"})
                     total_penalty += flag["penalty"]
 
@@ -1807,6 +2005,147 @@ class JournalScorerService:
 
         return gaps
 
+    def _assess_review_methodology(self, text: str, title: str, paper_type: str = 'review') -> dict:
+        """Assess methodology and synthesis quality for review/meta-analysis papers.
+
+        Instead of generic research gap detection (which doesn't apply to reviews,
+        since reviews ARE about identifying gaps), this evaluates:
+        1. Search Strategy & Inclusion Criteria - PRISMA compliance, databases searched
+        2. Synthesis Quality - how well findings are integrated vs. just listed
+        3. Coverage Analysis - topics/areas the review may have missed
+
+        Returns a structured assessment dict emitted as the 'review_methodology' SSE event.
+        """
+        type_label = "systematic review" if paper_type == "review" else "meta-analysis"
+        meta_specific = ""
+        if paper_type == "meta_analysis":
+            meta_specific = (
+                "\n\nMETA-ANALYSIS SPECIFIC — also evaluate:\n"
+                "- Effect size measure used (OR, RR, HR, SMD, etc.) and appropriateness\n"
+                "- Heterogeneity assessment (I-squared, Q-statistic, tau-squared)\n"
+                "- Publication bias tests (funnel plot, Egger test, trim-and-fill)\n"
+                "- Sensitivity/subgroup analysis adequacy\n"
+                "- Forest plot clarity and completeness\n"
+                "- Random vs. fixed effects model justification\n"
+            )
+
+        meta_json_block = ""
+        if paper_type == "meta_analysis":
+            meta_json_block = (
+                ',\n    "meta_analysis_rigor": {\n'
+                '        "effect_size_appropriate": true,\n'
+                '        "heterogeneity_assessed": true,\n'
+                '        "publication_bias_tested": true,\n'
+                '        "sensitivity_analysis_done": true,\n'
+                '        "subgroup_analysis_done": true,\n'
+                '        "model_justified": true,\n'
+                '        "strengths": ["1-2 statistical strengths"],\n'
+                '        "weaknesses": ["1-3 statistical issues"],\n'
+                '        "recommendations": ["1-3 statistical improvements"]\n'
+                '    }'
+            )
+
+        prompt = f"""You are a senior methodologist evaluating a {type_label} paper for journal submission.
+
+TITLE: {title}
+
+MANUSCRIPT (first 18,000 chars):
+{text[:18000]}
+
+Evaluate this {type_label} across three dimensions. For each, provide a score (0-100) and specific evidence-based findings.
+{meta_specific}
+Respond in JSON format:
+{{{{
+    "search_strategy": {{{{
+        "score": 65,
+        "databases_mentioned": ["list of databases mentioned, e.g. PubMed, Scopus, Web of Science"],
+        "date_range_specified": true,
+        "search_terms_described": true,
+        "prisma_compliant": false,
+        "inclusion_criteria_clear": true,
+        "exclusion_criteria_clear": false,
+        "screening_process_described": true,
+        "strengths": ["1-3 specific strengths with quoted evidence"],
+        "weaknesses": ["1-4 specific weaknesses — what is missing or vague"],
+        "recommendations": ["1-3 actionable fixes"]
+    }}}},
+    "synthesis_quality": {{{{
+        "score": 55,
+        "approach": "narrative or thematic or chronological or methodological or framework-based",
+        "critical_comparison": true,
+        "themes_identified": true,
+        "contradictions_addressed": false,
+        "theoretical_framework_used": false,
+        "strengths": ["1-3 specific strengths — where synthesis is genuinely insightful"],
+        "weaknesses": ["1-4 specific issues — e.g. Section 3.2 lists 12 studies sequentially without comparing their findings"],
+        "recommendations": ["1-3 actionable improvements, e.g. Add a comparison table for the 8 RCTs in Section 4"]
+    }}}},
+    "coverage_analysis": {{{{
+        "score": 60,
+        "total_studies_included": 45,
+        "date_range_of_studies": "e.g. 2010-2023 or unclear",
+        "geographic_diversity": "global or regional or single-country or unclear",
+        "study_type_diversity": "mixed methods or RCTs only or observational only or etc.",
+        "potential_gaps": ["1-4 specific topic areas or perspectives the review appears to miss"],
+        "recency_assessment": "up-to-date or slightly outdated or significantly outdated",
+        "strengths": ["1-2 coverage strengths"],
+        "recommendations": ["1-3 ways to improve coverage"]
+    }}}}{meta_json_block}
+}}}}
+"""
+
+        try:
+            response = self.openai.chat_completion(
+                messages=[
+                    {"role": "system", "content": f"You are a senior peer reviewer and methodologist specializing in {type_label} papers. Evaluate rigorously but fairly. Always cite specific evidence from the manuscript."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=4000,
+                response_format={"type": "json_object"}
+            )
+            result = json.loads(response.choices[0].message.content)
+
+            # Compute overall rigor score as weighted average
+            search_score = result.get('search_strategy', {}).get('score', 50)
+            synthesis_score = result.get('synthesis_quality', {}).get('score', 50)
+            coverage_score = result.get('coverage_analysis', {}).get('score', 50)
+
+            if paper_type == 'meta_analysis':
+                meta_rigor = result.get('meta_analysis_rigor', {})
+                meta_checks = [
+                    meta_rigor.get('effect_size_appropriate', False),
+                    meta_rigor.get('heterogeneity_assessed', False),
+                    meta_rigor.get('publication_bias_tested', False),
+                    meta_rigor.get('sensitivity_analysis_done', False),
+                    meta_rigor.get('subgroup_analysis_done', False),
+                    meta_rigor.get('model_justified', False),
+                ]
+                meta_score = round(sum(1 for c in meta_checks if c) / max(len(meta_checks), 1) * 100)
+                result['meta_analysis_rigor']['score'] = meta_score
+                overall = round(search_score * 0.25 + synthesis_score * 0.20 + coverage_score * 0.20 + meta_score * 0.35)
+            else:
+                overall = round(search_score * 0.35 + synthesis_score * 0.40 + coverage_score * 0.25)
+
+            result['overall_rigor_score'] = overall
+            result['paper_type'] = paper_type
+
+            print(f"[JournalScorer] Review methodology assessment: overall={overall}, "
+                  f"search={search_score}, synthesis={synthesis_score}, coverage={coverage_score}")
+
+            return result
+
+        except Exception as e:
+            print(f"[JournalScorer] Review methodology assessment failed: {e}")
+            return {
+                "search_strategy": {"score": 0, "strengths": [], "weaknesses": ["Assessment failed"], "recommendations": []},
+                "synthesis_quality": {"score": 0, "strengths": [], "weaknesses": ["Assessment failed"], "recommendations": []},
+                "coverage_analysis": {"score": 0, "strengths": [], "weaknesses": ["Assessment failed"], "recommendations": []},
+                "overall_rigor_score": 0,
+                "paper_type": paper_type,
+                "error": str(e),
+            }
+
     def _generate_paper_type_aware_suggestions(self, text: str, title: str,
                                                 paper_type: str,
                                                 deep_analysis: dict = None) -> list:
@@ -2006,10 +2345,11 @@ class JournalScorerService:
 
     # ── Enrich suggested references with real DOIs from OpenAlex ─────────────
 
-    def _enrich_suggested_references(self, refs: list) -> list:
+    def _enrich_suggested_references(self, refs: list, manuscript_title: str = '') -> list:
         """Strip hallucinated URLs from LLM-suggested references and look up real DOIs.
 
         For each reference, search OpenAlex by title to find the real paper and DOI.
+        Filters out any reference that matches the uploaded manuscript (self-reference).
         Returns cleaned references with verified DOI URLs where found.
         """
         if not refs:
@@ -2026,6 +2366,12 @@ class JournalScorerService:
                 enriched.append(clean)
                 continue
 
+            # ── Self-reference filter (ISSUE 6 fix) ──
+            # Skip references that match the uploaded paper's own title
+            if manuscript_title and self._is_self_reference(manuscript_title, title):
+                print(f"[JournalScorer] Filtered self-reference from suggested refs: {title[:60]}...")
+                continue
+
             # Search OpenAlex for this paper by title
             try:
                 results = self.openalex.search_works(title, max_results=1, min_citations=0)
@@ -2034,6 +2380,10 @@ class JournalScorerService:
                     paper_title = paper.get("title", "")
                     # Basic fuzzy match — first 40 chars of title should overlap
                     if paper_title and title[:40].lower().strip() in paper_title.lower() or paper_title[:40].lower().strip() in title.lower():
+                        # Also check that the OpenAlex result is not the manuscript itself
+                        if manuscript_title and self._is_self_reference(manuscript_title, paper_title):
+                            print(f"[JournalScorer] Filtered self-reference (OpenAlex match): {paper_title[:60]}...")
+                            continue
                         doi = paper.get("doi", "")
                         if doi:
                             if not doi.startswith("http"):
@@ -2048,11 +2398,12 @@ class JournalScorerService:
 
     # ── Reference Bank: pre-fetch real papers from OpenAlex ─────────────────
 
-    def _fetch_reference_bank(self, keywords: list, field: str) -> list:
+    def _fetch_reference_bank(self, keywords: list, field: str, manuscript_title: str = '') -> list:
         """Fetch real papers from OpenAlex to use as a verified reference bank.
 
         Returns up to 15 papers with real DOIs that the LLM can cite,
-        preventing DOI hallucination.
+        preventing DOI hallucination. Filters out the user's own paper
+        to avoid self-referencing.
         """
         if not keywords:
             keywords = [field]
@@ -2070,10 +2421,15 @@ class JournalScorerService:
             )
             for paper in results:
                 doi = paper.get("doi", "")
+                paper_title = paper.get("title", "")
+                # ── Self-reference filter (ISSUE 6 fix) ──
+                if manuscript_title and self._is_self_reference(manuscript_title, paper_title):
+                    print(f"[JournalScorer] Filtered self-reference from reference bank: {paper_title[:60]}...")
+                    continue
                 if doi and doi not in seen_dois:
                     seen_dois.add(doi)
                     all_papers.append({
-                        "title": paper.get("title", ""),
+                        "title": paper_title,
                         "authors": paper.get("authors", []),
                         "year": paper.get("year"),
                         "doi": doi,
@@ -2094,10 +2450,15 @@ class JournalScorerService:
                 )
                 for paper in results2:
                     doi = paper.get("doi", "")
+                    paper_title = paper.get("title", "")
+                    # ── Self-reference filter (ISSUE 6 fix) ──
+                    if manuscript_title and self._is_self_reference(manuscript_title, paper_title):
+                        print(f"[JournalScorer] Filtered self-reference from reference bank (secondary): {paper_title[:60]}...")
+                        continue
                     if doi and doi not in seen_dois:
                         seen_dois.add(doi)
                         all_papers.append({
-                            "title": paper.get("title", ""),
+                            "title": paper_title,
                             "authors": paper.get("authors", []),
                             "year": paper.get("year"),
                             "doi": doi,

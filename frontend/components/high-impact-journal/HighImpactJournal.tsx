@@ -174,6 +174,54 @@ interface ResearchGapsInfo {
   stats: Record<string, any>
 }
 
+interface ReviewMethodologyDimension {
+  score: number
+  strengths: string[]
+  weaknesses: string[]
+  recommendations: string[]
+  [key: string]: any
+}
+
+interface MetaAnalysisRigor extends ReviewMethodologyDimension {
+  effect_size_appropriate?: boolean
+  heterogeneity_assessed?: boolean
+  publication_bias_tested?: boolean
+  sensitivity_analysis_done?: boolean
+  subgroup_analysis_done?: boolean
+  model_justified?: boolean
+}
+
+interface ReviewMethodologyInfo {
+  search_strategy: ReviewMethodologyDimension & {
+    databases_mentioned?: string[]
+    date_range_specified?: boolean
+    search_terms_described?: boolean
+    prisma_compliant?: boolean
+    inclusion_criteria_clear?: boolean
+    exclusion_criteria_clear?: boolean
+    screening_process_described?: boolean
+  }
+  synthesis_quality: ReviewMethodologyDimension & {
+    approach?: string
+    critical_comparison?: boolean
+    themes_identified?: boolean
+    contradictions_addressed?: boolean
+    theoretical_framework_used?: boolean
+  }
+  coverage_analysis: ReviewMethodologyDimension & {
+    total_studies_included?: number | null
+    date_range_of_studies?: string
+    geographic_diversity?: string
+    study_type_diversity?: string
+    potential_gaps?: string[]
+    recency_assessment?: string
+  }
+  meta_analysis_rigor?: MetaAnalysisRigor
+  overall_rigor_score: number
+  paper_type: string
+  error?: string
+}
+
 type AppState = 'idle' | 'analyzing' | 'results'
 type InputMode = 'upload' | 'describe'
 
@@ -199,6 +247,7 @@ export default function HighImpactJournal() {
   const [deepAnalysis, setDeepAnalysis] = useState<DeepAnalysisInfo | null>(null)
   const [experimentSuggestions, setExperimentSuggestions] = useState<ExperimentSuggestionsInfo | null>(null)
   const [researchGaps, setResearchGaps] = useState<ResearchGapsInfo | null>(null)
+  const [reviewMethodology, setReviewMethodology] = useState<ReviewMethodologyInfo | null>(null)
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -219,6 +268,7 @@ export default function HighImpactJournal() {
     setDeepAnalysis(null)
     setExperimentSuggestions(null)
     setResearchGaps(null)
+    setReviewMethodology(null)
     setError('')
     setResearchText('')
   }, [])
@@ -282,6 +332,9 @@ export default function HighImpactJournal() {
                 break
               case 'research_gaps':
                 setResearchGaps(data)
+                break
+              case 'review_methodology':
+                setReviewMethodology(data)
                 break
               case 'recommendations':
                 setRecommendations(prev => prev + data.content)
@@ -1243,8 +1296,240 @@ export default function HighImpactJournal() {
               </div>
             )}
 
-            {/* Research Gaps */}
-            {researchGaps && researchGaps.gaps && researchGaps.gaps.length > 0 && (
+            {/* Review Methodology Assessment — shown instead of Research Gaps for review/meta-analysis papers */}
+            {reviewMethodology && reviewMethodology.overall_rigor_score > 0 && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                backgroundColor: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary }}>
+                    Review Methodology Assessment
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      padding: '4px 10px',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      fontFamily: fontMono,
+                      backgroundColor: reviewMethodology.overall_rigor_score >= 70 ? '#F0F7EE' : reviewMethodology.overall_rigor_score >= 40 ? '#FEF7E8' : '#FDF2F2',
+                      color: reviewMethodology.overall_rigor_score >= 70 ? '#2D6A2E' : reviewMethodology.overall_rigor_score >= 40 ? '#8B6914' : '#9B3B3B',
+                    }}>
+                      Rigor: {reviewMethodology.overall_rigor_score}/100
+                    </span>
+                  </div>
+                </div>
+
+                {/* Score bars overview */}
+                <div style={{ display: 'grid', gridTemplateColumns: reviewMethodology.meta_analysis_rigor ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+                  {[
+                    { label: 'Search Strategy', score: reviewMethodology.search_strategy?.score ?? 0 },
+                    { label: 'Synthesis Quality', score: reviewMethodology.synthesis_quality?.score ?? 0 },
+                    { label: 'Coverage', score: reviewMethodology.coverage_analysis?.score ?? 0 },
+                    ...(reviewMethodology.meta_analysis_rigor ? [{ label: 'Statistical Rigor', score: reviewMethodology.meta_analysis_rigor?.score ?? 0 }] : []),
+                  ].map((dim, i) => {
+                    const barColor = dim.score >= 70 ? '#9CB896' : dim.score >= 40 ? '#E2A336' : '#D97B7B'
+                    return (
+                      <div key={i} style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 11, fontWeight: 500, color: theme.textSecondary, marginBottom: 6 }}>{dim.label}</div>
+                        <div style={{ position: 'relative', height: 6, borderRadius: 3, backgroundColor: '#F0EDE8', overflow: 'hidden' }}>
+                          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${dim.score}%`, borderRadius: 3, backgroundColor: barColor, transition: 'width 0.6s ease' }} />
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600, fontFamily: fontMono, color: barColor, marginTop: 4 }}>{dim.score}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Detailed dimension cards */}
+                {([
+                  { key: 'search_strategy', title: 'Search Strategy & Inclusion Criteria', data: reviewMethodology.search_strategy },
+                  { key: 'synthesis_quality', title: 'Synthesis Quality', data: reviewMethodology.synthesis_quality },
+                  { key: 'coverage_analysis', title: 'Coverage Analysis', data: reviewMethodology.coverage_analysis },
+                  ...(reviewMethodology.meta_analysis_rigor ? [{ key: 'meta_analysis_rigor', title: 'Meta-Analysis Statistical Rigor', data: reviewMethodology.meta_analysis_rigor }] : []),
+                ] as { key: string; title: string; data: ReviewMethodologyDimension }[]).map((dim, di) => {
+                  const d = dim.data
+                  if (!d) return null
+                  const borderColor = (d.score ?? 0) >= 70 ? '#9CB896' : (d.score ?? 0) >= 40 ? '#E2A336' : '#D97B7B'
+
+                  return (
+                    <div key={di} style={{
+                      padding: '14px 16px',
+                      borderRadius: 10,
+                      backgroundColor: theme.pageBg,
+                      borderLeft: `3px solid ${borderColor}`,
+                      marginBottom: 10,
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary }}>{dim.title}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, fontFamily: fontMono, color: borderColor }}>{d.score ?? '?'}/100</span>
+                      </div>
+
+                      {/* Search strategy specific: checklist badges */}
+                      {dim.key === 'search_strategy' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          {[
+                            { label: 'PRISMA', ok: (d as any).prisma_compliant },
+                            { label: 'Databases listed', ok: (d as any).databases_mentioned?.length > 0 },
+                            { label: 'Date range', ok: (d as any).date_range_specified },
+                            { label: 'Search terms', ok: (d as any).search_terms_described },
+                            { label: 'Inclusion criteria', ok: (d as any).inclusion_criteria_clear },
+                            { label: 'Exclusion criteria', ok: (d as any).exclusion_criteria_clear },
+                            { label: 'Screening process', ok: (d as any).screening_process_described },
+                          ].map((chk, ci) => (
+                            <span key={ci} style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              backgroundColor: chk.ok ? '#F0F7EE' : '#FDF2F2',
+                              color: chk.ok ? '#2D6A2E' : '#9B3B3B',
+                            }}>
+                              {chk.ok ? '\u2713' : '\u2717'} {chk.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Synthesis quality specific: approach badge */}
+                      {dim.key === 'synthesis_quality' && (d as any).approach && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#EEF2FF', color: '#4338CA' }}>
+                            Approach: {(d as any).approach}
+                          </span>
+                          {[
+                            { label: 'Critical comparison', ok: (d as any).critical_comparison },
+                            { label: 'Themes identified', ok: (d as any).themes_identified },
+                            { label: 'Contradictions addressed', ok: (d as any).contradictions_addressed },
+                          ].map((chk, ci) => (
+                            <span key={ci} style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              backgroundColor: chk.ok ? '#F0F7EE' : '#FDF2F2',
+                              color: chk.ok ? '#2D6A2E' : '#9B3B3B',
+                            }}>
+                              {chk.ok ? '\u2713' : '\u2717'} {chk.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Coverage analysis specific: metadata */}
+                      {dim.key === 'coverage_analysis' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          {(d as any).total_studies_included != null && (
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#EEF2FF', color: '#4338CA' }}>
+                              {(d as any).total_studies_included} studies included
+                            </span>
+                          )}
+                          {(d as any).date_range_of_studies && (
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0FF', color: '#6B21A8' }}>
+                              {(d as any).date_range_of_studies}
+                            </span>
+                          )}
+                          {(d as any).recency_assessment && (
+                            <span style={{
+                              fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                              backgroundColor: (d as any).recency_assessment === 'up-to-date' ? '#F0F7EE' : (d as any).recency_assessment === 'slightly outdated' ? '#FEF7E8' : '#FDF2F2',
+                              color: (d as any).recency_assessment === 'up-to-date' ? '#2D6A2E' : (d as any).recency_assessment === 'slightly outdated' ? '#8B6914' : '#9B3B3B',
+                            }}>
+                              {(d as any).recency_assessment}
+                            </span>
+                          )}
+                          {(d as any).geographic_diversity && (d as any).geographic_diversity !== 'unclear' && (
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F0EDE8', color: theme.textSecondary }}>
+                              {(d as any).geographic_diversity}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Meta-analysis rigor specific: checklist badges */}
+                      {dim.key === 'meta_analysis_rigor' && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          {[
+                            { label: 'Effect size appropriate', ok: (d as any).effect_size_appropriate },
+                            { label: 'Heterogeneity assessed', ok: (d as any).heterogeneity_assessed },
+                            { label: 'Publication bias tested', ok: (d as any).publication_bias_tested },
+                            { label: 'Sensitivity analysis', ok: (d as any).sensitivity_analysis_done },
+                            { label: 'Subgroup analysis', ok: (d as any).subgroup_analysis_done },
+                            { label: 'Model justified', ok: (d as any).model_justified },
+                          ].map((chk, ci) => (
+                            <span key={ci} style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              backgroundColor: chk.ok ? '#F0F7EE' : '#FDF2F2',
+                              color: chk.ok ? '#2D6A2E' : '#9B3B3B',
+                            }}>
+                              {chk.ok ? '\u2713' : '\u2717'} {chk.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Strengths */}
+                      {d.strengths && d.strengths.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#2D6A2E' }}>Strengths</span>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                            {d.strengths.map((s: string, si: number) => (
+                              <li key={si} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5, marginBottom: 2 }}>{s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Weaknesses */}
+                      {d.weaknesses && d.weaknesses.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#9B3B3B' }}>Weaknesses</span>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                            {d.weaknesses.map((w: string, wi: number) => (
+                              <li key={wi} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5, marginBottom: 2 }}>{w}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Recommendations */}
+                      {d.recommendations && d.recommendations.length > 0 && (
+                        <div>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#4338CA' }}>Recommendations</span>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                            {d.recommendations.map((r: string, ri: number) => (
+                              <li key={ri} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5, marginBottom: 2 }}>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Coverage potential gaps (topic-level) */}
+                      {dim.key === 'coverage_analysis' && (d as any).potential_gaps && (d as any).potential_gaps.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#8B6914' }}>Potential Coverage Gaps</span>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                            {(d as any).potential_gaps.map((g: string, gi: number) => (
+                              <li key={gi} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5, marginBottom: 2 }}>{g}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Research Gaps — hidden for review/meta-analysis papers (they get Review Methodology Assessment above) */}
+            {researchGaps && researchGaps.gaps && researchGaps.gaps.length > 0 && !(paperTypeInfo && (paperTypeInfo.paper_type === 'review' || paperTypeInfo.paper_type === 'meta_analysis')) && (
               <div style={{
                 padding: 24,
                 borderRadius: 16,

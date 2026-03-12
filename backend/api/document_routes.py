@@ -61,6 +61,111 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB per file
 
 
 # ============================================================================
+# DOCUMENT SOURCES (for folder/source picker in Co-Work chat)
+# ============================================================================
+
+@document_bp.route('/sources', methods=['GET'])
+@require_auth
+def list_document_sources():
+    """
+    List available document sources/folders for the current tenant.
+    Used by the Co-Work chat folder picker to let users scope searches
+    to specific integrations.
+
+    Response:
+    {
+        "success": true,
+        "sources": [
+            {
+                "source_type": "email",
+                "label": "Gmail",
+                "icon": "mail",
+                "doc_count": 42
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        db = get_db()
+        try:
+            from sqlalchemy import func as sqlfunc
+
+            tenant_id = getattr(g, 'tenant_id', 'local-tenant')
+
+            # Get document counts grouped by source_type
+            results = db.query(
+                Document.source_type,
+                sqlfunc.count(Document.id).label('doc_count')
+            ).filter(
+                Document.tenant_id == tenant_id,
+                Document.is_deleted == False,
+                Document.source_type != None,
+                Document.source_type != '',
+                Document.source_type != 'ctsi_shared',
+            ).group_by(Document.source_type).all()
+
+            # Also get connected integrations for richer metadata
+            connectors = db.query(Connector).filter(
+                Connector.tenant_id == tenant_id,
+                Connector.is_active == True
+            ).all()
+            connector_types = {c.connector_type.value for c in connectors}
+
+            # Map source_type to display labels and icons
+            SOURCE_META = {
+                'email': {'label': 'Gmail', 'icon': 'mail'},
+                'gmail': {'label': 'Gmail', 'icon': 'mail'},
+                'message': {'label': 'Slack', 'icon': 'slack'},
+                'slack': {'label': 'Slack', 'icon': 'slack'},
+                'file': {'label': 'Uploaded Files', 'icon': 'file'},
+                'document': {'label': 'Documents', 'icon': 'file-text'},
+                'box': {'label': 'Box', 'icon': 'box'},
+                'github': {'label': 'GitHub', 'icon': 'github'},
+                'onedrive': {'label': 'OneDrive', 'icon': 'cloud'},
+                'google_drive': {'label': 'Google Drive', 'icon': 'hard-drive'},
+                'google_docs': {'label': 'Google Docs', 'icon': 'file-text'},
+                'google_sheets': {'label': 'Google Sheets', 'icon': 'table'},
+                'google_slides': {'label': 'Google Slides', 'icon': 'presentation'},
+                'notion': {'label': 'Notion', 'icon': 'book-open'},
+                'zotero': {'label': 'Zotero', 'icon': 'book'},
+                'pubmed': {'label': 'PubMed', 'icon': 'search'},
+                'webscraper': {'label': 'Web Scraper', 'icon': 'globe'},
+                'firecrawl': {'label': 'Firecrawl', 'icon': 'globe'},
+                'outlook': {'label': 'Outlook', 'icon': 'mail'},
+                'email_forwarding': {'label': 'Email Forwarding', 'icon': 'forward'},
+                'grant': {'label': 'Grants', 'icon': 'award'},
+                'quartzy': {'label': 'Quartzy', 'icon': 'flask-conical'},
+            }
+
+            sources = []
+            for source_type, doc_count in results:
+                meta = SOURCE_META.get(source_type, {
+                    'label': source_type.replace('_', ' ').title(),
+                    'icon': 'folder'
+                })
+                sources.append({
+                    'source_type': source_type,
+                    'label': meta['label'],
+                    'icon': meta['icon'],
+                    'doc_count': doc_count,
+                })
+
+            # Sort by doc_count descending
+            sources.sort(key=lambda x: x['doc_count'], reverse=True)
+
+            return jsonify({
+                "success": True,
+                "sources": sources,
+            })
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[DocumentSources] Error: {e}", flush=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================================================================
 # LIST DOCUMENTS
 # ============================================================================
 
