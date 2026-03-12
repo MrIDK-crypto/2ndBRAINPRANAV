@@ -18,5 +18,13 @@ else
     echo "Continuing anyway (non-critical for app startup)..."
 fi
 
+# Sync HIJ models from S3 (non-blocking — falls back to bundled models)
+echo "=== Syncing HIJ models from S3 ==="
+if python -m scripts.sync_models_from_s3 2>&1; then
+    echo "=== Model sync completed ==="
+else
+    echo "=== Model sync skipped (non-critical) ==="
+fi
+
 echo "=== Starting gunicorn ==="
 exec gunicorn --bind 0.0.0.0:$PORT --workers 4 --worker-class gevent --worker-connections 1000 --timeout 300 --graceful-timeout 30 --keep-alive 65 app_v2:app
