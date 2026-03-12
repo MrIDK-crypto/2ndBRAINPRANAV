@@ -1980,6 +1980,17 @@ def search_stream():
                 yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Querying evidence database', 'status': 'pending'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Assessing feasibility', 'status': 'pending'})}\n\n"
                 yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Checking protocol feasibility...'})}\n\n"
+            elif _intent_name == 'knowledge_gap':
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Scanning knowledge base documents', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Running intelligent gap detection', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Formatting gap analysis results', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Analyzing knowledge gaps...'})}\n\n"
+            elif _intent_name == 'literature_search':
+                yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Expanding search terms', 'status': 'in_progress'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Literature', 'text': 'Searching OpenAlex & PubMed', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Ranking results by relevance and citations', 'status': 'pending'})}\n\n"
+                yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Formatting literature review', 'status': 'pending'})}\n\n"
+                yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Searching literature databases...'})}\n\n"
             elif any(p in query.lower() for p in ['compare', 'versus', 'vs', 'difference']):
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Decompose comparison query', 'status': 'in_progress'})}\n\n"
                 yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search each sub-topic separately', 'status': 'pending'})}\n\n"
@@ -2004,71 +2015,165 @@ def search_stream():
                 yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate answer with source attribution', 'status': 'pending'})}\n\n"
                 yield f"event: thinking\ndata: {json.dumps({'type': 'expanding_query', 'text': 'Expanding query...'})}\n\n"
 
-            # Handle experiment suggestion intent
+            # ================================================================
+            # INTENT ROUTING — Execute specialized services per intent
+            # ================================================================
+            # Helper: search user's KB for paper content (reused by multiple intents)
+            def _search_user_kb(q, vstore, tid, boost_ids=None, k=10):
+                """Search user's knowledge base and return (paper_context, references, raw_results)."""
+                paper_context = ""
+                paper_references = []
+                raw_results = []
+                try:
+                    raw_results = vstore.hybrid_search(
+                        query=q, tenant_id=tid, top_k=k,
+                        boost_doc_ids=boost_ids or [],
+                    ) or []
+                    if raw_results:
+                        paper_chunks = []
+                        seen_docs = set()
+                        for r in raw_results:
+                            chunk_text = r.get("content", "") or r.get("text", "")
+                            doc_title_r = r.get("title", "")
+                            doc_id_r = r.get("doc_id", "")
+                            if chunk_text:
+                                paper_chunks.append(f"[{doc_title_r}]: {chunk_text[:1500]}")
+                            if doc_id_r and doc_id_r not in seen_docs:
+                                seen_docs.add(doc_id_r)
+                                paper_references.append({"title": doc_title_r, "doc_id": doc_id_r})
+                        paper_context = "\n\n".join(paper_chunks[:8])
+                except Exception as kb_err:
+                    print(f"[SEARCH-STREAM] KB search failed: {kb_err}", flush=True)
+                return paper_context, paper_references, raw_results
+
+            # Helper: search protocol corpus
+            def _search_protocol_corpus(q, vstore):
+                """Search protocol corpus namespace in Pinecone."""
+                protocol_context = ""
+                try:
+                    if vstore:
+                        q_embedding = vstore._get_embedding(q)
+                        corpus_results = vstore.index.query(
+                            vector=q_embedding, top_k=5,
+                            namespace="protocol-corpus", include_metadata=True,
+                        )
+                        if corpus_results and corpus_results.matches:
+                            protocol_chunks = []
+                            for m in corpus_results.matches:
+                                meta = m.metadata or {}
+                                protocol_chunks.append(
+                                    f"[Protocol: {meta.get('title', 'Unknown')}] {meta.get('text', '')}"
+                                )
+                            protocol_context = "\n\n".join(protocol_chunks)
+                except Exception as corpus_err:
+                    print(f"[SEARCH-STREAM] Protocol corpus search failed: {corpus_err}", flush=True)
+                return protocol_context
+
+            # Helper: build sources_for_response from raw search results
+            def _build_sources(raw_sources, database):
+                """Build enriched source entries from raw search results."""
+                enriched = []
+                doc_ids = [s.get('doc_id', '') for s in raw_sources if s.get('doc_id')]
+                source_url_map = {}
+                doc_source_type_map = {}
+                if doc_ids:
+                    try:
+                        docs_with_urls = database.query(Document.id, Document.source_url).filter(
+                            Document.id.in_(doc_ids)
+                        ).all()
+                        source_url_map = {str(d.id): d.source_url for d in docs_with_urls if d.source_url}
+                    except Exception:
+                        pass
+                    try:
+                        docs_with_types = database.query(Document.id, Document.source_type).filter(
+                            Document.id.in_(doc_ids)
+                        ).all()
+                        doc_source_type_map = {str(d.id): d.source_type for d in docs_with_types}
+                    except Exception:
+                        pass
+
+                for src in raw_sources:
+                    doc_id = src.get('doc_id', '')
+                    is_shared = src.get('is_shared', False)
+                    source_entry = {
+                        "doc_id": doc_id,
+                        "title": src.get('title', 'Untitled'),
+                        "content_preview": (src.get('content', '') or '')[:300],
+                        "score": src.get('rerank_score', src.get('score', 0)),
+                    }
+                    if src.get('source_origin') == 'openalex':
+                        source_entry["source_origin"] = "openalex"
+                        source_entry["source_origin_label"] = src.get('source_origin_label', 'OpenAlex')
+                        source_entry["source_url"] = src.get('source_url', '')
+                    elif is_shared:
+                        source_entry["source_url"] = src.get('source_url', '')
+                        source_entry["is_shared"] = True
+                        source_entry["facility_name"] = src.get('facility_name', '')
+                        source_entry["source_origin"] = "ctsi"
+                        source_entry["source_origin_label"] = "CTSI Research"
+                    else:
+                        source_entry["source_url"] = source_url_map.get(doc_id, '')
+                        doc_st = doc_source_type_map.get(doc_id, '')
+                        if doc_st == 'pubmed':
+                            source_entry["source_origin"] = "pubmed"
+                            source_entry["source_origin_label"] = "PubMed"
+                        elif doc_st == 'journal':
+                            source_entry["source_origin"] = "journal"
+                            source_entry["source_origin_label"] = "Journal DB"
+                        elif doc_st == 'experiment':
+                            source_entry["source_origin"] = "reproducibility"
+                            source_entry["source_origin_label"] = "Repro Archive"
+                        else:
+                            source_entry["source_origin"] = "user_kb"
+                            source_entry["source_origin_label"] = "Your KB"
+                    enriched.append(source_entry)
+                return enriched
+
+            # Helper: stream a markdown string word-by-word as chunk events
+            def _stream_markdown(text):
+                """Yield chunk events for a markdown string, word by word."""
+                words = text.split(' ')
+                chunks = []
+                for i, word in enumerate(words):
+                    chunk = word if i == 0 else ' ' + word
+                    chunks.append(f"event: chunk\ndata: {json.dumps({'content': chunk})}\n\n")
+                return chunks
+
+            _intent_handled = False  # Flag: if True, skip standard RAG flow
+
+            # ────────────────────────────────────────────────────────────
+            # 1. EXPERIMENT SUGGESTION
+            # ────────────────────────────────────────────────────────────
             if _intent_name == "experiment_suggestion":
                 try:
                     from services.experiment_suggestion_service import ExperimentSuggestionService
                     from services.feasibility_checker import FeasibilityChecker
                     from services.protocol_graph_service import ProtocolGraphService
 
-                    # Step 1: Get user's paper content via RAG search
-                    paper_context = ""
-                    paper_references = []
+                    # Step 1: Search user's KB
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Analyzing research question', 'status': 'complete'})}\n\n"
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Querying protocol knowledge graph', 'status': 'in_progress'})}\n\n"
+
+                    paper_context, paper_references, raw_kb_results = _search_user_kb(query, vector_store, tenant_id, boost_doc_ids)
+
+                    # Step 2: Search protocol corpus
+                    protocol_context = _search_protocol_corpus(query, vector_store)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Querying protocol knowledge graph', 'status': 'complete'})}\n\n"
+
+                    # Step 3: Get resources from protocol graph
+                    yield f"event: action\ndata: {json.dumps({'section': 'Experiment Design', 'text': 'Generating experiment suggestions', 'status': 'in_progress'})}\n\n"
+                    available_resources = []
                     try:
-                        # Search user's knowledge base for relevant content
-                        rag_results = vector_store.hybrid_search(
-                            query=query,
-                            tenant_id=tenant_id,
-                            top_k=10,
-                            boost_doc_ids=boost_doc_ids,
-                        )
-                        if rag_results:
-                            paper_chunks = []
-                            seen_docs = set()
-                            for r in rag_results:
-                                chunk_text = r.get("content", "") or r.get("text", "")
-                                doc_title = r.get("title", "")
-                                doc_id = r.get("doc_id", "")
-                                if chunk_text:
-                                    paper_chunks.append(f"[{doc_title}]: {chunk_text[:1500]}")
-                                if doc_id and doc_id not in seen_docs:
-                                    seen_docs.add(doc_id)
-                                    paper_references.append({"title": doc_title, "doc_id": doc_id})
-                            paper_context = "\n\n".join(paper_chunks[:8])  # Top 8 chunks
-                    except Exception as rag_err:
-                        print(f"[SEARCH-STREAM] RAG for experiments failed: {rag_err}", flush=True)
+                        graph_service = ProtocolGraphService(_azure_client, AZURE_CHAT_DEPLOYMENT)
+                        graph_data = graph_service.query_graph(tenant_id, db)
+                        available_resources = [
+                            {"name": e.get("name", ""), "type": e.get("entity_type", ""), "attributes": e.get("attributes", {})}
+                            for e in graph_data.get("entities", [])
+                        ]
+                    except Exception as graph_err:
+                        print(f"[SEARCH-STREAM] Protocol graph query failed: {graph_err}", flush=True)
 
-                    # Step 2: Search protocol corpus for related protocols
-                    protocol_context = ""
-                    try:
-                        if vector_store:
-                            query_embedding = vector_store._get_embedding(query)
-                            corpus_results = vector_store.index.query(
-                                vector=query_embedding,
-                                top_k=5,
-                                namespace="protocol-corpus",
-                                include_metadata=True,
-                            )
-                            if corpus_results and corpus_results.matches:
-                                protocol_chunks = []
-                                for m in corpus_results.matches:
-                                    meta = m.metadata or {}
-                                    protocol_chunks.append(
-                                        f"[Protocol: {meta.get('title', 'Unknown')}] {meta.get('text', '')}"
-                                    )
-                                protocol_context = "\n\n".join(protocol_chunks)
-                    except Exception as corpus_err:
-                        print(f"[SEARCH-STREAM] Protocol corpus search failed: {corpus_err}", flush=True)
-
-                    # Step 3: Get available resources from protocol graph
-                    graph_service = ProtocolGraphService(_azure_client, AZURE_CHAT_DEPLOYMENT)
-                    graph_data = graph_service.query_graph(tenant_id, db)
-                    available_resources = [
-                        {"name": e.get("name", ""), "type": e.get("entity_type", ""), "attributes": e.get("attributes", {})}
-                        for e in graph_data.get("entities", [])
-                    ]
-
-                    # Step 4: Generate grounded suggestions
+                    # Step 4: Generate suggestions with feasibility
                     suggestion_service = ExperimentSuggestionService(_azure_client, AZURE_CHAT_DEPLOYMENT)
                     suggestions = suggestion_service.suggest_experiments_with_feasibility(
                         research_question=query,
@@ -2077,168 +2182,724 @@ def search_stream():
                         paper_context=paper_context,
                         protocol_context=protocol_context,
                     )
+                    yield f"event: action\ndata: {json.dumps({'section': 'Experiment Design', 'text': 'Generating experiment suggestions', 'status': 'complete'})}\n\n"
 
-                    # Step 5: Deep feasibility check with protocol corpus
+                    # Step 5: Deep feasibility check
+                    yield f"event: action\ndata: {json.dumps({'section': 'Experiment Design', 'text': 'Validating feasibility', 'status': 'in_progress'})}\n\n"
                     checker = FeasibilityChecker(llm_client=_azure_client, vector_store=vector_store)
                     for suggestion in suggestions:
                         if suggestion.get("feasibility", {}).get("overall", 0) < 0.9:
-                            deep_check = checker.check(suggestion, tenant_id=tenant_id)
-                            suggestion["deep_feasibility"] = deep_check
+                            try:
+                                deep_check = checker.check(suggestion, tenant_id=tenant_id)
+                                suggestion["deep_feasibility"] = deep_check
+                            except Exception:
+                                pass
+                    yield f"event: action\ndata: {json.dumps({'section': 'Experiment Design', 'text': 'Validating feasibility', 'status': 'complete'})}\n\n"
 
-                    # Emit as SSE event
-                    yield f"data: {json.dumps({'type': 'experiment_suggestions', 'suggestions': suggestions})}\n\n"
+                    if suggestions:
+                        # Build sources from KB results
+                        sources_for_response = _build_sources(raw_kb_results[:10], db)
+                        yield f"event: search_complete\ndata: {json.dumps({'expanded_query': query, 'num_sources': len(sources_for_response), 'sources': sources_for_response})}\n\n"
+
+                        # Format suggestions as streaming markdown
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Preparing results', 'status': 'in_progress'})}\n\n"
+                        answer_parts = [f"# Experiment Suggestions\n\nBased on your research question and knowledge base, here are **{len(suggestions)}** suggested experiments:\n\n"]
+                        for idx, s in enumerate(suggestions, 1):
+                            status_icon = {"validated": "Validated", "needs_adjustment": "Needs Adjustment", "infeasible": "Infeasible"}.get(s.get("validation_status", ""), "")
+                            feasibility_score = s.get("feasibility", {}).get("overall", 0)
+                            answer_parts.append(f"## {idx}. {s.get('title', 'Untitled Experiment')}\n\n")
+                            if s.get("hypothesis"):
+                                answer_parts.append(f"**Hypothesis:** {s['hypothesis']}\n\n")
+                            if s.get("methodology"):
+                                answer_parts.append(f"**Methodology:** {s['methodology']}\n\n")
+                            if s.get("grounding"):
+                                answer_parts.append(f"**Grounding:** {s['grounding']}\n\n")
+                            if s.get("expected_outcome"):
+                                answer_parts.append(f"**Expected Outcome:** {s['expected_outcome']}\n\n")
+                            if s.get("controls"):
+                                controls_str = ", ".join(s["controls"]) if isinstance(s["controls"], list) else str(s["controls"])
+                                answer_parts.append(f"**Controls:** {controls_str}\n\n")
+                            if s.get("required_resources"):
+                                res_str = ", ".join(s["required_resources"]) if isinstance(s["required_resources"], list) else str(s["required_resources"])
+                                answer_parts.append(f"**Required Resources:** {res_str}\n\n")
+                            answer_parts.append(f"**Feasibility:** {feasibility_score:.0%} | **Risk:** {s.get('risk_level', 'unknown')} | **Novelty:** {s.get('novelty', 'unknown')}")
+                            if status_icon:
+                                answer_parts.append(f" | **Status:** {status_icon}")
+                            answer_parts.append("\n\n")
+                            # Technical issues
+                            issues = s.get("technical_issues", [])
+                            if issues:
+                                answer_parts.append("**Technical Notes:**\n")
+                                for issue in issues:
+                                    answer_parts.append(f"- [{issue.get('severity', 'info').upper()}] {issue.get('issue', '')}\n")
+                                answer_parts.append("\n")
+                            answer_parts.append("---\n\n")
+
+                        full_answer = "".join(answer_parts)
+                        for chunk_event in _stream_markdown(full_answer):
+                            yield chunk_event
+
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Preparing results', 'status': 'complete'})}\n\n"
+                        yield f"event: done\ndata: {json.dumps({'confidence': 0.85, 'sources': sources_for_response, 'features_used': {'intent': 'experiment_suggestion', 'suggestions_count': len(suggestions)}})}\n\n"
+                        _intent_handled = True
+                    else:
+                        print("[SEARCH-STREAM] No experiment suggestions generated, falling back to RAG", flush=True)
+
                 except Exception as e:
-                    print(f"[SEARCH-STREAM] Experiment suggestion failed: {e}", flush=True)
+                    import traceback
+                    print(f"[SEARCH-STREAM] Experiment suggestion failed, falling back to RAG: {e}", flush=True)
+                    traceback.print_exc()
 
-            # Handle protocol feasibility intent
+            # ────────────────────────────────────────────────────────────
+            # 2. PROTOCOL FEASIBILITY
+            # ────────────────────────────────────────────────────────────
             elif _intent_name == "protocol_feasibility":
                 try:
                     from services.feasibility_checker import FeasibilityChecker
 
+                    # Step 1: Extract technique
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Extracting technique details', 'status': 'complete'})}\n\n"
+
+                    # Step 2: Check protocol compatibility — search KB for context
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Checking protocol compatibility', 'status': 'in_progress'})}\n\n"
+                    paper_context, paper_references, raw_kb_results = _search_user_kb(query, vector_store, tenant_id, boost_doc_ids)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Checking protocol compatibility', 'status': 'complete'})}\n\n"
+
+                    # Step 3: Run feasibility check
+                    yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Querying evidence database', 'status': 'in_progress'})}\n\n"
                     checker = FeasibilityChecker(llm_client=_azure_client, vector_store=vector_store)
-                    # Parse the query as an experiment proposal
                     experiment = {"title": query, "methodology": query}
                     feasibility = checker.check(experiment, tenant_id=tenant_id)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Querying evidence database', 'status': 'complete'})}\n\n"
 
-                    yield f"data: {json.dumps({'type': 'feasibility_check', 'feasibility': feasibility})}\n\n"
-                except Exception as e:
-                    print(f"[SEARCH-STREAM] Feasibility check failed: {e}", flush=True)
+                    # Step 4: ML protocol analysis if relevant
+                    yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Assessing feasibility', 'status': 'in_progress'})}\n\n"
+                    ml_analysis = None
+                    try:
+                        from services.ml_protocol_service import get_ml_protocol_service
+                        ml_service = get_ml_protocol_service()
+                        if paper_context:
+                            ml_analysis = ml_service.analyze_protocol(paper_context[:5000])
+                    except Exception as ml_err:
+                        print(f"[SEARCH-STREAM] ML protocol analysis failed: {ml_err}", flush=True)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Feasibility', 'text': 'Assessing feasibility', 'status': 'complete'})}\n\n"
 
-            sources_for_response = []
-            for event in enhanced_service.search_and_answer_stream(
-                query=query,
-                tenant_id=tenant_id,
-                vector_store=vector_store,
-                top_k=top_k,
-                conversation_history=conversation_history,
-                boost_doc_ids=boost_doc_ids,
-                response_mode=response_mode,
-                user_context=user_context,
-                source_types=source_types
-            ):
-                event_type = event.get('type')
+                    if feasibility:
+                        sources_for_response = _build_sources(raw_kb_results[:10], db)
+                        yield f"event: search_complete\ndata: {json.dumps({'expanded_query': query, 'num_sources': len(sources_for_response), 'sources': sources_for_response})}\n\n"
 
-                if event_type == 'journal_analysis':
-                    # Emit journal analysis plan steps and thinking events
-                    analysis = event.get('analysis', {})
-                    field_text = 'Detected field: ' + analysis.get('field_label', 'Unknown')
-                    action1 = json.dumps({'section': 'Journal Analysis', 'text': field_text, 'status': 'complete'})
-                    yield f"event: action\ndata: {action1}\n\n"
-                    gaps = analysis.get('methodology_gaps', [])
-                    gap_text = 'Found ' + str(len(gaps)) + ' methodology gaps'
-                    action2 = json.dumps({'section': 'Journal Analysis', 'text': gap_text, 'status': 'complete'})
-                    yield f"event: action\ndata: {action2}\n\n"
-                    neighbors = analysis.get('citation_neighbor_journals', [])
-                    kw_journals = analysis.get('keyword_journals', [])
-                    total_journals = len(neighbors) + len(kw_journals)
-                    journal_text = 'Matched ' + str(total_journals) + ' target journals'
-                    action3 = json.dumps({'section': 'Journal Analysis', 'text': journal_text, 'status': 'complete'})
-                    yield f"event: action\ndata: {action3}\n\n"
-                    doc_title = analysis.get('doc_title', 'document')
-                    thinking_text = 'Running High-Impact Journal Analysis on ' + doc_title + '...'
-                    thinking_data = json.dumps({'type': 'journal_analysis', 'text': thinking_text})
-                    yield f"event: thinking\ndata: {thinking_data}\n\n"
-                    # Emit the full analysis data as a separate event for the frontend context panel
-                    analysis_data = json.dumps(analysis)
-                    yield f"event: journal_analysis\ndata: {analysis_data}\n\n"
+                        # Format feasibility as markdown
+                        score = feasibility.get("score", 0)
+                        tier = feasibility.get("tier", "unknown")
+                        tier_labels = {"high": "Highly Feasible", "medium": "Moderately Feasible", "low": "Low Feasibility", "infeasible": "Infeasible"}
+                        answer_parts = [f"# Protocol Feasibility Assessment\n\n"]
+                        answer_parts.append(f"**Overall Score:** {score:.0%} — **{tier_labels.get(tier, tier.title())}**\n\n")
 
-                elif event_type == 'search_complete':
-                    raw_sources = event.get('sources', [])
+                        if feasibility.get("reasoning"):
+                            answer_parts.append(f"## Assessment\n\n{feasibility['reasoning']}\n\n")
 
-                    # Enrich with source_url from DB
-                    doc_ids = [s.get('doc_id', '') for s in raw_sources if s.get('doc_id')]
-                    source_url_map = {}
-                    if doc_ids:
-                        try:
-                            docs_with_urls = db.query(Document.id, Document.source_url).filter(
-                                Document.id.in_(doc_ids)
-                            ).all()
-                            source_url_map = {str(d.id): d.source_url for d in docs_with_urls if d.source_url}
-                        except Exception:
-                            pass
+                        issues = feasibility.get("issues", [])
+                        if issues:
+                            answer_parts.append(f"## Issues Identified ({len(issues)})\n\n")
+                            for issue in issues:
+                                severity = issue.get("severity", "info").upper()
+                                answer_parts.append(f"- **[{severity}]** {issue.get('description', '')} ")
+                                if issue.get("evidence"):
+                                    answer_parts.append(f"_(Evidence: {issue['evidence']})_")
+                                answer_parts.append("\n")
+                            answer_parts.append("\n")
 
-                    # Build doc source_type lookup for origin tagging
-                    doc_source_type_map = {}
-                    if doc_ids:
-                        try:
-                            docs_with_types = db.query(Document.id, Document.source_type).filter(
-                                Document.id.in_(doc_ids)
-                            ).all()
-                            doc_source_type_map = {str(d.id): d.source_type for d in docs_with_types}
-                        except Exception:
-                            pass
+                        modifications = feasibility.get("modifications", [])
+                        if modifications:
+                            answer_parts.append("## Suggested Modifications\n\n")
+                            for mod in modifications:
+                                answer_parts.append(f"- **{mod.get('original', '')}** -> {mod.get('suggested', '')} _{mod.get('reason', '')}_\n")
+                            answer_parts.append("\n")
 
-                    for src in raw_sources:
-                        doc_id = src.get('doc_id', '')
-                        is_shared = src.get('is_shared', False)
-                        source_entry = {
-                            "doc_id": doc_id,
-                            "title": src.get('title', 'Untitled'),
-                            "content_preview": (src.get('content', '') or '')[:300],
-                            "score": src.get('rerank_score', src.get('score', 0)),
-                        }
-                        if src.get('source_origin') == 'openalex':
-                            source_entry["source_origin"] = "openalex"
-                            source_entry["source_origin_label"] = src.get('source_origin_label', 'OpenAlex')
-                            source_entry["source_url"] = src.get('source_url', '')
-                        elif is_shared:
-                            source_entry["source_url"] = src.get('source_url', '')
-                            source_entry["is_shared"] = True
-                            source_entry["facility_name"] = src.get('facility_name', '')
-                            source_entry["source_origin"] = "ctsi"
-                            source_entry["source_origin_label"] = "CTSI Research"
-                        else:
-                            source_entry["source_url"] = source_url_map.get(doc_id, '')
-                            # Determine origin from source_type
-                            doc_st = doc_source_type_map.get(doc_id, '')
-                            if doc_st == 'pubmed':
-                                source_entry["source_origin"] = "pubmed"
-                                source_entry["source_origin_label"] = "PubMed"
-                            elif doc_st == 'journal':
-                                source_entry["source_origin"] = "journal"
-                                source_entry["source_origin_label"] = "Journal DB"
-                            elif doc_st == 'experiment':
-                                source_entry["source_origin"] = "reproducibility"
-                                source_entry["source_origin_label"] = "Repro Archive"
+                        evidence = feasibility.get("evidence", {})
+                        if evidence:
+                            answer_parts.append("## Evidence Summary\n\n")
+                            if evidence.get("cooccurrence_hits"):
+                                answer_parts.append(f"- Co-occurrence matches: {evidence['cooccurrence_hits']}\n")
+                            if evidence.get("corpus_matches"):
+                                answer_parts.append(f"- Similar protocols found: {evidence['corpus_matches']}\n")
+                            if evidence.get("negative_evidence"):
+                                answer_parts.append(f"- Negative evidence: {evidence['negative_evidence']}\n")
+                            answer_parts.append("\n")
+
+                        if ml_analysis:
+                            answer_parts.append("## ML Protocol Analysis\n\n")
+                            if ml_analysis.get("is_protocol"):
+                                answer_parts.append(f"- Protocol content detected (confidence: {ml_analysis.get('protocol_confidence', 0):.0%})\n")
+                                if ml_analysis.get("completeness_score") is not None:
+                                    answer_parts.append(f"- Completeness score: {ml_analysis['completeness_score']:.0%}\n")
                             else:
-                                source_entry["source_origin"] = "user_kb"
-                                source_entry["source_origin_label"] = "Your KB"
-                        sources_for_response.append(source_entry)
+                                answer_parts.append(f"- Content classified as non-protocol (confidence: {ml_analysis.get('protocol_confidence', 0):.0%})\n")
+                            answer_parts.append("\n")
 
-                    # Emit decomposition action if query was decomposed
-                    features_used = event.get('features_used', {})
-                    if features_used.get('decomposition'):
-                        sub_queries = features_used.get('sub_queries', [])
-                        yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': f'Decomposed into {len(sub_queries)} sub-queries', 'status': 'in_progress'})}\n\n"
+                        full_answer = "".join(answer_parts)
+                        for chunk_event in _stream_markdown(full_answer):
+                            yield chunk_event
 
-                    # Thinking: report search results found
-                    yield f"event: thinking\ndata: {json.dumps({'type': 'searching_kb', 'text': f'Searching knowledge base... Found {len(sources_for_response)} sources'})}\n\n"
+                        yield f"event: done\ndata: {json.dumps({'confidence': score, 'sources': sources_for_response, 'features_used': {'intent': 'protocol_feasibility', 'feasibility_tier': tier}})}\n\n"
+                        _intent_handled = True
+                    else:
+                        print("[SEARCH-STREAM] Feasibility check returned no results, falling back to RAG", flush=True)
 
-                    # Thinking: reranking
-                    yield f"event: thinking\ndata: {json.dumps({'type': 'reranking', 'text': 'Reranking and filtering results...'})}\n\n"
+                except Exception as e:
+                    import traceback
+                    print(f"[SEARCH-STREAM] Feasibility check failed, falling back to RAG: {e}", flush=True)
+                    traceback.print_exc()
 
-                    yield f"event: search_complete\ndata: {json.dumps({'expanded_query': event.get('expanded_query', query), 'num_sources': event.get('num_sources', 0), 'sources': sources_for_response})}\n\n"
+            # ────────────────────────────────────────────────────────────
+            # 3. JOURNAL ANALYSIS
+            # ────────────────────────────────────────────────────────────
+            elif _special == 'journal_analysis':
+                try:
+                    from services.journal_scorer_service import get_journal_scorer_service, FIELD_CONFIGS
 
-                    # Thinking: generating answer
-                    yield f"event: thinking\ndata: {json.dumps({'type': 'generating', 'text': 'Generating answer...'})}\n\n"
+                    # Step 1: Find the manuscript in user's KB
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Identify referenced manuscript', 'status': 'complete'})}\n\n"
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base for paper content', 'status': 'in_progress'})}\n\n"
 
-                elif event_type == 'chunk':
-                    content = event.get('content', '')
-                    print(f"[STREAM-CHUNK] Sending: {content[:20]}...", flush=True)
-                    yield f"event: chunk\ndata: {json.dumps({'content': content})}\n\n"
+                    paper_context, paper_references, raw_kb_results = _search_user_kb(query, vector_store, tenant_id, boost_doc_ids)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Search knowledge base for paper content', 'status': 'complete'})}\n\n"
 
-                elif event_type == 'done':
-                    final_data = {
-                        'confidence': event.get('confidence', 0.8),
-                        'sources': sources_for_response,
-                        'hallucination_check': event.get('hallucination_check'),
-                        'features_used': event.get('features_used', {})
-                    }
-                    # Include answer confidence scoring if available
-                    answer_confidence = event.get('answer_confidence')
-                    if answer_confidence:
-                        final_data['answer_confidence'] = answer_confidence
-                    yield f"event: done\ndata: {json.dumps(final_data)}\n\n"
+                    if paper_context and len(paper_context) > 500:
+                        # Step 2: Run journal analysis using enhanced_search_service's analyzer
+                        yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Detect academic field and keywords', 'status': 'in_progress'})}\n\n"
+
+                        journal_analysis = enhanced_service._run_journal_analysis(paper_context, paper_references[0].get('title', 'document') if paper_references else 'document')
+
+                        if journal_analysis:
+                            field_label = journal_analysis.get('field_label', 'Unknown')
+                            yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': f'Detect academic field and keywords', 'status': 'complete'})}\n\n"
+                            yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': f'Detected field: {field_label}', 'status': 'complete'})}\n\n"
+
+                            yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Analyze citation neighborhood', 'status': 'in_progress'})}\n\n"
+                            neighbors = journal_analysis.get('citation_neighbor_journals', [])
+                            yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': f'Analyze citation neighborhood', 'status': 'complete'})}\n\n"
+
+                            yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Match journals by top-cited authors', 'status': 'in_progress'})}\n\n"
+                            kw_journals = journal_analysis.get('keyword_journals', [])
+                            yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': 'Match journals by top-cited authors', 'status': 'complete'})}\n\n"
+
+                            gaps = journal_analysis.get('methodology_gaps', [])
+                            yield f"event: action\ndata: {json.dumps({'section': 'Journal Analysis', 'text': f'Check methodology gaps', 'status': 'complete'})}\n\n"
+
+                            # Emit full analysis for frontend context panel
+                            yield f"event: journal_analysis\ndata: {json.dumps(journal_analysis)}\n\n"
+
+                            # Build sources
+                            sources_for_response = _build_sources(raw_kb_results[:10], db)
+                            yield f"event: search_complete\ndata: {json.dumps({'expanded_query': query, 'num_sources': len(sources_for_response), 'sources': sources_for_response})}\n\n"
+
+                            # Format as streaming markdown answer
+                            yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate journal recommendations', 'status': 'in_progress'})}\n\n"
+                            doc_title = journal_analysis.get('doc_title', 'your manuscript')
+                            answer_parts = [f"# Journal Recommendations for \"{doc_title}\"\n\n"]
+                            answer_parts.append(f"**Academic Field:** {field_label}\n")
+                            keywords = journal_analysis.get('keywords', [])
+                            if keywords:
+                                answer_parts.append(f"**Keywords:** {', '.join(keywords[:8])}\n\n")
+
+                            # Methodology gaps
+                            if gaps:
+                                answer_parts.append(f"## Methodology Assessment ({len(gaps)} issues found)\n\n")
+                                for g in gaps:
+                                    answer_parts.append(f"- **[{g.get('severity', 'info').upper()}]** {g.get('gap', '')}: {g.get('recommendation', '')}\n")
+                                answer_parts.append("\n")
+                            else:
+                                answer_parts.append("## Methodology Assessment\n\nNo methodology gaps detected — manuscript looks methodologically sound.\n\n")
+
+                            # Citation neighborhood journals
+                            if neighbors:
+                                answer_parts.append(f"## Journals from Citation Neighborhood ({len(neighbors)} matches)\n\n")
+                                answer_parts.append("These journals frequently publish papers cited alongside your references:\n\n")
+                                for j in neighbors[:10]:
+                                    answer_parts.append(f"- **{j.get('journal_name', 'Unknown')}** — appears in {j.get('citation_overlap', 0)} reference neighborhoods\n")
+                                answer_parts.append("\n")
+
+                            # Keyword-matched journals
+                            if kw_journals:
+                                answer_parts.append(f"## Journals Matching Paper Keywords ({len(kw_journals)} matches)\n\n")
+                                for cat_label, cat_key in [("Target Journals", "primary"), ("Stretch Journals", "stretch"), ("Safe/Backup Journals", "safe")]:
+                                    cat_js = [j for j in kw_journals if j.get('category') == cat_key]
+                                    if cat_js:
+                                        answer_parts.append(f"### {cat_label}\n\n")
+                                        for j in cat_js[:5]:
+                                            name = j.get('name', 'Unknown')
+                                            h_idx = j.get('h_index', 0)
+                                            answer_parts.append(f"- **{name}**" + (f" (h-index: {h_idx})" if h_idx else "") + "\n")
+                                        answer_parts.append("\n")
+
+                            answer_parts.append(f"\n---\n*Analysis based on {journal_analysis.get('references_found', 0)} references found in manuscript.*\n")
+
+                            full_answer = "".join(answer_parts)
+                            for chunk_event in _stream_markdown(full_answer):
+                                yield chunk_event
+
+                            yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate journal recommendations', 'status': 'complete'})}\n\n"
+                            yield f"event: done\ndata: {json.dumps({'confidence': 0.85, 'sources': sources_for_response, 'features_used': {'intent': 'journal_analysis', 'field': field_label, 'journals_matched': len(neighbors) + len(kw_journals)}})}\n\n"
+                            _intent_handled = True
+                        else:
+                            print("[SEARCH-STREAM] Journal analysis returned None, falling back to RAG", flush=True)
+                    else:
+                        print("[SEARCH-STREAM] Insufficient paper content for journal analysis, falling back to RAG", flush=True)
+
+                except Exception as e:
+                    import traceback
+                    print(f"[SEARCH-STREAM] Journal analysis failed, falling back to RAG: {e}", flush=True)
+                    traceback.print_exc()
+
+            # ────────────────────────────────────────────────────────────
+            # 4. METHODOLOGY ANALYSIS
+            # ────────────────────────────────────────────────────────────
+            elif _special == 'methodology_analysis':
+                try:
+                    from services.paper_analysis_service import PaperAnalysisService
+
+                    # Step 1: Find manuscript
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Identify referenced manuscript', 'status': 'complete'})}\n\n"
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Retrieve paper content from knowledge base', 'status': 'in_progress'})}\n\n"
+
+                    paper_context, paper_references, raw_kb_results = _search_user_kb(query, vector_store, tenant_id, boost_doc_ids, k=15)
+
+                    # Concatenate all chunks from the top document for richer analysis
+                    best_doc_id = raw_kb_results[0].get('doc_id', '') if raw_kb_results else ''
+                    doc_text = ""
+                    doc_title_meth = "your manuscript"
+                    if best_doc_id and raw_kb_results:
+                        all_chunks = [r.get('content', '') or r.get('text', '') for r in raw_kb_results if r.get('doc_id') == best_doc_id]
+                        doc_text = '\n\n'.join(all_chunks)
+                        doc_title_meth = raw_kb_results[0].get('title', 'your manuscript')
+                    elif paper_context:
+                        doc_text = paper_context
+
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Retrieve paper content from knowledge base', 'status': 'complete'})}\n\n"
+
+                    if doc_text and len(doc_text) > 300:
+                        # Step 2: Run methodology analysis via PaperAnalysisService
+                        yield f"event: action\ndata: {json.dumps({'section': 'Methodology Review', 'text': 'Detect methodology gaps and weaknesses', 'status': 'in_progress'})}\n\n"
+
+                        paper_service = PaperAnalysisService()
+                        analysis_result = paper_service._analyze_experimental(doc_text, doc_title_meth)
+                        yield f"event: action\ndata: {json.dumps({'section': 'Methodology Review', 'text': 'Detect methodology gaps and weaknesses', 'status': 'complete'})}\n\n"
+
+                        # Step 3: Run methodology gap detection via enhanced search journal analyzer
+                        yield f"event: action\ndata: {json.dumps({'section': 'Methodology Review', 'text': 'Assess experimental design', 'status': 'in_progress'})}\n\n"
+                        methodology_gaps = []
+                        try:
+                            from services.journal_scorer_service import get_journal_scorer_service
+                            scorer = get_journal_scorer_service()
+                            methodology_gaps = scorer._detect_methodology_gaps(doc_text, 'biomedical')
+                        except Exception as mg_err:
+                            print(f"[SEARCH-STREAM] Methodology gap detection failed: {mg_err}", flush=True)
+                        yield f"event: action\ndata: {json.dumps({'section': 'Methodology Review', 'text': 'Assess experimental design', 'status': 'complete'})}\n\n"
+
+                        # Build sources
+                        sources_for_response = _build_sources(raw_kb_results[:10], db)
+                        yield f"event: search_complete\ndata: {json.dumps({'expanded_query': query, 'num_sources': len(sources_for_response), 'sources': sources_for_response})}\n\n"
+
+                        # Format as streaming markdown
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate improvement recommendations', 'status': 'in_progress'})}\n\n"
+
+                        answer_parts = [f"# Methodology Analysis: \"{doc_title_meth}\"\n\n"]
+
+                        if not analysis_result.get('error'):
+                            if analysis_result.get('summary'):
+                                answer_parts.append(f"## Summary\n\n{analysis_result['summary']}\n\n")
+                            if analysis_result.get('research_question'):
+                                answer_parts.append(f"**Research Question:** {analysis_result['research_question']}\n\n")
+
+                            meth = analysis_result.get('methodology', {})
+                            if meth:
+                                answer_parts.append("## Methodology Details\n\n")
+                                if meth.get('study_design'):
+                                    answer_parts.append(f"- **Study Design:** {meth['study_design']}\n")
+                                if meth.get('techniques'):
+                                    answer_parts.append(f"- **Techniques:** {', '.join(meth['techniques'])}\n")
+                                if meth.get('model_system'):
+                                    answer_parts.append(f"- **Model System:** {meth['model_system']}\n")
+                                if meth.get('sample_size'):
+                                    answer_parts.append(f"- **Sample Size:** {meth['sample_size']}\n")
+                                answer_parts.append("\n")
+
+                            limitations = analysis_result.get('limitations', [])
+                            if limitations:
+                                answer_parts.append(f"## Limitations ({len(limitations)})\n\n")
+                                for lim in limitations:
+                                    answer_parts.append(f"- {lim}\n")
+                                answer_parts.append("\n")
+
+                            repro = analysis_result.get('reproducibility_assessment', {})
+                            if repro:
+                                answer_parts.append("## Reproducibility Assessment\n\n")
+                                if repro.get('methods_completeness'):
+                                    answer_parts.append(f"- **Methods Completeness:** {repro['methods_completeness']}\n")
+                                if repro.get('data_availability'):
+                                    answer_parts.append(f"- **Data Availability:** {repro['data_availability']}\n")
+                                if repro.get('reagent_details'):
+                                    answer_parts.append(f"- **Reagent Details:** {repro['reagent_details']}\n")
+                                issues = repro.get('issues', [])
+                                if issues:
+                                    answer_parts.append("\n**Reproducibility Issues:**\n")
+                                    for issue in issues:
+                                        answer_parts.append(f"- {issue}\n")
+                                answer_parts.append("\n")
+
+                            stats = analysis_result.get('statistical_methods', [])
+                            if stats:
+                                answer_parts.append(f"## Statistical Methods\n\n{', '.join(stats)}\n\n")
+
+                            findings = analysis_result.get('key_findings', [])
+                            if findings:
+                                answer_parts.append(f"## Key Findings\n\n")
+                                for f_item in findings:
+                                    answer_parts.append(f"- {f_item}\n")
+                                answer_parts.append("\n")
+                        else:
+                            answer_parts.append(f"*Detailed analysis could not be completed: {analysis_result.get('error', 'unknown error')}*\n\n")
+
+                        # Methodology gaps from journal scorer
+                        if methodology_gaps:
+                            answer_parts.append(f"## Methodology Gaps ({len(methodology_gaps)} issues)\n\n")
+                            for g in methodology_gaps:
+                                answer_parts.append(f"- **[{g.get('severity', 'info').upper()}]** {g.get('gap', '')}: {g.get('recommendation', '')}\n")
+                            answer_parts.append("\n")
+
+                        full_answer = "".join(answer_parts)
+                        for chunk_event in _stream_markdown(full_answer):
+                            yield chunk_event
+
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Generate improvement recommendations', 'status': 'complete'})}\n\n"
+                        yield f"event: done\ndata: {json.dumps({'confidence': 0.8, 'sources': sources_for_response, 'features_used': {'intent': 'methodology_analysis', 'gaps_found': len(methodology_gaps)}})}\n\n"
+                        _intent_handled = True
+                    else:
+                        print("[SEARCH-STREAM] Insufficient paper content for methodology analysis, falling back to RAG", flush=True)
+
+                except Exception as e:
+                    import traceback
+                    print(f"[SEARCH-STREAM] Methodology analysis failed, falling back to RAG: {e}", flush=True)
+                    traceback.print_exc()
+
+            # ────────────────────────────────────────────────────────────
+            # 5. KNOWLEDGE GAP ANALYSIS
+            # ────────────────────────────────────────────────────────────
+            elif _intent_name == "knowledge_gap":
+                try:
+                    from services.knowledge_service import KnowledgeService
+
+                    # Emit plan steps (not emitted by default for knowledge_gap intent)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Scanning knowledge base documents', 'status': 'in_progress'})}\n\n"
+
+                    # Search KB for context to return as sources
+                    paper_context, paper_references, raw_kb_results = _search_user_kb(query, vector_store, tenant_id, boost_doc_ids)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Scanning knowledge base documents', 'status': 'complete'})}\n\n"
+
+                    yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Running intelligent gap detection', 'status': 'in_progress'})}\n\n"
+
+                    knowledge_service = KnowledgeService(db)
+                    gap_result = knowledge_service.analyze_gaps_intelligent(
+                        tenant_id=tenant_id,
+                        max_documents=50,
+                    )
+                    yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Running intelligent gap detection', 'status': 'complete'})}\n\n"
+
+                    if gap_result and gap_result.gaps:
+                        sources_for_response = _build_sources(raw_kb_results[:10], db)
+                        yield f"event: search_complete\ndata: {json.dumps({'expanded_query': query, 'num_sources': len(sources_for_response), 'sources': sources_for_response})}\n\n"
+
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Formatting gap analysis results', 'status': 'in_progress'})}\n\n"
+
+                        gaps = gap_result.gaps
+                        categories = gap_result.categories_found
+                        total_docs = gap_result.total_documents_analyzed
+
+                        answer_parts = [f"# Knowledge Gap Analysis\n\n"]
+                        answer_parts.append(f"Analyzed **{total_docs}** documents and identified **{len(gaps)}** knowledge gaps.\n\n")
+
+                        if categories:
+                            answer_parts.append("## Gap Categories\n\n")
+                            for cat, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+                                answer_parts.append(f"- **{cat.title()}**: {count} gaps\n")
+                            answer_parts.append("\n")
+
+                        answer_parts.append("## Identified Gaps\n\n")
+                        for idx, gap in enumerate(gaps[:20], 1):
+                            gap_cat = gap.get('category', 'general').title()
+                            gap_title = gap.get('title', 'Unknown gap')
+                            gap_priority = gap.get('priority', 3)
+                            gap_q_count = gap.get('questions_count', 0)
+                            priority_labels = {1: "Critical", 2: "High", 3: "Medium", 4: "Low", 5: "Optional"}
+                            priority_label = priority_labels.get(gap_priority, f"Level {gap_priority}")
+                            answer_parts.append(f"### {idx}. [{gap_cat}] {gap_title}\n\n")
+                            answer_parts.append(f"**Priority:** {priority_label}")
+                            if gap_q_count:
+                                answer_parts.append(f" | **Questions:** {gap_q_count}")
+                            answer_parts.append("\n\n---\n\n")
+
+                        answer_parts.append(f"\n*Analysis used the intelligent gap detection engine (6-layer NLP analysis) on {total_docs} documents.*\n")
+
+                        full_answer = "".join(answer_parts)
+                        for chunk_event in _stream_markdown(full_answer):
+                            yield chunk_event
+
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Formatting gap analysis results', 'status': 'complete'})}\n\n"
+                        yield f"event: done\ndata: {json.dumps({'confidence': 0.8, 'sources': sources_for_response, 'features_used': {'intent': 'knowledge_gap', 'gaps_found': len(gaps), 'docs_analyzed': total_docs}})}\n\n"
+                        _intent_handled = True
+                    else:
+                        print("[SEARCH-STREAM] No knowledge gaps found, falling back to RAG", flush=True)
+
+                except Exception as e:
+                    import traceback
+                    print(f"[SEARCH-STREAM] Knowledge gap analysis failed, falling back to RAG: {e}", flush=True)
+                    traceback.print_exc()
+
+            # ────────────────────────────────────────────────────────────
+            # 6. LITERATURE SEARCH
+            # ────────────────────────────────────────────────────────────
+            elif _intent_name == "literature_search":
+                try:
+                    from services.openalex_search_service import OpenAlexSearchService
+
+                    # Emit plan steps
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Expanding search terms', 'status': 'in_progress'})}\n\n"
+
+                    # Also search user's KB for internal context
+                    paper_context, paper_references, raw_kb_results = _search_user_kb(query, vector_store, tenant_id, boost_doc_ids, k=5)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': 'Expanding search terms', 'status': 'complete'})}\n\n"
+
+                    # Search external sources
+                    yield f"event: action\ndata: {json.dumps({'section': 'Literature', 'text': 'Searching OpenAlex & PubMed', 'status': 'in_progress'})}\n\n"
+
+                    openalex_service = OpenAlexSearchService()
+                    external_papers = openalex_service.search_works(
+                        query=query,
+                        max_results=15,
+                        min_citations=0,
+                    )
+                    yield f"event: action\ndata: {json.dumps({'section': 'Literature', 'text': f'Searching OpenAlex & PubMed', 'status': 'complete'})}\n\n"
+
+                    yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Ranking results by relevance and citations', 'status': 'in_progress'})}\n\n"
+
+                    # Sort by citation count (most cited first)
+                    external_papers.sort(key=lambda p: p.get('cited_by_count', 0), reverse=True)
+                    yield f"event: action\ndata: {json.dumps({'section': 'Analysis', 'text': 'Ranking results by relevance and citations', 'status': 'complete'})}\n\n"
+
+                    if external_papers:
+                        # Build sources: combine KB results with external papers
+                        sources_for_response = _build_sources(raw_kb_results[:5], db)
+                        for paper in external_papers[:10]:
+                            sources_for_response.append({
+                                "doc_id": paper.get('openalex_id', ''),
+                                "title": paper.get('title', 'Untitled'),
+                                "content_preview": (paper.get('abstract', '') or '')[:300],
+                                "score": min(1.0, paper.get('cited_by_count', 0) / 100),
+                                "source_origin": "openalex",
+                                "source_origin_label": "OpenAlex",
+                                "source_url": paper.get('doi', ''),
+                            })
+
+                        yield f"event: search_complete\ndata: {json.dumps({'expanded_query': query, 'num_sources': len(sources_for_response), 'sources': sources_for_response})}\n\n"
+
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Formatting literature review', 'status': 'in_progress'})}\n\n"
+
+                        answer_parts = [f"# Literature Search Results\n\n"]
+                        answer_parts.append(f"Found **{len(external_papers)}** papers from OpenAlex")
+                        if raw_kb_results:
+                            answer_parts.append(f" and **{len(raw_kb_results)}** related items in your knowledge base")
+                        answer_parts.append(".\n\n")
+
+                        # Top papers
+                        answer_parts.append("## Key Papers\n\n")
+                        for idx, paper in enumerate(external_papers[:10], 1):
+                            title = paper.get('title', 'Untitled')
+                            authors = paper.get('authors', [])
+                            year = paper.get('year', '')
+                            cited = paper.get('cited_by_count', 0)
+                            journal = paper.get('journal', '')
+                            doi = paper.get('doi', '')
+                            abstract = paper.get('abstract', '')
+
+                            author_str = ', '.join(authors[:3])
+                            if len(authors) > 3:
+                                author_str += f' et al.'
+
+                            answer_parts.append(f"### {idx}. {title}\n\n")
+                            answer_parts.append(f"**{author_str}** ({year})")
+                            if journal:
+                                answer_parts.append(f" — *{journal}*")
+                            answer_parts.append(f"\n\n")
+                            answer_parts.append(f"**Citations:** {cited:,}")
+                            if doi:
+                                answer_parts.append(f" | [DOI]({doi})")
+                            answer_parts.append("\n\n")
+                            if abstract:
+                                answer_parts.append(f"{abstract[:400]}{'...' if len(abstract) > 400 else ''}\n\n")
+                            answer_parts.append("---\n\n")
+
+                        # Relevant KB items
+                        if paper_references:
+                            answer_parts.append("## Related Items in Your Knowledge Base\n\n")
+                            for ref in paper_references[:5]:
+                                answer_parts.append(f"- {ref.get('title', 'Untitled')}\n")
+                            answer_parts.append("\n")
+
+                        full_answer = "".join(answer_parts)
+                        for chunk_event in _stream_markdown(full_answer):
+                            yield chunk_event
+
+                        yield f"event: action\ndata: {json.dumps({'section': 'Synthesis', 'text': 'Formatting literature review', 'status': 'complete'})}\n\n"
+                        yield f"event: done\ndata: {json.dumps({'confidence': 0.85, 'sources': sources_for_response, 'features_used': {'intent': 'literature_search', 'external_papers': len(external_papers), 'kb_results': len(raw_kb_results)}})}\n\n"
+                        _intent_handled = True
+                    else:
+                        print("[SEARCH-STREAM] No external papers found, falling back to RAG", flush=True)
+
+                except Exception as e:
+                    import traceback
+                    print(f"[SEARCH-STREAM] Literature search failed, falling back to RAG: {e}", flush=True)
+                    traceback.print_exc()
+
+            # ================================================================
+            # STANDARD RAG FLOW (default, or fallback if specialized intent failed)
+            # ================================================================
+            if not _intent_handled:
+                sources_for_response = []
+                for event in enhanced_service.search_and_answer_stream(
+                    query=query,
+                    tenant_id=tenant_id,
+                    vector_store=vector_store,
+                    top_k=top_k,
+                    conversation_history=conversation_history,
+                    boost_doc_ids=boost_doc_ids,
+                    response_mode=response_mode,
+                    user_context=user_context,
+                    source_types=source_types
+                ):
+                    event_type = event.get('type')
+
+                    if event_type == 'journal_analysis':
+                        # Emit journal analysis plan steps and thinking events
+                        analysis = event.get('analysis', {})
+                        field_text = 'Detected field: ' + analysis.get('field_label', 'Unknown')
+                        action1 = json.dumps({'section': 'Journal Analysis', 'text': field_text, 'status': 'complete'})
+                        yield f"event: action\ndata: {action1}\n\n"
+                        gaps = analysis.get('methodology_gaps', [])
+                        gap_text = 'Found ' + str(len(gaps)) + ' methodology gaps'
+                        action2 = json.dumps({'section': 'Journal Analysis', 'text': gap_text, 'status': 'complete'})
+                        yield f"event: action\ndata: {action2}\n\n"
+                        neighbors = analysis.get('citation_neighbor_journals', [])
+                        kw_journals = analysis.get('keyword_journals', [])
+                        total_journals = len(neighbors) + len(kw_journals)
+                        journal_text = 'Matched ' + str(total_journals) + ' target journals'
+                        action3 = json.dumps({'section': 'Journal Analysis', 'text': journal_text, 'status': 'complete'})
+                        yield f"event: action\ndata: {action3}\n\n"
+                        doc_title = analysis.get('doc_title', 'document')
+                        thinking_text = 'Running High-Impact Journal Analysis on ' + doc_title + '...'
+                        thinking_data = json.dumps({'type': 'journal_analysis', 'text': thinking_text})
+                        yield f"event: thinking\ndata: {thinking_data}\n\n"
+                        # Emit the full analysis data as a separate event for the frontend context panel
+                        analysis_data = json.dumps(analysis)
+                        yield f"event: journal_analysis\ndata: {analysis_data}\n\n"
+
+                    elif event_type == 'search_complete':
+                        raw_sources = event.get('sources', [])
+
+                        # Enrich with source_url from DB
+                        doc_ids = [s.get('doc_id', '') for s in raw_sources if s.get('doc_id')]
+                        source_url_map = {}
+                        if doc_ids:
+                            try:
+                                docs_with_urls = db.query(Document.id, Document.source_url).filter(
+                                    Document.id.in_(doc_ids)
+                                ).all()
+                                source_url_map = {str(d.id): d.source_url for d in docs_with_urls if d.source_url}
+                            except Exception:
+                                pass
+
+                        # Build doc source_type lookup for origin tagging
+                        doc_source_type_map = {}
+                        if doc_ids:
+                            try:
+                                docs_with_types = db.query(Document.id, Document.source_type).filter(
+                                    Document.id.in_(doc_ids)
+                                ).all()
+                                doc_source_type_map = {str(d.id): d.source_type for d in docs_with_types}
+                            except Exception:
+                                pass
+
+                        for src in raw_sources:
+                            doc_id = src.get('doc_id', '')
+                            is_shared = src.get('is_shared', False)
+                            source_entry = {
+                                "doc_id": doc_id,
+                                "title": src.get('title', 'Untitled'),
+                                "content_preview": (src.get('content', '') or '')[:300],
+                                "score": src.get('rerank_score', src.get('score', 0)),
+                            }
+                            if src.get('source_origin') == 'openalex':
+                                source_entry["source_origin"] = "openalex"
+                                source_entry["source_origin_label"] = src.get('source_origin_label', 'OpenAlex')
+                                source_entry["source_url"] = src.get('source_url', '')
+                            elif is_shared:
+                                source_entry["source_url"] = src.get('source_url', '')
+                                source_entry["is_shared"] = True
+                                source_entry["facility_name"] = src.get('facility_name', '')
+                                source_entry["source_origin"] = "ctsi"
+                                source_entry["source_origin_label"] = "CTSI Research"
+                            else:
+                                source_entry["source_url"] = source_url_map.get(doc_id, '')
+                                # Determine origin from source_type
+                                doc_st = doc_source_type_map.get(doc_id, '')
+                                if doc_st == 'pubmed':
+                                    source_entry["source_origin"] = "pubmed"
+                                    source_entry["source_origin_label"] = "PubMed"
+                                elif doc_st == 'journal':
+                                    source_entry["source_origin"] = "journal"
+                                    source_entry["source_origin_label"] = "Journal DB"
+                                elif doc_st == 'experiment':
+                                    source_entry["source_origin"] = "reproducibility"
+                                    source_entry["source_origin_label"] = "Repro Archive"
+                                else:
+                                    source_entry["source_origin"] = "user_kb"
+                                    source_entry["source_origin_label"] = "Your KB"
+                            sources_for_response.append(source_entry)
+
+                        # Emit decomposition action if query was decomposed
+                        features_used = event.get('features_used', {})
+                        if features_used.get('decomposition'):
+                            sub_queries = features_used.get('sub_queries', [])
+                            yield f"event: action\ndata: {json.dumps({'section': 'Research', 'text': f'Decomposed into {len(sub_queries)} sub-queries', 'status': 'in_progress'})}\n\n"
+
+                        # Thinking: report search results found
+                        yield f"event: thinking\ndata: {json.dumps({'type': 'searching_kb', 'text': f'Searching knowledge base... Found {len(sources_for_response)} sources'})}\n\n"
+
+                        # Thinking: reranking
+                        yield f"event: thinking\ndata: {json.dumps({'type': 'reranking', 'text': 'Reranking and filtering results...'})}\n\n"
+
+                        yield f"event: search_complete\ndata: {json.dumps({'expanded_query': event.get('expanded_query', query), 'num_sources': event.get('num_sources', 0), 'sources': sources_for_response})}\n\n"
+
+                        # Thinking: generating answer
+                        yield f"event: thinking\ndata: {json.dumps({'type': 'generating', 'text': 'Generating answer...'})}\n\n"
+
+                    elif event_type == 'chunk':
+                        content = event.get('content', '')
+                        print(f"[STREAM-CHUNK] Sending: {content[:20]}...", flush=True)
+                        yield f"event: chunk\ndata: {json.dumps({'content': content})}\n\n"
+
+                    elif event_type == 'done':
+                        final_data = {
+                            'confidence': event.get('confidence', 0.8),
+                            'sources': sources_for_response,
+                            'hallucination_check': event.get('hallucination_check'),
+                            'features_used': event.get('features_used', {})
+                        }
+                        # Include answer confidence scoring if available
+                        answer_confidence = event.get('answer_confidence')
+                        if answer_confidence:
+                            final_data['answer_confidence'] = answer_confidence
+                        yield f"event: done\ndata: {json.dumps(final_data)}\n\n"
 
             print(f"[SEARCH-STREAM] Complete: '{query}'", flush=True)
 
