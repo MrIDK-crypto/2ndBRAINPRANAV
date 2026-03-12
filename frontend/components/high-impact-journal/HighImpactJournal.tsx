@@ -372,6 +372,10 @@ export default function HighImpactJournal() {
       setError('File too large. Maximum size is 50MB.')
       return
     }
+    if (!publicationYear) {
+      setError('Please enter the publication year before uploading.')
+      return
+    }
 
     setError('')
     setState('analyzing')
@@ -404,6 +408,10 @@ export default function HighImpactJournal() {
     const wordCount = researchText.trim().split(/\s+/).filter(Boolean).length
     if (wordCount < 100) {
       setError(`Please write at least 100 words describing your research (currently ${wordCount}).`)
+      return
+    }
+    if (!publicationYear) {
+      setError('Please enter the publication year before submitting.')
       return
     }
 
@@ -649,10 +657,10 @@ export default function HighImpactJournal() {
               </>
             )}
 
-            {/* Optional Publication Year */}
+            {/* Publication Year (required) */}
             <div style={{ maxWidth: 520, margin: '24px auto 0', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <label style={{ fontSize: 13, color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                Publication year <span style={{ fontSize: 11, opacity: 0.6 }}>(optional)</span>
+              <label style={{ fontSize: 13, color: theme.textPrimary, whiteSpace: 'nowrap', fontWeight: 600 }}>
+                Publication year
               </label>
               <input
                 type="number"
@@ -661,6 +669,7 @@ export default function HighImpactJournal() {
                 placeholder={`e.g. ${new Date().getFullYear()}`}
                 value={publicationYear}
                 onChange={e => setPublicationYear(e.target.value)}
+                required
                 style={{
                   width: 100,
                   padding: '8px 12px',
@@ -668,13 +677,13 @@ export default function HighImpactJournal() {
                   fontFamily: fontMono,
                   color: theme.textPrimary,
                   backgroundColor: theme.cardBg,
-                  border: `1px solid ${theme.borderDark}`,
+                  border: `1px solid ${!publicationYear ? '#c0392b' : theme.borderDark}`,
                   borderRadius: 8,
                   outline: 'none',
                 }}
               />
               <span style={{ fontSize: 12, color: theme.textMuted, opacity: 0.7 }}>
-                Prevents flagging for not citing newer work
+                When was this paper published or submitted?
               </span>
             </div>
 
