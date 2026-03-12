@@ -985,7 +985,7 @@ def get_unembedded_docs():
             results.append({
                 'id': d.id,
                 'title': d.title[:100] if d.title else None,
-                'source': d.source,
+                'source': d.source_type,
                 'content_status': content_status,
                 'content_length': len(d.content) if d.content else 0,
                 'created_at': d.created_at.isoformat() if d.created_at else None,
