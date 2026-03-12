@@ -402,7 +402,7 @@ export default function HighImpactJournal() {
       setError('Connection failed. Please check your network and try again.')
       setState('idle')
     }
-  }, [processSSEStream])
+  }, [processSSEStream, publicationYear])
 
   const handleTextSubmit = useCallback(async () => {
     const wordCount = researchText.trim().split(/\s+/).filter(Boolean).length
@@ -440,7 +440,7 @@ export default function HighImpactJournal() {
       setError('Connection failed. Please check your network and try again.')
       setState('idle')
     }
-  }, [researchText, processSSEStream])
+  }, [researchText, processSSEStream, publicationYear])
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
