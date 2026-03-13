@@ -250,6 +250,7 @@ export default function HighImpactJournal() {
   const [reviewMethodology, setReviewMethodology] = useState<ReviewMethodologyInfo | null>(null)
   const [error, setError] = useState('')
   const [publicationYear, setPublicationYear] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const reset = useCallback(() => {
@@ -362,7 +363,7 @@ export default function HighImpactJournal() {
     }
   }, [])
 
-  const handleFile = useCallback(async (file: File) => {
+  const handleFile = useCallback((file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase()
     if (!ext || !['pdf', 'docx'].includes(ext)) {
       setError('Please upload a PDF or DOCX file.')
@@ -372,8 +373,14 @@ export default function HighImpactJournal() {
       setError('File too large. Maximum size is 50MB.')
       return
     }
+    setError('')
+    setSelectedFile(file)
+  }, [])
+
+  const handleFileSubmit = useCallback(async () => {
+    if (!selectedFile) return
     if (!publicationYear) {
-      setError('Please enter the publication year before uploading.')
+      setError('Please enter the publication year before analyzing.')
       return
     }
 
@@ -382,8 +389,8 @@ export default function HighImpactJournal() {
     setProgress({ step: 1, message: 'Uploading...', percent: 2 })
 
     const formData = new FormData()
-    formData.append('file', file)
-    if (publicationYear) formData.append('publication_year', publicationYear)
+    formData.append('file', selectedFile)
+    formData.append('publication_year', publicationYear)
 
     try {
       const response = await fetch(`${API_URL}/api/journal/analyze`, {
@@ -402,7 +409,7 @@ export default function HighImpactJournal() {
       setError('Connection failed. Please check your network and try again.')
       setState('idle')
     }
-  }, [processSSEStream, publicationYear])
+  }, [selectedFile, processSSEStream, publicationYear])
 
   const handleTextSubmit = useCallback(async () => {
     const wordCount = researchText.trim().split(/\s+/).filter(Boolean).length
@@ -555,9 +562,9 @@ export default function HighImpactJournal() {
                   onDrop={onDrop}
                   onClick={() => fileInputRef.current?.click()}
                   style={{
-                    border: `2px dashed ${dragOver ? theme.primary : theme.borderDark}`,
+                    border: `2px dashed ${dragOver ? theme.primary : (selectedFile ? theme.success : theme.borderDark)}`,
                     borderRadius: 16,
-                    padding: '60px 40px',
+                    padding: selectedFile ? '32px 40px' : '60px 40px',
                     backgroundColor: dragOver ? theme.primaryLight : theme.cardBg,
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
@@ -565,25 +572,47 @@ export default function HighImpactJournal() {
                     margin: '0 auto',
                   }}
                 >
-                  <div style={{
-                    width: 56, height: 56, borderRadius: 14,
-                    backgroundColor: theme.primaryLight,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    margin: '0 auto 20px',
-                    fontSize: 24,
-                  }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                      <polyline points="17 8 12 3 7 8"/>
-                      <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                  </div>
-                  <p style={{ fontWeight: 600, fontSize: 16, marginBottom: 8, color: theme.textPrimary }}>
-                    Drop your manuscript here
-                  </p>
-                  <p style={{ color: theme.textMuted, fontSize: 14 }}>
-                    or click to browse — PDF or DOCX up to 50MB
-                  </p>
+                  {selectedFile ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={theme.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                        <p style={{ fontWeight: 600, fontSize: 15, color: theme.textPrimary, margin: 0 }}>
+                          {selectedFile.name}
+                        </p>
+                        <span style={{ fontSize: 12, color: theme.textMuted }}>
+                          ({(selectedFile.size / 1024 / 1024).toFixed(1)} MB)
+                        </span>
+                      </div>
+                      <p style={{ color: theme.textMuted, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+                        Click to change file
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{
+                        width: 56, height: 56, borderRadius: 14,
+                        backgroundColor: theme.primaryLight,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        margin: '0 auto 20px',
+                        fontSize: 24,
+                      }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                          <polyline points="17 8 12 3 7 8"/>
+                          <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                      </div>
+                      <p style={{ fontWeight: 600, fontSize: 16, marginBottom: 8, color: theme.textPrimary }}>
+                        Drop your manuscript here
+                      </p>
+                      <p style={{ color: theme.textMuted, fontSize: 14 }}>
+                        or click to browse — PDF or DOCX up to 50MB
+                      </p>
+                    </>
+                  )}
                 </div>
                 <input
                   ref={fileInputRef}
@@ -592,6 +621,27 @@ export default function HighImpactJournal() {
                   onChange={onFileSelect}
                   style={{ display: 'none' }}
                 />
+                {selectedFile && (
+                  <div style={{ maxWidth: 520, margin: '16px auto 0', textAlign: 'center' }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleFileSubmit() }}
+                      style={{
+                        padding: '12px 32px',
+                        borderRadius: 10,
+                        border: 'none',
+                        fontSize: 15,
+                        fontWeight: 600,
+                        fontFamily: font,
+                        cursor: 'pointer',
+                        backgroundColor: theme.primary,
+                        color: '#FFFFFF',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      Analyze Manuscript
+                    </button>
+                  </div>
+                )}
               </>
             ) : (
               <>
