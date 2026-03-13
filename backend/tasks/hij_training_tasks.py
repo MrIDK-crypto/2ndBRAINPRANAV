@@ -31,12 +31,18 @@ SNS_TOPIC_ARN = os.getenv("HIJ_SNS_TOPIC_ARN", "")
 PROMOTION_THRESHOLD = 0.02
 
 # Year ranges for each batch — non-overlapping to avoid duplicates
+# Smaller batches (100K) to stay within Celery time limits
 BATCH_CONFIGS = [
-    {"index": 0, "year_range": "2024-2026", "target": 200000},
-    {"index": 1, "year_range": "2022-2023", "target": 200000},
-    {"index": 2, "year_range": "2020-2021", "target": 200000},
-    {"index": 3, "year_range": "2019-2019", "target": 200000},
-    {"index": 4, "year_range": "2018-2018", "target": 200000},
+    {"index": 0, "year_range": "2025-2026", "target": 100000},
+    {"index": 1, "year_range": "2024-2024", "target": 100000},
+    {"index": 2, "year_range": "2023-2023", "target": 100000},
+    {"index": 3, "year_range": "2022-2022", "target": 100000},
+    {"index": 4, "year_range": "2021-2021", "target": 100000},
+    {"index": 5, "year_range": "2020-2020", "target": 100000},
+    {"index": 6, "year_range": "2019-2019", "target": 100000},
+    {"index": 7, "year_range": "2018-2018", "target": 100000},
+    {"index": 8, "year_range": "2016-2017", "target": 100000},
+    {"index": 9, "year_range": "2014-2015", "target": 100000},
 ]
 
 
@@ -219,8 +225,8 @@ def train_hij_models(self, target_papers=5000):
 @celery.task(
     bind=True,
     name='tasks.hij_training_tasks.fetch_hij_batch',
-    time_limit=7200,         # 2 hour hard limit
-    soft_time_limit=6900,    # 1h55m soft limit
+    time_limit=14400,        # 4 hour hard limit
+    soft_time_limit=14100,   # 3h55m soft limit
     max_retries=1,
     autoretry_for=(),
 )
