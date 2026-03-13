@@ -143,6 +143,7 @@ def _fetch_query(
     checkpoint: CheckpointManager,
     seen_ids: Set[str],
     seen_lock: threading.Lock,
+    year_range: str = "2018-2026",
 ) -> List[dict]:
     """Fetch papers for one field+type combination."""
     query_key = f"{field_name}_{paper_type}"
@@ -152,7 +153,7 @@ def _fetch_query(
     fetched = 0
 
     params = {
-        "filter": f"concepts.id:{field_concept},type:{type_config['work_type']},has_abstract:true,publication_year:2018-2026",
+        "filter": f"concepts.id:{field_concept},type:{type_config['work_type']},has_abstract:true,publication_year:{year_range}",
         "select": "id,doi,title,type,cited_by_count,referenced_works_count,primary_location,authorships,abstract_inverted_index,concepts,fwci",
         "per_page": PER_PAGE,
         "cursor": cursor,
@@ -244,11 +245,20 @@ def fetch_papers_parallel(
     output_dir: Path,
     target_total: int = 1_000_000,
     num_workers: int = 8,
+    year_range: str = "2018-2026",
+    split_output: bool = True,
 ) -> Path:
     """
-    Fetch papers from OpenAlex in parallel and write train/val/test JSONL splits.
+    Fetch papers from OpenAlex in parallel and write JSONL output.
 
-    Returns path to output directory containing train.jsonl, val.jsonl, test.jsonl.
+    Args:
+        output_dir: Where to write output files
+        target_total: Target number of papers
+        num_workers: Number of parallel fetch threads
+        year_range: OpenAlex publication_year filter (e.g. "2020-2023")
+        split_output: If True, write train/val/test splits. If False, write single papers.jsonl.
+
+    Returns path to output directory.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = CheckpointManager(output_dir / "checkpoint.json")
@@ -283,6 +293,7 @@ def fetch_papers_parallel(
             pool.submit(
                 _fetch_query, fn, cid, pt, cfg, tgt,
                 rate_limiter, checkpoint, seen_ids, seen_lock,
+                year_range,
             ): f"{fn}_{pt}"
             for fn, cid, pt, cfg, tgt in queries
         }
@@ -297,6 +308,15 @@ def fetch_papers_parallel(
                 logger.error("[Fetcher] %s failed: %s", query_key, e)
 
     logger.info("[Fetcher] Total papers collected: %d", len(all_papers))
+
+    if not split_output:
+        # Write all papers to a single file (for batched pipeline)
+        path = output_dir / "papers.jsonl"
+        with open(path, "w") as f:
+            for r in all_papers:
+                f.write(json.dumps(r) + "\n")
+        logger.info("[Fetcher] Wrote papers.jsonl: %d records (no split)", len(all_papers))
+        return output_dir
 
     # Shuffle and split: 80/10/10
     import random
@@ -341,10 +361,14 @@ if __name__ == "__main__":
     parser.add_argument("--target", type=int, default=1_000_000)
     parser.add_argument("--output", type=str, default="data/hij_1m")
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--year-range", type=str, default="2018-2026")
+    parser.add_argument("--no-split", action="store_true", help="Write single papers.jsonl instead of train/val/test")
     args = parser.parse_args()
 
     fetch_papers_parallel(
         output_dir=Path(args.output),
         target_total=args.target,
         num_workers=args.workers,
+        year_range=args.year_range,
+        split_output=not args.no_split,
     )

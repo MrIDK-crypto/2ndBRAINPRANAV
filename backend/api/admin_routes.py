@@ -3,6 +3,9 @@ Admin Routes
 Administrative endpoints for tenant migration and maintenance
 """
 
+import json
+import os
+
 from flask import Blueprint, jsonify, request, g
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
@@ -933,6 +936,92 @@ def trigger_hij_training():
             "message": f"HIJ model training started in background thread (target: {target_papers} papers)",
             "note": "Celery unavailable — running in background thread. Check server logs for progress.",
         })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@admin_bp.route('/train-hij-1m', methods=['POST'])
+@require_auth
+def trigger_hij_1m_training():
+    """
+    Start batched 1M HIJ model training pipeline via Celery chain + S3.
+    Super admin only.
+
+    POST /api/admin/train-hij-1m
+    {
+        "resume_run_id": "hij-1m-...",   // optional — resume a failed run
+        "resume_from_batch": 0           // optional — skip completed batches
+    }
+    """
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        data = request.get_json(silent=True) or {}
+        resume_run_id = data.get('resume_run_id')
+        resume_from_batch = data.get('resume_from_batch', 0)
+
+        from tasks.hij_training_tasks import build_hij_1m_chain
+
+        run_id, pipeline = build_hij_1m_chain(
+            run_id=resume_run_id,
+            resume_from_batch=resume_from_batch,
+        )
+
+        result = pipeline.apply_async()
+
+        return jsonify({
+            "success": True,
+            "run_id": run_id,
+            "chain_task_id": result.id,
+            "message": f"HIJ 1M training pipeline started (run: {run_id})",
+            "resumed": resume_run_id is not None,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@admin_bp.route('/train-hij-1m/status/<run_id>', methods=['GET'])
+@require_auth
+def get_hij_1m_status(run_id):
+    """
+    Get status of a batched HIJ 1M training run.
+    Reads status.json from S3.
+
+    GET /api/admin/train-hij-1m/status/<run_id>
+    """
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        import boto3
+        s3 = boto3.client("s3", region_name=os.environ.get("AWS_S3_REGION", "us-east-2"))
+        bucket = os.environ.get("HIJ_MODEL_BUCKET", "secondbrain-models")
+        key = f"hij/training-runs/{run_id}/status.json"
+
+        try:
+            resp = s3.get_object(Bucket=bucket, Key=key)
+            status = json.loads(resp["Body"].read().decode())
+        except s3.exceptions.NoSuchKey:
+            return jsonify({"success": False, "error": f"Run {run_id} not found"}), 404
+        except Exception as e:
+            return jsonify({"success": False, "error": f"S3 error: {e}"}), 500
+
+        return jsonify({"success": True, "run_id": run_id, "status": status})
 
     except Exception as e:
         import traceback
