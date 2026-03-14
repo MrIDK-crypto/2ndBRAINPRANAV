@@ -10,7 +10,7 @@ import logging
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -151,6 +151,7 @@ def _fetch_query(
     results = []
     cursor = checkpoint.get_cursor(query_key) or "*"
     fetched = 0
+    deadline = time.monotonic() + 240  # 4 min hard deadline per query
 
     params = {
         "filter": f"concepts.id:{field_concept},type:{type_config['work_type']},has_abstract:true,publication_year:{year_range}",
@@ -164,6 +165,10 @@ def _fetch_query(
         params["filter"] += f",title.search:{type_config['title_filter']}"
 
     while fetched < target_per_query:
+        if time.monotonic() > deadline:
+            logger.warning("[%s] Hit 4-min deadline with %d papers — stopping", query_key, fetched)
+            break
+
         rate_limiter.acquire()
 
         try:
@@ -262,7 +267,7 @@ def fetch_papers_parallel(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     checkpoint = CheckpointManager(output_dir / "checkpoint.json")
-    rate_limiter = RateLimiter(rate=10.0)
+    rate_limiter = RateLimiter(rate=5.0)  # Gentler rate to avoid OpenAlex throttling
     seen_ids: Set[str] = set()
     seen_lock = threading.Lock()
 
@@ -288,28 +293,41 @@ def fetch_papers_parallel(
     logger.info("[Fetcher] %d queries, target %d papers total, %d workers", len(queries), target_total, num_workers)
 
     all_papers = []
-    query_timeout = 300  # 5 min max per query
-    with ThreadPoolExecutor(max_workers=num_workers) as pool:
-        futures = {
-            pool.submit(
-                _fetch_query, fn, cid, pt, cfg, tgt,
-                rate_limiter, checkpoint, seen_ids, seen_lock,
-                year_range,
-            ): f"{fn}_{pt}"
-            for fn, cid, pt, cfg, tgt in queries
-        }
+    # Process queries in small batches to avoid overwhelming the API
+    batch_size = min(num_workers, 4)
+    for qi in range(0, len(queries), batch_size):
+        query_batch = queries[qi:qi + batch_size]
+        logger.info("[Fetcher] Submitting query batch %d-%d of %d", qi, qi + len(query_batch) - 1, len(queries))
 
-        for future in as_completed(futures, timeout=1800):
-            query_key = futures[future]
-            try:
-                papers = future.result(timeout=query_timeout)
-                all_papers.extend(papers)
-                logger.info("[Fetcher] %s returned %d papers (total: %d)", query_key, len(papers), len(all_papers))
-            except TimeoutError:
-                logger.warning("[Fetcher] %s timed out after %ds — skipping", query_key, query_timeout)
+        with ThreadPoolExecutor(max_workers=batch_size) as pool:
+            futures = {
+                pool.submit(
+                    _fetch_query, fn, cid, pt, cfg, tgt,
+                    rate_limiter, checkpoint, seen_ids, seen_lock,
+                    year_range,
+                ): f"{fn}_{pt}"
+                for fn, cid, pt, cfg, tgt in query_batch
+            }
+
+            # Wait with a hard deadline — 5 min per query batch
+            remaining = set(futures.keys())
+            deadline = time.monotonic() + 300
+            while remaining and time.monotonic() < deadline:
+                done, remaining = wait(remaining, timeout=30, return_when=FIRST_COMPLETED)
+                for future in done:
+                    query_key = futures[future]
+                    try:
+                        papers = future.result(timeout=5)
+                        all_papers.extend(papers)
+                        logger.info("[Fetcher] %s returned %d papers (total: %d)", query_key, len(papers), len(all_papers))
+                    except Exception as e:
+                        logger.error("[Fetcher] %s failed: %s", query_key, e)
+
+            # Cancel any still-running queries
+            for future in remaining:
+                query_key = futures[future]
+                logger.warning("[Fetcher] %s still running after deadline — cancelling", query_key)
                 future.cancel()
-            except Exception as e:
-                logger.error("[Fetcher] %s failed: %s", query_key, e)
 
     logger.info("[Fetcher] Total papers collected: %d", len(all_papers))
 
