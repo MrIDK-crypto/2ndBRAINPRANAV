@@ -109,31 +109,36 @@ def train_paper_type_classifier(data_dir: Path, output_dir: Path):
     for cls in PAPER_TYPE_CLASSES:
         logger.info(f"  {cls}: {train_dist.get(cls, 0)}")
 
-    # TF-IDF with unigrams + bigrams
+    # TF-IDF with unigrams + bigrams (max_features=20000 for memory safety)
     tfidf = TfidfVectorizer(
-        max_features=30000,
+        max_features=20000,
         ngram_range=(1, 2),
         sublinear_tf=True,
         strip_accents="unicode",
-        min_df=2,
+        min_df=3,
         max_df=0.95,
     )
     X_train = tfidf.fit_transform(train_texts)
+    # Free raw texts after vectorization to save memory
+    del train_texts
     X_val = tfidf.transform(val_texts)
+    del val_texts
     X_test = tfidf.transform(test_texts)
+    del test_texts
 
     logger.info(f"TF-IDF vocabulary: {len(tfidf.vocabulary_)}, features: {X_train.shape}")
 
     # Grid search over regularization strength
+    # n_jobs=1 to avoid forking (memory-safe for 2GB ECS containers)
     best_c = 1.0
     best_val_f1 = 0.0
-    for c_val in [0.1, 0.5, 1.0, 5.0, 10.0]:
+    for c_val in [0.1, 1.0, 10.0]:
         clf = LogisticRegression(
-            max_iter=1000,
+            max_iter=500,
             class_weight="balanced",
             C=c_val,
-            solver="lbfgs",
-            n_jobs=-1,
+            solver="saga",
+            n_jobs=1,
         )
         clf.fit(X_train, train_labels)
         val_preds = clf.predict(X_val)
@@ -147,11 +152,11 @@ def train_paper_type_classifier(data_dir: Path, output_dir: Path):
 
     # Retrain with best C
     clf = LogisticRegression(
-        max_iter=1000,
+        max_iter=500,
         class_weight="balanced",
         C=best_c,
-        solver="lbfgs",
-        n_jobs=-1,
+        solver="saga",
+        n_jobs=1,
     )
     clf.fit(X_train, train_labels)
 
@@ -270,31 +275,35 @@ def train_tier_predictor(data_dir: Path, output_dir: Path):
     for cls in TIER_CLASSES:
         logger.info(f"  {cls}: {train_dist.get(cls, 0)}")
 
-    # TF-IDF
+    # TF-IDF (max_features=20000 for memory safety)
     tfidf = TfidfVectorizer(
-        max_features=30000,
+        max_features=20000,
         ngram_range=(1, 2),
         sublinear_tf=True,
         strip_accents="unicode",
-        min_df=2,
+        min_df=3,
         max_df=0.95,
     )
     X_train = tfidf.fit_transform(train_texts)
+    del train_texts
     X_val = tfidf.transform(val_texts)
+    del val_texts
     X_test = tfidf.transform(test_texts)
+    del test_texts
 
     logger.info(f"TF-IDF vocabulary: {len(tfidf.vocabulary_)}, features: {X_train.shape}")
 
     # Grid search
+    # n_jobs=1 to avoid forking (memory-safe for 2GB ECS containers)
     best_c = 1.0
     best_val_f1 = 0.0
-    for c_val in [0.1, 0.5, 1.0, 5.0, 10.0]:
+    for c_val in [0.1, 1.0, 10.0]:
         clf = LogisticRegression(
-            max_iter=1000,
+            max_iter=500,
             class_weight="balanced",
             C=c_val,
-            solver="lbfgs",
-            n_jobs=-1,
+            solver="saga",
+            n_jobs=1,
         )
         clf.fit(X_train, train_labels)
         val_preds = clf.predict(X_val)
@@ -308,11 +317,11 @@ def train_tier_predictor(data_dir: Path, output_dir: Path):
 
     # Retrain with best C
     clf = LogisticRegression(
-        max_iter=1000,
+        max_iter=500,
         class_weight="balanced",
         C=best_c,
-        solver="lbfgs",
-        n_jobs=-1,
+        solver="saga",
+        n_jobs=1,
     )
     clf.fit(X_train, train_labels)
 

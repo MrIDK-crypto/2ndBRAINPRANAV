@@ -426,11 +426,16 @@ def train_hij_from_s3(self, run_id):
             s3.download_file(S3_BUCKET, s3_key, str(data_dir / filename))
             logger.info("[HIJ-1M] Downloaded %s", filename)
 
-        # Train both models
+        # Train both models sequentially with memory cleanup between them
+        import gc
         from scripts.train_hij_models import train_paper_type_classifier, train_tier_predictor
 
         pt_metrics = train_paper_type_classifier(data_dir, model_dir)
+        gc.collect()  # Free paper type model memory before tier training
+        logger.info("[HIJ-1M] Paper type training done, freed memory for tier predictor")
+
         tier_metrics = train_tier_predictor(data_dir, model_dir)
+        gc.collect()
 
         if not pt_metrics or not tier_metrics:
             raise ValueError("Training returned no metrics")
