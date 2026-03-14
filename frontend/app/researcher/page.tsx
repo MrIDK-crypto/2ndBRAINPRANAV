@@ -183,10 +183,17 @@ export default function ResearchReproducibilityPage() {
     })
   }
 
-  const handleUpload = useCallback(async (myResearch: File, papers: File[]) => {
+  const handleUpload = useCallback(async (myResearch: File | null, papers: File[], researchDescription?: string) => {
     setError(null)
     const formData = new FormData()
-    formData.append('my_research', myResearch)
+
+    // Support both file upload and text description
+    if (myResearch) {
+      formData.append('my_research', myResearch)
+    } else if (researchDescription) {
+      formData.append('research_description', researchDescription)
+    }
+
     papers.forEach(p => formData.append('papers', p))
 
     try {
