@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import os
+import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
@@ -16,6 +17,9 @@ from typing import Dict, List, Optional, Set
 
 import requests
 from requests.adapters import HTTPAdapter, Retry
+
+# Set global socket timeout to prevent DNS/connect hangs
+socket.setdefaulttimeout(30)
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +270,25 @@ def fetch_papers_parallel(
     Returns path to output directory.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pre-flight connectivity check
+    logger.info("[Fetcher] Testing OpenAlex API connectivity...")
+    for attempt in range(3):
+        try:
+            test_resp = requests.get(
+                BASE_URL,
+                params={"filter": "type:article", "per_page": 1, "mailto": MAILTO},
+                timeout=(10, 15),
+            )
+            test_resp.raise_for_status()
+            logger.info("[Fetcher] Connectivity OK (attempt %d, HTTP %d)", attempt + 1, test_resp.status_code)
+            break
+        except Exception as e:
+            logger.warning("[Fetcher] Connectivity check attempt %d failed: %s", attempt + 1, e)
+            if attempt == 2:
+                raise RuntimeError(f"Cannot reach OpenAlex API after 3 attempts: {e}")
+            time.sleep(5)
+
     checkpoint = CheckpointManager(output_dir / "checkpoint.json")
     rate_limiter = RateLimiter(rate=5.0)  # Gentler rate to avoid OpenAlex throttling
     seen_ids: Set[str] = set()
