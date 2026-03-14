@@ -259,7 +259,7 @@ def fetch_hij_batch(self, run_id, batch_index, batch_target, year_range):
         fetch_papers_parallel(
             output_dir=output_dir,
             target_total=batch_target,
-            num_workers=4,
+            num_workers=2,
             year_range=year_range,
             split_output=False,
         )

@@ -100,7 +100,8 @@ class CheckpointManager:
 
 def _create_session() -> requests.Session:
     session = requests.Session()
-    retries = Retry(total=5, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
+    retries = Retry(total=3, backoff_factor=2.0, status_forcelist=[500, 502, 503, 504],
+                    respect_retry_after_header=True)
     session.mount("https://", HTTPAdapter(max_retries=retries))
     session.headers.update({
         "User-Agent": f"2ndBrain/1.0 (mailto:{MAILTO})",
@@ -177,6 +178,11 @@ def _fetch_query(
 
         try:
             resp = session.get(BASE_URL, params=params, timeout=(10, 30))
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", "60"))
+                logger.warning("[%s] Rate limited (429). Waiting %ds", query_key, retry_after)
+                time.sleep(min(retry_after, 120))
+                continue
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -271,26 +277,35 @@ def fetch_papers_parallel(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Pre-flight connectivity check
+    # Pre-flight connectivity check with backoff for 429s
     logger.info("[Fetcher] Testing OpenAlex API connectivity...")
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             test_resp = requests.get(
                 BASE_URL,
                 params={"filter": "type:article", "per_page": 1, "mailto": MAILTO},
                 timeout=(10, 15),
             )
+            if test_resp.status_code == 429:
+                backoff = min(60 * (2 ** attempt), 300)  # 60s, 120s, 240s, 300s, 300s
+                logger.warning("[Fetcher] Rate limited (429). Backing off %ds (attempt %d/5)", backoff, attempt + 1)
+                time.sleep(backoff)
+                continue
             test_resp.raise_for_status()
             logger.info("[Fetcher] Connectivity OK (attempt %d, HTTP %d)", attempt + 1, test_resp.status_code)
             break
+        except requests.exceptions.HTTPError:
+            raise  # Re-raise non-429 HTTP errors
         except Exception as e:
             logger.warning("[Fetcher] Connectivity check attempt %d failed: %s", attempt + 1, e)
-            if attempt == 2:
-                raise RuntimeError(f"Cannot reach OpenAlex API after 3 attempts: {e}")
-            time.sleep(5)
+            if attempt == 4:
+                raise RuntimeError(f"Cannot reach OpenAlex API after 5 attempts: {e}")
+            time.sleep(10)
+    else:
+        raise RuntimeError("OpenAlex API rate limited after all backoff attempts")
 
     checkpoint = CheckpointManager(output_dir / "checkpoint.json")
-    rate_limiter = RateLimiter(rate=5.0)  # Gentler rate to avoid OpenAlex throttling
+    rate_limiter = RateLimiter(rate=3.0)  # Conservative rate to avoid OpenAlex 429s
     seen_ids: Set[str] = set()
     seen_lock = threading.Lock()
 
