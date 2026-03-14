@@ -23,7 +23,7 @@ socket.setdefaulttimeout(30)
 
 logger = logging.getLogger(__name__)
 
-MAILTO = os.getenv("OPENALEX_MAILTO", "prmogathala@gmail.com")
+MAILTO = os.getenv("OPENALEX_MAILTO", "pranav@use2ndbrain.com")
 BASE_URL = "https://api.openalex.org/works"
 PER_PAGE = 200
 
