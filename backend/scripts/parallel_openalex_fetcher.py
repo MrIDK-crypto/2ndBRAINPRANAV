@@ -322,35 +322,40 @@ def fetch_papers_parallel(
         query_batch = queries[qi:qi + batch_size]
         logger.info("[Fetcher] Submitting query batch %d-%d of %d", qi, qi + len(query_batch) - 1, len(queries))
 
-        with ThreadPoolExecutor(max_workers=batch_size) as pool:
-            futures = {
-                pool.submit(
-                    _fetch_query, fn, cid, pt, cfg, tgt,
-                    rate_limiter, checkpoint, seen_ids, seen_lock,
-                    year_range,
-                ): f"{fn}_{pt}"
-                for fn, cid, pt, cfg, tgt in query_batch
-            }
+        pool = ThreadPoolExecutor(max_workers=batch_size)
+        futures = {
+            pool.submit(
+                _fetch_query, fn, cid, pt, cfg, tgt,
+                rate_limiter, checkpoint, seen_ids, seen_lock,
+                year_range,
+            ): f"{fn}_{pt}"
+            for fn, cid, pt, cfg, tgt in query_batch
+        }
 
-            # Wait with a hard deadline — 5 min per query batch
-            remaining = set(futures.keys())
-            deadline = time.monotonic() + 300
-            while remaining and time.monotonic() < deadline:
-                done, remaining = wait(remaining, timeout=30, return_when=FIRST_COMPLETED)
-                for future in done:
-                    query_key = futures[future]
-                    try:
-                        papers = future.result(timeout=5)
-                        all_papers.extend(papers)
-                        logger.info("[Fetcher] %s returned %d papers (total: %d)", query_key, len(papers), len(all_papers))
-                    except Exception as e:
-                        logger.error("[Fetcher] %s failed: %s", query_key, e)
+        # Wait with a hard deadline — 5 min per query batch
+        remaining = set(futures.keys())
+        deadline = time.monotonic() + 300
+        while remaining and time.monotonic() < deadline:
+            done, remaining = wait(remaining, timeout=30, return_when=FIRST_COMPLETED)
+            for future in done:
+                query_key = futures[future]
+                try:
+                    papers = future.result(timeout=5)
+                    all_papers.extend(papers)
+                    logger.info("[Fetcher] %s returned %d papers (total: %d)", query_key, len(papers), len(all_papers))
+                except Exception as e:
+                    logger.error("[Fetcher] %s failed: %s", query_key, e)
 
-            # Cancel any still-running queries
+        # Cancel and abandon any still-running queries (don't wait)
+        if remaining:
             for future in remaining:
                 query_key = futures[future]
-                logger.warning("[Fetcher] %s still running after deadline — cancelling", query_key)
+                logger.warning("[Fetcher] %s still running after deadline — abandoning", query_key)
                 future.cancel()
+            pool.shutdown(wait=False, cancel_futures=True)
+            logger.warning("[Fetcher] Abandoned %d hung queries in batch %d-%d", len(remaining), qi, qi + len(query_batch) - 1)
+        else:
+            pool.shutdown(wait=True)
 
     logger.info("[Fetcher] Total papers collected: %d", len(all_papers))
 
