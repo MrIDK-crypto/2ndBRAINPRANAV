@@ -1000,6 +1000,7 @@ class JournalScorerService:
                 research_gaps=research_gaps_result if research_gaps_result else None,
                 reference_bank=reference_bank,
                 publication_year=publication_year,
+                manuscript_title=manuscript_title,
             ):
                 rec_buffer += chunk
                 yield _sse("recommendations", {"content": chunk})
@@ -2779,7 +2780,7 @@ Respond in JSON format:
 
         return text
 
-    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield="", paper_type=None, research_gaps=None, reference_bank=None, publication_year=None):
+    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield="", paper_type=None, research_gaps=None, reference_bank=None, publication_year=None, manuscript_title=None):
         feature_summary = "\n".join(
             f"- {f['label']}: {f['score']}/100 — {f.get('details', '')}"
             for f in features.values()
@@ -2834,6 +2835,11 @@ Respond in JSON format:
         paper_type_info = ""
         if paper_type:
             paper_type_info = f"\n- Paper type: {paper_type}"
+
+        # Manuscript title context — CRITICAL to prevent self-citation suggestions
+        manuscript_info = ""
+        if manuscript_title:
+            manuscript_info = f"\n- THIS MANUSCRIPT'S TITLE: \"{manuscript_title}\" — DO NOT suggest citing this paper as a missing reference"
 
         # Publication year context — CRITICAL for appropriate recommendations
         year_context = ""
@@ -2934,6 +2940,7 @@ Respond in JSON format:
             f"- Target journals: {journal_names}"
             f"{keywords_info}"
             f"{paper_type_info}"
+            f"{manuscript_info}"
             f"{year_context}"
             f"{gaps_info}"
             f"{landscape_info}"
@@ -2943,12 +2950,15 @@ Respond in JSON format:
             f"{section1}"
 
             "## SECTION 2: Missing Key References\n\n"
-            f"{'REMEMBER: This paper was written in ' + str(publication_year) + '. ONLY suggest references published BEFORE ' + str(publication_year) + '.' if publication_year else ''}\n"
-            "Select 5-8 papers from the Reference Bank below that MUST be cited in this manuscript. For each:\n"
-            "- Full citation using the exact title and DOI from the Reference Bank: [Author et al. (Year) - Paper Title](DOI)\n"
-            "- One sentence on why this specific paper is essential for this manuscript\n"
-            "- Where in the manuscript it should be cited (Introduction, Methods, Discussion)\n"
-            f"{'- VERIFY the paper year is before ' + str(publication_year) + ' before suggesting it' if publication_year else ''}\n\n"
+            "⚠️ STRICT RULES FOR THIS SECTION:\n"
+            f"{'1. This paper was written in ' + str(publication_year) + '. ONLY suggest references published BEFORE ' + str(publication_year) + '.' if publication_year else ''}\n"
+            "2. You MUST ONLY select papers from the REFERENCE BANK below. Do NOT cite any paper not in the reference bank.\n"
+            "3. Do NOT suggest the manuscript itself as a reference — that would be self-citation.\n"
+            "4. If the reference bank is empty or has no relevant papers, write: 'No additional references needed from the available literature.'\n\n"
+            "Select 3-5 papers from the Reference Bank below. For each:\n"
+            "- Full citation using the EXACT title and DOI from the Reference Bank: [Author et al. (Year) - Paper Title](DOI)\n"
+            "- One sentence on why this specific paper is essential\n"
+            "- Where in the manuscript it should be cited (Introduction, Methods, Discussion)\n\n"
 
             "## SECTION 3: Structural Improvements\n\n"
             "2-3 specific structural changes to improve acceptance chances.\n\n"
@@ -2960,9 +2970,11 @@ Respond in JSON format:
             f"{verified_journal_list}\n\n"
             "FORMATTING RULES:\n"
             "- Use markdown with numbered lists\n"
-            "- When citing papers, use the EXACT title and DOI from the Reference Bank above. Do NOT fabricate any DOIs or paper titles.\n"
-            "- ONLY cite papers from the Reference Bank. If no relevant paper exists in the bank, describe the type of paper needed without inventing a citation.\n"
-            "- When mentioning target journals, ONLY reference journals from the VERIFIED JOURNAL LIST above. Do NOT invent or suggest journal names not in this list.\n"
+            "- CITATIONS: You MUST ONLY cite papers that appear in the REFERENCE BANK above. Copy the exact title and DOI.\n"
+            "- ABSOLUTELY DO NOT cite papers from your training data that are not in the Reference Bank.\n"
+            "- ABSOLUTELY DO NOT suggest citing the manuscript itself — that is the paper being analyzed.\n"
+            "- If the Reference Bank is empty or has no suitable papers, say so explicitly instead of inventing citations.\n"
+            "- JOURNALS: ONLY mention journals from the VERIFIED JOURNAL LIST above.\n"
             "- Be extremely specific — no vague advice\n"
         )
 
