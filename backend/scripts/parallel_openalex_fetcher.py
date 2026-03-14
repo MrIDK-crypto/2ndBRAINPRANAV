@@ -167,7 +167,7 @@ def _fetch_query(
         rate_limiter.acquire()
 
         try:
-            resp = session.get(BASE_URL, params=params, timeout=30)
+            resp = session.get(BASE_URL, params=params, timeout=(10, 30))
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -288,6 +288,7 @@ def fetch_papers_parallel(
     logger.info("[Fetcher] %d queries, target %d papers total, %d workers", len(queries), target_total, num_workers)
 
     all_papers = []
+    query_timeout = 300  # 5 min max per query
     with ThreadPoolExecutor(max_workers=num_workers) as pool:
         futures = {
             pool.submit(
@@ -298,12 +299,15 @@ def fetch_papers_parallel(
             for fn, cid, pt, cfg, tgt in queries
         }
 
-        for future in as_completed(futures):
+        for future in as_completed(futures, timeout=1800):
             query_key = futures[future]
             try:
-                papers = future.result()
+                papers = future.result(timeout=query_timeout)
                 all_papers.extend(papers)
                 logger.info("[Fetcher] %s returned %d papers (total: %d)", query_key, len(papers), len(all_papers))
+            except TimeoutError:
+                logger.warning("[Fetcher] %s timed out after %ds — skipping", query_key, query_timeout)
+                future.cancel()
             except Exception as e:
                 logger.error("[Fetcher] %s failed: %s", query_key, e)
 
