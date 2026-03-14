@@ -277,9 +277,14 @@ def fetch_papers_parallel(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Pre-flight connectivity check with backoff for 429s
+    # Pre-flight connectivity check with long backoff for 429s
+    # OpenAlex rate limits can last 30-60min after heavy usage
     logger.info("[Fetcher] Testing OpenAlex API connectivity...")
-    for attempt in range(5):
+    max_wait = 3600  # Max 1 hour total wait for rate limit to clear
+    waited = 0
+    attempt = 0
+    while waited < max_wait:
+        attempt += 1
         try:
             test_resp = requests.get(
                 BASE_URL,
@@ -287,22 +292,22 @@ def fetch_papers_parallel(
                 timeout=(10, 15),
             )
             if test_resp.status_code == 429:
-                backoff = min(60 * (2 ** attempt), 300)  # 60s, 120s, 240s, 300s, 300s
-                logger.warning("[Fetcher] Rate limited (429). Backing off %ds (attempt %d/5)", backoff, attempt + 1)
+                backoff = min(300, 60 * attempt)  # 60s, 120s, 180s, 240s, then 300s
+                logger.warning("[Fetcher] Rate limited (429). Waiting %ds (total waited: %ds)", backoff, waited)
                 time.sleep(backoff)
+                waited += backoff
                 continue
             test_resp.raise_for_status()
-            logger.info("[Fetcher] Connectivity OK (attempt %d, HTTP %d)", attempt + 1, test_resp.status_code)
+            logger.info("[Fetcher] Connectivity OK after %ds wait (attempt %d)", waited, attempt)
             break
         except requests.exceptions.HTTPError:
-            raise  # Re-raise non-429 HTTP errors
+            raise
         except Exception as e:
-            logger.warning("[Fetcher] Connectivity check attempt %d failed: %s", attempt + 1, e)
-            if attempt == 4:
-                raise RuntimeError(f"Cannot reach OpenAlex API after 5 attempts: {e}")
-            time.sleep(10)
+            logger.warning("[Fetcher] Connectivity attempt %d failed: %s", attempt, e)
+            time.sleep(30)
+            waited += 30
     else:
-        raise RuntimeError("OpenAlex API rate limited after all backoff attempts")
+        raise RuntimeError(f"OpenAlex API still rate limited after {waited}s of backoff")
 
     checkpoint = CheckpointManager(output_dir / "checkpoint.json")
     rate_limiter = RateLimiter(rate=3.0)  # Conservative rate to avoid OpenAlex 429s
