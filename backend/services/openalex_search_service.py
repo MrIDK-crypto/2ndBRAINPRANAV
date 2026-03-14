@@ -27,6 +27,7 @@ class OpenAlexSearchService:
 
     def search_works(self, query: str, max_results: int = 10,
                      from_year: Optional[int] = None,
+                     to_year: Optional[int] = None,
                      min_citations: int = 0) -> list:
         """Search OpenAlex for academic papers matching query.
 
@@ -34,6 +35,7 @@ class OpenAlexSearchService:
             query: Search query string
             max_results: Max papers to return (capped at 50)
             from_year: Only papers published after this year
+            to_year: Only papers published before or in this year (for year-aware recommendations)
             min_citations: Minimum citation count filter
 
         Returns:
@@ -50,6 +52,8 @@ class OpenAlexSearchService:
         filters = []
         if from_year:
             filters.append(f'publication_year:>{from_year}')
+        if to_year:
+            filters.append(f'publication_year:<={to_year}')
         if min_citations > 0:
             filters.append(f'cited_by_count:>{min_citations}')
         if filters:

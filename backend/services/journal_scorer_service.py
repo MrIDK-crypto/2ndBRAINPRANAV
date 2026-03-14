@@ -979,10 +979,15 @@ class JournalScorerService:
             yield _sse("progress", {"step": 10, "message": "Fetching verified references & generating recommendations...", "percent": 82})
 
             # Part A: Pre-fetch real references from OpenAlex
+            # CRITICAL: Filter by publication_year so we only suggest papers that existed when the manuscript was written
             reference_bank = []
             try:
-                reference_bank = self._fetch_reference_bank(keywords, field, manuscript_title=manuscript_title)
-                print(f"[JournalScorer] Reference bank: fetched {len(reference_bank)} verified papers from OpenAlex")
+                reference_bank = self._fetch_reference_bank(
+                    keywords, field,
+                    manuscript_title=manuscript_title,
+                    publication_year=publication_year
+                )
+                print(f"[JournalScorer] Reference bank: fetched {len(reference_bank)} verified papers from OpenAlex (up to year {publication_year or 'current'})")
             except Exception as e:
                 print(f"[JournalScorer] Reference bank fetch failed (non-critical): {e}")
 
@@ -994,6 +999,7 @@ class JournalScorerService:
                 paper_type=paper_type,
                 research_gaps=research_gaps_result if research_gaps_result else None,
                 reference_bank=reference_bank,
+                publication_year=publication_year,
             ):
                 rec_buffer += chunk
                 yield _sse("recommendations", {"content": chunk})
@@ -1361,7 +1367,7 @@ class JournalScorerService:
 
             if not all_author_ids:
                 print(f"[Journal] No authors found from keyword search, falling back")
-                return self._match_journals_from_db(field, tier)
+                return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
 
             # ── Step 2: Take top 100 authors by citation weight ─────────
             top_authors = [aid for aid, _ in all_author_ids.most_common(100)]
@@ -1398,7 +1404,7 @@ class JournalScorerService:
 
             if not journal_counts:
                 print(f"[Journal] No journals found from author publications, falling back")
-                return self._match_journals_from_db(field, tier)
+                return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
 
             print(f"[Journal] Top authors publish in {len(journal_counts)} journals")
 
@@ -1472,7 +1478,7 @@ class JournalScorerService:
 
             if not enriched:
                 print(f"[Journal] No enriched journals, falling back")
-                return self._match_journals_from_db(field, tier)
+                return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
 
             # ── Step 4b: Validate top journals against recent publications ──
             # Verify each journal actually publishes papers of this type
@@ -1605,7 +1611,7 @@ class JournalScorerService:
             }
         except Exception as e:
             print(f"[Journal] Professor-based journal matching failed: {e}")
-            return self._match_journals_from_db(field, tier)
+            return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
 
     def _validate_journal_fit(self, journal_name: str, journal_oa_id: str,
                                paper_type: str, keywords: list) -> dict:
@@ -1678,8 +1684,12 @@ class JournalScorerService:
             print(f"[Journal] Validation error for {journal_name}: {e}")
             return {"validated": True, "confidence": "unknown", "reason": "Validation skipped"}
 
-    def _match_journals_from_db(self, field: str, tier: int) -> dict:
-        """Fallback: match journals from the pre-populated database by field."""
+    def _match_journals_from_db(self, field: str, tier: int, keywords: list = None, paper_type: str = 'experimental') -> dict:
+        """Fallback: match journals from the pre-populated database by field.
+
+        If keywords are provided, validates each journal against the keywords
+        to filter out journals that don't publish in the paper's specific subfield.
+        """
         try:
             from services.journal_data_service import get_journal_data_service
             svc = get_journal_data_service()
@@ -1688,10 +1698,42 @@ class JournalScorerService:
             stretch = svc.get_journals_for_field(field, tier=max(1, tier - 1)) if tier > 1 else []
             safe = svc.get_journals_for_field(field, tier=min(3, tier + 1)) if tier < 3 else []
 
+            # If keywords provided, validate journals against the specific topic
+            if keywords:
+                def validate_and_filter(journals, max_count):
+                    validated = []
+                    for j in journals:
+                        if len(validated) >= max_count:
+                            break
+                        # Try to validate against keywords
+                        journal_name = j.get("name", "") if isinstance(j, dict) else str(j)
+                        validation = self._validate_journal_fit(
+                            journal_name=journal_name,
+                            journal_oa_id=j.get("openalex_id", "") if isinstance(j, dict) else "",
+                            paper_type=paper_type,
+                            keywords=keywords,
+                        )
+                        if validation.get("validated", False):
+                            if isinstance(j, dict):
+                                j["validation"] = validation
+                                j["verified"] = True
+                            validated.append(j)
+                    return validated
+
+                primary = validate_and_filter(primary, 8)
+                stretch = validate_and_filter(stretch, 5)
+                safe = validate_and_filter(safe, 5)
+
+                print(f"[Journal] DB fallback: validated {len(primary)} primary, {len(stretch)} stretch, {len(safe)} safe journals against keywords")
+            else:
+                primary = primary[:8]
+                stretch = stretch[:5]
+                safe = safe[:5]
+
             return {
-                "primary_matches": primary[:8],
-                "stretch_matches": stretch[:5],
-                "safe_matches": safe[:5],
+                "primary_matches": primary,
+                "stretch_matches": stretch,
+                "safe_matches": safe,
             }
         except Exception as e:
             print(f"[Journal] DB journal matching also failed: {e}")
@@ -2564,18 +2606,29 @@ Respond in JSON format:
 
     # ── Reference Bank: pre-fetch real papers from OpenAlex ─────────────────
 
-    def _fetch_reference_bank(self, keywords: list, field: str, manuscript_title: str = '') -> list:
+    def _fetch_reference_bank(self, keywords: list, field: str, manuscript_title: str = '', publication_year: int = None) -> list:
         """Fetch real papers from OpenAlex to use as a verified reference bank.
 
         Returns up to 15 papers with real DOIs that the LLM can cite,
         preventing DOI hallucination. Filters out the user's own paper
         to avoid self-referencing.
+
+        CRITICAL: If publication_year is provided, only fetch papers published
+        BEFORE that year. A 2013 paper cannot cite a 2022 paper!
         """
         if not keywords:
             keywords = [field]
 
         all_papers = []
         seen_dois = set()
+
+        # Determine year range for references
+        # For a paper from 2013, we want refs from ~2003-2013 (last 10 years before publication)
+        to_year = publication_year if publication_year else None
+        from_year = (publication_year - 10) if publication_year else None
+
+        if publication_year:
+            print(f"[JournalScorer] Reference bank: filtering to papers from {from_year}-{to_year}")
 
         # Search with top keywords (combine first 3-4 for relevance)
         primary_query = " ".join(keywords[:4])
@@ -2584,6 +2637,8 @@ Respond in JSON format:
                 query=primary_query,
                 max_results=10,
                 min_citations=5,
+                from_year=from_year,
+                to_year=to_year,
             )
             for paper in results:
                 doi = paper.get("doi", "")
@@ -2613,6 +2668,8 @@ Respond in JSON format:
                     query=secondary_query,
                     max_results=8,
                     min_citations=3,
+                    from_year=from_year,
+                    to_year=to_year,
                 )
                 for paper in results2:
                     doi = paper.get("doi", "")
@@ -2722,7 +2779,7 @@ Respond in JSON format:
 
         return text
 
-    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield="", paper_type=None, research_gaps=None, reference_bank=None):
+    def _generate_recommendations_stream(self, field_label, score, tier, features, flags, journals, landscape, citations, keywords=None, subfield="", paper_type=None, research_gaps=None, reference_bank=None, publication_year=None):
         feature_summary = "\n".join(
             f"- {f['label']}: {f['score']}/100 — {f.get('details', '')}"
             for f in features.values()
@@ -2777,6 +2834,19 @@ Respond in JSON format:
         paper_type_info = ""
         if paper_type:
             paper_type_info = f"\n- Paper type: {paper_type}"
+
+        # Publication year context — CRITICAL for appropriate recommendations
+        year_context = ""
+        year_warning = ""
+        if publication_year:
+            year_context = f"\n- Publication year: {publication_year}"
+            year_warning = (
+                f"\n\n⚠️ CRITICAL YEAR CONSTRAINT: This manuscript was written in {publication_year}. "
+                f"You MUST ONLY recommend citing papers published BEFORE {publication_year}. "
+                f"Do NOT suggest adding references from {publication_year + 1} or later — those papers did not exist when this manuscript was written. "
+                f"The Reference Bank below contains ONLY papers published up to {publication_year}. "
+                f"If a topic emerged after {publication_year}, acknowledge that it was not yet established at the time of writing, rather than suggesting the author cite future papers."
+            )
 
         # Research gaps context
         gaps_info = ""
@@ -2864,17 +2934,21 @@ Respond in JSON format:
             f"- Target journals: {journal_names}"
             f"{keywords_info}"
             f"{paper_type_info}"
+            f"{year_context}"
             f"{gaps_info}"
             f"{landscape_info}"
-            f"{citation_info}\n\n"
+            f"{citation_info}"
+            f"{year_warning}\n\n"
 
             f"{section1}"
 
             "## SECTION 2: Missing Key References\n\n"
+            f"{'REMEMBER: This paper was written in ' + str(publication_year) + '. ONLY suggest references published BEFORE ' + str(publication_year) + '.' if publication_year else ''}\n"
             "Select 5-8 papers from the Reference Bank below that MUST be cited in this manuscript. For each:\n"
             "- Full citation using the exact title and DOI from the Reference Bank: [Author et al. (Year) - Paper Title](DOI)\n"
             "- One sentence on why this specific paper is essential for this manuscript\n"
-            "- Where in the manuscript it should be cited (Introduction, Methods, Discussion)\n\n"
+            "- Where in the manuscript it should be cited (Introduction, Methods, Discussion)\n"
+            f"{'- VERIFY the paper year is before ' + str(publication_year) + ' before suggesting it' if publication_year else ''}\n\n"
 
             "## SECTION 3: Structural Improvements\n\n"
             "2-3 specific structural changes to improve acceptance chances.\n\n"
