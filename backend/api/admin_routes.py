@@ -993,6 +993,56 @@ def trigger_hij_1m_training():
         db.close()
 
 
+@admin_bp.route('/train-hij-1m/merge-and-train', methods=['POST'])
+@require_auth
+def trigger_hij_merge_train():
+    """
+    Skip fetching — directly merge existing S3 batches and train.
+    Use when some batches completed but remaining are blocked (e.g. rate limit).
+
+    POST /api/admin/train-hij-1m/merge-and-train
+    {
+        "run_id": "hij-1m-...",
+        "num_batches": 3
+    }
+    """
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.id == g.user_id).first()
+        if not user or user.email not in SUPER_ADMIN_EMAILS:
+            return jsonify({"success": False, "error": "Forbidden"}), 403
+
+        data = request.get_json(silent=True) or {}
+        run_id = data.get('run_id')
+        num_batches = data.get('num_batches', 3)
+
+        if not run_id:
+            return jsonify({"success": False, "error": "run_id is required"}), 400
+
+        from celery import chain
+        from tasks.hij_training_tasks import merge_hij_batches, train_hij_from_s3
+
+        pipeline = chain(
+            merge_hij_batches.si(run_id, num_batches),
+            train_hij_from_s3.si(run_id),
+        )
+        result = pipeline.apply_async()
+
+        return jsonify({
+            "success": True,
+            "run_id": run_id,
+            "chain_task_id": result.id,
+            "message": f"Merge + train started for {num_batches} batches (run: {run_id})",
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @admin_bp.route('/train-hij-1m/status/<run_id>', methods=['GET'])
 @require_auth
 def get_hij_1m_status(run_id):
