@@ -852,7 +852,7 @@ class JournalScorerService:
                     # For review papers, run a Review Methodology Assessment instead of research gaps
                     yield _sse("progress", {"step": 5, "message": "Assessing review methodology & synthesis quality...", "percent": 58})
 
-                    review_methodology_result = self._assess_review_methodology(text, title_guess, paper_type)
+                    review_methodology_result = self._assess_review_methodology(text, title_guess, paper_type, publication_year=publication_year)
                     yield _sse("review_methodology", review_methodology_result)
 
                     # Emit empty research_gaps so frontend doesn't hang waiting
@@ -1425,6 +1425,7 @@ class JournalScorerService:
                         continue
                     enriched.append({
                         "name": src.get("display_name", "Unknown"),
+                        "openalex_id": oa_id,
                         "h_index": h_index,
                         "citedness_2yr": round(citedness, 2),
                         "works_count": works,
@@ -1457,6 +1458,7 @@ class JournalScorerService:
                             continue
                         enriched.append({
                             "name": src.get("display_name", "Unknown"),
+                            "openalex_id": oa_id,
                             "h_index": h_index,
                             "citedness_2yr": round(citedness, 2),
                             "works_count": works,
@@ -1471,6 +1473,28 @@ class JournalScorerService:
             if not enriched:
                 print(f"[Journal] No enriched journals, falling back")
                 return self._match_journals_from_db(field, tier)
+
+            # ── Step 4b: Validate top journals against recent publications ──
+            # Verify each journal actually publishes papers of this type
+            # in this subject area (prevents subfield mismatches)
+            validated_enriched = []
+            for j in enriched[:25]:  # Validate top 25 to keep API calls reasonable
+                validation = self._validate_journal_fit(
+                    journal_name=j["name"],
+                    journal_oa_id=j.get("openalex_id", ""),
+                    paper_type=paper_type,
+                    keywords=keywords,
+                )
+                j["validation"] = validation
+                if validation.get("validated", True):
+                    validated_enriched.append(j)
+                else:
+                    print(f"[Journal] Excluded {j['name']}: {validation.get('reason', 'no fit')}")
+
+            # Keep unvalidated journals at the end as backup
+            unvalidated = [j for j in enriched[25:]]
+            enriched = validated_enriched + unvalidated
+            print(f"[Journal] {len(validated_enriched)} journals validated, {len(unvalidated)} unvalidated backup")
 
             # ── Step 5: Split into Stretch / Target / Safe ─────────────
             # Separate mega-journals
@@ -1530,24 +1554,36 @@ class JournalScorerService:
             for j in stretch:
                 pp = j.get("prof_papers", 0)
                 cite = j.get("citedness_2yr", 0)
+                validation = j.get("validation", {})
+                evidence = validation.get("evidence", "")
                 j["reason"] = (
                     f"Top-cited researchers in your field publish here — "
                     f"{pp} recent papers by leading authors. "
                     f"Citedness ({cite}) is aspirational for a {score_label} manuscript."
                 )
+                if evidence:
+                    j["reason"] += f" Verified: {evidence}"
+                j["verified"] = validation.get("validated", False)
 
             for j in target:
                 pp = j.get("prof_papers", 0)
                 cite = j.get("citedness_2yr", 0)
+                validation = j.get("validation", {})
+                evidence = validation.get("evidence", "")
                 j["reason"] = (
                     f"Frequently chosen by experts in your area — "
                     f"{pp} recent papers by top authors. "
                     f"Citedness of {cite} suggests a realistic match for your paper."
                 )
+                if evidence:
+                    j["reason"] += f" Verified: {evidence}"
+                j["verified"] = validation.get("validated", False)
 
             for j in safe:
                 pp = j.get("prof_papers", 0)
                 cite = j.get("citedness_2yr", 0)
+                validation = j.get("validation", {})
+                evidence = validation.get("evidence", "")
                 if _is_mega(j["name"]):
                     j["reason"] = (
                         f"High-volume journal that publishes broadly. "
@@ -1558,6 +1594,9 @@ class JournalScorerService:
                         f"Accessible venue where researchers in your area publish. "
                         f"Citedness {cite} with {pp} recent papers from top authors."
                     )
+                if evidence:
+                    j["reason"] += f" Verified: {evidence}"
+                j["verified"] = validation.get("validated", False)
 
             return {
                 "primary_matches": target,
@@ -1567,6 +1606,77 @@ class JournalScorerService:
         except Exception as e:
             print(f"[Journal] Professor-based journal matching failed: {e}")
             return self._match_journals_from_db(field, tier)
+
+    def _validate_journal_fit(self, journal_name: str, journal_oa_id: str,
+                               paper_type: str, keywords: list) -> dict:
+        """Validate that a journal actually publishes papers of this type in this area.
+
+        Searches OpenAlex for recent papers in this journal matching the paper's
+        keywords and type. Returns concrete evidence of fit.
+
+        This prevents recommending journals that exist but don't publish in the
+        user's specific subfield or paper type.
+        """
+        import requests as req
+        OPENALEX_EMAIL = "prmogathala@gmail.com"
+        HEADERS = {"User-Agent": f"2ndBrain/1.0 (mailto:{OPENALEX_EMAIL})", "Accept": "application/json"}
+
+        type_map = {
+            "experimental": "article",
+            "review": "review",
+            "meta_analysis": "article",
+            "case_report": "article",
+            "protocol": "article",
+        }
+        work_type = type_map.get(paper_type, "article")
+
+        try:
+            # Search for recent papers in this journal matching keywords
+            kw_query = " ".join(keywords[:5]) if keywords else ""
+            source_filter = f"primary_location.source.id:{journal_oa_id}" if journal_oa_id else f"primary_location.source.display_name.search:{req.utils.quote(journal_name)}"
+
+            url = (
+                f"https://api.openalex.org/works"
+                f"?filter={source_filter},"
+                f"type:{work_type},"
+                f"publication_year:2022-2026"
+                f"&search={req.utils.quote(kw_query)}"
+                f"&per_page=5"
+                f"&sort=cited_by_count:desc"
+                f"&select=id,title,publication_year,cited_by_count"
+                f"&mailto={OPENALEX_EMAIL}"
+            )
+            resp = req.get(url, headers=HEADERS, timeout=10)
+            if resp.status_code != 200:
+                return {"validated": True, "confidence": "unknown", "reason": "Could not verify"}
+
+            data = resp.json()
+            results = data.get("results", [])
+            total = data.get("meta", {}).get("count", 0)
+
+            if total == 0:
+                return {
+                    "validated": False,
+                    "confidence": "low",
+                    "reason": f"No recent {paper_type} papers matching your keywords found in {journal_name}",
+                }
+
+            # Build evidence from top match
+            top = results[0]
+            return {
+                "validated": True,
+                "confidence": "high" if total >= 5 else "moderate",
+                "total_similar_papers": total,
+                "evidence": f"Published {total} similar papers (2022-2026), e.g. \"{top.get('title', '')}\" ({top.get('cited_by_count', 0)} citations)",
+                "example_paper": {
+                    "title": top.get("title", ""),
+                    "year": top.get("publication_year"),
+                    "citations": top.get("cited_by_count", 0),
+                },
+            }
+        except Exception as e:
+            print(f"[Journal] Validation error for {journal_name}: {e}")
+            return {"validated": True, "confidence": "unknown", "reason": "Validation skipped"}
 
     def _match_journals_from_db(self, field: str, tier: int) -> dict:
         """Fallback: match journals from the pre-populated database by field."""
@@ -2042,7 +2152,7 @@ class JournalScorerService:
 
         return gaps
 
-    def _assess_review_methodology(self, text: str, title: str, paper_type: str = 'review') -> dict:
+    def _assess_review_methodology(self, text: str, title: str, paper_type: str = 'review', publication_year: int = None) -> dict:
         """Assess methodology and synthesis quality for review/meta-analysis papers.
 
         Instead of generic research gap detection (which doesn't apply to reviews,
@@ -2082,15 +2192,34 @@ class JournalScorerService:
                 '    }'
             )
 
+        # Year-awareness: evaluate coverage ONLY relative to literature available at publication time
+        year_context = ""
+        year_instruction = ""
+        if publication_year:
+            year_context = f"\nPUBLICATION YEAR: {publication_year}\n"
+            year_instruction = (
+                f"\n\nCRITICAL YEAR-AWARENESS RULE: This paper was published in {publication_year}. "
+                f"You MUST evaluate its literature coverage ONLY against studies available up to {publication_year}. "
+                f"Do NOT penalize for missing studies published AFTER {publication_year} — those did not exist when this paper was written. "
+                f"'Recency' means: did the review include the latest studies available AT THE TIME of writing (up to {publication_year})? "
+                f"A 2013 review that covers literature through 2012-2013 is 'up-to-date', NOT 'outdated'. "
+                f"Only flag recency issues if the review missed studies that were already published BEFORE {publication_year}.\n"
+            )
+        else:
+            year_instruction = (
+                "\n\nNote: If you can detect the paper's publication year from its content, evaluate "
+                "recency RELATIVE to that year, not the current year.\n"
+            )
+
         prompt = f"""You are a senior methodologist evaluating a {type_label} paper for journal submission.
 
 TITLE: {title}
-
+{year_context}
 MANUSCRIPT (first 18,000 chars):
 {text[:18000]}
 
 Evaluate this {type_label} across three dimensions. For each, provide a score (0-100) and specific evidence-based findings.
-{meta_specific}
+{year_instruction}{meta_specific}
 Respond in JSON format:
 {{{{
     "search_strategy": {{{{
@@ -2120,13 +2249,13 @@ Respond in JSON format:
     "coverage_analysis": {{{{
         "score": 60,
         "total_studies_included": 45,
-        "date_range_of_studies": "e.g. 2010-2023 or unclear",
+        "date_range_of_studies": "e.g. 2010-2012 or unclear",
         "geographic_diversity": "global or regional or single-country or unclear",
         "study_type_diversity": "mixed methods or RCTs only or observational only or etc.",
-        "potential_gaps": ["1-4 specific topic areas or perspectives the review appears to miss"],
-        "recency_assessment": "up-to-date or slightly outdated or significantly outdated",
+        "potential_gaps": ["1-4 specific topic areas or perspectives the review appears to miss — ONLY flag gaps in literature that existed BEFORE the paper's publication year"],
+        "recency_assessment": "up-to-date or slightly outdated or significantly outdated — RELATIVE TO THE PAPER'S OWN PUBLICATION YEAR, not today",
         "strengths": ["1-2 coverage strengths"],
-        "recommendations": ["1-3 ways to improve coverage"]
+        "recommendations": ["1-3 ways to improve coverage — ONLY suggest adding studies that were available before the publication year"]
     }}}}{meta_json_block}
 }}}}
 """
@@ -2134,7 +2263,7 @@ Respond in JSON format:
         try:
             response = self.openai.chat_completion(
                 messages=[
-                    {"role": "system", "content": f"You are a senior peer reviewer and methodologist specializing in {type_label} papers. Evaluate rigorously but fairly. Always cite specific evidence from the manuscript."},
+                    {"role": "system", "content": f"You are a senior peer reviewer and methodologist specializing in {type_label} papers. Evaluate rigorously but fairly. Always cite specific evidence from the manuscript. CRITICAL: When evaluating literature coverage and recency, you MUST judge relative to the paper's own publication year — never penalize a paper for not citing studies that were published AFTER it."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -2600,12 +2729,26 @@ Respond in JSON format:
         )
         flag_summary = "\n".join(f"- [{f['severity']}] {f['issue']}" for f in flags) if flags else "None detected"
 
-        # Get journal names from primary matches
+        # Get journal names from primary matches — ONLY these verified journals
         primary = journals.get("primary_matches", [])
+        stretch = journals.get("stretch_matches", [])
+        safe = journals.get("safe_matches", [])
         if primary and isinstance(primary[0], dict):
             journal_names = ", ".join(j.get("name", str(j)) for j in primary[:5])
         else:
             journal_names = "Various journals in the field"
+
+        # Build verified journal list for the LLM (prevents hallucination)
+        all_verified = []
+        for tier_label, tier_journals in [("Stretch", stretch), ("Target", primary), ("Safe", safe)]:
+            for j in tier_journals:
+                if isinstance(j, dict):
+                    name = j.get("name", "")
+                    verified = j.get("verified", False)
+                    evidence = j.get("validation", {}).get("evidence", "") if isinstance(j.get("validation"), dict) else ""
+                    all_verified.append(f"  - {name} ({tier_label}){' [VERIFIED]' if verified else ''}")
+
+        verified_journal_list = "\n".join(all_verified) if all_verified else "  (No journals matched)"
 
         # Landscape context
         landscape_info = ""
@@ -2738,10 +2881,14 @@ Respond in JSON format:
 
             f"{self._format_reference_bank(reference_bank or [])}\n\n"
 
+            "## VERIFIED JOURNAL LIST\n"
+            "The following journals have been verified against OpenAlex data as publishing in this paper's area:\n"
+            f"{verified_journal_list}\n\n"
             "FORMATTING RULES:\n"
             "- Use markdown with numbered lists\n"
             "- When citing papers, use the EXACT title and DOI from the Reference Bank above. Do NOT fabricate any DOIs or paper titles.\n"
             "- ONLY cite papers from the Reference Bank. If no relevant paper exists in the bank, describe the type of paper needed without inventing a citation.\n"
+            "- When mentioning target journals, ONLY reference journals from the VERIFIED JOURNAL LIST above. Do NOT invent or suggest journal names not in this list.\n"
             "- Be extremely specific — no vague advice\n"
         )
 
