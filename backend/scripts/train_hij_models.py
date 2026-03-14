@@ -66,7 +66,10 @@ logger = logging.getLogger(__name__)
 PAPER_TYPE_CLASSES = ["experimental", "review", "meta_analysis", "case_report", "protocol"]
 
 
-def load_paper_type_data(filepath: str):
+MAX_TRAIN_SAMPLES = 100000  # TF-IDF+LogReg has diminishing returns above ~50K
+
+
+def load_paper_type_data(filepath: str, max_samples: int = 0):
     """Load texts and paper_type labels from JSONL."""
     texts, labels = [], []
     with open(filepath, "r") as f:
@@ -84,6 +87,8 @@ def load_paper_type_data(filepath: str):
             if paper_type in PAPER_TYPE_CLASSES:
                 texts.append(f"{title} {abstract}")
                 labels.append(paper_type)
+                if max_samples and len(texts) >= max_samples:
+                    break
     return texts, labels
 
 
@@ -93,7 +98,7 @@ def train_paper_type_classifier(data_dir: Path, output_dir: Path):
     logger.info("Training Paper Type Classifier (TF-IDF + LogReg)")
     logger.info("=" * 60)
 
-    train_texts, train_labels = load_paper_type_data(str(data_dir / "train.jsonl"))
+    train_texts, train_labels = load_paper_type_data(str(data_dir / "train.jsonl"), max_samples=MAX_TRAIN_SAMPLES)
     val_texts, val_labels = load_paper_type_data(str(data_dir / "val.jsonl"))
     test_texts, test_labels = load_paper_type_data(str(data_dir / "test.jsonl"))
 
@@ -209,7 +214,7 @@ def train_paper_type_classifier(data_dir: Path, output_dir: Path):
 TIER_CLASSES = ["Tier1", "Tier2", "Tier3"]
 
 
-def load_tier_data(filepath: str):
+def load_tier_data(filepath: str, max_samples: int = 0):
     """Load texts, metadata features, and tier labels from JSONL."""
     texts, labels = [], []
     with open(filepath, "r") as f:
@@ -249,6 +254,8 @@ def load_tier_data(filepath: str):
             text = f"{title} {abstract[:2000]}{meta_text}"
             texts.append(text)
             labels.append(tier)
+            if max_samples and len(texts) >= max_samples:
+                break
 
     return texts, labels
 
@@ -259,7 +266,7 @@ def train_tier_predictor(data_dir: Path, output_dir: Path):
     logger.info("Training Journal Tier Predictor (TF-IDF + LogReg)")
     logger.info("=" * 60)
 
-    train_texts, train_labels = load_tier_data(str(data_dir / "train.jsonl"))
+    train_texts, train_labels = load_tier_data(str(data_dir / "train.jsonl"), max_samples=MAX_TRAIN_SAMPLES)
     val_texts, val_labels = load_tier_data(str(data_dir / "val.jsonl"))
     test_texts, test_labels = load_tier_data(str(data_dir / "test.jsonl"))
 
