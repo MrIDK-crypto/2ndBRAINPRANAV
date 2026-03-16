@@ -57,7 +57,7 @@ IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.
 # Audio/Video extensions for Whisper transcription
 MEDIA_EXTENSIONS = ('.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm')
 
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB per file
+MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1 GB per file
 
 
 # ============================================================================
@@ -675,7 +675,7 @@ def upload_batch():
             """Thread-safe: parse file text + upload to S3. No DB access."""
             lower_name = filename.lower()
             if len(file_content) > MAX_FILE_SIZE:
-                return {'filename': filename, 'error': f'File exceeds 100 MB limit'}
+                return {'filename': filename, 'error': f'File exceeds 1 GB limit'}
 
             text = None
             try:

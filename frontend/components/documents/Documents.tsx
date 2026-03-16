@@ -785,8 +785,8 @@ export default function Documents() {
       const response = await axios.post(`${API_BASE}/documents/upload`, formData, {
         headers: { 'Authorization': `Bearer ${token}` },
         timeout: 300000, // 5 minute timeout for large file uploads
-        maxContentLength: 100 * 1024 * 1024, // 100MB
-        maxBodyLength: 100 * 1024 * 1024, // 100MB
+        maxContentLength: 1024 * 1024 * 1024, // 1GB
+        maxBodyLength: 1024 * 1024 * 1024, // 1GB
         onUploadProgress: (progressEvent) => {
           const pct = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1))
           setUploadProgress(pct)

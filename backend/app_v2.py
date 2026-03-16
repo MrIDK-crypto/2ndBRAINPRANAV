@@ -81,7 +81,7 @@ def handle_exception(e):
 
 @app.errorhandler(413)
 def handle_413(e):
-    return jsonify({"error": "File too large. Maximum upload size is 100MB."}), 413
+    return jsonify({"error": "File too large. Maximum upload size is 1GB."}), 413
 
 @app.errorhandler(404)
 def handle_404(e):
