@@ -837,7 +837,9 @@ export default function CoWorkChat({
                         ) === idx)
                         .slice(0, 5)
                         .map((source, idx) => {
-                          const sourceViewUrl = source.source_url || null
+                          const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+                          const sourceViewUrl = source.source_url
+                            || (source.doc_id ? `${apiBase}/documents/${encodeURIComponent(source.doc_id)}/view${token ? `?token=${encodeURIComponent(token)}` : ''}` : null)
                           return (
                             <a
                               key={idx}

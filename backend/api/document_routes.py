@@ -685,7 +685,9 @@ def upload_batch():
                     text = parser.parse_word_bytes(file_content)
                 elif lower_name.endswith(('.csv', '.tsv')):
                     text = parser.parse_file_bytes(file_content, filename)
-                elif lower_name.endswith(('.txt', '.md', '.json', '.xml', '.html', '.htm', '.r', '.rmd')):
+                elif lower_name.endswith(('.json', '.xml', '.html', '.htm')):
+                    text = parser.parse_file_bytes(file_content, filename)
+                elif lower_name.endswith(('.txt', '.md', '.r', '.rmd')):
                     text = file_content.decode('utf-8', errors='ignore')
                 elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.ods', '.numbers', '.rtf')):
                     text = parser.parse_file_bytes(file_content, filename)
@@ -1296,7 +1298,9 @@ def upload_and_embed():
                         text = parser.parse_word_bytes(file_content)
                     elif lower_name.endswith(('.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt', '.csv', '.tsv')):
                         text = parser.parse_file_bytes(file_content, filename)
-                    elif lower_name.endswith(('.txt', '.md', '.json', '.xml')):
+                    elif lower_name.endswith(('.json', '.xml')):
+                        text = parser.parse_file_bytes(file_content, filename)
+                    elif lower_name.endswith(('.txt', '.md')):
                         text = file_content.decode('utf-8')
                     else:
                         # Try to decode as text
