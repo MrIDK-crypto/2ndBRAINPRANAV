@@ -322,6 +322,46 @@ class AzureDocumentParser:
             }
         }
 
+    def parse_bytes(self, content: bytes, mime_type: str) -> Optional[Dict]:
+        """Parse document from raw bytes (used by upload endpoints).
+
+        Args:
+            content: File content as bytes
+            mime_type: MIME type (e.g. 'application/pdf')
+        """
+        import tempfile
+
+        mime_to_ext = {
+            'application/pdf': '.pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+            'text/plain': '.txt',
+            'text/html': '.html',
+            'image/png': '.png',
+            'image/jpeg': '.jpg',
+        }
+        ext = mime_to_ext.get(mime_type, '.pdf')
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+
+            result = self.parse(tmp_path)
+            if result and result.get('content'):
+                result['success'] = True
+                return result
+            return {'success': False, 'content': None}
+        except Exception as e:
+            print(f"[AzureDocumentParser] parse_bytes failed: {e}")
+            return None
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     def parse_batch(self, file_paths: list) -> Dict[str, Optional[Dict]]:
         results = {}
         for file_path in file_paths:
