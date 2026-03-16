@@ -791,11 +791,11 @@ def upload_batch():
                 try:
                     bg_db = SessionLocal()
                     # Find all docs from this upload session
-                    from sqlalchemy import cast, String
+                    from sqlalchemy import text
                     all_docs = bg_db.query(Document).filter(
                         Document.tenant_id == tid,
                         Document.source_type == 'manual_upload',
-                        Document.doc_metadata['upload_session_id'].astext == session_id
+                        text("doc_metadata->>'upload_session_id' = :sid").bindparams(sid=session_id)
                     ).all()
 
                     if not all_docs:

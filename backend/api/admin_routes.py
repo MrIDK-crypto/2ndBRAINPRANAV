@@ -522,7 +522,7 @@ def get_analytics():
                     AuditLog.tenant_id == tenant_id,
                     AuditLog.action == 'slack_bot:question',
                     AuditLog.created_at >= since,
-                    AuditLog.changes['result'].astext == 'answered'
+                    text("changes->>'result' = 'answered'")
                 ).count()
             except Exception:
                 slack_answered = 0
