@@ -438,14 +438,25 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                   {dedupedSources.map(({ item, type }, idx) => {
                     const isExpanded = expandedSource === idx
                     const title = item.subject || item.title || item.name || `Source ${idx + 1}`
-                    // Only show score as percentage if it's a valid 0-1 similarity score
-                    // Cross-encoder rerank scores can be negative logits — hide those
                     const rawScore = item.score
                     const score = (rawScore != null && rawScore >= 0 && rawScore <= 1)
                       ? Math.round(rawScore * 100)
                       : null
                     const preview = item.content || item.abstract || item.content_preview || ''
                     const badgeColor = SOURCE_BADGE_COLORS[type] || COLORS.primary
+
+                    // Build "View More" URL
+                    const apiBase = (typeof window !== 'undefined' ? process.env.NEXT_PUBLIC_API_URL : '') || 'http://localhost:5006'
+                    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+                    const viewUrl = item.source_url
+                      || (item.doc_id ? `${apiBase}/api/documents/${encodeURIComponent(item.doc_id)}/view${token ? `?token=${encodeURIComponent(token)}` : ''}` : null)
+
+                    // Extract a clean summary — first 2-3 sentences from preview
+                    const cleanPreview = typeof preview === 'string'
+                      ? preview.replace(/^[\s\n]+/, '').replace(/\n{2,}/g, '\n')
+                      : ''
+                    const sentences = cleanPreview.split(/(?<=[.!?])\s+/).filter(Boolean)
+                    const summaryText = sentences.slice(0, 3).join(' ')
 
                     return (
                       <div
@@ -454,7 +465,7 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                         style={{
                           padding: '10px 12px',
                           borderRadius: '8px',
-                          border: `1px solid ${COLORS.border}`,
+                          border: `1px solid ${isExpanded ? COLORS.primary + '40' : COLORS.border}`,
                           backgroundColor: isExpanded ? COLORS.pageBg : COLORS.cardBg,
                           cursor: 'pointer',
                           transition: 'all 0.15s ease',
@@ -471,7 +482,6 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                           alignItems: 'center',
                           gap: '6px',
                         }}>
-                          {/* Type badge */}
                           <span style={{
                             padding: '1px 6px',
                             borderRadius: '4px',
@@ -485,7 +495,6 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                             {type}
                           </span>
 
-                          {/* Title */}
                           <span style={{
                             fontSize: '12px',
                             fontWeight: 500,
@@ -498,7 +507,6 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                             {typeof title === 'string' ? title.split('/').pop() : title}
                           </span>
 
-                          {/* Score */}
                           {score !== null && (
                             <span style={{
                               fontSize: '10px',
@@ -508,34 +516,130 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                               {score}%
                             </span>
                           )}
+
+                          {/* Expand chevron */}
+                          <svg
+                            width="10" height="10" viewBox="0 0 24 24" fill="none"
+                            stroke={COLORS.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                            style={{
+                              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                              transition: 'transform 0.15s ease',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
                         </div>
 
-                        {/* Expanded preview */}
-                        {isExpanded && preview && (
+                        {/* Expanded detail view */}
+                        {isExpanded && (
                           <div style={{
                             marginTop: '8px',
                             paddingTop: '8px',
                             borderTop: `1px solid ${COLORS.border}`,
-                            fontSize: '12px',
-                            lineHeight: '1.5',
-                            color: COLORS.textSecondary,
-                            maxHeight: '250px',
-                            overflowY: 'auto',
                           }}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-                              p: ({ children }) => <p style={{ margin: '4px 0' }}>{children}</p>,
-                              h1: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
-                              h2: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
-                              h3: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
-                              h4: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
-                              ul: ({ children }) => <ul style={{ margin: '2px 0', paddingLeft: '16px' }}>{children}</ul>,
-                              ol: ({ children }) => <ol style={{ margin: '2px 0', paddingLeft: '16px' }}>{children}</ol>,
-                              li: ({ children }) => <li style={{ margin: '1px 0' }}>{children}</li>,
+                            {/* Summary — first few sentences */}
+                            {summaryText && (
+                              <p style={{
+                                fontSize: '12px',
+                                lineHeight: '1.6',
+                                color: COLORS.textSecondary,
+                                margin: '0 0 8px',
+                              }}>
+                                {summaryText.length > 300 ? summaryText.slice(0, 300) + '...' : summaryText}
+                              </p>
+                            )}
+
+                            {/* Full content preview (scrollable) */}
+                            {cleanPreview.length > 300 && (
+                              <div style={{
+                                fontSize: '11px',
+                                lineHeight: '1.5',
+                                color: COLORS.textMuted,
+                                maxHeight: '200px',
+                                overflowY: 'auto',
+                                padding: '8px',
+                                backgroundColor: COLORS.cardBg,
+                                borderRadius: '6px',
+                                border: `1px solid ${COLORS.border}`,
+                                marginBottom: '8px',
+                              }}>
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                                  p: ({ children }) => <p style={{ margin: '3px 0' }}>{children}</p>,
+                                  h1: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '12px', fontWeight: 600 }}>{children}</h4>,
+                                  h2: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '12px', fontWeight: 600 }}>{children}</h4>,
+                                  h3: ({ children }) => <h4 style={{ margin: '5px 0 2px', fontSize: '11px', fontWeight: 600 }}>{children}</h4>,
+                                  h4: ({ children }) => <h4 style={{ margin: '5px 0 2px', fontSize: '11px', fontWeight: 600 }}>{children}</h4>,
+                                  ul: ({ children }) => <ul style={{ margin: '2px 0', paddingLeft: '14px' }}>{children}</ul>,
+                                  ol: ({ children }) => <ol style={{ margin: '2px 0', paddingLeft: '14px' }}>{children}</ol>,
+                                  li: ({ children }) => <li style={{ margin: '1px 0' }}>{children}</li>,
+                                  a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: COLORS.primary }}>{children}</a>,
+                                }}>
+                                  {cleanPreview.slice(0, 2000)}
+                                </ReactMarkdown>
+                              </div>
+                            )}
+
+                            {/* Metadata row */}
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              flexWrap: 'wrap',
+                              marginBottom: viewUrl ? '8px' : '0',
                             }}>
-                              {typeof preview === 'string' ? preview.slice(0, 800) : ''}
-                            </ReactMarkdown>
-                            {typeof preview === 'string' && preview.length > 800 && (
-                              <span style={{ color: COLORS.textMuted, fontStyle: 'italic' }}>... (truncated)</span>
+                              {item.source_type && (
+                                <span style={{ fontSize: '10px', color: COLORS.textMuted }}>
+                                  {item.source_type === 'manual_upload' ? 'Uploaded' : item.source_type}
+                                </span>
+                              )}
+                              {item.created_at && (
+                                <span style={{ fontSize: '10px', color: COLORS.textMuted }}>
+                                  {new Date(item.created_at).toLocaleDateString()}
+                                </span>
+                              )}
+                              {item.facility_name && (
+                                <span style={{ fontSize: '10px', color: COLORS.textMuted }}>
+                                  {item.facility_name}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* View More button */}
+                            {viewUrl && (
+                              <a
+                                href={viewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  color: COLORS.primary,
+                                  textDecoration: 'none',
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  border: `1px solid ${COLORS.primary}40`,
+                                  backgroundColor: `${COLORS.primary}08`,
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = `${COLORS.primary}15`
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = `${COLORS.primary}08`
+                                }}
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+                                  <polyline points="15 3 21 3 21 9" />
+                                  <line x1="10" y1="14" x2="21" y2="3" />
+                                </svg>
+                                View full document
+                              </a>
                             )}
                           </div>
                         )}

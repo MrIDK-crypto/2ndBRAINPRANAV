@@ -388,12 +388,14 @@ export default function CoWorkChat({
                 doc_id: s.doc_id,
                 subject: s.title || `Source ${idx + 1}`,
                 score: s.score,
-                content: (s.content_preview || '').substring(0, 200) + '...',
+                content: s.content_preview || '',
                 source_url: s.source_url || '',
                 is_shared: s.is_shared || false,
                 facility_name: s.facility_name || '',
                 source_origin: s.source_origin || (s.is_shared ? 'ctsi' : 'user_kb'),
                 source_origin_label: s.source_origin_label || (s.is_shared ? 'CTSI Research' : 'Your KB'),
+                source_type: s.source_type || '',
+                created_at: s.created_at || '',
               }))
 
               setStreamingSources(localSources)
