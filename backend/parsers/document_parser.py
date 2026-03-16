@@ -248,9 +248,29 @@ class DocumentParser:
             return self._parse_rtf_bytes(file_bytes)
 
         # Image files - describe via GPT-4o vision
-        if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff'):
+        if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif'):
             if len(file_bytes) > 20 * 1024 * 1024:
                 return f"[Image: {filename} — too large for vision analysis ({len(file_bytes) // (1024*1024)} MB)]"
+            # Convert HEIC/HEIF/TIF to JPEG for GPT-4o vision compatibility
+            if ext in ('.heic', '.heif', '.tif', '.tiff'):
+                try:
+                    from PIL import Image
+                    import io
+                    if ext in ('.heic', '.heif'):
+                        try:
+                            import pillow_heif
+                            pillow_heif.register_heif_opener()
+                        except ImportError:
+                            return f"[HEIC image: {filename} — pillow-heif not installed for conversion]"
+                    img = Image.open(io.BytesIO(file_bytes))
+                    if img.mode in ('RGBA', 'P', 'LA'):
+                        img = img.convert('RGB')
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG', quality=90)
+                    file_bytes = buf.getvalue()
+                    filename = filename.rsplit('.', 1)[0] + '.jpg'
+                except Exception as e:
+                    return f"[Image conversion failed for {filename}: {e}]"
             return self._parse_image_bytes(file_bytes, filename)
 
         # Audio/video files - transcribe via Whisper

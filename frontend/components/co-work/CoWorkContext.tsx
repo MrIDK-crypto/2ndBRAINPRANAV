@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 // ── Design tokens ──
 const COLORS = {
@@ -517,11 +519,24 @@ export default function CoWorkContext({ thinkingSteps, brief, sources }: CoWorkC
                             fontSize: '12px',
                             lineHeight: '1.5',
                             color: COLORS.textSecondary,
-                            maxHeight: '120px',
-                            overflow: 'hidden',
+                            maxHeight: '250px',
+                            overflowY: 'auto',
                           }}>
-                            {typeof preview === 'string' ? preview.slice(0, 300) : ''}
-                            {typeof preview === 'string' && preview.length > 300 && '...'}
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                              p: ({ children }) => <p style={{ margin: '4px 0' }}>{children}</p>,
+                              h1: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
+                              h2: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
+                              h3: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
+                              h4: ({ children }) => <h4 style={{ margin: '6px 0 2px', fontSize: '13px', fontWeight: 600 }}>{children}</h4>,
+                              ul: ({ children }) => <ul style={{ margin: '2px 0', paddingLeft: '16px' }}>{children}</ul>,
+                              ol: ({ children }) => <ol style={{ margin: '2px 0', paddingLeft: '16px' }}>{children}</ol>,
+                              li: ({ children }) => <li style={{ margin: '1px 0' }}>{children}</li>,
+                            }}>
+                              {typeof preview === 'string' ? preview.slice(0, 800) : ''}
+                            </ReactMarkdown>
+                            {typeof preview === 'string' && preview.length > 800 && (
+                              <span style={{ color: COLORS.textMuted, fontStyle: 'italic' }}>... (truncated)</span>
+                            )}
                           </div>
                         )}
                       </div>

@@ -82,12 +82,12 @@ class AzureDocumentParser:
 
         self.supported_formats = [
             '.pdf', '.pptx', '.xlsx', '.docx',
-            '.txt', '.html', '.xml',
-            '.png', '.jpg', '.jpeg'
+            '.txt', '.html', '.xml', '.json',
+            '.png', '.jpg', '.jpeg', '.heic', '.heif', '.tif', '.tiff'
         ]
 
         # Image formats that GPT-4o can process directly via vision
-        self.image_formats = ['.png', '.jpg', '.jpeg']
+        self.image_formats = ['.png', '.jpg', '.jpeg', '.heic', '.heif', '.tif', '.tiff']
 
     def _initialize_client(self):
         """Initialize Azure OpenAI client"""
@@ -224,7 +224,32 @@ class AzureDocumentParser:
         print(f"  📄 Parsing {file_name} with GPT-4o vision...")
 
         with open(file_path, 'rb') as f:
-            b64 = base64.b64encode(f.read()).decode('utf-8')
+            raw_bytes = f.read()
+
+        # Convert HEIC/TIF to JPEG for GPT-4o vision compatibility
+        if ext in ('.heic', '.heif', '.tif', '.tiff'):
+            try:
+                from PIL import Image
+                import io
+                if ext in ('.heic', '.heif'):
+                    try:
+                        import pillow_heif
+                        pillow_heif.register_heif_opener()
+                    except ImportError:
+                        print(f"  ⚠ pillow-heif not installed, cannot parse {file_name}")
+                        return None
+                img = Image.open(io.BytesIO(raw_bytes))
+                if img.mode in ('RGBA', 'P', 'LA'):
+                    img = img.convert('RGB')
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=90)
+                raw_bytes = buf.getvalue()
+                ext = '.jpg'
+            except Exception as e:
+                print(f"  ⚠ Image conversion failed for {file_name}: {e}")
+                return None
+
+        b64 = base64.b64encode(raw_bytes).decode('utf-8')
 
         mime = 'image/png' if ext == '.png' else 'image/jpeg'
 

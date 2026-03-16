@@ -47,12 +47,12 @@ ZIP_SUPPORTED_EXTENSIONS = {
     '.xlsx', '.xls', '.xlsm', '.xlsb', '.pptx', '.ppt',
     '.rtf', '.ods', '.numbers', '.json', '.xml', '.html', '.htm', '.md',
     '.r', '.rmd', '.rdata',
-    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif',
     '.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm'
 }
 
 # Image extensions for OCR via Azure Document Intelligence
-IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif')
+IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif')
 
 # Audio/Video extensions for Whisper transcription
 MEDIA_EXTENSIONS = ('.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm')

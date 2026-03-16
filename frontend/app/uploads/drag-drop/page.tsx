@@ -13,7 +13,7 @@ const ACCEPTED_EXTENSIONS = [
   '.pdf', '.doc', '.docx', '.txt', '.csv', '.tsv', '.xlsx', '.xls',
   '.pptx', '.ppt', '.rtf', '.json', '.xml', '.html', '.md',
   '.r', '.rmd', '.rdata',
-  '.png', '.jpg', '.jpeg', '.gif',
+  '.png', '.jpg', '.jpeg', '.gif', '.heic', '.heif', '.tif', '.tiff', '.bmp',
   '.mp4', '.mov', '.wav', '.mp3', '.m4a', '.webm',
   '.zip',
 ]
@@ -40,7 +40,7 @@ const ACCEPTED_MIME_TYPES = [
   'application/xml', 'text/xml',
   'text/html',
   'text/markdown',
-  'image/png', 'image/jpeg', 'image/gif',
+  'image/png', 'image/jpeg', 'image/gif', 'image/heic', 'image/heif', 'image/tiff',
   'video/mp4', 'video/quicktime',
   'audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/webm',
   'video/webm',
