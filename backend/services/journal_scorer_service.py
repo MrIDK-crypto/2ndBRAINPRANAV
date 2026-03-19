@@ -891,6 +891,24 @@ class JournalScorerService:
                 if paper_type in ('review', 'meta_analysis') and not review_methodology_result:
                     yield _sse("review_methodology", {"search_strategy": {}, "synthesis_quality": {}, "coverage_analysis": {}, "overall_rigor_score": 0, "paper_type": paper_type})
 
+            # ── Step 5.8: Figure/Graph Analysis (Vision API) ──────────────
+            figure_analysis_result = None
+            if file_bytes and filename and filename.lower().endswith('.pdf'):
+                try:
+                    yield _sse("progress", {"step": 5, "message": "Analyzing figures and graphs...", "percent": 62})
+                    from services.figure_analyzer import FigureAnalyzer
+                    fig_analyzer = FigureAnalyzer()
+                    figure_analysis_result = fig_analyzer.analyze_all_figures(file_bytes, text[:5000])
+                    if figure_analysis_result and figure_analysis_result["total_figures"] > 0:
+                        yield _sse("figure_analysis", figure_analysis_result)
+                    else:
+                        yield _sse("figure_analysis", {"figures": [], "summary": "No figures extracted from PDF.", "total_figures": 0})
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    print(f"[JournalScorer] Figure analysis failed (non-critical): {e}")
+                    yield _sse("figure_analysis", {"figures": [], "summary": f"Figure analysis unavailable: {e}", "total_figures": 0})
+
             # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
             yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
 

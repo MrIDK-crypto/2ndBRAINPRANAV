@@ -248,6 +248,7 @@ export default function HighImpactJournal() {
   const [experimentSuggestions, setExperimentSuggestions] = useState<ExperimentSuggestionsInfo | null>(null)
   const [researchGaps, setResearchGaps] = useState<ResearchGapsInfo | null>(null)
   const [reviewMethodology, setReviewMethodology] = useState<ReviewMethodologyInfo | null>(null)
+  const [figureAnalysis, setFigureAnalysis] = useState<any>(null)
   const [error, setError] = useState('')
   const [publicationYear, setPublicationYear] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -271,6 +272,7 @@ export default function HighImpactJournal() {
     setExperimentSuggestions(null)
     setResearchGaps(null)
     setReviewMethodology(null)
+    setFigureAnalysis(null)
     setError('')
     setResearchText('')
     setPublicationYear('')
@@ -338,6 +340,9 @@ export default function HighImpactJournal() {
                 break
               case 'review_methodology':
                 setReviewMethodology(data)
+                break
+              case 'figure_analysis':
+                setFigureAnalysis(data)
                 break
               case 'recommendations':
                 setRecommendations(prev => prev + data.content)
@@ -1229,6 +1234,79 @@ export default function HighImpactJournal() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Figures & Graphs Analysis */}
+            {figureAnalysis && figureAnalysis.total_figures > 0 && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                backgroundColor: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                marginBottom: 24,
+              }}>
+                <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary, marginBottom: 16 }}>
+                  Figures & Graphs Analysis ({figureAnalysis.total_figures} found)
+                </h3>
+                <p style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 16 }}>
+                  {figureAnalysis.summary}
+                </p>
+                {figureAnalysis.avg_score && (
+                  <div style={{ fontSize: 14, color: theme.textPrimary, marginBottom: 16 }}>
+                    Average Figure Quality: <strong>{figureAnalysis.avg_score}/100</strong>
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {figureAnalysis.figures.map((fig: any, i: number) => (
+                    <div key={i} style={{
+                      backgroundColor: theme.primaryLight,
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: 8,
+                      padding: 16,
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <strong style={{ fontSize: 14, color: theme.textPrimary }}>{fig.label}</strong>
+                        <span style={{
+                          fontSize: 13,
+                          fontFamily: fontMono,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontWeight: 600,
+                          backgroundColor: fig.score >= 70 ? '#F0F7EE' : fig.score >= 40 ? '#FEF7E8' : '#FDF2F2',
+                          color: fig.score >= 70 ? '#3D6B35' : fig.score >= 40 ? '#8B6914' : '#9B4D4D',
+                        }}>
+                          {fig.score}/100
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
+                        Type: {fig.figure_type?.replace(/_/g, ' ')}
+                        {fig.page && <span> &middot; Page {fig.page}</span>}
+                      </div>
+                      <div style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 8 }}>
+                        {fig.description}
+                      </div>
+                      {fig.key_findings?.length > 0 && (
+                        <div style={{ fontSize: 13, color: theme.textPrimary, marginBottom: 8 }}>
+                          <strong>Key findings:</strong>
+                          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                            {fig.key_findings.map((f: string, j: number) => <li key={j}>{f}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {fig.issues?.length > 0 && (
+                        <div style={{ fontSize: 13, color: '#9B4D4D' }}>
+                          Issues: {fig.issues.join('; ')}
+                        </div>
+                      )}
+                      {fig.suggestions?.length > 0 && (
+                        <div style={{ fontSize: 13, color: '#3D6B35', marginTop: 4 }}>
+                          Suggestions: {fig.suggestions.join('; ')}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
