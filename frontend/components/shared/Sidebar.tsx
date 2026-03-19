@@ -97,6 +97,7 @@ export default function Sidebar({
     if (pathname === '/integrations') return 'Integrations'
     if (pathname === '/documents') return 'Documents'
     if (pathname === '/co-work' || pathname === '/chat') return 'Co-Work'
+    if (pathname === '/high-impact-journal') return 'High Impact Journal'
     if (pathname === '/training-guides') return 'Training Videos'
     if (pathname === '/analytics') return 'Analytics'
     if (pathname === '/inventory') return 'Inventory'
@@ -158,6 +159,8 @@ export default function Sidebar({
       label: 'More',
       id: 'more',
       items: [
+        { id: 'High Impact Journal', label: 'High Impact Journal', href: '/high-impact-journal', icon: 'journal', adminOnly: false },
+        { id: 'Co-Researcher', label: 'Co-Researcher', href: '/co-work', icon: 'researcher', adminOnly: false },
         { id: 'Training Videos', label: 'Training Videos', href: '/training-guides', icon: 'training', adminOnly: false, comingSoon: true },
         { id: 'Analytics', label: 'Analytics', href: '/analytics', icon: 'analytics', adminOnly: true },
         { id: 'Inventory', label: 'Inventory', href: '/inventory', icon: 'inventory', adminOnly: false },
@@ -207,6 +210,23 @@ export default function Sidebar({
             <circle cx="12" cy="10" r="1" />
             <circle cx="8" cy="10" r="1" />
             <circle cx="16" cy="10" r="1" />
+          </svg>
+        )
+      case 'journal':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+            <line x1="12" y1="6" x2="16" y2="6" />
+            <line x1="12" y1="10" x2="16" y2="10" />
+          </svg>
+        )
+      case 'researcher':
+        return (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="7" r="4" />
+            <path d="M5.5 21c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6" />
+            <path d="M17 11l2 2 4-4" />
           </svg>
         )
       case 'training':
