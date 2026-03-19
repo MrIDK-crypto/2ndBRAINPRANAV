@@ -267,6 +267,10 @@ export default function HighImpactJournal() {
   const [competitorLoading, setCompetitorLoading] = useState(false)
   const [competitorProgress, setCompetitorProgress] = useState('')
 
+  // Idea Reality states
+  const [ideaResult, setIdeaResult] = useState<any>(null)
+  const [ideaLoading, setIdeaLoading] = useState(false)
+
   // Auth for paper-to-code (requires login)
   const { token: authToken } = useAuth()
 
@@ -300,6 +304,8 @@ export default function HighImpactJournal() {
     setCompetitorResult(null)
     setCompetitorLoading(false)
     setCompetitorProgress('')
+    setIdeaResult(null)
+    setIdeaLoading(false)
   }, [])
 
   const processSSEStream = useCallback(async (response: Response) => {
@@ -690,6 +696,67 @@ export default function HighImpactJournal() {
       setCompetitorProgress('')
     }
   }, [authToken, researchText, recommendations, fieldInfo, deepAnalysis])
+
+  // ── Idea Reality validation ──
+  const handleValidateIdea = useCallback(async () => {
+    if (!authToken) {
+      setError('Please log in to validate research ideas.')
+      return
+    }
+
+    setIdeaLoading(true)
+    setIdeaResult(null)
+
+    // Build search string from detected field + keywords + paper topic
+    const parts: string[] = []
+    if (fieldInfo?.field_label) parts.push(fieldInfo.field_label)
+    if (fieldInfo?.subfield) parts.push(fieldInfo.subfield)
+    if (fieldInfo?.keywords && fieldInfo.keywords.length > 0) {
+      parts.push(fieldInfo.keywords.slice(0, 5).join(' '))
+    }
+    if (deepAnalysis?.analysis) {
+      const analysis = deepAnalysis.analysis
+      for (const [, val] of Object.entries(analysis)) {
+        if (typeof val === 'string' && val.length < 200) parts.push(val)
+        else if (typeof val === 'object' && val) {
+          const obj = val as Record<string, any>
+          if (obj.summary) parts.push(obj.summary)
+        }
+      }
+    }
+
+    const idea = parts.join(' ').slice(0, 256) || researchText.slice(0, 256)
+
+    try {
+      const response = await fetch(`${API_URL}/api/idea-reality/check`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ idea, depth: 'standard' }),
+      })
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        setError(errData.error || 'Idea validation failed. Please try again.')
+        setIdeaLoading(false)
+        return
+      }
+
+      const data = await response.json()
+      if (data.success) {
+        setIdeaResult(data)
+      } else {
+        setError(data.error || 'Idea validation failed.')
+      }
+    } catch (err) {
+      console.error('Idea validation failed:', err)
+      setError('Idea validation failed. Please check your connection.')
+    } finally {
+      setIdeaLoading(false)
+    }
+  }, [authToken, researchText, fieldInfo, deepAnalysis])
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -2620,6 +2687,271 @@ export default function HighImpactJournal() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* ── Idea Reality Validation ── */}
+            <div style={{
+              padding: 24,
+              borderRadius: 14,
+              border: `1px solid ${theme.border}`,
+              backgroundColor: theme.cardBg,
+              marginBottom: 24,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>
+                    Idea Reality Check
+                  </h3>
+                  <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
+                    Validate if similar tools or implementations already exist
+                  </p>
+                </div>
+                {!ideaResult && (
+                  <button
+                    onClick={handleValidateIdea}
+                    disabled={ideaLoading}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: 10,
+                      border: 'none',
+                      backgroundColor: ideaLoading ? theme.border : theme.primary,
+                      color: ideaLoading ? theme.textMuted : '#fff',
+                      fontWeight: 600,
+                      fontSize: 14,
+                      cursor: ideaLoading ? 'not-allowed' : 'pointer',
+                      fontFamily: font,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {ideaLoading && (
+                      <span style={{
+                        display: 'inline-block',
+                        width: 14,
+                        height: 14,
+                        border: `2px solid ${theme.textMuted}`,
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                      }} />
+                    )}
+                    {ideaLoading ? 'Validating...' : 'Validate Research Idea'}
+                  </button>
+                )}
+              </div>
+
+              {/* Not logged in hint */}
+              {!authToken && !ideaLoading && !ideaResult && (
+                <p style={{ fontSize: 13, color: theme.amber, margin: 0 }}>
+                  Sign in to validate research ideas against existing implementations.
+                </p>
+              )}
+
+              {/* ── Idea Reality Results ── */}
+              {ideaResult && (() => {
+                const signal = ideaResult.reality_signal || 0
+                const verdict = ideaResult.verdict || 'UNKNOWN'
+                const trend = ideaResult.trend || 'stable'
+
+                // Color mapping: LOW competition = green (good), HIGH = red (saturated)
+                const verdictColor = verdict === 'HIGH' ? '#D97B7B'
+                  : verdict === 'MEDIUM-HIGH' ? '#E2A336'
+                  : verdict === 'MEDIUM' ? '#E2A336'
+                  : '#9CB896'
+                const verdictBg = verdict === 'HIGH' ? '#FDF2F2'
+                  : verdict === 'MEDIUM-HIGH' ? '#FEF7E8'
+                  : verdict === 'MEDIUM' ? '#FEF7E8'
+                  : '#F0F7EE'
+                const verdictText = verdict === 'HIGH' ? '#9B4D4D'
+                  : verdict === 'MEDIUM-HIGH' ? '#8B6914'
+                  : verdict === 'MEDIUM' ? '#8B6914'
+                  : '#3D6B35'
+
+                // Progress bar color: inverted — green when low signal (opportunity), red when high (saturated)
+                const barColor = signal >= 70 ? '#D97B7B' : signal >= 40 ? '#E2A336' : '#9CB896'
+
+                const trendLabel = trend === 'accelerating' ? 'Accelerating' : trend === 'active' ? 'Active' : 'Stable'
+                const trendColor = trend === 'accelerating' ? '#D97B7B' : trend === 'active' ? '#E2A336' : '#9CB896'
+
+                return (
+                  <div>
+                    {/* Reality Signal Score */}
+                    <div style={{
+                      padding: '16px 20px',
+                      borderRadius: 12,
+                      backgroundColor: verdictBg,
+                      border: `1px solid ${verdictColor}`,
+                      marginBottom: 20,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '4px 14px',
+                          borderRadius: 20,
+                          backgroundColor: verdictColor,
+                          color: '#fff',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                        }}>
+                          {verdict} competition
+                        </span>
+                        <span style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: verdictText,
+                          fontFamily: fontMono,
+                        }}>
+                          Reality Signal: {signal}/100
+                        </span>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '3px 10px',
+                          borderRadius: 12,
+                          backgroundColor: trendColor,
+                          color: '#fff',
+                          fontSize: 11,
+                          fontWeight: 600,
+                        }}>
+                          {trendLabel}
+                        </span>
+                      </div>
+                      {/* Signal bar */}
+                      <div style={{
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: 'rgba(255,255,255,0.5)',
+                        marginBottom: 10,
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          width: `${Math.min(signal, 100)}%`,
+                          height: '100%',
+                          backgroundColor: barColor,
+                          borderRadius: 3,
+                          transition: 'width 0.5s ease',
+                        }} />
+                      </div>
+                      {ideaResult.recommendation && (
+                        <p style={{ fontSize: 13, color: verdictText, margin: 0, lineHeight: 1.5 }}>
+                          {ideaResult.recommendation}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Stats row */}
+                    <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
+                      <div style={{
+                        flex: 1,
+                        padding: '14px 18px',
+                        borderRadius: 10,
+                        border: `1px solid ${theme.border}`,
+                        backgroundColor: theme.pageBg,
+                      }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: theme.textPrimary, fontFamily: fontMono }}>
+                          {(ideaResult.github_repos || 0).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                          GitHub Repos
+                        </div>
+                      </div>
+                      <div style={{
+                        flex: 1,
+                        padding: '14px 18px',
+                        borderRadius: 10,
+                        border: `1px solid ${theme.border}`,
+                        backgroundColor: theme.pageBg,
+                      }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: theme.textPrimary, fontFamily: fontMono }}>
+                          {(ideaResult.pypi_packages || 0).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                          PyPI Packages
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Top Competitors */}
+                    {ideaResult.competitors && ideaResult.competitors.length > 0 && (
+                      <div>
+                        <h4 style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 10 }}>
+                          Top Existing Implementations ({ideaResult.competitors.length})
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {ideaResult.competitors.map((c: any, i: number) => (
+                            <div key={i} style={{
+                              padding: '12px 16px',
+                              borderRadius: 10,
+                              border: `1px solid ${theme.border}`,
+                              backgroundColor: theme.cardBg,
+                            }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                                <a
+                                  href={c.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    color: theme.primary,
+                                    textDecoration: 'none',
+                                    lineHeight: 1.4,
+                                    fontFamily: fontMono,
+                                  }}
+                                >
+                                  {c.name}
+                                </a>
+                                <span style={{
+                                  fontSize: 13,
+                                  fontWeight: 600,
+                                  color: theme.textPrimary,
+                                  fontFamily: fontMono,
+                                  flexShrink: 0,
+                                  marginLeft: 12,
+                                }}>
+                                  {c.stars?.toLocaleString() || '0'} stars
+                                </span>
+                              </div>
+                              {c.description && (
+                                <p style={{ fontSize: 12, color: theme.textSecondary, margin: '0 0 6px 0', lineHeight: 1.4 }}>
+                                  {c.description}
+                                </p>
+                              )}
+                              <div style={{ display: 'flex', gap: 12, fontSize: 11, color: theme.textMuted }}>
+                                {c.language && (
+                                  <span style={{
+                                    display: 'inline-block',
+                                    padding: '2px 8px',
+                                    borderRadius: 4,
+                                    backgroundColor: theme.primaryLight,
+                                    color: theme.textSecondary,
+                                    fontWeight: 500,
+                                  }}>
+                                    {c.language}
+                                  </span>
+                                )}
+                                {c.updated && (
+                                  <span>Updated {c.updated}</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No results */}
+                    {(!ideaResult.competitors || ideaResult.competitors.length === 0) && (
+                      <p style={{ fontSize: 13, color: theme.textMuted, textAlign: 'center', padding: '20px 0' }}>
+                        No existing implementations found. This appears to be a novel research area.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Analyze Another */}
