@@ -513,19 +513,11 @@ def get_analytics():
                 AuditLog.tenant_id == tenant_id,
                 AuditLog.action == 'slack_bot:question',
                 AuditLog.created_at >= since,
-                func.json_extract(AuditLog.changes, '$.result') == 'answered'
+                text("changes->>'result' = 'answered'")
             ).count()
         except Exception:
-            # Fallback for PostgreSQL which uses different JSON syntax
-            try:
-                slack_answered = db.query(AuditLog).filter(
-                    AuditLog.tenant_id == tenant_id,
-                    AuditLog.action == 'slack_bot:question',
-                    AuditLog.created_at >= since,
-                    text("changes->>'result' = 'answered'")
-                ).count()
-            except Exception:
-                slack_answered = 0
+            db.rollback()
+            slack_answered = 0
         slack_no_results = slack_total - slack_answered
 
         # --- Document Metrics (last N days) ---
@@ -660,6 +652,7 @@ def get_analytics():
         })
 
     except Exception as e:
+        db.rollback()
         import traceback
         traceback.print_exc()
         return jsonify({
