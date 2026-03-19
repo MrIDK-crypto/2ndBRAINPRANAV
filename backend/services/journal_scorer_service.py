@@ -272,27 +272,27 @@ PAPER_TYPE_FEATURE_OVERRIDES = {
 
 RED_FLAGS_BY_TYPE = {
     "experimental": [
-        {"id": "no_methods", "pattern": r"\b(methods?|methodology|materials?\s+and\s+methods?)\b", "check": "missing", "issue": "No methods section", "penalty": -20, "fix": "Add a detailed methods section"},
-        {"id": "no_stats", "pattern": r"\b(p\s*[<>=]|statistical|significance|ANOVA|t-test|chi-square|regression|confidence interval)\b", "check": "missing", "issue": "No statistical analysis", "penalty": -15, "fix": "Add statistical analysis of your results"},
-        {"id": "small_n", "pattern": r"\bn\s*=\s*[1-9]\b", "check": "present", "issue": "Very small sample size (n < 10)", "penalty": -10, "fix": "Increase sample size or justify small N"},
+        {"id": "no_methods", "pattern": r"\b(methods?|methodology|materials?\s+and\s+methods?)\b", "check": "missing", "issue": "No methods section", "penalty": -10, "fix": "Add a detailed methods section"},
+        {"id": "no_stats", "pattern": r"\b(p\s*[<>=]|statistical|significance|ANOVA|t-test|chi-square|regression|confidence interval)\b", "check": "missing", "issue": "No statistical analysis", "penalty": -8, "fix": "Add statistical analysis of your results"},
+        {"id": "small_n", "pattern": r"\bn\s*=\s*[1-9]\b", "check": "present", "issue": "Very small sample size (n < 10)", "penalty": -5, "fix": "Increase sample size or justify small N"},
     ],
     "review": [
-        {"id": "no_synthesis", "pattern": r"\b(synthesiz|integrat|taken together|collectively|overall|in summary)\b", "check": "missing", "issue": "Lists papers without synthesis", "penalty": -20, "fix": "Add synthesis paragraphs connecting findings across studies"},
-        {"id": "outdated_refs", "pattern": None, "check": "recency_dynamic", "issue": "No references from last 2 years", "penalty": -10, "fix": "Include recent publications from the last 2 years"},
-        {"id": "no_gaps", "pattern": r"\b(future\s+(research|direction|stud)|gap|remain|unanswered|unexplored)\b", "check": "missing", "issue": "No future directions identified", "penalty": -3, "fix": "Consider adding a brief section on research gaps and future directions"},
+        {"id": "no_synthesis", "pattern": r"\b(synthesiz|integrat|taken together|collectively|overall|in summary)\b", "check": "missing", "issue": "Lists papers without synthesis", "penalty": -10, "fix": "Add synthesis paragraphs connecting findings across studies"},
+        {"id": "outdated_refs", "pattern": None, "check": "recency_dynamic", "issue": "No references from last 2 years", "penalty": -5, "fix": "Include recent publications from the last 2 years"},
+        {"id": "no_gaps", "pattern": r"\b(future\s+(research|direction|stud)|gap|remain|unanswered|unexplored)\b", "check": "missing", "issue": "No future directions identified", "penalty": -2, "fix": "Consider adding a brief section on research gaps and future directions"},
     ],
     "meta_analysis": [
-        {"id": "no_prisma", "pattern": r"\b(PRISMA|flow\s+diagram|study\s+selection)\b", "check": "missing", "issue": "No PRISMA flow diagram", "penalty": -15, "fix": "Add PRISMA flow diagram showing study selection"},
-        {"id": "no_heterogeneity", "pattern": r"\b(heterogeneity|I²|I-squared|Q\s+statistic|random.effects)\b", "check": "missing", "issue": "No heterogeneity assessment", "penalty": -20, "fix": "Assess and report heterogeneity (I², Q statistic)"},
-        {"id": "few_studies", "pattern": r"\b(\d+)\s+stud(y|ies)\s+(included|met|selected)\b", "check": "count_low", "issue": "Fewer than 5 studies included", "penalty": -15, "fix": "Consider broadening inclusion criteria"},
+        {"id": "no_prisma", "pattern": r"\b(PRISMA|flow\s+diagram|study\s+selection)\b", "check": "missing", "issue": "No PRISMA flow diagram", "penalty": -8, "fix": "Add PRISMA flow diagram showing study selection"},
+        {"id": "no_heterogeneity", "pattern": r"\b(heterogeneity|I²|I-squared|Q\s+statistic|random.effects)\b", "check": "missing", "issue": "No heterogeneity assessment", "penalty": -10, "fix": "Assess and report heterogeneity (I², Q statistic)"},
+        {"id": "few_studies", "pattern": r"\b(\d+)\s+stud(y|ies)\s+(included|met|selected)\b", "check": "count_low", "issue": "Fewer than 5 studies included", "penalty": -8, "fix": "Consider broadening inclusion criteria"},
     ],
     "case_report": [
-        {"id": "no_consent", "pattern": r"\b(consent|permission|IRB|ethics)\b", "check": "missing", "issue": "No patient consent mentioned", "penalty": -10, "fix": "Add statement about patient consent"},
-        {"id": "no_differential", "pattern": r"\b(differential|rule\s+out|alternative\s+diagnos)\b", "check": "missing", "issue": "No differential diagnosis discussed", "penalty": -10, "fix": "Discuss differential diagnoses considered"},
+        {"id": "no_consent", "pattern": r"\b(consent|permission|IRB|ethics)\b", "check": "missing", "issue": "No patient consent mentioned", "penalty": -5, "fix": "Add statement about patient consent"},
+        {"id": "no_differential", "pattern": r"\b(differential|rule\s+out|alternative\s+diagnos)\b", "check": "missing", "issue": "No differential diagnosis discussed", "penalty": -5, "fix": "Discuss differential diagnoses considered"},
     ],
     "protocol": [
-        {"id": "no_reagents", "pattern": r"\b(catalog|supplier|vendor|manufacturer|concentration|dilut)\b", "check": "missing", "issue": "Missing reagent details", "penalty": -10, "fix": "Add supplier, catalog numbers, and concentrations for all reagents"},
-        {"id": "no_troubleshooting", "pattern": r"\b(troubleshoot|common\s+error|pitfall|tip|caution|warning|note)\b", "check": "missing", "issue": "No troubleshooting section", "penalty": -10, "fix": "Add troubleshooting tips for common issues"},
+        {"id": "no_reagents", "pattern": r"\b(catalog|supplier|vendor|manufacturer|concentration|dilut)\b", "check": "missing", "issue": "Missing reagent details", "penalty": -5, "fix": "Add supplier, catalog numbers, and concentrations for all reagents"},
+        {"id": "no_troubleshooting", "pattern": r"\b(troubleshoot|common\s+error|pitfall|tip|caution|warning|note)\b", "check": "missing", "issue": "No troubleshooting section", "penalty": -5, "fix": "Add troubleshooting tips for common issues"},
     ],
 }
 
@@ -300,11 +300,11 @@ RED_FLAGS_BY_TYPE = {
 # Note: paper_type_exclude lists paper types for which this flag should NOT apply
 
 RED_FLAG_CHECKS = [
-    {"id": "no_abstract", "pattern": r"\babstract\b", "check": "missing", "severity": "critical", "issue": "No abstract detected", "penalty": -15, "fix": "Add a structured abstract (150-300 words)", "paper_type_exclude": []},
-    {"id": "no_references", "pattern": r"\breferences?\b|\bbibliography\b", "check": "missing", "severity": "critical", "issue": "No references section detected", "penalty": -20, "fix": "Add a properly formatted references section", "paper_type_exclude": []},
-    {"id": "low_references", "pattern": None, "check": "ref_count_low", "severity": "warning", "issue": "Fewer than 15 references", "penalty": -5, "fix": "Expand your literature review — top journals expect 30-60 references", "paper_type_exclude": ["review", "meta_analysis"]},
-    {"id": "too_short", "pattern": None, "check": "word_count_low", "severity": "warning", "issue": "Manuscript under 3,000 words", "penalty": -10, "fix": "Expand methodology and results sections for journal-length depth", "paper_type_exclude": ["case_report"]},
-    {"id": "no_tables", "pattern": r"\btable\s+\d+\b|\btable\s+[ivx]+\b", "check": "missing", "severity": "info", "issue": "No tables detected", "penalty": -3, "fix": "Add summary statistics, regression results, or comparison tables", "paper_type_exclude": ["review", "protocol"]},
+    {"id": "no_abstract", "pattern": r"\babstract\b", "check": "missing", "severity": "critical", "issue": "No abstract detected", "penalty": -8, "fix": "Add a structured abstract (150-300 words)", "paper_type_exclude": []},
+    {"id": "no_references", "pattern": r"\breferences?\b|\bbibliography\b", "check": "missing", "severity": "critical", "issue": "No references section detected", "penalty": -10, "fix": "Add a properly formatted references section", "paper_type_exclude": []},
+    {"id": "low_references", "pattern": None, "check": "ref_count_low", "severity": "warning", "issue": "Fewer than 15 references", "penalty": -3, "fix": "Expand your literature review — top journals expect 30-60 references", "paper_type_exclude": ["review", "meta_analysis"]},
+    {"id": "too_short", "pattern": None, "check": "word_count_low", "severity": "warning", "issue": "Manuscript under 3,000 words", "penalty": -5, "fix": "Expand methodology and results sections for journal-length depth", "paper_type_exclude": ["case_report"]},
+    {"id": "no_tables", "pattern": r"\btable\s+\d+\b|\btable\s+[ivx]+\b", "check": "missing", "severity": "info", "issue": "No tables detected", "penalty": -2, "fix": "Add summary statistics, regression results, or comparison tables", "paper_type_exclude": ["review", "protocol"]},
 ]
 
 JOURNAL_TARGETS_BY_TYPE = {
@@ -1839,6 +1839,9 @@ class JournalScorerService:
                 elif check_type == "present" and found:
                     flags.append({"id": flag["id"], "issue": flag["issue"], "penalty": flag["penalty"], "fix": flag.get("fix", ""), "severity": "warning"})
                     total_penalty += flag["penalty"]
+
+        # Cap total red-flag penalty at -25 to prevent red flags from dominating
+        total_penalty = max(total_penalty, -25)
 
         return {"flags": flags, "total_penalty": total_penalty, "reference_count": ref_count}
 
