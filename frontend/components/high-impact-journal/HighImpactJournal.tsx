@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useCallback } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import { theme, font, fontDisplay, fontMono, tierColors, fieldColors, severityColors } from './theme'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006'
@@ -254,6 +255,16 @@ export default function HighImpactJournal() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Paper-to-Code states
+  const [codeGenResult, setCodeGenResult] = useState<any>(null)
+  const [codeGenLoading, setCodeGenLoading] = useState(false)
+  const [codeGenProgress, setCodeGenProgress] = useState('')
+  const [selectedCodeFile, setSelectedCodeFile] = useState(0)
+  const [copiedFileIdx, setCopiedFileIdx] = useState<number | null>(null)
+
+  // Auth for paper-to-code (requires login)
+  const { token: authToken } = useAuth()
+
   const reset = useCallback(() => {
     setState('idle')
     setProgress({ step: 0, message: '', percent: 0 })
@@ -276,6 +287,11 @@ export default function HighImpactJournal() {
     setError('')
     setResearchText('')
     setPublicationYear('')
+    setCodeGenResult(null)
+    setCodeGenLoading(false)
+    setCodeGenProgress('')
+    setSelectedCodeFile(0)
+    setCopiedFileIdx(null)
   }, [])
 
   const processSSEStream = useCallback(async (response: Response) => {
@@ -466,6 +482,111 @@ export default function HighImpactJournal() {
     if (file) handleFile(file)
     e.target.value = ''
   }, [handleFile])
+
+  // ── Paper-to-Code handler ──────────────────────────────────────────────
+
+  const handleGenerateCode = useCallback(async () => {
+    if (!authToken) {
+      setError('Please log in to generate code implementations.')
+      return
+    }
+
+    setCodeGenLoading(true)
+    setCodeGenProgress('Starting...')
+    setCodeGenResult(null)
+    setSelectedCodeFile(0)
+
+    // Build paper text from available sources:
+    // 1. researchText if user typed a description
+    // 2. Otherwise, construct from analysis results
+    let paperText = researchText || ''
+    if (!paperText && recommendations) {
+      const parts: string[] = []
+      if (fieldInfo) parts.push(`Field: ${fieldInfo.field_label} — ${fieldInfo.subfield}`)
+      if (deepAnalysis?.analysis) {
+        const analysis = deepAnalysis.analysis
+        for (const [, val] of Object.entries(analysis)) {
+          if (typeof val === 'string') parts.push(val)
+          else if (typeof val === 'object' && val) {
+            const obj = val as Record<string, any>
+            if (obj.summary) parts.push(obj.summary)
+            if (obj.description) parts.push(obj.description)
+          }
+        }
+      }
+      parts.push(recommendations)
+      paperText = parts.join('\n\n')
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/paper-to-code/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          paper_text: paperText,
+          field: fieldInfo?.field || '',
+          paper_type: paperTypeInfo?.paper_type || 'experimental',
+        }),
+      })
+
+      if (!response.ok || !response.body) {
+        setError('Code generation failed. Please try again.')
+        setCodeGenLoading(false)
+        setCodeGenProgress('')
+        return
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        let currentEvent = ''
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim()
+          } else if (line.startsWith('data: ') && currentEvent) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (currentEvent === 'progress') {
+                setCodeGenProgress(data.message)
+              } else if (currentEvent === 'complete') {
+                setCodeGenResult(data)
+              } else if (currentEvent === 'error') {
+                setError(data.error || 'Code generation failed.')
+              }
+            } catch {
+              // skip unparseable
+            }
+            currentEvent = ''
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Code generation failed:', err)
+      setError('Code generation failed. Please check your connection.')
+    } finally {
+      setCodeGenLoading(false)
+      setCodeGenProgress('')
+    }
+  }, [authToken, researchText, recommendations, fieldInfo, deepAnalysis, paperTypeInfo])
+
+  const handleCopyFile = useCallback((content: string, idx: number) => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedFileIdx(idx)
+      setTimeout(() => setCopiedFileIdx(null), 2000)
+    })
+  }, [])
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -1905,6 +2026,201 @@ export default function HighImpactJournal() {
                 />
               </div>
             )}
+
+            {/* Paper-to-Code Implementation */}
+            <div style={{
+              padding: 24,
+              borderRadius: 16,
+              backgroundColor: theme.cardBg,
+              border: `1px solid ${theme.border}`,
+              marginBottom: 24,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>
+                    Generate Implementation
+                  </h3>
+                  <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
+                    Generate a Python implementation of the paper&apos;s core method
+                  </p>
+                </div>
+                {!codeGenResult && (
+                  <button
+                    onClick={handleGenerateCode}
+                    disabled={codeGenLoading}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: 10,
+                      border: 'none',
+                      backgroundColor: codeGenLoading ? theme.border : theme.primary,
+                      color: codeGenLoading ? theme.textMuted : '#fff',
+                      fontWeight: 600,
+                      fontSize: 14,
+                      cursor: codeGenLoading ? 'not-allowed' : 'pointer',
+                      fontFamily: font,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {codeGenLoading && (
+                      <span style={{
+                        display: 'inline-block',
+                        width: 14,
+                        height: 14,
+                        border: `2px solid ${theme.textMuted}`,
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                      }} />
+                    )}
+                    {codeGenLoading ? 'Generating...' : 'Generate Code'}
+                  </button>
+                )}
+              </div>
+
+              {/* Progress */}
+              {codeGenLoading && codeGenProgress && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  backgroundColor: theme.primaryLight,
+                  fontSize: 13,
+                  color: theme.textSecondary,
+                  marginBottom: 16,
+                }}>
+                  {codeGenProgress}
+                </div>
+              )}
+
+              {/* Not logged in hint */}
+              {!authToken && !codeGenLoading && !codeGenResult && (
+                <p style={{ fontSize: 13, color: theme.amber, margin: 0 }}>
+                  Sign in to generate code implementations from your paper.
+                </p>
+              )}
+
+              {/* Code Viewer */}
+              {codeGenResult && codeGenResult.files && codeGenResult.files.length > 0 && (
+                <div>
+                  {/* Method Summary */}
+                  {codeGenResult.method && (
+                    <div style={{
+                      padding: '12px 16px',
+                      borderRadius: 8,
+                      backgroundColor: theme.pageBg,
+                      marginBottom: 16,
+                      borderLeft: `3px solid ${theme.primary}`,
+                    }}>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>
+                        {codeGenResult.method.method_name}
+                      </p>
+                      <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
+                        {codeGenResult.method.summary}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* File tabs + code */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '200px 1fr',
+                    gap: 0,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    minHeight: 400,
+                  }}>
+                    {/* File list */}
+                    <div style={{
+                      borderRight: `1px solid ${theme.border}`,
+                      backgroundColor: theme.pageBg,
+                      overflowY: 'auto',
+                    }}>
+                      {codeGenResult.files.map((f: any, i: number) => {
+                        const fileName = f.path.split('/').pop() || f.path
+                        const isSelected = i === selectedCodeFile
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => setSelectedCodeFile(i)}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              padding: '10px 14px',
+                              border: 'none',
+                              borderBottom: `1px solid ${theme.border}`,
+                              backgroundColor: isSelected ? theme.cardBg : 'transparent',
+                              borderLeft: isSelected ? `3px solid ${theme.primary}` : '3px solid transparent',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: 12,
+                              fontFamily: fontMono,
+                              color: isSelected ? theme.textPrimary : theme.textSecondary,
+                              fontWeight: isSelected ? 600 : 400,
+                            }}
+                          >
+                            {fileName}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Code viewer */}
+                    <div style={{ position: 'relative' }}>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '8px 14px',
+                        borderBottom: `1px solid ${theme.border}`,
+                        backgroundColor: theme.pageBg,
+                      }}>
+                        <span style={{
+                          fontSize: 12,
+                          fontFamily: fontMono,
+                          color: theme.textMuted,
+                        }}>
+                          {codeGenResult.files[selectedCodeFile]?.path}
+                        </span>
+                        <button
+                          onClick={() => handleCopyFile(codeGenResult.files[selectedCodeFile]?.content || '', selectedCodeFile)}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 6,
+                            border: `1px solid ${theme.border}`,
+                            backgroundColor: copiedFileIdx === selectedCodeFile ? theme.success : theme.cardBg,
+                            color: copiedFileIdx === selectedCodeFile ? '#fff' : theme.textSecondary,
+                            fontSize: 11,
+                            fontFamily: font,
+                            cursor: 'pointer',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {copiedFileIdx === selectedCodeFile ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                      <pre style={{
+                        margin: 0,
+                        padding: 16,
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        fontFamily: fontMono,
+                        color: theme.textPrimary,
+                        backgroundColor: theme.cardBg,
+                        overflow: 'auto',
+                        maxHeight: 500,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}>
+                        {codeGenResult.files[selectedCodeFile]?.content || ''}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Analyze Another */}
             <div style={{ textAlign: 'center', paddingTop: 8, paddingBottom: 40 }}>

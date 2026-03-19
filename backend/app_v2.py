@@ -256,6 +256,7 @@ from api.protocol_graph_routes import protocol_graph_bp
 from api.experiment_routes import experiment_bp
 from api.training_guide_routes import training_guide_bp
 from api.paper_analysis_routes import paper_analysis_bp
+from api.paper_to_code_routes import paper_to_code_bp
 # share_bp removed - replaced by invitation system in auth_routes
 
 app.register_blueprint(auth_bp)
@@ -285,6 +286,7 @@ app.register_blueprint(protocol_graph_bp)
 app.register_blueprint(experiment_bp)
 app.register_blueprint(training_guide_bp)
 app.register_blueprint(paper_analysis_bp)
+app.register_blueprint(paper_to_code_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")
