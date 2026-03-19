@@ -262,6 +262,11 @@ export default function HighImpactJournal() {
   const [selectedCodeFile, setSelectedCodeFile] = useState(0)
   const [copiedFileIdx, setCopiedFileIdx] = useState<number | null>(null)
 
+  // Competitor Finder states
+  const [competitorResult, setCompetitorResult] = useState<any>(null)
+  const [competitorLoading, setCompetitorLoading] = useState(false)
+  const [competitorProgress, setCompetitorProgress] = useState('')
+
   // Auth for paper-to-code (requires login)
   const { token: authToken } = useAuth()
 
@@ -292,6 +297,9 @@ export default function HighImpactJournal() {
     setCodeGenProgress('')
     setSelectedCodeFile(0)
     setCopiedFileIdx(null)
+    setCompetitorResult(null)
+    setCompetitorLoading(false)
+    setCompetitorProgress('')
   }, [])
 
   const processSSEStream = useCallback(async (response: Response) => {
@@ -587,6 +595,101 @@ export default function HighImpactJournal() {
       setTimeout(() => setCopiedFileIdx(null), 2000)
     })
   }, [])
+
+  // ── Competitor Finder handler ──────────────────────────────────────────
+
+  const handleFindCompetitors = useCallback(async () => {
+    if (!authToken) {
+      setError('Please log in to search for competitors.')
+      return
+    }
+
+    setCompetitorLoading(true)
+    setCompetitorProgress('Starting competitor search...')
+    setCompetitorResult(null)
+
+    // Build paper text from available sources
+    let paperText = researchText || ''
+    if (!paperText && recommendations) {
+      const parts: string[] = []
+      if (fieldInfo) parts.push(`Field: ${fieldInfo.field_label} — ${fieldInfo.subfield}`)
+      if (deepAnalysis?.analysis) {
+        const analysis = deepAnalysis.analysis
+        for (const [, val] of Object.entries(analysis)) {
+          if (typeof val === 'string') parts.push(val)
+          else if (typeof val === 'object' && val) {
+            const obj = val as Record<string, any>
+            if (obj.summary) parts.push(obj.summary)
+            if (obj.description) parts.push(obj.description)
+          }
+        }
+      }
+      parts.push(recommendations)
+      paperText = parts.join('\n\n')
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/competitor-finder/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          paper_text: paperText,
+          field: fieldInfo?.field || '',
+          keywords: fieldInfo?.keywords || [],
+        }),
+      })
+
+      if (!response.ok || !response.body) {
+        setError('Competitor search failed. Please try again.')
+        setCompetitorLoading(false)
+        setCompetitorProgress('')
+        return
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        let currentEvent = ''
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim()
+          } else if (line.startsWith('data: ') && currentEvent) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              if (currentEvent === 'progress') {
+                setCompetitorProgress(data.message)
+              } else if (currentEvent === 'complete') {
+                setCompetitorResult(data)
+              } else if (currentEvent === 'error') {
+                setError(data.error || 'Competitor search failed.')
+              }
+            } catch {
+              // skip unparseable
+            }
+            currentEvent = ''
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Competitor search failed:', err)
+      setError('Competitor search failed. Please check your connection.')
+    } finally {
+      setCompetitorLoading(false)
+      setCompetitorProgress('')
+    }
+  }, [authToken, researchText, recommendations, fieldInfo, deepAnalysis])
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -2218,6 +2321,303 @@ export default function HighImpactJournal() {
                       </pre>
                     </div>
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Competitor Finder ──────────────────────────────── */}
+            <div style={{
+              padding: 24,
+              borderRadius: 16,
+              backgroundColor: theme.cardBg,
+              border: `1px solid ${theme.border}`,
+              marginBottom: 24,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>
+                    Competitor Landscape
+                  </h3>
+                  <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
+                    Find competing labs, recent preprints, and active grants
+                  </p>
+                </div>
+                {!competitorResult && (
+                  <button
+                    onClick={handleFindCompetitors}
+                    disabled={competitorLoading}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: 10,
+                      border: 'none',
+                      backgroundColor: competitorLoading ? theme.border : theme.primary,
+                      color: competitorLoading ? theme.textMuted : '#fff',
+                      fontWeight: 600,
+                      fontSize: 14,
+                      cursor: competitorLoading ? 'not-allowed' : 'pointer',
+                      fontFamily: font,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {competitorLoading && (
+                      <span style={{
+                        display: 'inline-block',
+                        width: 14,
+                        height: 14,
+                        border: `2px solid ${theme.textMuted}`,
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                      }} />
+                    )}
+                    {competitorLoading ? 'Searching...' : 'Find Competitors'}
+                  </button>
+                )}
+              </div>
+
+              {/* Progress */}
+              {competitorLoading && competitorProgress && (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  backgroundColor: theme.primaryLight,
+                  fontSize: 13,
+                  color: theme.textSecondary,
+                  marginBottom: 16,
+                }}>
+                  {competitorProgress}
+                </div>
+              )}
+
+              {/* Not logged in hint */}
+              {!authToken && !competitorLoading && !competitorResult && (
+                <p style={{ fontSize: 13, color: theme.amber, margin: 0 }}>
+                  Sign in to search for competing labs and grants.
+                </p>
+              )}
+
+              {/* ── Competitor Results ── */}
+              {competitorResult && (
+                <div>
+                  {/* Urgency Meter */}
+                  {competitorResult.urgency && (() => {
+                    const u = competitorResult.urgency
+                    const urgencyColor = u.level === 'high' ? '#D97B7B' : u.level === 'medium' ? '#E2A336' : '#9CB896'
+                    const urgencyBg = u.level === 'high' ? '#FDF2F2' : u.level === 'medium' ? '#FEF7E8' : '#F0F7EE'
+                    const urgencyText = u.level === 'high' ? '#9B4D4D' : u.level === 'medium' ? '#8B6914' : '#3D6B35'
+                    return (
+                      <div style={{
+                        padding: '16px 20px',
+                        borderRadius: 12,
+                        backgroundColor: urgencyBg,
+                        border: `1px solid ${urgencyColor}`,
+                        marginBottom: 20,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 14px',
+                            borderRadius: 20,
+                            backgroundColor: urgencyColor,
+                            color: '#fff',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                          }}>
+                            {u.level} urgency
+                          </span>
+                          <span style={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: urgencyText,
+                            fontFamily: fontMono,
+                          }}>
+                            Score: {u.score}/100
+                          </span>
+                        </div>
+                        {/* Urgency bar */}
+                        <div style={{
+                          height: 6,
+                          borderRadius: 3,
+                          backgroundColor: 'rgba(255,255,255,0.5)',
+                          marginBottom: 10,
+                          overflow: 'hidden',
+                        }}>
+                          <div style={{
+                            width: `${Math.min(u.score, 100)}%`,
+                            height: '100%',
+                            backgroundColor: urgencyColor,
+                            borderRadius: 3,
+                            transition: 'width 0.5s ease',
+                          }} />
+                        </div>
+                        {u.reasons && u.reasons.length > 0 && (
+                          <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
+                            {u.reasons.map((r: string, i: number) => (
+                              <li key={i} style={{ fontSize: 13, color: urgencyText, marginBottom: 2 }}>{r}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Competing Labs */}
+                  {competitorResult.competing_labs && competitorResult.competing_labs.length > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                      <h4 style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 10 }}>
+                        Competing Labs ({competitorResult.competing_labs.length})
+                      </h4>
+                      <div style={{
+                        borderRadius: 10,
+                        border: `1px solid ${theme.border}`,
+                        overflow: 'hidden',
+                      }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ backgroundColor: theme.pageBg }}>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>Institution</th>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>Lead Author</th>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>Top Paper</th>
+                              <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>Citations</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {competitorResult.competing_labs.map((lab: any, i: number) => (
+                              <tr key={i} style={{ borderBottom: i < competitorResult.competing_labs.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+                                <td style={{ padding: '10px 14px', color: theme.textPrimary, fontWeight: 500 }}>{lab.institution}</td>
+                                <td style={{ padding: '10px 14px', color: theme.textSecondary }}>{lab.lead_author}</td>
+                                <td style={{ padding: '10px 14px', color: theme.textSecondary, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {lab.doi ? (
+                                    <a href={lab.doi} target="_blank" rel="noopener noreferrer" style={{ color: theme.primary, textDecoration: 'none' }}>
+                                      {lab.paper_title}
+                                    </a>
+                                  ) : lab.paper_title}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: fontMono, color: theme.textPrimary, fontWeight: 600 }}>
+                                  {(lab.cited_by || 0).toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recent Preprints */}
+                  {competitorResult.preprints && competitorResult.preprints.length > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                      <h4 style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 10 }}>
+                        Recent Preprints ({competitorResult.preprints.length})
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {competitorResult.preprints.map((p: any, i: number) => (
+                          <div key={i} style={{
+                            padding: '12px 16px',
+                            borderRadius: 10,
+                            border: `1px solid ${theme.border}`,
+                            backgroundColor: p.is_recent ? '#FDF2F2' : theme.cardBg,
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
+                              {p.is_recent && (
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  backgroundColor: '#D97B7B',
+                                  color: '#fff',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.5px',
+                                  flexShrink: 0,
+                                  marginTop: 2,
+                                }}>
+                                  RECENT
+                                </span>
+                              )}
+                              <a
+                                href={p.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: 600,
+                                  color: theme.textPrimary,
+                                  textDecoration: 'none',
+                                  lineHeight: 1.4,
+                                }}
+                              >
+                                {p.title}
+                              </a>
+                            </div>
+                            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: theme.textMuted }}>
+                              <span>{(p.authors || []).slice(0, 3).join(', ')}{p.authors && p.authors.length > 3 ? ' et al.' : ''}</span>
+                              <span>{p.published}</span>
+                              {p.days_ago !== null && p.days_ago !== undefined && (
+                                <span style={{ color: p.is_recent ? '#9B4D4D' : theme.textMuted }}>
+                                  {p.days_ago}d ago
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Active Grants */}
+                  {competitorResult.grants && competitorResult.grants.length > 0 && (
+                    <div>
+                      <h4 style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 10 }}>
+                        Active NIH Grants ({competitorResult.grants.length})
+                      </h4>
+                      <div style={{
+                        borderRadius: 10,
+                        border: `1px solid ${theme.border}`,
+                        overflow: 'hidden',
+                      }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ backgroundColor: theme.pageBg }}>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>PI</th>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>Organization</th>
+                              <th style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>Grant #</th>
+                              <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>Award</th>
+                              <th style={{ textAlign: 'right', padding: '10px 14px', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>FY</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {competitorResult.grants.map((g: any, i: number) => (
+                              <tr key={i} style={{ borderBottom: i < competitorResult.grants.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+                                <td style={{ padding: '10px 14px', color: theme.textPrimary, fontWeight: 500 }}>{g.pi}</td>
+                                <td style={{ padding: '10px 14px', color: theme.textSecondary }}>{g.organization}</td>
+                                <td style={{ padding: '10px 14px', color: theme.textMuted, fontFamily: fontMono, fontSize: 11 }}>{g.project_num}</td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: fontMono, color: theme.textPrimary, fontWeight: 600 }}>
+                                  {g.award_amount != null ? `$${g.award_amount.toLocaleString()}` : '--'}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: theme.textSecondary }}>{g.fiscal_year || '--'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No results message */}
+                  {(!competitorResult.competing_labs || competitorResult.competing_labs.length === 0) &&
+                   (!competitorResult.preprints || competitorResult.preprints.length === 0) &&
+                   (!competitorResult.grants || competitorResult.grants.length === 0) && (
+                    <p style={{ fontSize: 13, color: theme.textMuted, textAlign: 'center', padding: '20px 0' }}>
+                      No competing work found. This could indicate a novel research area.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
