@@ -58,8 +58,24 @@ jobs:
 
       - name: Wait for backend stability
         run: |
-          aws ecs wait services-stable --cluster $ECS_CLUSTER --services secondbrain-backend
-          echo "Backend deployed successfully"
+          echo "Waiting for backend to stabilize (up to 15 minutes)..."
+          # Custom wait loop with 60 attempts (15 min total)
+          for i in {1..60}; do
+            STATUS=$(aws ecs describe-services --cluster $ECS_CLUSTER --services secondbrain-backend \
+              --query 'services[0].deployments[?status==`PRIMARY`].runningCount' --output text)
+            DESIRED=$(aws ecs describe-services --cluster $ECS_CLUSTER --services secondbrain-backend \
+              --query 'services[0].desiredCount' --output text)
+            echo "Attempt $i/60: Running=$STATUS, Desired=$DESIRED"
+            if [ "$STATUS" = "$DESIRED" ] && [ "$STATUS" != "0" ]; then
+              echo "Backend deployed successfully!"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Deployment timed out - checking container logs..."
+          aws ecs describe-services --cluster $ECS_CLUSTER --services secondbrain-backend \
+            --query 'services[0].events[:5]' --output table
+          exit 1
 
   deploy-frontend:
     needs: detect-changes
