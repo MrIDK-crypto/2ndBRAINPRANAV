@@ -52,3 +52,4 @@ HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=5 \
 
 # Run the application with entrypoint (seeds DB then starts gunicorn)
 CMD ["/app/entrypoint.sh"]
+# Trigger rebuild Fri Mar 20 12:40:34 PDT 2026
