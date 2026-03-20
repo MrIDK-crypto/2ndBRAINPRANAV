@@ -46,8 +46,8 @@ ENV PORT=5002
 # Expose port
 EXPOSE 5002
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Health check - allow 120s for startup (DB init, model sync, gunicorn workers)
+HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=5 \
     CMD curl -f http://localhost:5002/api/health || exit 1
 
 # Run the application with entrypoint (seeds DB then starts gunicorn)
