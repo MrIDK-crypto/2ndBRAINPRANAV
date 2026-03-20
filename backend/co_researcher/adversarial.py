@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from azure_openai_config import get_azure_client, AZURE_CHAT_DEPLOYMENT
+from co_researcher.json_utils import robust_json_parse, retry_api_call
 
 
 ADVERSARIAL_AGENTS = [
@@ -111,6 +112,7 @@ Output ONLY valid JSON:
 ]
 
 
+@retry_api_call(max_retries=3, base_delay=2.0)
 def run_single_agent(agent: dict, translation: dict, source_context: dict, target_context: dict) -> dict:
     """Run a single adversarial agent against one translation."""
     client = get_azure_client()
@@ -154,9 +156,15 @@ Evaluate this translation from your perspective."""
         temperature=0.3,
         max_tokens=600,
         response_format={"type": "json_object"},
+        timeout=60,  # 60 second timeout per API call
     )
 
-    result = json.loads(response.choices[0].message.content)
+    fallback = {
+        "verdict": "vulnerable",
+        "attack": "Analysis failed due to response parsing error",
+        "what_would_change_my_mind": "",
+    }
+    result = robust_json_parse(response.choices[0].message.content, fallback)
 
     # Attach agent metadata
     result["agent_id"] = agent["id"]

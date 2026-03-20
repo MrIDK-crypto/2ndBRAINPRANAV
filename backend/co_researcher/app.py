@@ -9,6 +9,14 @@ Endpoints:
 """
 
 import os
+import sys
+
+# Load .env file BEFORE any other imports that use env vars
+from dotenv import load_dotenv
+# Go up one level from co_researcher/ to backend/ to find .env
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(env_path)
+
 import uuid
 import json
 import threading
@@ -26,7 +34,7 @@ from co_researcher.chat import build_chat_context, handle_chat_message
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {
-    "origins": ["http://localhost:3000", "http://localhost:3006", "http://localhost:3009"],
+    "origins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:3006", "http://localhost:3009"],
     "methods": ["GET", "POST", "OPTIONS"],
     "allow_headers": ["Content-Type"]
 }})
@@ -278,34 +286,73 @@ def health():
 
 @app.route('/api/co-researcher/analyze', methods=['POST'])
 def analyze():
-    if 'my_research' not in request.files:
-        return jsonify({"error": "'my_research' file is required (PDF or DOCX)"}), 400
+    import requests as http_requests
 
+    # Support either file upload OR text description
+    target_bytes = None
+    target_name = "research_description.txt"
+    research_description = request.form.get('research_description', '').strip()
+
+    if 'my_research' in request.files and request.files['my_research'].filename:
+        target_file = request.files['my_research']
+        allowed_exts = ('.pdf', '.docx', '.doc')
+        if not target_file.filename.lower().endswith(allowed_exts):
+            return jsonify({"error": "Your research must be a PDF or DOCX file"}), 400
+        target_bytes = target_file.read()
+        target_name = target_file.filename
+    elif research_description:
+        # Use text description as the research content
+        target_bytes = research_description.encode('utf-8')
+        target_name = "research_description.txt"
+    else:
+        return jsonify({"error": "Please describe your research or upload a file (PDF/DOCX)"}), 400
+
+    # Support both file uploads and URLs for papers
     paper_files = request.files.getlist('papers')
-    if not paper_files or len(paper_files) < 1:
+    paper_urls_json = request.form.get('paper_urls', '[]')
+    try:
+        paper_urls = json.loads(paper_urls_json) if paper_urls_json else []
+    except:
+        paper_urls = []
+
+    if (not paper_files or len(paper_files) < 1 or not paper_files[0].filename) and not paper_urls:
         return jsonify({"error": "At least one source paper is required"}), 400
-    if len(paper_files) > 5:
+
+    total_papers = len([p for p in paper_files if p.filename]) + len(paper_urls)
+    if total_papers > 5:
         return jsonify({"error": "Maximum 5 source papers allowed"}), 400
 
-    target_file = request.files['my_research']
+    papers = []
     allowed_exts = ('.pdf', '.docx', '.doc')
 
-    if not target_file.filename.lower().endswith(allowed_exts):
-        return jsonify({"error": "Your research must be a PDF or DOCX file"}), 400
-
-    papers = []
+    # Process uploaded files
     for pf in paper_files:
+        if not pf.filename:
+            continue
         if not pf.filename.lower().endswith(allowed_exts):
             return jsonify({"error": f"'{pf.filename}' must be PDF or DOCX"}), 400
         papers.append({"bytes": pf.read(), "name": pf.filename})
 
+    # Download papers from URLs
+    for url in paper_urls:
+        try:
+            resp = http_requests.get(url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
+            resp.raise_for_status()
+            # Extract filename from URL or use generic name
+            url_name = url.split('/')[-1].split('?')[0] or 'paper.pdf'
+            if not url_name.lower().endswith(allowed_exts):
+                url_name = url_name + '.pdf'
+            papers.append({"bytes": resp.content, "name": url_name})
+        except Exception as e:
+            return jsonify({"error": f"Failed to download paper from {url}: {str(e)}"}), 400
+
     session_id = str(uuid.uuid4())
     sessions[session_id] = {
         "events": Queue(),
-        "target_bytes": target_file.read(),
-        "target_name": target_file.filename,
+        "target_bytes": target_bytes,
+        "target_name": target_name,
         "papers": papers,
-        "target_text": "",
+        "target_text": research_description if research_description else "",
         "source_texts": [],
         "target_context": {},
         "source_contexts": [],

@@ -10,6 +10,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from azure_openai_config import get_azure_client, AZURE_CHAT_DEPLOYMENT
+from co_researcher.json_utils import robust_json_parse, retry_api_call
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ For open_questions, include both explicit statements ("future work should...") a
 Return ONLY valid JSON. No markdown fences, no commentary."""
 
 
+@retry_api_call(max_retries=3, base_delay=2.0)
 def extract_context(text: str, role: str) -> dict:
     """
     Extract structured context from a paper.
@@ -107,10 +109,23 @@ def extract_context(text: str, role: str) -> dict:
         temperature=0.2,
         max_tokens=2000,
         response_format={"type": "json_object"},
+        timeout=90,  # 90 second timeout
     )
 
     raw = response.choices[0].message.content
-    return json.loads(raw)
+    fallback = {
+        "domain": "Unknown",
+        "key_methods": [],
+        "key_findings": [],
+        "analytical_approaches": [],
+        "conceptual_principles": [],
+        "experimental_systems": [],
+        "available_techniques": [],
+        "key_circuits_or_mechanisms": [],
+        "open_questions": [],
+        "limitations_acknowledged": [],
+    }
+    return robust_json_parse(raw, fallback)
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +190,7 @@ Return a JSON object:
 Return ONLY valid JSON. No markdown fences, no commentary."""
 
 
+@retry_api_call(max_retries=3, base_delay=2.0)
 def decompose_layers(source_context: dict, method_or_finding: dict) -> dict:
     """
     Decompose a single method or finding into 4 abstraction layers.
@@ -206,7 +222,16 @@ def decompose_layers(source_context: dict, method_or_finding: dict) -> dict:
         temperature=0.3,
         max_tokens=800,
         response_format={"type": "json_object"},
+        timeout=60,  # 60 second timeout
     )
 
     raw = response.choices[0].message.content
-    return json.loads(raw)
+    fallback = {
+        "layers": [
+            {"level": "L4", "name": "Conceptual Principle", "content": "Unable to extract"},
+            {"level": "L3", "name": "Analytical Logic", "content": "Unable to extract"},
+            {"level": "L2", "name": "Design Pattern", "content": "Unable to extract"},
+            {"level": "L1", "name": "Specific Implementation", "content": "Unable to extract"},
+        ]
+    }
+    return robust_json_parse(raw, fallback)

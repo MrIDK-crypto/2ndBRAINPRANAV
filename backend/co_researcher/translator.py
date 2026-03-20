@@ -19,6 +19,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from azure_openai_config import get_azure_client, AZURE_CHAT_DEPLOYMENT
+from co_researcher.json_utils import robust_json_parse, retry_api_call
 
 
 TRANSLATOR_SYSTEM_PROMPT = """You are a research translation specialist. Your job is to take an insight that has been decomposed into 4 abstraction layers from a SOURCE paper and attempt to re-instantiate each layer in a TARGET researcher's domain.
@@ -87,6 +88,7 @@ Output ONLY valid JSON with this structure:
 }"""
 
 
+@retry_api_call(max_retries=3, base_delay=2.0)
 def translate_insight(source_context: dict, target_context: dict, layers: dict) -> dict:
     """Translate a decomposed insight from source domain to target domain.
 
@@ -139,9 +141,17 @@ Translate each layer from the source domain into the target domain. Be honest ab
         temperature=0.4,
         max_tokens=1500,
         response_format={"type": "json_object"},
+        timeout=90,  # 90 second timeout
     )
 
-    result = json.loads(response.choices[0].message.content)
+    fallback = {
+        "title": "Translation failed",
+        "source_insight": "",
+        "layers": [],
+        "overall_break_point": "",
+        "what_to_test_first": "",
+    }
+    result = robust_json_parse(response.choices[0].message.content, fallback)
 
     # Ensure the expected structure is present with sensible defaults
     if "title" not in result:

@@ -3,13 +3,23 @@
 import React, { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { theme, font } from './theme'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5010') + '/api/co-researcher'
+// Co-researcher has its own dedicated backend on port 5010
+const API_BASE = (process.env.NEXT_PUBLIC_CO_RESEARCHER_URL || 'http://localhost:5010') + '/api/co-researcher'
 
+// Wellspring Warm Design System - matches 2nd Brain
 const t = {
-  bg: '#f5f3f0', surface: '#fafaf9', border: '#e7e5e4',
-  text: '#1c1917', textSec: '#57534e', textMuted: '#a8a29e',
-  accent: '#ea580c', accentBg: '#fff7ed', accentBorder: '#fed7aa',
+  bg: theme.pageBg,
+  surface: theme.cardBg,
+  border: theme.border,
+  text: theme.textPrimary,
+  textSec: theme.textSecondary,
+  textMuted: theme.textMuted,
+  accent: theme.primary,
+  accentBg: theme.primaryLight,
+  accentBorder: '#E8D5CF',
+  font,
 }
 
 interface Message {
@@ -138,7 +148,7 @@ export default function ChatPanel({ sessionId }: Props) {
             flex: 1, padding: '8px 12px', borderRadius: 8,
             border: `1px solid ${t.border}`, background: t.bg,
             fontSize: 13, color: t.text, outline: 'none',
-            fontFamily: "'Manrope', sans-serif",
+            fontFamily: t.font,
           }}
         />
         <button

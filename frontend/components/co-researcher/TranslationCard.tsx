@@ -1,16 +1,34 @@
 'use client'
 
 import React, { useState } from 'react'
+import { theme, font } from './theme'
 
+// Wellspring Warm Design System - matches 2nd Brain
 const t = {
-  bg: '#f5f3f0', surface: '#fafaf9', border: '#e7e5e4', borderStrong: '#d6d3d1',
-  text: '#1c1917', textSec: '#57534e', textMuted: '#a8a29e',
-  accent: '#ea580c', accentBg: '#fff7ed', accentBorder: '#fed7aa',
-  green: '#16a34a', greenBg: '#f0fdf4', greenBorder: '#bbf7d0',
-  amber: '#d97706', amberBg: '#fffbeb', amberBorder: '#fde68a',
-  red: '#dc2626', redBg: '#fef2f2', redBorder: '#fecaca',
-  blue: '#2563eb', blueBg: '#eff6ff', blueBorder: '#bfdbfe',
+  bg: theme.pageBg,
+  surface: theme.cardBg,
+  border: theme.border,
+  borderStrong: theme.borderDark,
+  text: theme.textPrimary,
+  textSec: theme.textSecondary,
+  textMuted: theme.textMuted,
+  accent: theme.primary,
+  accentBg: theme.primaryLight,
+  accentBorder: '#E8D5CF',
+  green: theme.success,
+  greenBg: '#F5FAF4',
+  greenBorder: '#C5DBC1',
+  amber: theme.amber,
+  amberBg: theme.amberLight,
+  amberBorder: '#F5D89A',
+  red: '#D97B7B',
+  redBg: '#FDF2F2',
+  redBorder: '#F0C4C4',
+  blue: theme.primary,
+  blueBg: theme.primaryLight,
+  blueBorder: '#E8D5CF',
   mono: "'JetBrains Mono', 'SF Mono', monospace",
+  font,
 }
 
 interface LayerMapping {

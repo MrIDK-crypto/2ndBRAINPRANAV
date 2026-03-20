@@ -5,15 +5,17 @@ import UploadPanel from '@/components/co-researcher/UploadPanel'
 import TranslationCard from '@/components/co-researcher/TranslationCard'
 import ChatPanel from '@/components/co-researcher/ChatPanel'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api/co-researcher'
+// Co-researcher has its own dedicated backend on port 5010
+const API_BASE = (process.env.NEXT_PUBLIC_CO_RESEARCHER_URL || 'http://localhost:5010') + '/api/co-researcher'
 
+// Wellspring Warm theme - matching 2nd Brain design system
 const t = {
-  bg: '#f5f3f0', surface: '#fafaf9', border: '#e7e5e4', borderStrong: '#d6d3d1',
-  text: '#1c1917', textSec: '#57534e', textMuted: '#a8a29e',
-  accent: '#ea580c', accentBg: '#fff7ed', accentBorder: '#fed7aa',
-  green: '#16a34a', greenBg: '#f0fdf4', greenBorder: '#bbf7d0',
-  amber: '#d97706', amberBg: '#fffbeb', amberBorder: '#fde68a',
-  red: '#dc2626', redBg: '#fef2f2', redBorder: '#fecaca',
+  bg: '#FAF9F7', surface: '#FFFFFF', border: '#F0EEEC', borderStrong: '#E8E5E2',
+  text: '#2D2D2D', textSec: '#6B6B6B', textMuted: '#9A9A9A',
+  accent: '#C9A598', accentBg: '#FBF4F1', accentBorder: '#E8D5CF',
+  green: '#9CB896', greenBg: '#F5FAF4', greenBorder: '#C5DBC1',
+  amber: '#E2A336', amberBg: '#FEF7E8', amberBorder: '#F5D89A',
+  red: '#D97B7B', redBg: '#FDF2F2', redBorder: '#F0C4C4',
   font: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
   mono: "'JetBrains Mono', 'SF Mono', monospace",
 }
@@ -183,7 +185,7 @@ export default function ResearchReproducibilityPage() {
     })
   }
 
-  const handleUpload = useCallback(async (myResearch: File | null, papers: File[], researchDescription?: string) => {
+  const handleUpload = useCallback(async (myResearch: File | null, papers: File[], researchDescription?: string, paperUrls?: string[]) => {
     setError(null)
     const formData = new FormData()
 
@@ -195,6 +197,11 @@ export default function ResearchReproducibilityPage() {
     }
 
     papers.forEach(p => formData.append('papers', p))
+
+    // Add paper URLs if provided
+    if (paperUrls && paperUrls.length > 0) {
+      formData.append('paper_urls', JSON.stringify(paperUrls))
+    }
 
     try {
       const resp = await fetch(`${API_BASE}/analyze`, { method: 'POST', body: formData })
@@ -232,19 +239,19 @@ export default function ResearchReproducibilityPage() {
 
   return (
     <>
-      <style>{`
+      <style suppressHydrationWarning>{`
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
         @keyframes co-spin { to { transform: rotate(360deg) } }
         @keyframes co-fadeIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
-        .co-markdown h1 { font-size: 18px; font-weight: 600; margin: 0 0 10px; color: #1c1917; }
-        .co-markdown h2 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; color: #1c1917; border-bottom: 1px solid #e7e5e4; padding-bottom: 4px; }
-        .co-markdown h3 { font-size: 13px; font-weight: 600; margin: 14px 0 4px; color: #1c1917; }
+        .co-markdown h1 { font-size: 18px; font-weight: 600; margin: 0 0 10px; color: ${t.text}; }
+        .co-markdown h2 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; color: ${t.text}; border-bottom: 1px solid ${t.border}; padding-bottom: 4px; }
+        .co-markdown h3 { font-size: 13px; font-weight: 600; margin: 14px 0 4px; color: ${t.text}; }
         .co-markdown p { margin: 0 0 8px; line-height: 1.65; }
         .co-markdown ul, .co-markdown ol { margin: 0 0 10px; padding-left: 18px; }
         .co-markdown li { margin-bottom: 3px; line-height: 1.55; }
-        .co-markdown strong { color: #1c1917; font-weight: 600; }
-        .co-markdown code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #f5f3f0; padding: 1px 4px; border-radius: 3px; color: #ea580c; }
-        .co-markdown blockquote { margin: 0 0 10px; padding: 6px 12px; border-left: 3px solid #d6d3d1; background: #f5f3f0; border-radius: 0 6px 6px 0; color: #57534e; }
+        .co-markdown strong { color: ${t.text}; font-weight: 600; }
+        .co-markdown code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: ${t.bg}; padding: 1px 4px; border-radius: 3px; color: ${t.accent}; }
+        .co-markdown blockquote { margin: 0 0 10px; padding: 6px 12px; border-left: 3px solid ${t.borderStrong}; background: ${t.bg}; border-radius: 0 6px 6px 0; color: ${t.textSec}; }
       `}</style>
 
       <div style={{ minHeight: '100vh', background: t.bg, fontFamily: t.font, color: t.text }}>

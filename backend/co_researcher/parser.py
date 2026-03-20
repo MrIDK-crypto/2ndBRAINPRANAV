@@ -98,11 +98,14 @@ def parse_docx(file_bytes: bytes, filename: str) -> str:
 
 
 def parse_document(file_bytes: bytes, filename: str) -> str:
-    """Parse PDF or DOCX. Returns extracted text as markdown."""
+    """Parse PDF, DOCX, or plain text. Returns extracted text as markdown."""
     ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
     if ext == 'pdf':
         return parse_pdf(file_bytes, filename)
     elif ext in ('docx', 'doc'):
         return parse_docx(file_bytes, filename)
+    elif ext == 'txt':
+        # Plain text (e.g., research description) - return as-is
+        return file_bytes.decode('utf-8', errors='ignore')
     else:
         raise ValueError(f"Unsupported file type: .{ext}. Upload PDF or DOCX.")

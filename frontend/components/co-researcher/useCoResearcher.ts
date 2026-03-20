@@ -6,7 +6,8 @@ import type {
   ResearchBrief, ActionDetail, ContextData,
 } from './types'
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006') + '/api/co-researcher'
+// Co-researcher has its own dedicated backend on port 5010
+const API_BASE = (process.env.NEXT_PUBLIC_CO_RESEARCHER_URL || 'http://localhost:5010') + '/api/co-researcher'
 
 export function useCoResearcher() {
   const { token } = useAuth()
