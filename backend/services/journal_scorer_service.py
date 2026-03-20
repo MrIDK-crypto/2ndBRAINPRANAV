@@ -5,15 +5,21 @@ landscape positioning, and CrossRef DOI verification.
 """
 
 import json
+import os
 import re
 import time
 import statistics
+import httpx
 from datetime import datetime
 from typing import Generator, Dict, List, Optional
+from openai import AzureOpenAI, OpenAI
 
 from parsers.document_parser import DocumentParser
 from services.openai_client import get_openai_client
 from services.openalex_search_service import OpenAlexSearchService
+
+# HIJ-specific timeout: 5 minutes total, 60s connect (longer for complex analyses)
+_HIJ_TIMEOUT = httpx.Timeout(300.0, connect=60.0)
 
 
 # ── 18 Field Configurations with Scoring Weights ────────────────────────────
@@ -356,12 +362,57 @@ def _sse(event: str, data: dict) -> str:
 
 class JournalScorerService:
     def __init__(self):
-        self.openai = get_openai_client()
+        # Use HIJ-specific OpenAI client with longer timeout for complex analyses
+        self.openai = self._create_hij_openai_client()
         self.parser = DocumentParser()
         self.openalex = OpenAlexSearchService()
 
         # Lazy-load ML tier predictor (supplements LLM-based scoring)
         self._ml_tier_predictor = None
+
+    def _create_hij_openai_client(self):
+        """Create OpenAI client with HIJ-specific timeout (5 min) and retry logic."""
+        use_azure = os.getenv("USE_AZURE_OPENAI", "false").lower() == "true"
+
+        if use_azure:
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            client = AzureOpenAI(
+                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+                api_version=os.getenv("AZURE_API_VERSION", "2024-12-01-preview"),
+                azure_endpoint=endpoint,
+                timeout=_HIJ_TIMEOUT,
+                max_retries=3,  # Built-in retry for transient errors
+            )
+            chat_model = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4")
+        else:
+            client = OpenAI(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                timeout=_HIJ_TIMEOUT,
+                max_retries=3,
+            )
+            chat_model = "gpt-4o-mini"
+
+        # Return a simple wrapper that mimics the shared client interface
+        class HIJOpenAIClient:
+            def __init__(self, client, model):
+                self.client = client
+                self.chat_model = model
+
+            def chat_completion(self, messages, temperature=0.7, max_tokens=None, **kwargs):
+                params = {"model": self.chat_model, "messages": messages, "temperature": temperature}
+                if max_tokens:
+                    params["max_tokens"] = max_tokens
+                params.update(kwargs)
+                return self.client.chat.completions.create(**params)
+
+            def chat_completion_stream(self, messages, temperature=0.7, max_tokens=None, **kwargs):
+                params = {"model": self.chat_model, "messages": messages, "temperature": temperature, "stream": True}
+                if max_tokens:
+                    params["max_tokens"] = max_tokens
+                params.update(kwargs)
+                return self.client.chat.completions.create(**params)
+
+        return HIJOpenAIClient(client, chat_model)
 
     @property
     def ml_tier_predictor(self):
