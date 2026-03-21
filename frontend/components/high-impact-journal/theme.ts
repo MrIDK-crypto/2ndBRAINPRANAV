@@ -15,6 +15,15 @@ export const theme = {
   success: '#9CB896',
   amber: '#E2A336',
   error: '#D97B7B',
+  // Subtle state backgrounds - whisper-quiet surface elevation
+  successBgSubtle: 'rgba(156, 184, 150, 0.08)',
+  amberBgSubtle: 'rgba(226, 163, 54, 0.08)',
+  errorBgSubtle: 'rgba(217, 123, 123, 0.08)',
+  // Subtle borders - rgba for blending
+  successBorder: 'rgba(156, 184, 150, 0.25)',
+  amberBorder: 'rgba(226, 163, 54, 0.25)',
+  errorBorder: 'rgba(217, 123, 123, 0.25)',
+  primaryBorder: 'rgba(201, 165, 152, 0.25)',
 }
 
 export const font = "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif"
@@ -22,9 +31,9 @@ export const fontMono = "'JetBrains Mono', 'SF Mono', monospace"
 export const fontDisplay = "'Instrument Serif', Georgia, serif"
 
 export const tierColors = {
-  1: { bg: '#F0F7EE', text: '#3D6B35', border: '#9CB896', label: 'Tier 1' },
-  2: { bg: '#FEF7E8', text: '#8B6914', border: '#E2A336', label: 'Tier 2' },
-  3: { bg: '#FDF2F2', text: '#9B4D4D', border: '#D97B7B', label: 'Tier 3' },
+  1: { bg: 'rgba(156, 184, 150, 0.1)', text: '#3D6B35', border: 'rgba(156, 184, 150, 0.3)', label: 'Tier 1' },
+  2: { bg: 'rgba(226, 163, 54, 0.1)', text: '#8B6914', border: 'rgba(226, 163, 54, 0.3)', label: 'Tier 2' },
+  3: { bg: 'rgba(217, 123, 123, 0.1)', text: '#9B4D4D', border: 'rgba(217, 123, 123, 0.3)', label: 'Tier 3' },
 }
 
 export const fieldColors: Record<string, { bg: string; text: string; dot: string }> = {
@@ -49,7 +58,7 @@ export const fieldColors: Record<string, { bg: string; text: string; dot: string
 }
 
 export const severityColors = {
-  critical: { bg: '#FDF2F2', text: '#9B4D4D', border: '#D97B7B' },
-  warning: { bg: '#FEF7E8', text: '#8B6914', border: '#E2A336' },
-  info: { bg: '#EEF2FF', text: '#4338CA', border: '#818CF8' },
+  critical: { bg: 'rgba(217, 123, 123, 0.1)', text: '#9B4D4D', border: 'rgba(217, 123, 123, 0.3)' },
+  warning: { bg: 'rgba(226, 163, 54, 0.1)', text: '#8B6914', border: 'rgba(226, 163, 54, 0.3)' },
+  info: { bg: 'rgba(99, 102, 241, 0.08)', text: '#4338CA', border: 'rgba(99, 102, 241, 0.25)' },
 }

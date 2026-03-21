@@ -30,14 +30,16 @@ class OpenAIClientWrapper:
                 self.client = AzureOpenAI(
                     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
                     api_version=os.getenv("AZURE_API_VERSION", "2024-12-01-preview"),
-                    azure_endpoint=endpoint
+                    azure_endpoint=endpoint,
+                    timeout=120.0  # 2 minute timeout
                 )
             self.chat_model = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4")
             self.embedding_model = os.getenv("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
         else:
             # Regular OpenAI configuration
             self.client = OpenAI(
-                api_key=os.getenv("OPENAI_API_KEY")
+                api_key=os.getenv("OPENAI_API_KEY"),
+                timeout=120.0  # 2 minute timeout
             )
             self.chat_model = "gpt-4o-mini"  # More cost-effective for development
             self.embedding_model = "text-embedding-3-large"

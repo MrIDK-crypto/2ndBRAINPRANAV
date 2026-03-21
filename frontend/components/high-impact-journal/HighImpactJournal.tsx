@@ -772,9 +772,9 @@ export default function HighImpactJournal() {
           <div style={{
             padding: '12px 16px',
             borderRadius: 8,
-            backgroundColor: '#FDF2F2',
-            border: '1px solid #D97B7B',
-            color: '#9B4D4D',
+            backgroundColor: theme.errorBgSubtle,
+            border: `1px solid ${theme.errorBorder}`,
+            color: tierColors[3].text,
             marginBottom: 24,
             fontSize: 14,
           }}>
@@ -1279,8 +1279,8 @@ export default function HighImpactJournal() {
                               fontSize: 10,
                               padding: '1px 6px',
                               borderRadius: 4,
-                              backgroundColor: '#FEF7E8',
-                              color: '#8B6914',
+                              backgroundColor: theme.amberBgSubtle,
+                              color: tierColors[2].text,
                               fontWeight: 500,
                             }} title={`Scores varied: ${varianceItem.scores.join(', ')}`}>
                               ±{varianceItem.std}
@@ -1316,7 +1316,7 @@ export default function HighImpactJournal() {
                               padding: '8px 12px',
                               borderRadius: 6,
                               backgroundColor: theme.primaryLight,
-                              borderLeft: `3px solid ${theme.primary}`,
+                              border: `1px solid ${theme.primaryBorder}`,
                               marginBottom: 4,
                               fontSize: 12,
                             }}>
@@ -1462,8 +1462,8 @@ export default function HighImpactJournal() {
                     fontSize: 12,
                     fontWeight: 600,
                     fontFamily: fontMono,
-                    backgroundColor: citationInfo.verification_rate >= 80 ? '#F0F7EE' : citationInfo.verification_rate >= 50 ? '#FEF7E8' : '#FDF2F2',
-                    color: citationInfo.verification_rate >= 80 ? '#3D6B35' : citationInfo.verification_rate >= 50 ? '#8B6914' : '#9B4D4D',
+                    backgroundColor: citationInfo.verification_rate >= 80 ? theme.successBgSubtle : citationInfo.verification_rate >= 50 ? theme.amberBgSubtle : theme.errorBgSubtle,
+                    color: citationInfo.verification_rate >= 80 ? tierColors[1].text : citationInfo.verification_rate >= 50 ? tierColors[2].text : tierColors[3].text,
                   }}>
                     {citationInfo.verification_rate}% verified
                   </span>
@@ -1477,8 +1477,8 @@ export default function HighImpactJournal() {
                       <div key={i} style={{
                         padding: '8px 12px',
                         borderRadius: 6,
-                        backgroundColor: '#F0F7EE',
-                        borderLeft: '3px solid #9CB896',
+                        backgroundColor: theme.successBgSubtle,
+                        border: `1px solid ${theme.successBorder}`,
                         marginBottom: 4,
                         fontSize: 12,
                         display: 'flex',
@@ -1514,8 +1514,8 @@ export default function HighImpactJournal() {
                       <div key={i} style={{
                         padding: '6px 12px',
                         borderRadius: 6,
-                        backgroundColor: '#FEF7E8',
-                        borderLeft: '3px solid #E2A336',
+                        backgroundColor: theme.amberBgSubtle,
+                        border: `1px solid ${theme.amberBorder}`,
                         marginTop: 4,
                         fontSize: 12,
                         color: theme.textSecondary,
@@ -1564,8 +1564,8 @@ export default function HighImpactJournal() {
                           padding: '2px 8px',
                           borderRadius: 4,
                           fontWeight: 600,
-                          backgroundColor: fig.score >= 70 ? '#F0F7EE' : fig.score >= 40 ? '#FEF7E8' : '#FDF2F2',
-                          color: fig.score >= 70 ? '#3D6B35' : fig.score >= 40 ? '#8B6914' : '#9B4D4D',
+                          backgroundColor: fig.score >= 70 ? theme.successBgSubtle : fig.score >= 40 ? theme.amberBgSubtle : theme.errorBgSubtle,
+                          color: fig.score >= 70 ? tierColors[1].text : fig.score >= 40 ? tierColors[2].text : tierColors[3].text,
                         }}>
                           {fig.score}/100
                         </span>
@@ -1711,7 +1711,7 @@ export default function HighImpactJournal() {
                           padding: '10px 14px',
                           borderRadius: 8,
                           backgroundColor: theme.primaryLight,
-                          borderLeft: `3px solid ${theme.primary}`,
+                          border: `1px solid ${theme.primaryBorder}`,
                           marginBottom: 10,
                           fontSize: 13,
                         }}>
@@ -1777,8 +1777,8 @@ export default function HighImpactJournal() {
                       fontSize: 12,
                       fontWeight: 600,
                       fontFamily: fontMono,
-                      backgroundColor: reviewMethodology.overall_rigor_score >= 70 ? '#F0F7EE' : reviewMethodology.overall_rigor_score >= 40 ? '#FEF7E8' : '#FDF2F2',
-                      color: reviewMethodology.overall_rigor_score >= 70 ? '#2D6A2E' : reviewMethodology.overall_rigor_score >= 40 ? '#8B6914' : '#9B3B3B',
+                      backgroundColor: reviewMethodology.overall_rigor_score >= 70 ? theme.successBgSubtle : reviewMethodology.overall_rigor_score >= 40 ? theme.amberBgSubtle : theme.errorBgSubtle,
+                      color: reviewMethodology.overall_rigor_score >= 70 ? tierColors[1].text : reviewMethodology.overall_rigor_score >= 40 ? tierColors[2].text : tierColors[3].text,
                     }}>
                       Rigor: {reviewMethodology.overall_rigor_score}/100
                     </span>
@@ -1815,19 +1815,21 @@ export default function HighImpactJournal() {
                 ] as { key: string; title: string; data: ReviewMethodologyDimension }[]).map((dim, di) => {
                   const d = dim.data
                   if (!d) return null
-                  const borderColor = (d.score ?? 0) >= 70 ? '#9CB896' : (d.score ?? 0) >= 40 ? '#E2A336' : '#D97B7B'
+                  const scoreBorder = (d.score ?? 0) >= 70 ? theme.successBorder : (d.score ?? 0) >= 40 ? theme.amberBorder : theme.errorBorder
+                  const scoreBg = (d.score ?? 0) >= 70 ? theme.successBgSubtle : (d.score ?? 0) >= 40 ? theme.amberBgSubtle : theme.errorBgSubtle
+                  const scoreColor = (d.score ?? 0) >= 70 ? theme.success : (d.score ?? 0) >= 40 ? theme.amber : theme.error
 
                   return (
                     <div key={di} style={{
                       padding: '14px 16px',
                       borderRadius: 10,
-                      backgroundColor: theme.pageBg,
-                      borderLeft: `3px solid ${borderColor}`,
+                      backgroundColor: scoreBg,
+                      border: `1px solid ${scoreBorder}`,
                       marginBottom: 10,
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <span style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary }}>{dim.title}</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, fontFamily: fontMono, color: borderColor }}>{d.score ?? '?'}/100</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, fontFamily: fontMono, color: scoreColor }}>{d.score ?? '?'}/100</span>
                       </div>
 
                       {/* Search strategy specific: checklist badges */}
@@ -1847,8 +1849,8 @@ export default function HighImpactJournal() {
                               fontWeight: 600,
                               padding: '2px 8px',
                               borderRadius: 4,
-                              backgroundColor: chk.ok ? '#F0F7EE' : '#FDF2F2',
-                              color: chk.ok ? '#2D6A2E' : '#9B3B3B',
+                              backgroundColor: chk.ok ? theme.successBgSubtle : theme.errorBgSubtle,
+                              color: chk.ok ? tierColors[1].text : tierColors[3].text,
                             }}>
                               {chk.ok ? '\u2713' : '\u2717'} {chk.label}
                             </span>
@@ -1859,7 +1861,7 @@ export default function HighImpactJournal() {
                       {/* Synthesis quality specific: approach badge */}
                       {dim.key === 'synthesis_quality' && (d as any).approach && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#EEF2FF', color: '#4338CA' }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: severityColors.info.bg, color: severityColors.info.text }}>
                             Approach: {(d as any).approach}
                           </span>
                           {[
@@ -1872,8 +1874,8 @@ export default function HighImpactJournal() {
                               fontWeight: 600,
                               padding: '2px 8px',
                               borderRadius: 4,
-                              backgroundColor: chk.ok ? '#F0F7EE' : '#FDF2F2',
-                              color: chk.ok ? '#2D6A2E' : '#9B3B3B',
+                              backgroundColor: chk.ok ? theme.successBgSubtle : theme.errorBgSubtle,
+                              color: chk.ok ? tierColors[1].text : tierColors[3].text,
                             }}>
                               {chk.ok ? '\u2713' : '\u2717'} {chk.label}
                             </span>
@@ -1885,26 +1887,26 @@ export default function HighImpactJournal() {
                       {dim.key === 'coverage_analysis' && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                           {(d as any).total_studies_included != null && (
-                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#EEF2FF', color: '#4338CA' }}>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: severityColors.info.bg, color: severityColors.info.text }}>
                               {(d as any).total_studies_included} studies included
                             </span>
                           )}
                           {(d as any).date_range_of_studies && (
-                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0FF', color: '#6B21A8' }}>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: 'rgba(107, 33, 168, 0.08)', color: '#6B21A8' }}>
                               {(d as any).date_range_of_studies}
                             </span>
                           )}
                           {(d as any).recency_assessment && (
                             <span style={{
                               fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-                              backgroundColor: (d as any).recency_assessment === 'up-to-date' ? '#F0F7EE' : (d as any).recency_assessment === 'slightly outdated' ? '#FEF7E8' : '#FDF2F2',
-                              color: (d as any).recency_assessment === 'up-to-date' ? '#2D6A2E' : (d as any).recency_assessment === 'slightly outdated' ? '#8B6914' : '#9B3B3B',
+                              backgroundColor: (d as any).recency_assessment === 'up-to-date' ? theme.successBgSubtle : (d as any).recency_assessment === 'slightly outdated' ? theme.amberBgSubtle : theme.errorBgSubtle,
+                              color: (d as any).recency_assessment === 'up-to-date' ? tierColors[1].text : (d as any).recency_assessment === 'slightly outdated' ? tierColors[2].text : tierColors[3].text,
                             }}>
                               {(d as any).recency_assessment}
                             </span>
                           )}
                           {(d as any).geographic_diversity && (d as any).geographic_diversity !== 'unclear' && (
-                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F0EDE8', color: theme.textSecondary }}>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, backgroundColor: theme.pageBg, color: theme.textSecondary }}>
                               {(d as any).geographic_diversity}
                             </span>
                           )}
@@ -1927,8 +1929,8 @@ export default function HighImpactJournal() {
                               fontWeight: 600,
                               padding: '2px 8px',
                               borderRadius: 4,
-                              backgroundColor: chk.ok ? '#F0F7EE' : '#FDF2F2',
-                              color: chk.ok ? '#2D6A2E' : '#9B3B3B',
+                              backgroundColor: chk.ok ? theme.successBgSubtle : theme.errorBgSubtle,
+                              color: chk.ok ? tierColors[1].text : tierColors[3].text,
                             }}>
                               {chk.ok ? '\u2713' : '\u2717'} {chk.label}
                             </span>
@@ -1939,7 +1941,7 @@ export default function HighImpactJournal() {
                       {/* Strengths */}
                       {d.strengths && d.strengths.length > 0 && (
                         <div style={{ marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: '#2D6A2E' }}>Strengths</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: tierColors[1].text }}>Strengths</span>
                           <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
                             {d.strengths.map((s: string, si: number) => (
                               <li key={si} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5, marginBottom: 2 }}>{s}</li>
@@ -1951,7 +1953,7 @@ export default function HighImpactJournal() {
                       {/* Weaknesses */}
                       {d.weaknesses && d.weaknesses.length > 0 && (
                         <div style={{ marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: '#9B3B3B' }}>Weaknesses</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: tierColors[3].text }}>Weaknesses</span>
                           <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
                             {d.weaknesses.map((w: string, wi: number) => (
                               <li key={wi} style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5, marginBottom: 2 }}>{w}</li>
@@ -2006,21 +2008,22 @@ export default function HighImpactJournal() {
                     fontSize: 12,
                     fontWeight: 600,
                     fontFamily: fontMono,
-                    backgroundColor: '#FEF7E8',
-                    color: '#8B6914',
+                    backgroundColor: theme.amberBgSubtle,
+                    color: tierColors[2].text,
                   }}>
                     {researchGaps.gaps.length} gap{researchGaps.gaps.length !== 1 ? 's' : ''} found
                   </span>
                 </div>
                 {researchGaps.gaps.map((gap, i) => {
-                  const priorityColor = gap.priority >= 4 ? '#D97B7B' : gap.priority >= 3 ? '#E2A336' : '#9CB896'
-                  const priorityBg = gap.priority >= 4 ? '#FDF2F2' : gap.priority >= 3 ? '#FEF7E8' : '#F0F7EE'
+                  const priorityColor = gap.priority >= 4 ? theme.error : gap.priority >= 3 ? theme.amber : theme.success
+                  const priorityBg = gap.priority >= 4 ? theme.errorBgSubtle : gap.priority >= 3 ? theme.amberBgSubtle : theme.successBgSubtle
+                  const priorityBorder = gap.priority >= 4 ? theme.errorBorder : gap.priority >= 3 ? theme.amberBorder : theme.successBorder
                   return (
                     <div key={i} style={{
                       padding: '12px 16px',
                       borderRadius: 8,
                       backgroundColor: priorityBg,
-                      borderLeft: `3px solid ${priorityColor}`,
+                      border: `1px solid ${priorityBorder}`,
                       marginBottom: 8,
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -2114,8 +2117,8 @@ export default function HighImpactJournal() {
                               fontWeight: 500,
                               padding: '2px 8px',
                               borderRadius: 4,
-                              backgroundColor: s.effort_level === 'low' ? '#F0F7EE' : s.effort_level === 'high' ? '#FDF2F2' : '#FEF7E8',
-                              color: s.effort_level === 'low' ? '#3D6B35' : s.effort_level === 'high' ? '#9B4D4D' : '#8B6914',
+                              backgroundColor: s.effort_level === 'low' ? theme.successBgSubtle : s.effort_level === 'high' ? theme.errorBgSubtle : theme.amberBgSubtle,
+                              color: s.effort_level === 'low' ? tierColors[1].text : s.effort_level === 'high' ? tierColors[3].text : tierColors[2].text,
                             }}>
                               {s.effort_level} effort
                             </span>
@@ -2279,9 +2282,9 @@ export default function HighImpactJournal() {
                     <div style={{
                       padding: '12px 16px',
                       borderRadius: 8,
-                      backgroundColor: theme.pageBg,
+                      backgroundColor: theme.primaryLight,
                       marginBottom: 16,
-                      borderLeft: `3px solid ${theme.primary}`,
+                      border: `1px solid ${theme.primaryBorder}`,
                     }}>
                       <p style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>
                         {codeGenResult.method.method_name}
@@ -2321,8 +2324,7 @@ export default function HighImpactJournal() {
                               padding: '10px 14px',
                               border: 'none',
                               borderBottom: `1px solid ${theme.border}`,
-                              backgroundColor: isSelected ? theme.cardBg : 'transparent',
-                              borderLeft: isSelected ? `3px solid ${theme.primary}` : '3px solid transparent',
+                              backgroundColor: isSelected ? theme.primaryLight : 'transparent',
                               cursor: 'pointer',
                               textAlign: 'left',
                               fontSize: 12,
@@ -2472,15 +2474,16 @@ export default function HighImpactJournal() {
                   {/* Urgency Meter */}
                   {competitorResult.urgency && (() => {
                     const u = competitorResult.urgency
-                    const urgencyColor = u.level === 'high' ? '#D97B7B' : u.level === 'medium' ? '#E2A336' : '#9CB896'
-                    const urgencyBg = u.level === 'high' ? '#FDF2F2' : u.level === 'medium' ? '#FEF7E8' : '#F0F7EE'
-                    const urgencyText = u.level === 'high' ? '#9B4D4D' : u.level === 'medium' ? '#8B6914' : '#3D6B35'
+                    const urgencyColor = u.level === 'high' ? theme.error : u.level === 'medium' ? theme.amber : theme.success
+                    const urgencyBg = u.level === 'high' ? theme.errorBgSubtle : u.level === 'medium' ? theme.amberBgSubtle : theme.successBgSubtle
+                    const urgencyText = u.level === 'high' ? tierColors[3].text : u.level === 'medium' ? tierColors[2].text : tierColors[1].text
+                    const urgencyBorder = u.level === 'high' ? theme.errorBorder : u.level === 'medium' ? theme.amberBorder : theme.successBorder
                     return (
                       <div style={{
                         padding: '16px 20px',
                         borderRadius: 12,
                         backgroundColor: urgencyBg,
-                        border: `1px solid ${urgencyColor}`,
+                        border: `1px solid ${urgencyBorder}`,
                         marginBottom: 20,
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
@@ -2587,8 +2590,8 @@ export default function HighImpactJournal() {
                           <div key={i} style={{
                             padding: '12px 16px',
                             borderRadius: 10,
-                            border: `1px solid ${theme.border}`,
-                            backgroundColor: p.is_recent ? '#FDF2F2' : theme.cardBg,
+                            border: `1px solid ${p.is_recent ? theme.errorBorder : theme.border}`,
+                            backgroundColor: p.is_recent ? theme.errorBgSubtle : theme.cardBg,
                           }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
                               {p.is_recent && (
@@ -2596,7 +2599,7 @@ export default function HighImpactJournal() {
                                   display: 'inline-block',
                                   padding: '2px 8px',
                                   borderRadius: 4,
-                                  backgroundColor: '#D97B7B',
+                                  backgroundColor: theme.error,
                                   color: '#fff',
                                   fontSize: 10,
                                   fontWeight: 700,
@@ -2756,24 +2759,24 @@ export default function HighImpactJournal() {
                 const trend = ideaResult.trend || 'stable'
 
                 // Color mapping: LOW competition = green (good), HIGH = red (saturated)
-                const verdictColor = verdict === 'HIGH' ? '#D97B7B'
-                  : verdict === 'MEDIUM-HIGH' ? '#E2A336'
-                  : verdict === 'MEDIUM' ? '#E2A336'
-                  : '#9CB896'
-                const verdictBg = verdict === 'HIGH' ? '#FDF2F2'
-                  : verdict === 'MEDIUM-HIGH' ? '#FEF7E8'
-                  : verdict === 'MEDIUM' ? '#FEF7E8'
-                  : '#F0F7EE'
-                const verdictText = verdict === 'HIGH' ? '#9B4D4D'
-                  : verdict === 'MEDIUM-HIGH' ? '#8B6914'
-                  : verdict === 'MEDIUM' ? '#8B6914'
-                  : '#3D6B35'
+                const verdictColor = verdict === 'HIGH' ? theme.error
+                  : verdict === 'MEDIUM-HIGH' ? theme.amber
+                  : verdict === 'MEDIUM' ? theme.amber
+                  : theme.success
+                const verdictBg = verdict === 'HIGH' ? theme.errorBgSubtle
+                  : verdict === 'MEDIUM-HIGH' ? theme.amberBgSubtle
+                  : verdict === 'MEDIUM' ? theme.amberBgSubtle
+                  : theme.successBgSubtle
+                const verdictText = verdict === 'HIGH' ? tierColors[3].text
+                  : verdict === 'MEDIUM-HIGH' ? tierColors[2].text
+                  : verdict === 'MEDIUM' ? tierColors[2].text
+                  : tierColors[1].text
 
                 // Progress bar color: inverted — green when low signal (opportunity), red when high (saturated)
-                const barColor = signal >= 70 ? '#D97B7B' : signal >= 40 ? '#E2A336' : '#9CB896'
+                const barColor = signal >= 70 ? theme.error : signal >= 40 ? theme.amber : theme.success
 
                 const trendLabel = trend === 'accelerating' ? 'Accelerating' : trend === 'active' ? 'Active' : 'Stable'
-                const trendColor = trend === 'accelerating' ? '#D97B7B' : trend === 'active' ? '#E2A336' : '#9CB896'
+                const trendColor = trend === 'accelerating' ? theme.error : trend === 'active' ? theme.amber : theme.success
 
                 return (
                   <div>
@@ -3018,8 +3021,8 @@ const paperTypeStyles: Record<string, { bg: string; text: string; dot: string; l
 
 function PaperTypeBadge({ paperType, confidence, small }: { paperType: string; confidence: string; small?: boolean }) {
   const style = paperTypeStyles[paperType] || paperTypeStyles.experimental
-  const confColor = confidence === 'high' ? '#3D6B35' : confidence === 'moderate' ? '#8B6914' : '#9B4D4D'
-  const confBg = confidence === 'high' ? '#F0F7EE' : confidence === 'moderate' ? '#FEF7E8' : '#FDF2F2'
+  const confColor = confidence === 'high' ? tierColors[1].text : confidence === 'moderate' ? tierColors[2].text : tierColors[3].text
+  const confBg = confidence === 'high' ? theme.successBgSubtle : confidence === 'moderate' ? theme.amberBgSubtle : theme.errorBgSubtle
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={{
@@ -3146,7 +3149,7 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
       borderRadius: 16,
       backgroundColor: theme.cardBg,
       border: `1px solid ${theme.border}`,
-      borderTop: `3px solid ${accent}`,
+      borderTop: `2px solid ${accent}`,
     }}>
       <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{title}</h4>
       {journals.map((j, i) => {
