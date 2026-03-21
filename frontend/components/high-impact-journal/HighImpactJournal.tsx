@@ -448,8 +448,8 @@ export default function HighImpactJournal() {
 
   const handleTextSubmit = useCallback(async () => {
     const wordCount = researchText.trim().split(/\s+/).filter(Boolean).length
-    if (wordCount < 100) {
-      setError(`Please write at least 100 words describing your research (currently ${wordCount}).`)
+    if (wordCount < 50) {
+      setError(`Please write at least 50 words describing your research (currently ${wordCount}).`)
       return
     }
     if (!publicationYear) {
@@ -973,16 +973,16 @@ export default function HighImpactJournal() {
                   }}>
                     <p style={{
                       fontSize: 13,
-                      color: researchText.trim().split(/\s+/).filter(Boolean).length >= 100
+                      color: researchText.trim().split(/\s+/).filter(Boolean).length >= 50
                         ? theme.success
                         : theme.textMuted,
                       fontFamily: fontMono,
                     }}>
-                      {researchText.trim() ? researchText.trim().split(/\s+/).filter(Boolean).length : 0} / 100 words min
+                      {researchText.trim() ? researchText.trim().split(/\s+/).filter(Boolean).length : 0} / 50 words min
                     </p>
                     <button
                       onClick={handleTextSubmit}
-                      disabled={researchText.trim().split(/\s+/).filter(Boolean).length < 100}
+                      disabled={researchText.trim().split(/\s+/).filter(Boolean).length < 50}
                       style={{
                         padding: '12px 32px',
                         borderRadius: 10,
@@ -990,9 +990,9 @@ export default function HighImpactJournal() {
                         fontSize: 15,
                         fontWeight: 600,
                         fontFamily: font,
-                        cursor: researchText.trim().split(/\s+/).filter(Boolean).length >= 100 ? 'pointer' : 'not-allowed',
-                        backgroundColor: researchText.trim().split(/\s+/).filter(Boolean).length >= 100 ? theme.primary : theme.border,
-                        color: researchText.trim().split(/\s+/).filter(Boolean).length >= 100 ? '#FFFFFF' : theme.textMuted,
+                        cursor: researchText.trim().split(/\s+/).filter(Boolean).length >= 50 ? 'pointer' : 'not-allowed',
+                        backgroundColor: researchText.trim().split(/\s+/).filter(Boolean).length >= 50 ? theme.primary : theme.border,
+                        color: researchText.trim().split(/\s+/).filter(Boolean).length >= 50 ? '#FFFFFF' : theme.textMuted,
                         transition: 'all 0.2s ease',
                       }}
                     >
@@ -2403,10 +2403,10 @@ export default function HighImpactJournal() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div>
                   <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>
-                    Competitor Landscape
+                    Peer Labs
                   </h3>
                   <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
-                    Find competing labs, recent preprints, and active grants
+                    Find related labs, recent preprints, and active grants
                   </p>
                 </div>
                 {!competitorResult && (
@@ -2440,7 +2440,7 @@ export default function HighImpactJournal() {
                         animation: 'spin 0.8s linear infinite',
                       }} />
                     )}
-                    {competitorLoading ? 'Searching...' : 'Find Competitors'}
+                    {competitorLoading ? 'Searching...' : 'Find Peer Labs'}
                   </button>
                 )}
               </div>
@@ -2462,7 +2462,7 @@ export default function HighImpactJournal() {
               {/* Not logged in hint */}
               {!authToken && !competitorLoading && !competitorResult && (
                 <p style={{ fontSize: 13, color: theme.amber, margin: 0 }}>
-                  Sign in to search for competing labs and grants.
+                  Sign in to search for peer labs and grants.
                 </p>
               )}
 
@@ -2533,11 +2533,11 @@ export default function HighImpactJournal() {
                     )
                   })()}
 
-                  {/* Competing Labs */}
+                  {/* Peer Labs */}
                   {competitorResult.competing_labs && competitorResult.competing_labs.length > 0 && (
                     <div style={{ marginBottom: 20 }}>
                       <h4 style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 10 }}>
-                        Competing Labs ({competitorResult.competing_labs.length})
+                        Peer Labs ({competitorResult.competing_labs.length})
                       </h4>
                       <div style={{
                         borderRadius: 10,
@@ -2682,7 +2682,7 @@ export default function HighImpactJournal() {
                    (!competitorResult.preprints || competitorResult.preprints.length === 0) &&
                    (!competitorResult.grants || competitorResult.grants.length === 0) && (
                     <p style={{ fontSize: 13, color: theme.textMuted, textAlign: 'center', padding: '20px 0' }}>
-                      No competing work found. This could indicate a novel research area.
+                      No related work found. This could indicate a novel research area.
                     </p>
                   )}
                 </div>
