@@ -253,6 +253,7 @@ from api.research_translator_routes import research_translator_bp
 from api.journal_routes import journal_bp
 from api.reproducibility_routes import reproducibility_bp
 from api.protocol_graph_routes import protocol_graph_bp
+from api.protocol_optimizer_routes import protocol_optimizer_bp
 from api.experiment_routes import experiment_bp
 from api.training_guide_routes import training_guide_bp
 from api.paper_analysis_routes import paper_analysis_bp
@@ -285,6 +286,7 @@ app.register_blueprint(research_translator_bp)
 app.register_blueprint(journal_bp)
 app.register_blueprint(reproducibility_bp)
 app.register_blueprint(protocol_graph_bp)
+app.register_blueprint(protocol_optimizer_bp)
 app.register_blueprint(experiment_bp)
 app.register_blueprint(training_guide_bp)
 app.register_blueprint(paper_analysis_bp)

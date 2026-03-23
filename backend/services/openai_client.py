@@ -10,35 +10,46 @@ from openai import OpenAI, AzureOpenAI
 class OpenAIClientWrapper:
     """Wrapper that works with both Azure OpenAI and regular OpenAI"""
 
-    def __init__(self):
+    def __init__(self, timeout: float = None):
+        """
+        Initialize OpenAI client wrapper.
+
+        Args:
+            timeout: Optional timeout in seconds for API calls. If None, uses SDK default.
+        """
         self.use_azure = os.getenv("USE_AZURE_OPENAI", "false").lower() == "true"
 
         if self.use_azure:
             # Azure OpenAI configuration
             endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            azure_kwargs = {
+                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+                "api_version": os.getenv("AZURE_API_VERSION", "2024-12-01-preview"),
+            }
+            if timeout:
+                azure_kwargs["timeout"] = timeout
+
             # Handle Azure AI Services project endpoints
             if "/api/projects/" in endpoint:
                 # Remove trailing path for SDK compatibility
                 base_endpoint = endpoint.split("/api/projects/")[0]
-                self.client = AzureOpenAI(
-                    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-                    api_version=os.getenv("AZURE_API_VERSION", "2024-12-01-preview"),
-                    azure_endpoint=base_endpoint,
-                    default_headers={"api-project": endpoint.split("/api/projects/")[1]}
-                )
+                azure_kwargs["azure_endpoint"] = base_endpoint
+                azure_kwargs["default_headers"] = {"api-project": endpoint.split("/api/projects/")[1]}
             else:
-                self.client = AzureOpenAI(
-                    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-                    api_version=os.getenv("AZURE_API_VERSION", "2024-12-01-preview"),
-                    azure_endpoint=endpoint
-                )
+                azure_kwargs["azure_endpoint"] = endpoint
+
+            self.client = AzureOpenAI(**azure_kwargs)
             self.chat_model = os.getenv("AZURE_CHAT_DEPLOYMENT", "gpt-4")
             self.embedding_model = os.getenv("AZURE_EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
         else:
             # Regular OpenAI configuration
-            self.client = OpenAI(
-                api_key=os.getenv("OPENAI_API_KEY")
-            )
+            openai_kwargs = {
+                "api_key": os.getenv("OPENAI_API_KEY")
+            }
+            if timeout:
+                openai_kwargs["timeout"] = timeout
+
+            self.client = OpenAI(**openai_kwargs)
             self.chat_model = "gpt-4o-mini"  # More cost-effective for development
             self.embedding_model = "text-embedding-3-large"
 
@@ -100,6 +111,7 @@ class OpenAIClientWrapper:
 
 # Singleton instance
 _client = None
+_client_with_timeout = None
 
 def get_openai_client() -> OpenAIClientWrapper:
     """Get or create the OpenAI client singleton"""
@@ -107,3 +119,14 @@ def get_openai_client() -> OpenAIClientWrapper:
     if _client is None:
         _client = OpenAIClientWrapper()
     return _client
+
+
+def get_openai_client_with_timeout(timeout: float = 120.0) -> OpenAIClientWrapper:
+    """
+    Get OpenAI client with extended timeout for long-running operations.
+    Use this for services like Protocol Optimizer that make multiple sequential API calls.
+    """
+    global _client_with_timeout
+    if _client_with_timeout is None:
+        _client_with_timeout = OpenAIClientWrapper(timeout=timeout)
+    return _client_with_timeout
