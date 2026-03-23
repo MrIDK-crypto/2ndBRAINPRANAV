@@ -2267,12 +2267,6 @@ export default function HighImpactJournal() {
                 </div>
               )}
 
-              {/* Not logged in hint */}
-              {!authToken && !codeGenLoading && !codeGenResult && (
-                <p style={{ fontSize: 13, color: theme.amber, margin: 0 }}>
-                  Sign in to generate code implementations from your paper.
-                </p>
-              )}
 
               {/* Code Viewer */}
               {codeGenResult && codeGenResult.files && codeGenResult.files.length > 0 && (
@@ -2461,12 +2455,6 @@ export default function HighImpactJournal() {
                 </div>
               )}
 
-              {/* Not logged in hint */}
-              {!authToken && !competitorLoading && !competitorResult && (
-                <p style={{ fontSize: 13, color: theme.amber, margin: 0 }}>
-                  Sign in to search for peer labs and grants.
-                </p>
-              )}
 
               {/* ── Competitor Results ── */}
               {competitorResult && (
@@ -2745,12 +2733,6 @@ export default function HighImpactJournal() {
                 )}
               </div>
 
-              {/* Not logged in hint */}
-              {!authToken && !ideaLoading && !ideaResult && (
-                <p style={{ fontSize: 13, color: theme.amber, margin: 0 }}>
-                  Sign in to validate research ideas against existing implementations.
-                </p>
-              )}
 
               {/* ── Idea Reality Results ── */}
               {ideaResult && (() => {
