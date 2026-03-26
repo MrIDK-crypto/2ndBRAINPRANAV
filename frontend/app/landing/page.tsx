@@ -594,12 +594,13 @@ export default function LandingPage() {
             <p className="section-p">transparent pricing for teams of every size. all plans include unlimited integrations and ai-powered search.</p>
           </div>
           <div className="pricing-row">
-            <div className="pricing-card reveal">
+            <div className="pricing-card pricing-featured reveal">
               <div className="pricing-hdr">
-                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
-                  <path d="M12 5v14" /><path d="M5 12h14" />
+                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeLinecap="round">
+                  <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
                 </svg>
                 <span className="label">lab</span>
+                <div className="pricing-tag">most popular</div>
               </div>
               <div className="pricing-price">
                 <span className="price-amt">$20</span><span className="price-per">/user/mo</span>
@@ -612,16 +613,15 @@ export default function LandingPage() {
                 <li>co-researcher &amp; research tools</li>
                 <li>email support</li>
               </ul>
-              <Link href="/signup" className="btn-ghost btn-full">get started</Link>
+              <Link href="/signup" className="btn-solid btn-accent btn-full">get lab</Link>
             </div>
 
-            <div className="pricing-card pricing-featured reveal reveal-delay-1">
+            <div className="pricing-card reveal reveal-delay-1">
               <div className="pricing-hdr">
-                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeLinecap="round">
-                  <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
+                <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+                  <path d="M12 5v14" /><path d="M5 12h14" />
                 </svg>
                 <span className="label">department</span>
-                <div className="pricing-tag">most popular</div>
               </div>
               <div className="pricing-price">
                 <span className="price-amt">$99</span><span className="price-per">/user/mo</span>
@@ -635,7 +635,7 @@ export default function LandingPage() {
                 <li>advanced analytics dashboard</li>
                 <li>priority support</li>
               </ul>
-              <Link href="/signup" className="btn-solid btn-accent btn-full">get department</Link>
+              <Link href="/signup" className="btn-ghost btn-full">get department</Link>
             </div>
 
             <div className="pricing-card reveal reveal-delay-2">
