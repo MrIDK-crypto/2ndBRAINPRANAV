@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import './landing.css'
@@ -32,8 +32,41 @@ function useReveal() {
   return ref
 }
 
+/* Animated word typing effect */
+function useTypingWords(words: string[], typingSpeed = 100, pauseDuration = 2000) {
+  const [currentWordIndex, setCurrentWordIndex] = useState(0)
+  const [displayText, setDisplayText] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  useEffect(() => {
+    const currentWord = words[currentWordIndex]
+
+    const timeout = setTimeout(() => {
+      if (!isDeleting) {
+        if (displayText.length < currentWord.length) {
+          setDisplayText(currentWord.slice(0, displayText.length + 1))
+        } else {
+          setTimeout(() => setIsDeleting(true), pauseDuration)
+        }
+      } else {
+        if (displayText.length > 0) {
+          setDisplayText(displayText.slice(0, -1))
+        } else {
+          setIsDeleting(false)
+          setCurrentWordIndex((prev) => (prev + 1) % words.length)
+        }
+      }
+    }, isDeleting ? typingSpeed / 2 : typingSpeed)
+
+    return () => clearTimeout(timeout)
+  }, [displayText, isDeleting, currentWordIndex, words, typingSpeed, pauseDuration])
+
+  return displayText
+}
+
 export default function LandingPage() {
   const rootRef = useReveal()
+  const typingWord = useTypingWords(['emails', 'protocols', 'slack messages', 'papers', 'documents'], 80, 2000)
 
   const smoothScroll = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
     e.preventDefault()
@@ -98,54 +131,129 @@ export default function LandingPage() {
         <div className="hero-grid" />
 
         <div className="hero-content reveal">
-          <span className="hero-tag">the knowledge transfer platform</span>
+          <span className="hero-tag">research knowledge transfer platform</span>
           <h1 className="hero-h1">
             your organization&apos;s<br />
             <em>second brain</em>
           </h1>
           <p className="hero-p">
-            when people leave, knowledge stays. capture everything — emails, slack, documents — make it instantly searchable with ai, and transfer critical knowledge to the next generation.
+            when people leave, knowledge stays. capture{' '}
+            <span className="typing-word">{typingWord}<span className="typing-cursor">|</span></span>
+            {' '}— make it instantly searchable with ai, and transfer critical knowledge to the next generation.
           </p>
           <div className="hero-cta">
-            <Link href="/signup" className="btn-solid btn-accent btn-lg">get started free</Link>
-            <div className="install-box">
-              <code>pip install 2nd-brain</code>
-              <button className="copy-btn" aria-label="copy" onClick={() => navigator.clipboard.writeText('pip install 2nd-brain')}>
-                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <rect x={9} y={9} width={13} height={13} rx={0} />
-                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                </svg>
-              </button>
-            </div>
+            <Link href="/signup" className="btn-solid btn-accent btn-lg">start free trial</Link>
+            <Link href="#how-it-works" onClick={(e) => smoothScroll(e, 'how-it-works')} className="btn-ghost btn-lg">
+              see how it works
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" style={{ marginLeft: 8 }}>
+                <path d="M12 5v14M19 12l-7 7-7-7" />
+              </svg>
+            </Link>
           </div>
         </div>
 
-        <div className="hero-mockup reveal reveal-delay-2">
-          <div className="mockup-frame">
-            <div className="mockup-titlebar">
-              <div className="mockup-dots">
-                <span className="dot-close" />
-                <span className="dot-min" />
-                <span className="dot-max" />
-              </div>
-              <span className="mockup-title">~/2nd-brain &mdash; zsh</span>
-            </div>
-            <div className="mockup-terminal">
-              <div><span className="t-prompt">~ $</span> <span className="t-cmd">2brain connect --gmail --slack</span></div>
-              <div>&nbsp;</div>
-              <div><span className="t-dim">connecting integrations...</span></div>
-              <div><span className="t-green">✓</span> <span className="t-dim">gmail connected (1,847 emails synced)</span></div>
-              <div><span className="t-green">✓</span> <span className="t-dim">slack connected (12 channels synced)</span></div>
-              <div>&nbsp;</div>
-              <div><span className="t-prompt">~ $</span> <span className="t-cmd">2brain search &quot;Q4 product roadmap&quot;</span></div>
-              <div>&nbsp;</div>
-              <div><span className="t-dim">searching 2,847 documents...</span></div>
-              <div><span className="t-green">✓</span> <span className="t-dim">found 14 relevant sources (0.94 relevance)</span></div>
-              <div><span className="t-green">✓</span> <span className="t-dim">generating answer with citations...</span></div>
-              <div>&nbsp;</div>
-              <div><span className="t-prompt">&gt;</span> <span className="term-cursor" /></div>
-            </div>
-          </div>
+        {/* Knowledge network visualization - interconnected graph */}
+        <div className="hero-network" aria-hidden="true">
+          <svg className="network-left" viewBox="0 0 350 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Central hub node with connections */}
+            <g className="net-group">
+              {/* Hub connections to all other nodes */}
+              <line x1="160" y1="280" x2="80" y2="120" className="net-edge e1" />
+              <line x1="160" y1="280" x2="260" y2="140" className="net-edge e2" />
+              <line x1="160" y1="280" x2="60" y2="320" className="net-edge e3" />
+              <line x1="160" y1="280" x2="280" y2="340" className="net-edge e4" />
+              <line x1="160" y1="280" x2="100" y2="460" className="net-edge e5" />
+              <line x1="160" y1="280" x2="240" y2="480" className="net-edge e6" />
+              {/* Cross connections between outer nodes */}
+              <line x1="80" y1="120" x2="260" y2="140" className="net-edge e2" />
+              <line x1="60" y1="320" x2="100" y2="460" className="net-edge e4" />
+              <line x1="280" y1="340" x2="240" y2="480" className="net-edge e5" />
+              <line x1="80" y1="120" x2="60" y2="320" className="net-edge e3" />
+              <line x1="260" y1="140" x2="280" y2="340" className="net-edge e4" />
+            </g>
+            {/* Central hub - largest node */}
+            <g className="net-node hub">
+              <circle cx="160" cy="280" r="42" fill="var(--paper)" stroke="var(--accent)" strokeWidth="2.5" />
+              <circle cx="160" cy="280" r="18" fill="var(--accent)" opacity="0.5" />
+              <circle cx="160" cy="280" r="8" fill="var(--accent)" opacity="0.8" />
+            </g>
+            {/* Outer nodes */}
+            <g className="net-node n1">
+              <circle cx="80" cy="120" r="32" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <rect x="66" y="110" width="28" height="20" rx="3" fill="none" stroke="var(--accent)" strokeWidth="1.5" opacity="0.6" />
+              <path d="M70 118 L90 118 M70 122 L86 122" stroke="var(--accent)" strokeWidth="1" opacity="0.5" />
+            </g>
+            <g className="net-node n2">
+              <circle cx="260" cy="140" r="28" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <circle cx="260" cy="140" r="10" fill="var(--accent)" opacity="0.4" />
+            </g>
+            <g className="net-node n3">
+              <circle cx="60" cy="320" r="26" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <path d="M48 312 L72 312 M48 320 L68 320 M48 328 L72 328" stroke="var(--accent)" strokeWidth="1.5" opacity="0.5" />
+            </g>
+            <g className="net-node n4">
+              <circle cx="280" cy="340" r="24" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <circle cx="280" cy="340" r="8" fill="var(--accent)" opacity="0.35" />
+            </g>
+            <g className="net-node n5">
+              <circle cx="100" cy="460" r="30" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <rect x="88" y="452" width="24" height="16" rx="2" fill="none" stroke="var(--accent)" strokeWidth="1" opacity="0.5" />
+            </g>
+            <g className="net-node n6">
+              <circle cx="240" cy="480" r="22" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <circle cx="240" cy="480" r="7" fill="var(--accent)" opacity="0.3" />
+            </g>
+          </svg>
+          <svg className="network-right" viewBox="0 0 350 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Central hub node with connections */}
+            <g className="net-group">
+              {/* Hub connections to all other nodes */}
+              <line x1="190" y1="300" x2="270" y2="100" className="net-edge e1" />
+              <line x1="190" y1="300" x2="90" y2="130" className="net-edge e2" />
+              <line x1="190" y1="300" x2="290" y2="340" className="net-edge e3" />
+              <line x1="190" y1="300" x2="70" y2="320" className="net-edge e4" />
+              <line x1="190" y1="300" x2="250" y2="480" className="net-edge e5" />
+              <line x1="190" y1="300" x2="110" y2="460" className="net-edge e6" />
+              {/* Cross connections between outer nodes */}
+              <line x1="270" y1="100" x2="90" y2="130" className="net-edge e2" />
+              <line x1="290" y1="340" x2="250" y2="480" className="net-edge e4" />
+              <line x1="70" y1="320" x2="110" y2="460" className="net-edge e5" />
+              <line x1="270" y1="100" x2="290" y2="340" className="net-edge e3" />
+              <line x1="90" y1="130" x2="70" y2="320" className="net-edge e4" />
+            </g>
+            {/* Central hub - largest node */}
+            <g className="net-node hub">
+              <circle cx="190" cy="300" r="40" fill="var(--paper)" stroke="var(--accent)" strokeWidth="2.5" />
+              <circle cx="190" cy="300" r="16" fill="var(--accent)" opacity="0.5" />
+              <circle cx="190" cy="300" r="6" fill="var(--accent)" opacity="0.8" />
+            </g>
+            {/* Outer nodes */}
+            <g className="net-node n1">
+              <circle cx="270" cy="100" r="30" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <circle cx="270" cy="100" r="12" fill="var(--accent)" opacity="0.4" />
+            </g>
+            <g className="net-node n2">
+              <circle cx="90" cy="130" r="34" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <rect x="76" y="120" width="28" height="20" rx="3" fill="none" stroke="var(--accent)" strokeWidth="1.5" opacity="0.5" />
+              <path d="M80 128 L100 128 M80 132 L96 132" stroke="var(--accent)" strokeWidth="1" opacity="0.4" />
+            </g>
+            <g className="net-node n3">
+              <circle cx="290" cy="340" r="26" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <circle cx="290" cy="340" r="9" fill="var(--accent)" opacity="0.35" />
+            </g>
+            <g className="net-node n4">
+              <circle cx="70" cy="320" r="28" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <path d="M58 312 L82 312 M58 320 L78 320 M58 328 L82 328" stroke="var(--accent)" strokeWidth="1.5" opacity="0.45" />
+            </g>
+            <g className="net-node n5">
+              <circle cx="250" cy="480" r="24" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <rect x="238" y="472" width="24" height="16" rx="2" fill="none" stroke="var(--accent)" strokeWidth="1" opacity="0.4" />
+            </g>
+            <g className="net-node n6">
+              <circle cx="110" cy="460" r="28" fill="var(--paper)" stroke="var(--accent)" strokeWidth="1.5" />
+              <circle cx="110" cy="460" r="10" fill="var(--accent)" opacity="0.3" />
+            </g>
+          </svg>
         </div>
       </section>
 
@@ -154,22 +262,99 @@ export default function LandingPage() {
       {/* ═══ Stats ═══ */}
       <div className="stats-bar">
         <div className="stat-item reveal">
+          <div className="stat-icon">
+            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+          </div>
           <div className="stat-num">15+</div>
           <div className="stat-label">integrations</div>
         </div>
         <div className="stat-item reveal reveal-delay-1">
+          <div className="stat-icon">
+            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </div>
           <div className="stat-num">100%</div>
           <div className="stat-label">knowledge retention</div>
         </div>
         <div className="stat-item reveal reveal-delay-2">
+          <div className="stat-icon">
+            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+              <circle cx={11} cy={11} r={8} />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+          </div>
           <div className="stat-num">0.97</div>
           <div className="stat-label">search accuracy</div>
         </div>
         <div className="stat-item reveal reveal-delay-3">
+          <div className="stat-icon">
+            <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+            </svg>
+          </div>
           <div className="stat-num">4</div>
           <div className="stat-label">ai co-researcher tools</div>
         </div>
       </div>
+
+      {/* ═══ How It Works ═══ */}
+      <section className="how-it-works" id="how-it-works">
+        <div className="section-hdr reveal">
+          <span className="section-tag">[ how it works ]</span>
+          <h2 className="section-h2">get started in minutes, not weeks.</h2>
+          <p className="section-p">three simple steps to preserve your organization&apos;s knowledge forever.</p>
+        </div>
+        <div className="steps-container">
+          <div className="step-card reveal">
+            <div className="step-number">01</div>
+            <div className="step-icon">
+              <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <h3 className="step-title">connect your tools</h3>
+            <p className="step-desc">link gmail, slack, drive, notion, github, and more. one-click oauth, no complex setup required.</p>
+          </div>
+          <div className="step-connector reveal reveal-delay-1">
+            <svg width={48} height={24} viewBox="0 0 48 24" fill="none">
+              <path d="M0 12h40M40 12l-8-8M40 12l-8 8" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="step-card reveal reveal-delay-1">
+            <div className="step-number">02</div>
+            <div className="step-icon">
+              <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+                <circle cx={12} cy={12} r={10} />
+                <path d="M12 6v6l4 2" />
+              </svg>
+            </div>
+            <h3 className="step-title">ai indexes everything</h3>
+            <p className="step-desc">our ai automatically classifies, organizes, and indexes all your content. sit back while we do the work.</p>
+          </div>
+          <div className="step-connector reveal reveal-delay-2">
+            <svg width={48} height={24} viewBox="0 0 48 24" fill="none">
+              <path d="M0 12h40M40 12l-8-8M40 12l-8 8" stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="step-card reveal reveal-delay-2">
+            <div className="step-number">03</div>
+            <div className="step-icon">
+              <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </div>
+            <h3 className="step-title">ask anything</h3>
+            <p className="step-desc">search your entire knowledge base in plain english. get instant answers with source citations.</p>
+          </div>
+        </div>
+      </section>
 
       {/* ═══ Features ═══ */}
       <section className="section" id="features">
@@ -738,7 +923,13 @@ export default function LandingPage() {
             <div className="footer-wordmark">2nd Brain</div>
           </div>
           <p className="footer-tagline">knowledge transfer + ai research tools for teams.</p>
-          <Link href="/signup" className="btn-footer">get started</Link>
+          <div className="newsletter-signup">
+            <p className="newsletter-label">stay up to date</p>
+            <form className="newsletter-form" onSubmit={(e) => e.preventDefault()}>
+              <input type="email" placeholder="your@email.com" className="newsletter-input" />
+              <button type="submit" className="newsletter-btn">subscribe</button>
+            </form>
+          </div>
         </div>
         <nav className="footer-nav">
           <a href="#features" onClick={(e) => smoothScroll(e, 'features')}>features</a>
