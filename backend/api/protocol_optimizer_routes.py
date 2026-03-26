@@ -160,12 +160,9 @@ def optimize_protocol():
             'Connection': 'keep-alive',
             'X-Accel-Buffering': 'no',
             'Content-Type': 'text/event-stream; charset=utf-8',
-            'Transfer-Encoding': 'chunked',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         }
     )
+    # Let Flask-CORS handle CORS headers instead of manual headers
     response.implicit_sequence_conversion = False
     return response
 

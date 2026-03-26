@@ -1006,6 +1006,33 @@ INVITED_ONLY_REVIEW_JOURNALS = {
     "chemical reviews",
 }
 
+# Journals that DON'T accept editorials/commentaries/letters (research only)
+NO_EDITORIALS_JOURNALS = {
+    "cell", "nature", "science", "cell metabolism", "nature metabolism",
+    "molecular cell", "developmental cell", "cell stem cell", "embo journal",
+    "journal of biological chemistry", "journal of cell biology", "elife",
+    # These high-impact journals have strict formats
+}
+
+# Journals that ACCEPT editorials/commentaries/perspectives
+ACCEPTS_EDITORIALS = {
+    "lancet", "lancet neurology", "lancet oncology", "lancet psychiatry",
+    "jama", "jama neurology", "jama oncology", "jama internal medicine",
+    "new england journal of medicine", "bmj", "annals of internal medicine",
+    "neurology", "brain", "annals of neurology", "stroke",
+    "frontiers in neurology", "frontiers in immunology", "frontiers in oncology",
+    "frontiers in medicine", "frontiers in cell and developmental biology",
+    # Most Frontiers journals accept various formats
+}
+
+# Maximum word count for editorials/commentaries by journal type
+EDITORIAL_WORD_LIMITS = {
+    "jama_family": 1200,  # JAMA viewpoints
+    "lancet_family": 800,  # Lancet correspondence
+    "frontiers": 3000,  # Frontiers perspectives
+    "default": 2000,
+}
+
 # Journals that primarily publish EXPERIMENTAL/PRIMARY research (reviews rare or never)
 PRIMARY_RESEARCH_ONLY_JOURNALS = {
     # High-impact primary research journals
@@ -2027,15 +2054,39 @@ class JournalScorerService:
             '  "field": "one of the fields above",\n'
             '  "confidence": 0.0-1.0,\n'
             '  "core_discipline": "the specific subdiscipline this paper IS about (e.g., bioenergetics, autophagy, neurodegeneration)",\n'
-            '  "paper_type": "experimental|review|meta_analysis|case_report|protocol|computational|theoretical",\n'
+            '  "paper_type": "experimental|review|meta_analysis|case_report|protocol|computational|theoretical|editorial|commentary|letter|perspective",\n'
             '  "contribution_level": "paradigm_shifting|substantial_synthesis|competent_summary|incremental_update",\n'
             '  "tier1_keywords": ["5-8 CORE terms from MIDDLE of text that define what this paper IS fundamentally about"],\n'
             '  "tier2_keywords": ["8-12 SUBSTANTIAL terms the paper discusses in depth — techniques, pathways, molecules"],\n'
             '  "tier3_keywords": ["5-8 CONTEXTUAL terms from INTRO/CONCLUSION mentioned only as motivation — do NOT let these drive journal selection"],\n'
             '  "motivation_keywords": ["terms from first 1-2 sentences — these are CONTEXT, not core"],\n'
             '  "conclusion_keywords": ["terms from last 1-2 sentences — these are FRAMING, not core"],\n'
+            '  "topical_fingerprint": {\n'
+            '    "primary_domain": "the broad field (e.g., neurology, cell biology, biochemistry)",\n'
+            '    "subfield": "specific subfield (e.g., autonomic neurology, mitochondrial biology, autophagy)",\n'
+            '    "clinical_focus": ["list of clinical conditions discussed, if any (e.g., stroke, Parkinson, diabetes)"],\n'
+            '    "methodology": ["methods/techniques used (e.g., Ewing battery, Western blot, meta-analysis, cohort study)"],\n'
+            '    "population": "study population if applicable (e.g., acute stroke patients, elderly, mice)"\n'
+            '  },\n'
             '  "reasoning": "one sentence explaining why you classified it this way"\n'
             "}\n\n"
+            "=== PAPER TYPE CLASSIFICATION (CRITICAL) ===\n"
+            "- editorial: Short (<2000 words), no methods/results, opinion piece, invited commentary on field state\n"
+            "- commentary: Brief response to recent paper or debate, typically <1500 words\n"
+            "- letter: Very short (<1000 words), response to published article or brief case report\n"
+            "- perspective: Opinion/viewpoint article, longer than editorial, may propose new frameworks\n"
+            "- review: Comprehensive literature survey (>4000 words), synthesizes existing research, has systematic search\n"
+            "- meta_analysis: Statistical synthesis of multiple studies, has forest plots, PRISMA-style methods\n"
+            "- experimental: Original research with methods, results, and novel data\n"
+            "- case_report: Clinical case(s) with patient data, typically 1-5 patients\n"
+            "- protocol: Describes methodology for future/ongoing study\n"
+            "- computational: In-silico analysis, modeling, simulations\n"
+            "- theoretical: Mathematical models, theoretical frameworks without experimental data\n\n"
+            "IMPORTANT: Word count and structure are key signals:\n"
+            "- <1500 words + no methods = editorial/commentary/letter\n"
+            "- 1500-3000 words + opinion focus = perspective\n"
+            "- >4000 words + literature synthesis = review\n"
+            "- Has methods + results + data = experimental\n\n"
             "=== CONTRIBUTION LEVEL GUIDELINES ===\n"
             "- paradigm_shifting: Proposes fundamentally new framework or paradigm. Rare. Cell/Nature/Science level.\n"
             "- substantial_synthesis: Provides substantial novel synthesis connecting previously separate fields. Good specialty journals.\n"
@@ -3086,6 +3137,35 @@ class JournalScorerService:
                     else:
                         paper_type_filtered.append(j)
 
+                enriched = paper_type_filtered
+
+            # For EDITORIALS/COMMENTARIES/LETTERS: filter journals that don't accept these
+            elif paper_type in ('editorial', 'commentary', 'letter', 'perspective'):
+                paper_type_filtered = []
+                for j in enriched:
+                    name_lower = j["name"].lower()
+
+                    # Check if journal accepts editorials (clinical/general journals usually do)
+                    is_no_editorials = any(no_ed in name_lower for no_ed in NO_EDITORIALS_JOURNALS)
+
+                    # Also reject basic science journals for clinical editorials
+                    is_basic_science = any(
+                        pattern in name_lower
+                        for pattern in ['journal of biological chemistry', 'embo', 'molecular cell',
+                                       'developmental cell', 'cell reports', 'elife']
+                    )
+
+                    if is_no_editorials or is_basic_science:
+                        anti_recommendations.append({
+                            "name": j["name"],
+                            "reason": f"This journal doesn't typically accept unsolicited editorials/commentaries. Target clinical or specialty journals that have viewpoint sections.",
+                            "filter_type": "paper_type_incompatibility",
+                        })
+                        print(f"[Journal] HARD FILTER (no-editorials): '{j['name']}' rejected for editorial/commentary")
+                    else:
+                        paper_type_filtered.append(j)
+
+                print(f"[Journal] After editorial filter: {len(paper_type_filtered)} journals remain")
                 enriched = paper_type_filtered
 
             # ── HARD FILTER 2: Primary Research Only Journals ─────────────────

@@ -4,7 +4,7 @@ import React, { useState, useRef, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { theme, font, fontDisplay, fontMono, tierColors, fieldColors, severityColors } from './theme'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5006'
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -3144,7 +3144,6 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ fontSize: 13, color: url ? '#4338CA' : theme.textPrimary, fontWeight: 500 }}>{j.name}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                {j.reason && <InfoTooltip text={j.reason} />}
                 {url && (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4338CA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
                     <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
@@ -3154,8 +3153,20 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
                 )}
               </div>
             </div>
+            {/* Justification text - visible paragraph explaining why this journal was suggested */}
+            {j.reason && (
+              <p style={{
+                fontSize: 11,
+                color: theme.textMuted,
+                margin: '6px 0 0 0',
+                lineHeight: 1.5,
+                fontStyle: 'normal',
+              }}>
+                {j.reason}
+              </p>
+            )}
             {hasMetrics && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                 {j.h_index !== undefined && j.h_index > 0 && (
                   <MetricPill label="h-index" value={String(j.h_index)} />
                 )}

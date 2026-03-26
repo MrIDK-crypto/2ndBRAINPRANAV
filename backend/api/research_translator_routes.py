@@ -9,8 +9,12 @@ Endpoints under /api/co-researcher:
 import uuid
 import json
 import threading
+import re
+import tempfile
 from queue import Queue, Empty
+from urllib.parse import urlparse
 
+import requests
 from flask import Blueprint, request, jsonify, Response
 
 from co_researcher.parser import parse_document
@@ -18,6 +22,89 @@ from co_researcher.decomposer import extract_context, decompose_layers
 from co_researcher.translator import translate_insight
 from co_researcher.adversarial import run_adversarial
 from co_researcher.chat import build_chat_context, handle_chat_message
+
+
+def fetch_paper_from_url(url: str) -> tuple[bytes, str]:
+    """
+    Fetch a paper from a URL (DOI, arXiv, or direct PDF link).
+    Returns (file_bytes, filename) or raises an exception.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (compatible; 2ndBrain/1.0; +https://use2ndbrain.com)'
+    }
+
+    # Handle DOI URLs - resolve to actual paper URL
+    if 'doi.org' in url:
+        # Try to get PDF from DOI
+        try:
+            resp = requests.get(url, headers=headers, allow_redirects=True, timeout=30)
+            # Check if we got a PDF directly
+            if resp.headers.get('content-type', '').startswith('application/pdf'):
+                doi_part = url.split('doi.org/')[-1].replace('/', '_')
+                return resp.content, f"doi_{doi_part}.pdf"
+            # Otherwise try unpaywall or direct publisher
+            doi = url.split('doi.org/')[-1]
+            unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email=support@use2ndbrain.com"
+            unpaywall_resp = requests.get(unpaywall_url, timeout=15)
+            if unpaywall_resp.ok:
+                data = unpaywall_resp.json()
+                if data.get('best_oa_location', {}).get('url_for_pdf'):
+                    pdf_url = data['best_oa_location']['url_for_pdf']
+                    pdf_resp = requests.get(pdf_url, headers=headers, timeout=60)
+                    if pdf_resp.ok:
+                        return pdf_resp.content, f"doi_{doi.replace('/', '_')}.pdf"
+        except Exception as e:
+            print(f"[ResearchTranslator] DOI fetch failed: {e}")
+
+    # Handle arXiv URLs
+    if 'arxiv.org' in url:
+        # Extract arXiv ID
+        arxiv_match = re.search(r'(\d{4}\.\d{4,5})', url)
+        if arxiv_match:
+            arxiv_id = arxiv_match.group(1)
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+            resp = requests.get(pdf_url, headers=headers, timeout=60)
+            if resp.ok:
+                return resp.content, f"arxiv_{arxiv_id}.pdf"
+
+    # Handle PubMed URLs - try to get PMC PDF
+    if 'pubmed' in url or 'ncbi.nlm.nih.gov' in url:
+        # Try to extract PMID
+        pmid_match = re.search(r'(\d{7,8})', url)
+        if pmid_match:
+            pmid = pmid_match.group(1)
+            # Try PMC first
+            pmc_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/pmid/{pmid}/pdf/"
+            try:
+                resp = requests.get(pmc_url, headers=headers, allow_redirects=True, timeout=30)
+                if resp.ok and resp.headers.get('content-type', '').startswith('application/pdf'):
+                    return resp.content, f"pubmed_{pmid}.pdf"
+            except Exception:
+                pass
+
+    # Direct PDF URL
+    if url.endswith('.pdf') or 'pdf' in url.lower():
+        resp = requests.get(url, headers=headers, timeout=60)
+        if resp.ok:
+            # Extract filename from URL
+            parsed = urlparse(url)
+            filename = parsed.path.split('/')[-1] or 'paper.pdf'
+            if not filename.endswith('.pdf'):
+                filename += '.pdf'
+            return resp.content, filename
+
+    # Generic URL - try to fetch and see if it's a PDF
+    resp = requests.get(url, headers=headers, allow_redirects=True, timeout=30)
+    if resp.ok:
+        content_type = resp.headers.get('content-type', '')
+        if 'pdf' in content_type:
+            parsed = urlparse(url)
+            filename = parsed.path.split('/')[-1] or 'paper.pdf'
+            if not filename.endswith('.pdf'):
+                filename += '.pdf'
+            return resp.content, filename
+
+    raise ValueError(f"Could not fetch paper from URL: {url}")
 
 research_translator_bp = Blueprint(
     'research_translator', __name__, url_prefix='/api/co-researcher'
@@ -47,7 +134,15 @@ def _run_pipeline(session_id: str):
             "stage": "target", "progress": 5,
             "message": "Parsing your research document..."
         })
-        target_text = parse_document(session["target_bytes"], session["target_name"])
+
+        # Handle text description vs file upload
+        if session.get("target_is_text"):
+            # Text description - use directly
+            target_text = session["target_bytes"].decode('utf-8') if isinstance(session["target_bytes"], bytes) else session["target_bytes"]
+        else:
+            # File upload - parse the document
+            target_text = parse_document(session["target_bytes"], session["target_name"])
+
         session["target_text"] = target_text
 
         _emit_event(session_id, "parsing_status", {
@@ -257,32 +352,71 @@ def _run_pipeline(session_id: str):
 
 @research_translator_bp.route('/analyze', methods=['POST'])
 def rt_analyze():
-    if 'my_research' not in request.files:
-        return jsonify({"error": "'my_research' file is required (PDF or DOCX)"}), 400
+    # Check for either file upload OR text description
+    research_description = request.form.get('research_description', '').strip()
+    has_file = 'my_research' in request.files and request.files['my_research'].filename
+
+    if not has_file and not research_description:
+        return jsonify({"error": "Please upload a research file (PDF/DOCX) or provide a research description"}), 400
 
     paper_files = request.files.getlist('papers')
-    if not paper_files or len(paper_files) < 1:
-        return jsonify({"error": "At least one source paper is required"}), 400
-    if len(paper_files) > 5:
+    paper_urls_json = request.form.get('paper_urls', '[]')
+
+    try:
+        paper_urls = json.loads(paper_urls_json) if paper_urls_json else []
+    except json.JSONDecodeError:
+        paper_urls = []
+
+    # Filter out empty file entries (happens when no files selected)
+    paper_files = [pf for pf in paper_files if pf.filename]
+
+    total_papers = len(paper_files) + len(paper_urls)
+    if total_papers < 1:
+        return jsonify({"error": "At least one source paper is required (upload files or provide URLs)"}), 400
+    if total_papers > 5:
         return jsonify({"error": "Maximum 5 source papers allowed"}), 400
 
-    target_file = request.files['my_research']
     allowed_exts = ('.pdf', '.docx', '.doc')
 
-    if not target_file.filename.lower().endswith(allowed_exts):
-        return jsonify({"error": "Your research must be a PDF or DOCX file"}), 400
+    # Process target research (either file or text)
+    target_bytes = None
+    target_name = "research_description.txt"
+
+    if has_file:
+        target_file = request.files['my_research']
+        if not target_file.filename.lower().endswith(allowed_exts):
+            return jsonify({"error": "Your research must be a PDF or DOCX file"}), 400
+        target_bytes = target_file.read()
+        target_name = target_file.filename
+    else:
+        # Use text description - encode as bytes for consistent handling
+        target_bytes = research_description.encode('utf-8')
+        target_name = "research_description.txt"
 
     papers = []
+
+    # Process uploaded files
     for pf in paper_files:
         if not pf.filename.lower().endswith(allowed_exts):
             return jsonify({"error": f"'{pf.filename}' must be PDF or DOCX"}), 400
         papers.append({"bytes": pf.read(), "name": pf.filename})
 
+    # Process paper URLs - fetch them
+    for url in paper_urls:
+        try:
+            file_bytes, filename = fetch_paper_from_url(url)
+            papers.append({"bytes": file_bytes, "name": filename})
+            print(f"[ResearchTranslator] Fetched paper from URL: {filename}")
+        except Exception as e:
+            print(f"[ResearchTranslator] Failed to fetch URL {url}: {e}")
+            return jsonify({"error": f"Could not fetch paper from URL: {url}. Please try uploading the PDF directly."}), 400
+
     session_id = str(uuid.uuid4())
     _rt_sessions[session_id] = {
         "events": Queue(),
-        "target_bytes": target_file.read(),
-        "target_name": target_file.filename,
+        "target_bytes": target_bytes,
+        "target_name": target_name,
+        "target_is_text": not has_file,
         "papers": papers,
         "target_text": "",
         "source_texts": [],

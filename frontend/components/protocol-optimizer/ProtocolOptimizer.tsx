@@ -370,6 +370,7 @@ export default function ProtocolOptimizer() {
       const response = await fetch(`${API_URL}/api/protocol/optimize`, {
         method: 'POST',
         body: formData,
+        credentials: 'include',
       })
 
       if (!response.ok || !response.body) {

@@ -1,435 +1,387 @@
 """
-Competitor Finder Service
-Searches OpenAlex, arXiv, and NIH Reporter to find competing labs,
-recent preprints, and active grants for a research paper's topic.
-Yields SSE events for each step.
+Competitor Finder Service - "Find My Competitors"
+Finds labs, researchers, and preprints working on similar problems.
 """
 
-import json
 import re
-import traceback
-import time
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
-from typing import Generator
-
+import json
 import requests
+from typing import Dict, List, Optional, Generator
+from collections import defaultdict
+from datetime import datetime, timedelta
 
+from services.openalex_search_service import OpenAlexSearchService
 from services.openai_client import get_openai_client
 
 
+def _sse(event: str, data: dict) -> str:
+    """Format SSE event."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
 class CompetitorFinderService:
-    """Finds competitors for a research paper across OpenAlex, arXiv, and NIH Reporter."""
+    """Find competing labs, researchers, and recent work in user's research area."""
+
+    ARXIV_API = "http://export.arxiv.org/api/query"
+    NIH_REPORTER_API = "https://api.reporter.nih.gov/v2/projects/search"
 
     def __init__(self):
+        self.openalex = OpenAlexSearchService()
         self.openai = get_openai_client()
+        self.session = requests.Session()
 
-    # ── Public entry point ────────────────────────────────────────────────
-
-    def find_competitors(
-        self,
-        paper_text: str,
-        field: str = '',
-        keywords: list[str] | None = None,
-    ) -> Generator[str, None, None]:
-        """
-        Main pipeline. Yields SSE event strings for each step:
-          1. Extract topic via GPT
-          2. Search OpenAlex for competing labs
-          3. Search arXiv for recent preprints
-          4. Search NIH Reporter for active grants
-          5. Calculate urgency score
-        """
+    def extract_research_focus(self, text: str) -> Dict:
+        """Extract key research focus from manuscript."""
         try:
-            # ── Step 1: Extract topic ──────────────────────────────────────
-            yield self._sse('progress', {'step': 1, 'message': 'Extracting research topic...', 'percent': 10})
-            topic_info = self._extract_topic(paper_text, field, keywords)
-            yield self._sse('topic_extracted', topic_info)
+            response = self.openai.chat_completion(
+                messages=[{
+                    "role": "system",
+                    "content": """Analyze this research manuscript and extract:
+1. Main research question/hypothesis
+2. Key methodology/approach
+3. Target domain (e.g., "Alzheimer's disease", "RNA sequencing", "climate modeling")
+4. Unique contribution/innovation
+5. Search keywords for finding similar work (5-8 terms)
+6. arXiv categories if applicable (e.g., "cs.LG", "q-bio.GN")
 
-            # ── Step 2: Search OpenAlex ────────────────────────────────────
-            yield self._sse('progress', {'step': 2, 'message': 'Searching OpenAlex for competing labs...', 'percent': 30})
-            labs = self._search_openalex(topic_info)
-            yield self._sse('competing_labs', {'labs': labs})
+Return JSON:
+{
+  "research_question": "...",
+  "methodology": "...",
+  "domain": "...",
+  "innovation": "...",
+  "search_keywords": ["..."],
+  "arxiv_categories": ["..."] or []
+}"""
+                }, {
+                    "role": "user",
+                    "content": text[:15000]
+                }],
+                temperature=0,
+                max_tokens=1000
+            )
 
-            # ── Step 3: Search arXiv ───────────────────────────────────────
-            yield self._sse('progress', {'step': 3, 'message': 'Searching arXiv for recent preprints...', 'percent': 55})
-            preprints = self._search_arxiv(topic_info)
-            yield self._sse('preprints', {'preprints': preprints})
+            content = response.choices[0].message.content.strip()
+            if content.startswith("```"):
+                content = content.split("\n", 1)[1].rsplit("```", 1)[0]
 
-            # ── Step 4: Search NIH Reporter ────────────────────────────────
-            yield self._sse('progress', {'step': 4, 'message': 'Searching NIH Reporter for active grants...', 'percent': 75})
-            grants = self._search_nih(topic_info)
-            yield self._sse('grants', {'grants': grants})
-
-            # ── Step 5: Calculate urgency ──────────────────────────────────
-            yield self._sse('progress', {'step': 5, 'message': 'Calculating competition urgency...', 'percent': 90})
-            urgency = self._calculate_urgency(labs, preprints, grants)
-            yield self._sse('urgency', urgency)
-
-            # ── Done ──────────────────────────────────────────────────────
-            yield self._sse('progress', {'step': 5, 'message': 'Complete!', 'percent': 100})
-            yield self._sse('complete', {
-                'topic': topic_info,
-                'competing_labs': labs,
-                'preprints': preprints,
-                'grants': grants,
-                'urgency': urgency,
-            })
-
+            return json.loads(content)
         except Exception as e:
-            print(f"[CompetitorFinder] Pipeline error: {e}", flush=True)
-            traceback.print_exc()
-            yield self._sse('error', {'error': str(e)})
+            print(f"[CompetitorFinder] Focus extraction failed: {e}")
+            return {"domain": "unknown", "search_keywords": [], "arxiv_categories": []}
 
-    # ── SSE helper ────────────────────────────────────────────────────────
+    def search_openalex_competitors(self, keywords: List[str], domain: str,
+                                     from_year: int = 2023) -> List[Dict]:
+        """Search OpenAlex for recent papers and group by institution."""
 
-    @staticmethod
-    def _sse(event: str, data: dict) -> str:
-        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+        all_papers = []
 
-    # ── Step 1: Extract topic via GPT ──────────────────────────────────────
+        # Search by domain + keywords
+        for kw in keywords[:5]:
+            query = f"{domain} {kw}"
+            results = self.openalex.search_works(
+                query=query,
+                max_results=15,
+                from_year=from_year
+            )
+            all_papers.extend(results)
 
-    def _extract_topic(self, paper_text: str, field: str, keywords: list[str] | None) -> dict:
-        text_excerpt = paper_text[:10000]
-        kw_str = ', '.join(keywords) if keywords else 'auto-detect'
+        # Group by institution
+        labs = defaultdict(lambda: {"papers": [], "authors": set(), "total_citations": 0})
 
-        prompt = (
-            "You are an expert research analyst. Analyze the following research paper excerpt and "
-            "extract the core research topic for competitor analysis.\n\n"
-            f"Field: {field or 'auto-detect'}\n"
-            f"Keywords provided by user: {kw_str}\n\n"
-            "Return a JSON object with these keys:\n"
-            "- topic: string — concise description of the research topic (1-2 sentences)\n"
-            "- search_queries: list of 3 strings — specific search queries to find competing work\n"
-            "- key_terms: list of strings — 5-8 key technical terms from the paper\n"
-            "- arxiv_categories: list of strings — relevant arXiv category codes (e.g. 'cs.AI', 'q-bio.BM')\n\n"
-            "Return ONLY the JSON object, no markdown fences.\n\n"
-            f"PAPER EXCERPT:\n{text_excerpt}"
-        )
-
-        resp = self.openai.chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=1000,
-        )
-        raw = resp.choices[0].message.content.strip()
-        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
-
-        # Fallback
-        return {
-            "topic": "Research topic extracted from paper",
-            "search_queries": [field or "research"] if field else ["research"],
-            "key_terms": keywords or ["research"],
-            "arxiv_categories": [],
-        }
-
-    # ── Step 2: Search OpenAlex ────────────────────────────────────────────
-
-    def _search_openalex(self, topic_info: dict) -> list[dict]:
-        """Search OpenAlex for competing labs. Deduplicates by institution, keeps highest cited."""
-        queries = topic_info.get('search_queries', [])
-        if not queries:
-            queries = [topic_info.get('topic', 'research')]
-
-        two_years_ago = (datetime.now(timezone.utc) - timedelta(days=730)).strftime('%Y-%m-%d')
-        institution_map: dict[str, dict] = {}  # institution -> best result
-
-        for query in queries[:3]:
-            try:
-                params = {
-                    'search': query,
-                    'filter': f'from_publication_date:{two_years_ago}',
-                    'sort': 'cited_by_count:desc',
-                    'per_page': 15,
-                    'mailto': 'prmogathala@gmail.com',
-                }
-                resp = requests.get('https://api.openalex.org/works', params=params, timeout=15)
-                if resp.status_code != 200:
-                    print(f"[CompetitorFinder] OpenAlex returned {resp.status_code} for query: {query}", flush=True)
-                    continue
-
-                data = resp.json()
-                for work in data.get('results', []):
-                    # Extract institutions and lead author
-                    authorships = work.get('authorships', [])
-                    if not authorships:
-                        continue
-
-                    lead = authorships[0]
-                    author_name = lead.get('author', {}).get('display_name', 'Unknown')
-                    institutions = lead.get('institutions', [])
-                    institution_name = institutions[0].get('display_name', 'Unknown Institution') if institutions else 'Unknown Institution'
-
-                    cited_by = work.get('cited_by_count', 0)
-                    pub_year = work.get('publication_year', 0)
-                    doi = work.get('doi', '')
-                    title = work.get('title', 'Untitled')
-
-                    # Deduplicate by institution, keep highest cited
-                    existing = institution_map.get(institution_name)
-                    if existing is None or cited_by > existing.get('cited_by', 0):
-                        institution_map[institution_name] = {
-                            'institution': institution_name,
-                            'lead_author': author_name,
-                            'paper_title': title,
-                            'year': pub_year,
-                            'cited_by': cited_by,
-                            'doi': doi,
-                        }
-
-                # Rate limit courtesy
-                time.sleep(0.3)
-
-            except Exception as e:
-                print(f"[CompetitorFinder] OpenAlex error for query '{query}': {e}", flush=True)
+        for paper in all_papers:
+            # Skip if no author info
+            if not paper.get('authors'):
                 continue
 
-        # Sort by cited_by descending and return up to 15
-        labs = sorted(institution_map.values(), key=lambda x: x.get('cited_by', 0), reverse=True)
-        return labs[:15]
+            # Get institution from first author
+            # Note: OpenAlex doesn't return institution in basic search, so we use author names
+            first_author = paper['authors'][0] if paper['authors'] else "Unknown"
 
-    # ── Step 3: Search arXiv ──────────────────────────────────────────────
+            # Use author name as proxy for lab identification
+            lab_key = first_author.split()[-1] if first_author else "Unknown"  # Last name
 
-    def _search_arxiv(self, topic_info: dict) -> list[dict]:
-        """Search arXiv API for recent preprints. Flags papers from last 14 days."""
-        queries = topic_info.get('search_queries', [])
-        if not queries:
-            queries = [topic_info.get('topic', 'research')]
+            labs[lab_key]["papers"].append(paper)
+            labs[lab_key]["authors"].update(paper['authors'])
+            labs[lab_key]["total_citations"] += paper.get('cited_by_count', 0)
 
-        # Build arXiv query
-        # Combine queries with OR, and optionally add category filters
-        search_parts = []
-        for q in queries[:3]:
-            # Escape special arXiv query chars
-            clean_q = q.replace('"', '').replace('(', '').replace(')', '')
-            search_parts.append(f'all:"{clean_q}"')
+        # Convert to list and calculate overlap scores
+        competitor_labs = []
+        for lab_name, data in labs.items():
+            if len(data["papers"]) >= 1:
+                competitor_labs.append({
+                    "name": lab_name,
+                    "institution": data["papers"][0].get('journal', 'Unknown'),
+                    "recent_papers": len(data["papers"]),
+                    "total_citations": data["total_citations"],
+                    "key_authors": list(data["authors"])[:5],
+                    "top_papers": sorted(data["papers"],
+                                        key=lambda x: x.get('cited_by_count', 0),
+                                        reverse=True)[:3],
+                    "most_recent_year": max(p.get('year', 0) for p in data["papers"])
+                })
 
-        arxiv_query = ' OR '.join(search_parts)
+        # Sort by number of recent papers (activity level)
+        competitor_labs.sort(key=lambda x: (x['recent_papers'], x['total_citations']), reverse=True)
 
-        # Add category filter if available
-        categories = topic_info.get('arxiv_categories', [])
-        if categories:
-            cat_filter = ' OR '.join(f'cat:{c}' for c in categories[:3])
-            arxiv_query = f'({arxiv_query}) AND ({cat_filter})'
+        return competitor_labs[:10]
+
+    def search_arxiv_preprints(self, keywords: List[str], categories: List[str],
+                                days_back: int = 60) -> List[Dict]:
+        """Search arXiv for recent preprints."""
 
         preprints = []
-        now = datetime.now(timezone.utc)
-        fourteen_days_ago = now - timedelta(days=14)
+        query_terms = ' OR '.join([f'all:{kw}' for kw in keywords[:5]])
 
         try:
             params = {
-                'search_query': arxiv_query,
+                'search_query': query_terms,
                 'start': 0,
                 'max_results': 20,
                 'sortBy': 'submittedDate',
-                'sortOrder': 'descending',
+                'sortOrder': 'descending'
             }
-            resp = requests.get('http://export.arxiv.org/api/query', params=params, timeout=20)
-            if resp.status_code != 200:
-                print(f"[CompetitorFinder] arXiv returned {resp.status_code}", flush=True)
-                return []
 
-            # Parse Atom XML
-            root = ET.fromstring(resp.text)
-            ns = {'atom': 'http://www.w3.org/2005/Atom'}
+            resp = self.session.get(self.ARXIV_API, params=params, timeout=15)
 
-            for entry in root.findall('atom:entry', ns):
-                title_el = entry.find('atom:title', ns)
-                title = title_el.text.strip().replace('\n', ' ') if title_el is not None and title_el.text else 'Untitled'
+            if resp.status_code == 200:
+                # Parse Atom XML response
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(resp.content)
 
-                # Authors
-                authors = []
-                for author_el in entry.findall('atom:author', ns):
-                    name_el = author_el.find('atom:name', ns)
-                    if name_el is not None and name_el.text:
-                        authors.append(name_el.text.strip())
+                ns = {'atom': 'http://www.w3.org/2005/Atom',
+                      'arxiv': 'http://arxiv.org/schemas/atom'}
 
-                # Published date
-                published_el = entry.find('atom:published', ns)
-                published_str = published_el.text.strip() if published_el is not None and published_el.text else ''
-                published_date = None
-                days_ago = None
-                is_recent = False
-                if published_str:
-                    try:
-                        published_date = datetime.fromisoformat(published_str.replace('Z', '+00:00'))
-                        days_ago = (now - published_date).days
-                        is_recent = published_date >= fourteen_days_ago
-                    except (ValueError, TypeError):
-                        pass
+                for entry in root.findall('atom:entry', ns):
+                    title = entry.find('atom:title', ns)
+                    summary = entry.find('atom:summary', ns)
+                    published = entry.find('atom:published', ns)
+                    arxiv_id = entry.find('atom:id', ns)
 
-                # URL
-                url = ''
-                for link_el in entry.findall('atom:link', ns):
-                    if link_el.get('type') == 'text/html' or link_el.get('rel') == 'alternate':
-                        url = link_el.get('href', '')
-                        break
-                if not url:
-                    id_el = entry.find('atom:id', ns)
-                    url = id_el.text.strip() if id_el is not None and id_el.text else ''
+                    authors = []
+                    for author in entry.findall('atom:author', ns):
+                        name = author.find('atom:name', ns)
+                        if name is not None:
+                            authors.append(name.text)
 
-                # Summary
-                summary_el = entry.find('atom:summary', ns)
-                summary = summary_el.text.strip().replace('\n', ' ')[:300] if summary_el is not None and summary_el.text else ''
+                    # Get categories
+                    cats = []
+                    for cat in entry.findall('atom:category', ns):
+                        cats.append(cat.get('term', ''))
 
-                preprints.append({
-                    'title': title,
-                    'authors': authors[:5],
-                    'published': published_str[:10] if published_str else '',
-                    'days_ago': days_ago,
-                    'is_recent': is_recent,
-                    'url': url,
-                    'summary': summary,
-                })
+                    if title is not None:
+                        # Parse date
+                        pub_date = published.text if published is not None else ""
+                        days_ago = 0
+                        if pub_date:
+                            try:
+                                pub_dt = datetime.fromisoformat(pub_date.replace('Z', '+00:00'))
+                                days_ago = (datetime.now(pub_dt.tzinfo) - pub_dt).days
+                            except:
+                                pass
+
+                        preprints.append({
+                            'title': title.text.strip().replace('\n', ' '),
+                            'authors': authors[:5],
+                            'abstract': (summary.text.strip()[:300] + '...') if summary is not None else '',
+                            'arxiv_id': arxiv_id.text.split('/')[-1] if arxiv_id is not None else '',
+                            'url': arxiv_id.text if arxiv_id is not None else '',
+                            'published': pub_date[:10] if pub_date else '',
+                            'days_ago': days_ago,
+                            'categories': cats[:3],
+                            'is_very_recent': days_ago <= 14
+                        })
 
         except Exception as e:
-            print(f"[CompetitorFinder] arXiv error: {e}", flush=True)
-            traceback.print_exc()
+            print(f"[CompetitorFinder] arXiv search failed: {e}")
 
-        return preprints[:20]
+        return preprints[:15]
 
-    # ── Step 4: Search NIH Reporter ────────────────────────────────────────
-
-    def _search_nih(self, topic_info: dict) -> list[dict]:
-        """Search NIH Reporter API for active grants matching the topic."""
-        topic = topic_info.get('topic', '')
-        key_terms = topic_info.get('key_terms', [])
-
-        # Build search text: combine topic and key terms
-        search_text = topic
-        if key_terms:
-            search_text += ' ' + ' '.join(key_terms[:5])
+    def search_nih_grants(self, keywords: List[str], domain: str) -> List[Dict]:
+        """Search NIH Reporter for active grants on similar topics."""
 
         grants = []
+
         try:
+            # Build search query
+            search_text = f"{domain} {' '.join(keywords[:3])}"
+
             payload = {
-                'criteria': {
-                    'advanced_text_search': {
-                        'operator': 'and',
-                        'search_field': 'projecttitle,terms',
-                        'search_text': search_text[:500],
-                    },
-                    'is_active': True,
+                "criteria": {
+                    "use_relevance": True,
+                    "include_active_projects": True,
+                    "exclude_subprojects": True,
+                    "advanced_text_search": {
+                        "operator": "and",
+                        "search_field": "all",
+                        "search_text": search_text
+                    }
                 },
-                'offset': 0,
-                'limit': 15,
-                'sort_field': 'FiscalYear',
-                'sort_order': 'desc',
+                "offset": 0,
+                "limit": 15,
+                "sort_field": "project_start_date",
+                "sort_order": "desc"
             }
 
-            resp = requests.post(
-                'https://api.reporter.nih.gov/v2/projects/search',
+            resp = self.session.post(
+                self.NIH_REPORTER_API,
                 json=payload,
-                timeout=20,
                 headers={'Content-Type': 'application/json'},
+                timeout=15
             )
 
-            if resp.status_code != 200:
-                print(f"[CompetitorFinder] NIH Reporter returned {resp.status_code}", flush=True)
-                return []
-
-            data = resp.json()
-            for project in data.get('results', []):
-                pi_names = []
-                for pi in project.get('principal_investigators', []):
-                    name = pi.get('full_name', '') or f"{pi.get('first_name', '')} {pi.get('last_name', '')}".strip()
-                    if name:
-                        pi_names.append(name)
-
-                org = project.get('organization', {})
-                org_name = org.get('org_name', 'Unknown') if org else 'Unknown'
-
-                award_amount = project.get('award_amount', None)
-                if award_amount is not None:
-                    try:
-                        award_amount = int(award_amount)
-                    except (ValueError, TypeError):
-                        award_amount = None
-
-                grants.append({
-                    'title': project.get('project_title', 'Untitled'),
-                    'pi': ', '.join(pi_names) if pi_names else 'Unknown',
-                    'organization': org_name,
-                    'activity_code': project.get('activity_code', ''),
-                    'award_amount': award_amount,
-                    'fiscal_year': project.get('fiscal_year', None),
-                    'project_num': project.get('project_num', ''),
-                })
+            if resp.status_code == 200:
+                data = resp.json()
+                for project in data.get('results', []):
+                    grants.append({
+                        'title': project.get('project_title', ''),
+                        'pi_name': project.get('contact_pi_name', ''),
+                        'organization': project.get('organization', {}).get('org_name', ''),
+                        'total_cost': project.get('award_amount', 0),
+                        'start_date': project.get('project_start_date', '')[:10] if project.get('project_start_date') else '',
+                        'end_date': project.get('project_end_date', '')[:10] if project.get('project_end_date') else '',
+                        'abstract': (project.get('abstract_text', '') or '')[:300] + '...',
+                        'nih_link': f"https://reporter.nih.gov/project-details/{project.get('application_id', '')}"
+                    })
 
         except Exception as e:
-            print(f"[CompetitorFinder] NIH Reporter error: {e}", flush=True)
-            traceback.print_exc()
+            print(f"[CompetitorFinder] NIH search failed: {e}")
 
-        return grants[:15]
+        return grants
 
-    # ── Step 5: Calculate urgency ─────────────────────────────────────────
+    def calculate_overlap_analysis(self, user_focus: Dict, competitors: List[Dict],
+                                    preprints: List[Dict]) -> Dict:
+        """Analyze overlap and generate actionable insights."""
 
-    def _calculate_urgency(self, labs: list, preprints: list, grants: list) -> dict:
-        """Score competition urgency based on recent activity."""
-        score = 0
-        reasons = []
+        insights = []
+        urgency_level = "low"
 
-        # Recent preprints (<14 days)
-        recent_count = sum(1 for p in preprints if p.get('is_recent'))
-        if recent_count >= 3:
-            score += 40
-            reasons.append(f'{recent_count} preprints in last 14 days')
-        elif recent_count >= 1:
-            score += 20
-            reasons.append(f'{recent_count} preprint(s) in last 14 days')
+        # Check for very recent preprints
+        very_recent = [p for p in preprints if p.get('is_very_recent')]
+        if very_recent:
+            urgency_level = "high"
+            insights.append({
+                "type": "urgent",
+                "message": f"{len(very_recent)} preprint(s) dropped in the last 2 weeks on your topic!",
+                "action": "Review immediately and differentiate your approach"
+            })
 
-        # Competing labs
-        lab_count = len(labs)
-        if lab_count >= 10:
-            score += 30
-            reasons.append(f'{lab_count} competing labs identified')
-        elif lab_count >= 5:
-            score += 15
-            reasons.append(f'{lab_count} competing labs identified')
+        # Check for active competitors
+        active_labs = [c for c in competitors if c.get('recent_papers', 0) >= 3]
+        if len(active_labs) >= 3:
+            if urgency_level != "high":
+                urgency_level = "medium"
+            insights.append({
+                "type": "competition",
+                "message": f"{len(active_labs)} labs are actively publishing in your area",
+                "action": "Focus on your unique contribution to differentiate"
+            })
 
-        # Active grants
-        grant_count = len(grants)
-        if grant_count >= 5:
-            score += 20
-            reasons.append(f'{grant_count} active NIH grants')
-        elif grant_count >= 2:
-            score += 10
-            reasons.append(f'{grant_count} active NIH grants')
-
-        # Total preprints
-        total_preprints = len(preprints)
-        if total_preprints >= 15:
-            score += 10
-            reasons.append(f'{total_preprints} total preprints found')
-
-        # Determine level
-        if score >= 60:
-            level = 'high'
-        elif score >= 30:
-            level = 'medium'
-        else:
-            level = 'low'
+        # Identify top threat
+        if competitors:
+            top_competitor = competitors[0]
+            insights.append({
+                "type": "top_threat",
+                "message": f"{top_competitor['name']} lab has {top_competitor['recent_papers']} recent papers",
+                "action": f"Review their work and cite appropriately"
+            })
 
         return {
-            'score': score,
-            'level': level,
-            'reasons': reasons,
-            'recent_preprints': recent_count,
-            'competing_labs': lab_count,
-            'active_grants': grant_count,
-            'total_preprints': total_preprints,
+            "urgency_level": urgency_level,
+            "insights": insights,
+            "total_competitors": len(competitors),
+            "total_preprints": len(preprints),
+            "very_recent_preprints": len(very_recent)
         }
 
+    def analyze_stream(self, manuscript_text: str) -> Generator[str, None, None]:
+        """Stream competitor analysis results."""
 
-# ── Singleton ─────────────────────────────────────────────────────────────
+        try:
+            # Step 1: Extract research focus
+            yield _sse("progress", {"step": 1, "message": "Analyzing your research focus...", "percent": 10})
 
+            focus = self.extract_research_focus(manuscript_text)
+
+            yield _sse("focus", {
+                "domain": focus.get('domain'),
+                "research_question": focus.get('research_question', '')[:200],
+                "methodology": focus.get('methodology', '')[:150],
+                "innovation": focus.get('innovation', '')[:150],
+                "keywords": focus.get('search_keywords', [])[:8]
+            })
+
+            # Step 2: Search OpenAlex for competing labs
+            yield _sse("progress", {"step": 2, "message": "Finding competing labs...", "percent": 30})
+
+            competitors = self.search_openalex_competitors(
+                keywords=focus.get('search_keywords', []),
+                domain=focus.get('domain', '')
+            )
+
+            yield _sse("competitors_found", {
+                "count": len(competitors),
+                "labs": competitors[:5]
+            })
+
+            # Step 3: Search arXiv for recent preprints
+            yield _sse("progress", {"step": 3, "message": "Scanning recent preprints...", "percent": 55})
+
+            preprints = self.search_arxiv_preprints(
+                keywords=focus.get('search_keywords', []),
+                categories=focus.get('arxiv_categories', [])
+            )
+
+            very_recent = [p for p in preprints if p.get('is_very_recent')]
+
+            yield _sse("preprints_found", {
+                "count": len(preprints),
+                "very_recent": len(very_recent),
+                "alert": len(very_recent) > 0
+            })
+
+            # Step 4: Search NIH for active grants
+            yield _sse("progress", {"step": 4, "message": "Checking active NIH grants...", "percent": 75})
+
+            grants = self.search_nih_grants(
+                keywords=focus.get('search_keywords', []),
+                domain=focus.get('domain', '')
+            )
+
+            yield _sse("grants_found", {"count": len(grants)})
+
+            # Step 5: Generate overlap analysis
+            yield _sse("progress", {"step": 5, "message": "Analyzing competition landscape...", "percent": 90})
+
+            analysis = self.calculate_overlap_analysis(focus, competitors, preprints)
+
+            # Final result
+            yield _sse("complete", {
+                "success": True,
+                "domain": focus.get('domain'),
+                "research_question": focus.get('research_question', ''),
+                "urgency_level": analysis['urgency_level'],
+                "insights": analysis['insights'],
+                "competitor_labs": competitors,
+                "recent_preprints": preprints,
+                "active_grants": grants,
+                "summary": {
+                    "total_competitors": len(competitors),
+                    "total_preprints": len(preprints),
+                    "very_recent_preprints": len(very_recent),
+                    "active_grants": len(grants)
+                }
+            })
+
+        except Exception as e:
+            print(f"[CompetitorFinder] Analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+            yield _sse("error", {"message": str(e)})
+
+
+# Singleton
 _service = None
-
 
 def get_competitor_finder_service() -> CompetitorFinderService:
     global _service

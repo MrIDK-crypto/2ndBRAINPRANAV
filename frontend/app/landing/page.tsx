@@ -664,6 +664,116 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ═══ Use Cases ═══ */}
+      <section className="section" id="use-cases">
+        <div className="section-hdr reveal">
+          <span className="section-tag">[ use cases ]</span>
+          <h2 className="section-h2">trusted by research teams.</h2>
+          <p className="section-p">see how different research domains use 2nd brain to preserve knowledge and accelerate discovery.</p>
+        </div>
+        <div className="agent-grid">
+          <div className="agent-card reveal">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <circle cx={100} cy={80} r={30} strokeDasharray="4 4" />
+              <circle cx={100} cy={80} r={15} fill="var(--accent)" stroke="none" opacity={0.2} />
+              <path d="M70 130 L100 150 L130 130" strokeWidth={2} />
+              <path d="M85 140 L100 150 L115 140" strokeWidth={2} stroke="var(--accent)" />
+              <circle cx={70} cy={130} r={8} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
+              <circle cx={130} cy={130} r={8} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
+              <circle cx={100} cy={150} r={8} fill="var(--accent)" />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">biology</span>
+              <h3 className="bento-name">wet lab teams</h3>
+              <p className="bento-desc">capture protocols, experimental notes, and instrument data. when postdocs leave, their knowledge stays searchable for the next generation.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-1">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <rect x={50} y={50} width={100} height={100} rx={4} strokeDasharray="4 4" />
+              <path d="M70 100 L90 80 L110 100 L130 70" strokeWidth={2} stroke="var(--accent)" />
+              <circle cx={90} cy={80} r={4} fill="var(--accent)" />
+              <circle cx={110} cy={100} r={4} fill="var(--accent)" />
+              <circle cx={130} cy={70} r={4} fill="var(--accent)" />
+              <path d="M70 120 L130 120 M70 135 L110 135" strokeWidth={1.5} opacity={0.5} />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">chemistry</span>
+              <h3 className="bento-name">synthesis labs</h3>
+              <p className="bento-desc">index reaction conditions, compound libraries, and analytical results. ai helps find similar past experiments to optimize new syntheses.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-2">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <circle cx={100} cy={100} r={50} strokeDasharray="8 8" />
+              <circle cx={100} cy={100} r={25} fill="var(--accent)" stroke="none" opacity={0.1} />
+              <path d="M100 50 L100 150 M50 100 L150 100" strokeWidth={1.5} opacity={0.3} />
+              <circle cx={100} cy={70} r={6} fill="currentColor" />
+              <circle cx={130} cy={100} r={6} fill="var(--accent)" />
+              <circle cx={100} cy={130} r={6} fill="currentColor" />
+              <circle cx={70} cy={100} r={6} fill="var(--accent)" />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">clinical</span>
+              <h3 className="bento-name">medical research</h3>
+              <p className="bento-desc">consolidate patient data workflows, irb documents, and clinical protocols. ensure compliance while making institutional knowledge accessible.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-3">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <rect x={40} y={60} width={50} height={80} rx={4} />
+              <rect x={110} y={60} width={50} height={80} rx={4} />
+              <path d="M90 100 L110 100" strokeWidth={2} stroke="var(--accent)" />
+              <circle cx={65} cy={90} r={10} fill="var(--accent)" stroke="none" opacity={0.2} />
+              <circle cx={135} cy={90} r={10} fill="var(--accent)" stroke="none" opacity={0.2} />
+              <path d="M55 115 L75 115 M125 115 L145 115" strokeWidth={1.5} opacity={0.5} />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">engineering</span>
+              <h3 className="bento-name">core facilities</h3>
+              <p className="bento-desc">centralize equipment manuals, maintenance logs, and training materials. new staff get up to speed faster with ai-powered search.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ FAQ ═══ */}
+      <section className="section" id="faq">
+        <div className="section-hdr reveal">
+          <span className="section-tag">[ faq ]</span>
+          <h2 className="section-h2">frequently asked questions.</h2>
+        </div>
+        <div className="faq-grid reveal">
+          <details className="faq-item">
+            <summary className="faq-question">how long does it take to get started?</summary>
+            <p className="faq-answer">most teams are up and running within a week. connect your integrations (gmail, slack, drive, etc.), and 2nd brain automatically indexes everything. no complex setup or data migration required.</p>
+          </details>
+          <details className="faq-item">
+            <summary className="faq-question">what happens to my data?</summary>
+            <p className="faq-answer">your data stays yours. we use enterprise-grade encryption, multi-tenant isolation, and never train ai models on your content. you can export or delete everything at any time.</p>
+          </details>
+          <details className="faq-item">
+            <summary className="faq-question">do you offer academic pricing?</summary>
+            <p className="faq-answer">yes. our lab tier at $20/user/month is designed for academic research groups. we also offer volume discounts for departments and custom pricing for university-wide deployments.</p>
+          </details>
+          <details className="faq-item">
+            <summary className="faq-question">how does the ai search work?</summary>
+            <p className="faq-answer">we use retrieval-augmented generation (rag) with cross-encoder reranking. ask questions in plain english, and 2nd brain searches your entire knowledge base, returning answers with source citations and confidence scores.</p>
+          </details>
+          <details className="faq-item">
+            <summary className="faq-question">what integrations do you support?</summary>
+            <p className="faq-answer">gmail, slack, google drive, box, notion, github, outlook, onedrive, zotero, and more. we also support email forwarding for any source and have an api for custom integrations.</p>
+          </details>
+          <details className="faq-item">
+            <summary className="faq-question">can individual labs adopt without university approval?</summary>
+            <p className="faq-answer">yes. our lab tier is designed for individual research groups. no it department involvement required. just sign up, connect your tools, and start preserving knowledge.</p>
+          </details>
+        </div>
+      </section>
+
       {/* ═══ Footer ═══ */}
       <footer className="footer-dark">
         <div className="footer-hero reveal">

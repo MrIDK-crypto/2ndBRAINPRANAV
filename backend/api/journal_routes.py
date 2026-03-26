@@ -16,6 +16,20 @@ journal_bp = Blueprint('journal', __name__, url_prefix='/api/journal')
 ALLOWED_EXTENSIONS = {'.pdf', '.docx'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
+# CORS headers for SSE responses
+SSE_CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+
+def _sse_error_response(error_msg: str) -> Response:
+    """Create an SSE error response with CORS headers."""
+    def error_gen():
+        yield f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n"
+    return Response(error_gen(), mimetype='text/event-stream', headers=SSE_CORS_HEADERS)
+
 
 @journal_bp.route('/analyze', methods=['POST'])
 def analyze_manuscript():
@@ -36,10 +50,8 @@ def analyze_manuscript():
     if research_text:
         # Text-based research description
         word_count = len(research_text.split())
-        if word_count < 100:
-            def error_gen():
-                yield f"event: error\ndata: {json.dumps({'error': f'Please provide at least 100 words describing your research (currently {word_count}).'})}\n\n"
-            return Response(error_gen(), mimetype='text/event-stream')
+        if word_count < 50:
+            return _sse_error_response(f'Please provide at least 50 words describing your research (currently {word_count}).')
 
         def generate():
             try:
@@ -68,6 +80,9 @@ def analyze_manuscript():
                 'X-Accel-Buffering': 'no',
                 'Content-Type': 'text/event-stream; charset=utf-8',
                 'Transfer-Encoding': 'chunked',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
             }
         )
         response.implicit_sequence_conversion = False
@@ -75,9 +90,7 @@ def analyze_manuscript():
 
     # File-based submission
     if 'file' not in request.files:
-        def error_gen():
-            yield f"event: error\ndata: {json.dumps({'error': 'No file or research description provided. Please upload a PDF/DOCX or describe your research.'})}\n\n"
-        return Response(error_gen(), mimetype='text/event-stream')
+        return _sse_error_response('No file or research description provided. Please upload a PDF/DOCX or describe your research.')
 
     file = request.files['file']
     filename = file.filename or ''
@@ -88,21 +101,15 @@ def analyze_manuscript():
         ext = '.' + filename.rsplit('.', 1)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         err_ext = ext or 'unknown'
-        def error_gen():
-            yield f"event: error\ndata: {json.dumps({'error': 'Unsupported file type: ' + err_ext + '. Please upload a PDF or DOCX file.'})}\n\n"
-        return Response(error_gen(), mimetype='text/event-stream')
+        return _sse_error_response(f'Unsupported file type: {err_ext}. Please upload a PDF or DOCX file.')
 
     # Read file bytes
     file_bytes = file.read()
     if len(file_bytes) > MAX_FILE_SIZE:
-        def error_gen():
-            yield f"event: error\ndata: {json.dumps({'error': 'File too large. Maximum size is 50MB.'})}\n\n"
-        return Response(error_gen(), mimetype='text/event-stream')
+        return _sse_error_response('File too large. Maximum size is 50MB.')
 
     if len(file_bytes) == 0:
-        def error_gen():
-            yield f"event: error\ndata: {json.dumps({'error': 'File is empty.'})}\n\n"
-        return Response(error_gen(), mimetype='text/event-stream')
+        return _sse_error_response('File is empty.')
 
     # Upload manuscript to S3 for viewing later
     manuscript_url = None
@@ -145,6 +152,9 @@ def analyze_manuscript():
             'X-Accel-Buffering': 'no',
             'Content-Type': 'text/event-stream; charset=utf-8',
             'Transfer-Encoding': 'chunked',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         }
     )
     response.implicit_sequence_conversion = False

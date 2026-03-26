@@ -41,3 +41,4 @@ tenant_data/
 !next.config.js
 credentials/
 test_azure_quick.py
+backend/slackdump*.zip
