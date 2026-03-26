@@ -167,7 +167,7 @@ export default function LandingPage() {
         </div>
         <div className="stat-item reveal reveal-delay-3">
           <div className="stat-num">4</div>
-          <div className="stat-label">ai research tools</div>
+          <div className="stat-label">ai co-researcher tools</div>
         </div>
       </div>
 
