@@ -71,22 +71,10 @@ export default function LandingPage() {
                   <span className="nav-dropdown-desc">Find the perfect journal for your manuscript</span>
                 </div>
               </Link>
-              <Link href="/citation-analyzer" className="nav-dropdown-item">
-                <div>
-                  <span className="nav-dropdown-label">Citation Analyzer</span>
-                  <span className="nav-dropdown-desc">Map and visualize your citation network</span>
-                </div>
-              </Link>
               <Link href="/protocol-optimizer" className="nav-dropdown-item">
                 <div>
                   <span className="nav-dropdown-label">Protocol Optimizer</span>
                   <span className="nav-dropdown-desc">Optimize protocols with AI suggestions</span>
-                </div>
-              </Link>
-              <Link href="/competitor-finder" className="nav-dropdown-item">
-                <div>
-                  <span className="nav-dropdown-label">Peer Labs</span>
-                  <span className="nav-dropdown-desc">Discover labs working in your research area</span>
                 </div>
               </Link>
               <Link href="/reproducibility-archive" className="nav-dropdown-item">
@@ -178,7 +166,7 @@ export default function LandingPage() {
           <div className="stat-label">search accuracy</div>
         </div>
         <div className="stat-item reveal reveal-delay-3">
-          <div className="stat-num">6</div>
+          <div className="stat-num">4</div>
           <div className="stat-label">ai research tools</div>
         </div>
       </div>
@@ -340,22 +328,6 @@ export default function LandingPage() {
 
           <div className="agent-card reveal reveal-delay-2">
             <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
-              <circle cx={80} cy={80} r={20} fill="var(--accent)" stroke="none" opacity={0.15} />
-              <circle cx={130} cy={70} r={15} />
-              <circle cx={70} cy={130} r={15} />
-              <circle cx={140} cy={140} r={12} />
-              <path d="M95 90 L115 80 M85 105 L75 115 M125 85 L135 125" strokeWidth={1.5} />
-              <circle cx={80} cy={80} r={8} fill="currentColor" />
-            </svg>
-            <div className="agent-card-content">
-              <span className="bento-num">03</span>
-              <h3 className="bento-name">citation analyzer</h3>
-              <p className="bento-desc">visualize citation networks, find missing references, and discover related papers you might have missed.</p>
-            </div>
-          </div>
-
-          <div className="agent-card reveal reveal-delay-3">
-            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
               <rect x={40} y={60} width={120} height={80} rx={4} />
               <path d="M60 100 L90 80 L120 100 L140 90" strokeWidth={2} stroke="var(--accent)" />
               <circle cx={90} cy={80} r={4} fill="var(--accent)" />
@@ -363,36 +335,20 @@ export default function LandingPage() {
               <path d="M55 120 L145 120" strokeDasharray="4 4" opacity={0.5} />
             </svg>
             <div className="agent-card-content">
-              <span className="bento-num">04</span>
+              <span className="bento-num">03</span>
               <h3 className="bento-name">protocol optimizer</h3>
               <p className="bento-desc">upload your protocol, get ai-powered suggestions to improve efficiency based on published literature.</p>
             </div>
           </div>
 
-          <div className="agent-card reveal reveal-delay-4">
-            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
-              <circle cx={100} cy={100} r={50} strokeDasharray="8 8" />
-              <circle cx={100} cy={100} r={25} fill="var(--accent)" stroke="none" opacity={0.1} />
-              <path d="M70 70 L130 130 M130 70 L70 130" strokeWidth={2} opacity={0.3} />
-              <circle cx={70} cy={70} r={12} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
-              <circle cx={130} cy={70} r={12} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
-              <circle cx={100} cy={100} r={8} fill="var(--accent)" />
-            </svg>
-            <div className="agent-card-content">
-              <span className="bento-num">05</span>
-              <h3 className="bento-name">peer labs</h3>
-              <p className="bento-desc">discover labs working in your research area. find potential collaborators, see their publications, and identify funding opportunities.</p>
-            </div>
-          </div>
-
-          <div className="agent-card reveal reveal-delay-5">
+          <div className="agent-card reveal reveal-delay-3">
             <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
               <rect x={50} y={50} width={100} height={100} rx={4} />
               <path d="M70 85 L85 100 L130 70" strokeWidth={3} stroke="var(--accent)" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M70 120 L130 120 M70 135 L110 135" strokeWidth={1.5} opacity={0.5} />
             </svg>
             <div className="agent-card-content">
-              <span className="bento-num">06</span>
+              <span className="bento-num">04</span>
               <h3 className="bento-name">reproducibility archive</h3>
               <p className="bento-desc">document and share experiment outcomes — including negative results — to advance open science.</p>
             </div>
