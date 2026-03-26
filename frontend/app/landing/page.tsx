@@ -599,17 +599,17 @@ export default function LandingPage() {
                 <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
                   <path d="M12 5v14" /><path d="M5 12h14" />
                 </svg>
-                <span className="label">starter</span>
+                <span className="label">lab</span>
               </div>
               <div className="pricing-price">
-                <span className="price-amt">$29</span><span className="price-per">/user/mo</span>
+                <span className="price-amt">$20</span><span className="price-per">/user/mo</span>
               </div>
-              <div className="pricing-desc">for small teams getting started.</div>
+              <div className="pricing-desc">for individual research labs.</div>
               <ul className="pricing-list">
                 <li>up to 10 users</li>
                 <li>all 15+ integrations</li>
                 <li>ai-powered search &amp; classification</li>
-                <li>automatic indexing</li>
+                <li>co-researcher &amp; research tools</li>
                 <li>email support</li>
               </ul>
               <Link href="/signup" className="btn-ghost btn-full">get started</Link>
@@ -620,22 +620,22 @@ export default function LandingPage() {
                 <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeLinecap="round">
                   <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
                 </svg>
-                <span className="label">growth</span>
+                <span className="label">department</span>
                 <div className="pricing-tag">most popular</div>
               </div>
               <div className="pricing-price">
-                <span className="price-amt">$79</span><span className="price-per">/user/mo</span>
+                <span className="price-amt">$99</span><span className="price-per">/user/mo</span>
               </div>
-              <div className="pricing-desc">for growing organizations.</div>
+              <div className="pricing-desc">for departments and research groups.</div>
               <ul className="pricing-list">
                 <li>up to 50 users</li>
-                <li>everything in starter</li>
+                <li>everything in lab</li>
                 <li>priority sync &amp; indexing</li>
                 <li>grant monitoring &amp; alerts</li>
                 <li>advanced analytics dashboard</li>
                 <li>priority support</li>
               </ul>
-              <Link href="/signup" className="btn-solid btn-accent btn-full">get growth</Link>
+              <Link href="/signup" className="btn-solid btn-accent btn-full">get department</Link>
             </div>
 
             <div className="pricing-card reveal reveal-delay-2">
@@ -648,10 +648,10 @@ export default function LandingPage() {
               <div className="pricing-price">
                 <span className="price-amt">custom</span>
               </div>
-              <div className="pricing-desc">for enterprises with complex needs.</div>
+              <div className="pricing-desc">for institutions and universities.</div>
               <ul className="pricing-list">
                 <li>unlimited users</li>
-                <li>everything in growth</li>
+                <li>everything in department</li>
                 <li>dedicated success manager</li>
                 <li>custom integrations &amp; connectors</li>
                 <li>on-premise or private cloud</li>
