@@ -49,32 +49,50 @@ export default function LandingPage() {
           <span className="nav-logo-text">2nd Brain</span>
         </Link>
         <div className="nav-links">
-          <a href="#features" onClick={(e) => smoothScroll(e, 'features')}>features</a>
+          <a href="#features" onClick={(e) => smoothScroll(e, 'features')}>knowledge base</a>
+          <a href="#research-tools" onClick={(e) => smoothScroll(e, 'research-tools')}>research tools</a>
           <a href="#integrations" onClick={(e) => smoothScroll(e, 'integrations')}>integrations</a>
-          <Link href="/product">product</Link>
           <a href="#pricing" onClick={(e) => smoothScroll(e, 'pricing')}>pricing</a>
           <div className="nav-dropdown">
             <button className="nav-dropdown-trigger">
-              other domains
+              research tools
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             <div className="nav-dropdown-menu">
+              <Link href="/co-work" className="nav-dropdown-item">
+                <div>
+                  <span className="nav-dropdown-label">Co-Researcher</span>
+                  <span className="nav-dropdown-desc">AI assistant for deep research using your knowledge base</span>
+                </div>
+              </Link>
               <Link href="/high-impact-journal" className="nav-dropdown-item">
                 <div>
-                  <span className="nav-dropdown-label">High Impact Journals</span>
-                  <span className="nav-dropdown-desc">AI-powered manuscript scoring & journal matching</span>
+                  <span className="nav-dropdown-label">Journal Finder</span>
+                  <span className="nav-dropdown-desc">Find the perfect journal for your manuscript</span>
+                </div>
+              </Link>
+              <Link href="/citation-analyzer" className="nav-dropdown-item">
+                <div>
+                  <span className="nav-dropdown-label">Citation Analyzer</span>
+                  <span className="nav-dropdown-desc">Map and visualize your citation network</span>
+                </div>
+              </Link>
+              <Link href="/protocol-optimizer" className="nav-dropdown-item">
+                <div>
+                  <span className="nav-dropdown-label">Protocol Optimizer</span>
+                  <span className="nav-dropdown-desc">Optimize protocols with AI suggestions</span>
+                </div>
+              </Link>
+              <Link href="/competitor-finder" className="nav-dropdown-item">
+                <div>
+                  <span className="nav-dropdown-label">Competitor Intelligence</span>
+                  <span className="nav-dropdown-desc">Track competitor publications and grants</span>
                 </div>
               </Link>
               <Link href="/reproducibility-archive" className="nav-dropdown-item">
                 <div>
                   <span className="nav-dropdown-label">Reproducibility Archive</span>
-                  <span className="nav-dropdown-desc">Track and verify experimental reproducibility</span>
-                </div>
-              </Link>
-              <Link href="/reproducibility-archive/submit" className="nav-dropdown-item">
-                <div>
-                  <span className="nav-dropdown-label">Anonymous Failed Experiments</span>
-                  <span className="nav-dropdown-desc">Share negative results anonymously to advance science</span>
+                  <span className="nav-dropdown-desc">Share and verify experimental reproducibility</span>
                 </div>
               </Link>
             </div>
@@ -92,13 +110,13 @@ export default function LandingPage() {
         <div className="hero-grid" />
 
         <div className="hero-content reveal">
-          <span className="hero-tag">ai-powered knowledge transfer</span>
+          <span className="hero-tag">the knowledge transfer platform</span>
           <h1 className="hero-h1">
-            never lose<br />
-            organizational <em>knowledge</em>
+            your organization&apos;s<br />
+            <em>second brain</em>
           </h1>
           <p className="hero-p">
-            capture emails, documents, and messages from every team. make it all searchable with ai. never lose critical knowledge again.
+            when people leave, knowledge stays. capture everything — emails, slack, documents — make it instantly searchable with ai, and transfer critical knowledge to the next generation.
           </p>
           <div className="hero-cta">
             <Link href="/signup" className="btn-solid btn-accent btn-lg">get started free</Link>
@@ -152,25 +170,25 @@ export default function LandingPage() {
           <div className="stat-label">integrations</div>
         </div>
         <div className="stat-item reveal reveal-delay-1">
-          <div className="stat-num">2,847</div>
-          <div className="stat-label">documents indexed</div>
+          <div className="stat-num">100%</div>
+          <div className="stat-label">knowledge retention</div>
         </div>
         <div className="stat-item reveal reveal-delay-2">
           <div className="stat-num">0.97</div>
           <div className="stat-label">search accuracy</div>
         </div>
         <div className="stat-item reveal reveal-delay-3">
-          <div className="stat-num">24/7</div>
-          <div className="stat-label">grant monitoring</div>
+          <div className="stat-num">6</div>
+          <div className="stat-label">ai research tools</div>
         </div>
       </div>
 
       {/* ═══ Features ═══ */}
       <section className="section" id="features">
         <div className="section-hdr reveal">
-          <span className="section-tag">[ features ]</span>
-          <h2 className="section-h2">6 core capabilities. one platform.</h2>
-          <p className="section-p">from ingestion to insight, every step of knowledge management is covered. connect your tools and let ai do the heavy lifting.</p>
+          <span className="section-tag">[ knowledge base ]</span>
+          <h2 className="section-h2">capture everything. lose nothing.</h2>
+          <p className="section-p">connect all your tools, automatically classify and index content, and make your organization&apos;s entire knowledge searchable with ai.</p>
         </div>
         <div className="agent-grid">
           {/* 01 Smart Search — wide */}
@@ -274,6 +292,109 @@ export default function LandingPage() {
               <span className="bento-num">06</span>
               <h3 className="bento-name">multi-tenant</h3>
               <p className="bento-desc">enterprise-grade isolation. each organization gets its own secure data partition, user management, and audit trail. soc 2 ready architecture.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ Research Tools ═══ */}
+      <section className="section" id="research-tools">
+        <div className="section-hdr reveal">
+          <span className="section-tag">[ research tools ]</span>
+          <h2 className="section-h2">ai tools built on your knowledge base.</h2>
+          <p className="section-p">once your knowledge is connected, unlock powerful research tools that use your data to accelerate discovery.</p>
+        </div>
+        <div className="agent-grid">
+          <div className="agent-card agent-card-wide reveal">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <circle cx={100} cy={100} r={40} fill="var(--accent)" stroke="none" opacity={0.1} />
+              <circle cx={100} cy={100} r={20} strokeDasharray="4 4" />
+              <path d="M60 100 L30 100 M140 100 L170 100 M100 60 L100 30 M100 140 L100 170" strokeWidth={1.5} />
+              <circle cx={30} cy={100} r={8} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
+              <circle cx={170} cy={100} r={8} fill="var(--accent)" />
+              <circle cx={100} cy={30} r={8} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
+              <circle cx={100} cy={170} r={8} fill="var(--accent)" />
+              <path d="M75 75 L60 60 M125 75 L140 60 M75 125 L60 140 M125 125 L140 140" strokeWidth={1.5} opacity={0.5} />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">01 <span className="bento-tag">flagship</span></span>
+              <h3 className="bento-name">co-researcher</h3>
+              <p className="bento-desc">your ai research partner. ask complex questions, get answers grounded in your lab&apos;s documents, papers, and institutional knowledge. like having a senior colleague who has read everything.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-1">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <rect x={50} y={40} width={100} height={120} rx={4} />
+              <path d="M70 70 L130 70 M70 90 L130 90 M70 110 L100 110" strokeWidth={2} />
+              <circle cx={140} cy={140} r={25} fill="var(--accent)" stroke="none" opacity={0.15} />
+              <path d="M135 135 L145 145" strokeWidth={3} stroke="var(--accent)" strokeLinecap="round" />
+              <circle cx={130} cy={130} r={12} strokeWidth={2} stroke="var(--accent)" />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">02</span>
+              <h3 className="bento-name">journal finder</h3>
+              <p className="bento-desc">paste your abstract, get ranked journal recommendations with acceptance rates, impact factors, and publication timeline estimates.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-2">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <circle cx={80} cy={80} r={20} fill="var(--accent)" stroke="none" opacity={0.15} />
+              <circle cx={130} cy={70} r={15} />
+              <circle cx={70} cy={130} r={15} />
+              <circle cx={140} cy={140} r={12} />
+              <path d="M95 90 L115 80 M85 105 L75 115 M125 85 L135 125" strokeWidth={1.5} />
+              <circle cx={80} cy={80} r={8} fill="currentColor" />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">03</span>
+              <h3 className="bento-name">citation analyzer</h3>
+              <p className="bento-desc">visualize citation networks, find missing references, and discover related papers you might have missed.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-3">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <rect x={40} y={60} width={120} height={80} rx={4} />
+              <path d="M60 100 L90 80 L120 100 L140 90" strokeWidth={2} stroke="var(--accent)" />
+              <circle cx={90} cy={80} r={4} fill="var(--accent)" />
+              <circle cx={120} cy={100} r={4} fill="var(--accent)" />
+              <path d="M55 120 L145 120" strokeDasharray="4 4" opacity={0.5} />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">04</span>
+              <h3 className="bento-name">protocol optimizer</h3>
+              <p className="bento-desc">upload your protocol, get ai-powered suggestions to improve efficiency based on published literature.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-4">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <circle cx={100} cy={100} r={50} strokeDasharray="8 8" />
+              <circle cx={100} cy={100} r={25} fill="var(--accent)" stroke="none" opacity={0.1} />
+              <path d="M70 70 L130 130 M130 70 L70 130" strokeWidth={2} opacity={0.3} />
+              <circle cx={70} cy={70} r={12} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
+              <circle cx={130} cy={70} r={12} fill="var(--paper)" stroke="currentColor" strokeWidth={2} />
+              <circle cx={100} cy={100} r={8} fill="var(--accent)" />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">05</span>
+              <h3 className="bento-name">competitor intelligence</h3>
+              <p className="bento-desc">track competitor labs, their publications, funding, and research directions. stay ahead of the field.</p>
+            </div>
+          </div>
+
+          <div className="agent-card reveal reveal-delay-5">
+            <svg className="agent-svg" viewBox="0 0 200 200" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <rect x={50} y={50} width={100} height={100} rx={4} />
+              <path d="M70 85 L85 100 L130 70" strokeWidth={3} stroke="var(--accent)" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M70 120 L130 120 M70 135 L110 135" strokeWidth={1.5} opacity={0.5} />
+            </svg>
+            <div className="agent-card-content">
+              <span className="bento-num">06</span>
+              <h3 className="bento-name">reproducibility archive</h3>
+              <p className="bento-desc">document and share experiment outcomes — including negative results — to advance open science.</p>
             </div>
           </div>
         </div>
@@ -550,7 +671,7 @@ export default function LandingPage() {
             <Image src="/owl.png" alt="2nd Brain" width={36} height={36} className="footer-logo-img" />
             <div className="footer-wordmark">2nd Brain</div>
           </div>
-          <p className="footer-tagline">ai-powered knowledge transfer for enterprises.</p>
+          <p className="footer-tagline">knowledge transfer + ai research tools for teams.</p>
           <Link href="/signup" className="btn-footer">get started</Link>
         </div>
         <nav className="footer-nav">
