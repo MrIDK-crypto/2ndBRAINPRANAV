@@ -351,6 +351,834 @@ JOURNAL_TARGETS_BY_TYPE = {
     },
 }
 
+# ── Field-to-OpenAlex Concept Mapping ─────────────────────────────────────────
+# OpenAlex concepts for filtering journal searches by field of study
+# This ensures 80% of journal recommendations come from field-appropriate sources
+FIELD_TO_OPENALEX_CONCEPTS = {
+    "biomedical": {
+        "concepts": ["C71924100", "C86803240", "C126322002"],  # Medicine, Biology, Biochemistry
+        "exclude_concepts": ["C39432304", "C127313418"],  # Environmental Science, Geology
+        "field_keywords": ["clinical", "medical", "disease", "patient", "therapeutic", "cell", "molecular", "protein"],
+    },
+    "biology": {
+        "concepts": ["C86803240", "C104317684", "C55493867"],  # Biology, Cell Biology, Molecular Biology
+        "exclude_concepts": ["C39432304", "C127313418", "C33923547"],  # Environmental Science, Geology, Ecology (when not relevant)
+        "field_keywords": ["cell", "molecular", "gene", "protein", "organism", "biological", "biochemistry", "bioenergetics"],
+    },
+    "chemistry": {
+        "concepts": ["C185592680", "C178790620"],  # Chemistry, Organic Chemistry
+        "exclude_concepts": ["C39432304"],  # Environmental Science
+        "field_keywords": ["chemical", "synthesis", "compound", "reaction", "catalysis", "molecular"],
+    },
+    "physics": {
+        "concepts": ["C121332964", "C62520636"],  # Physics, Condensed Matter Physics
+        "exclude_concepts": [],
+        "field_keywords": ["quantum", "particle", "energy", "wave", "field", "matter"],
+    },
+    "engineering": {
+        "concepts": ["C127413603", "C199360897"],  # Engineering, Electrical Engineering
+        "exclude_concepts": [],
+        "field_keywords": ["design", "system", "control", "optimization", "device"],
+    },
+    "cs_data_science": {
+        "concepts": ["C41008148", "C154945302"],  # Computer Science, AI
+        "exclude_concepts": [],
+        "field_keywords": ["algorithm", "machine learning", "data", "neural", "network", "computation"],
+    },
+    "economics": {
+        "concepts": ["C162324750", "C175444787"],  # Economics, Microeconomics
+        "exclude_concepts": [],
+        "field_keywords": ["market", "price", "economic", "trade", "policy", "growth"],
+    },
+    "psychology": {
+        "concepts": ["C15744967", "C169760540"],  # Psychology, Cognitive Science
+        "exclude_concepts": [],
+        "field_keywords": ["cognitive", "behavior", "mental", "perception", "emotion"],
+    },
+    "political_science": {
+        "concepts": ["C17744445", "C199539241"],  # Political Science, International Relations
+        "exclude_concepts": [],
+        "field_keywords": ["policy", "government", "political", "democracy", "election"],
+    },
+    "sociology": {
+        "concepts": ["C144024400", "C118552586"],  # Sociology, Demography
+        "exclude_concepts": [],
+        "field_keywords": ["social", "society", "community", "culture", "inequality"],
+    },
+    "environmental_science": {
+        "concepts": ["C39432304", "C18903297"],  # Environmental Science, Ecology
+        "exclude_concepts": [],
+        "field_keywords": ["environment", "ecosystem", "climate", "pollution", "conservation"],
+    },
+    "neuroscience": {
+        "concepts": ["C54355233", "C86803240"],  # Neuroscience, Biology
+        "exclude_concepts": ["C39432304"],  # Environmental Science
+        "field_keywords": ["brain", "neuron", "neural", "cognitive", "synaptic", "cortex"],
+    },
+    "materials_science": {
+        "concepts": ["C192562407", "C185592680"],  # Materials Science, Chemistry
+        "exclude_concepts": [],
+        "field_keywords": ["material", "nanoparticle", "polymer", "semiconductor", "alloy"],
+    },
+    "public_health": {
+        "concepts": ["C71924100", "C33923547"],  # Medicine, Epidemiology
+        "exclude_concepts": [],
+        "field_keywords": ["health", "epidemiology", "disease", "prevention", "population"],
+    },
+    "mathematics": {
+        "concepts": ["C33923547", "C134306372"],  # Mathematics, Statistics
+        "exclude_concepts": [],
+        "field_keywords": ["theorem", "proof", "equation", "mathematical", "statistical"],
+    },
+    "law": {
+        "concepts": ["C138885662"],  # Law
+        "exclude_concepts": [],
+        "field_keywords": ["legal", "law", "court", "regulation", "constitutional"],
+    },
+    "education": {
+        "concepts": ["C95457728"],  # Education
+        "exclude_concepts": [],
+        "field_keywords": ["learning", "teaching", "student", "curriculum", "pedagogy"],
+    },
+    "business": {
+        "concepts": ["C144133560", "C162324750"],  # Business, Economics
+        "exclude_concepts": [],
+        "field_keywords": ["management", "strategy", "organization", "market", "corporate"],
+    },
+}
+
+# ── DISCIPLINE-SPECIFIC JOURNAL MAPPINGS ─────────────────────────────────────
+# Maps core research disciplines/subfields to their natural-fit specialty journals.
+# These are journals where researchers in that SPECIFIC discipline publish,
+# NOT journals that just happen to publish papers mentioning the discipline.
+#
+# The key insight: A paper ABOUT mitochondrial bioenergetics should go to
+# Mitochondrion, Autophagy, Free Radical Biology and Medicine — NOT to
+# "Environmental Health Perspectives" just because it mentions cancer applications.
+
+DISCIPLINE_JOURNAL_MAPPINGS = {
+    # ══════════════════════════════════════════════════════════════════════════
+    # DISCIPLINE JOURNAL MAPPINGS
+    # ══════════════════════════════════════════════════════════════════════════
+    # For each discipline, we define:
+    # - core_journals: Specialty journals that are THE natural homes for this topic
+    # - tier_2_journals: Good-fit journals that also publish in this area
+    # - safe_journals: Lower-barrier, discipline-appropriate fallback options
+    # - name_variants: Alternative names for journals (OpenAlex may use different names)
+    # - avoid_keywords: Journal name patterns to EXCLUDE
+    # ══════════════════════════════════════════════════════════════════════════
+    "bioenergetics": {
+        "core_journals": [
+            "Mitochondrion", "Free Radical Biology and Medicine", "Autophagy",
+            "Biochimica et Biophysica Acta - Bioenergetics", "Redox Biology",
+            "Antioxidants and Redox Signaling", "Cell Metabolism",
+            "Journal of Biological Chemistry", "Antioxidants",
+            "Journal of Bioenergetics and Biomembranes"
+        ],
+        "tier_2_journals": [
+            "Cell Death and Differentiation", "Cell Death and Disease",
+            "EMBO Journal", "Molecular Cell", "eLife", "Cell Reports"
+        ],
+        # Safe options: lower-barrier journals that still fit the discipline
+        "safe_journals": [
+            "Cells", "International Journal of Molecular Sciences",
+            "Oxidative Medicine and Cellular Longevity", "Biomolecules",
+            "Antioxidants", "Life"
+        ],
+        # Name variants for matching (OpenAlex may use different names)
+        "name_variants": {
+            "Biochimica et Biophysica Acta - Bioenergetics": ["BBA Bioenergetics", "BBA - Bioenergetics", "Biochimica Biophysica Acta Bioenergetics"],
+            "Free Radical Biology and Medicine": ["Free Radic Biol Med", "FRBM"],
+            "Antioxidants and Redox Signaling": ["Antioxid Redox Signal", "ARS"],
+        },
+        "avoid_keywords": [
+            "environmental", "ecology", "epidemiology", "public health",
+            "oncology", "cancer research", "tumor", "leukemia",
+            "immunology", "immune", "allergy",
+            "pharmacology", "drug discovery", "therapeutics",
+            "neurology", "lancet",
+            "translational medicine", "frontiers in medicine",
+        ],
+    },
+    "mitochondria": {
+        "core_journals": [
+            "Mitochondrion", "Free Radical Biology and Medicine", "Autophagy",
+            "Biochimica et Biophysica Acta - Bioenergetics", "Redox Biology",
+            "Journal of Bioenergetics and Biomembranes", "Cell Metabolism",
+            "Antioxidants and Redox Signaling", "Antioxidants"
+        ],
+        "tier_2_journals": [
+            "Cell Death and Disease", "Journal of Biological Chemistry",
+            "EMBO Journal", "Aging Cell", "Cell Reports", "Molecular Cell"
+        ],
+        "safe_journals": [
+            "Cells", "International Journal of Molecular Sciences",
+            "Oxidative Medicine and Cellular Longevity", "Biomolecules", "Life"
+        ],
+        "name_variants": {
+            "Biochimica et Biophysica Acta - Bioenergetics": ["BBA Bioenergetics", "BBA - Bioenergetics"],
+        },
+        "avoid_keywords": [
+            "environmental", "ecology", "public health",
+            "oncology", "cancer research", "tumor",
+            "immunology", "immune",
+            "pharmacology", "drug discovery",
+            "lancet", "translational medicine", "frontiers in medicine",
+        ],
+    },
+    "autophagy": {
+        "core_journals": [
+            "Autophagy", "Cell Death and Differentiation", "Cell Death and Disease",
+            "EMBO Journal", "Molecular Cell", "Journal of Cell Biology",
+            "Cell Reports", "eLife", "Nature Cell Biology"
+        ],
+        "tier_2_journals": [
+            "Cellular and Molecular Life Sciences",
+            "Journal of Biological Chemistry", "Aging Cell"
+        ],
+        "safe_journals": [
+            "Cells", "International Journal of Molecular Sciences", "Biomolecules"
+        ],
+        "name_variants": {},
+        "avoid_keywords": [
+            "environmental", "ecology",
+            "epidemiology", "public health",
+            "lancet", "translational medicine", "frontiers in medicine",
+        ],
+    },
+    "ferroptosis": {
+        "core_journals": [
+            "Cell Death and Differentiation", "Cell Death and Disease",
+            "Free Radical Biology and Medicine", "Redox Biology",
+            "Antioxidants and Redox Signaling", "Cell Chemical Biology",
+            "Nature Chemical Biology", "Cell Metabolism"
+        ],
+        "tier_2_journals": [
+            "Cell Reports", "eLife", "Journal of Biological Chemistry",
+            "Molecular Cell", "EMBO Journal"
+        ],
+        "avoid_keywords": ["environmental", "ecology"],
+    },
+    "apoptosis": {
+        "core_journals": [
+            "Cell Death and Differentiation", "Cell Death and Disease", "Apoptosis",
+            "Cell", "Molecular Cell", "Nature Cell Biology", "EMBO Journal"
+        ],
+        "tier_2_journals": [
+            "Cell Reports", "Journal of Biological Chemistry", "eLife"
+        ],
+        "avoid_keywords": [],
+    },
+    "cell_signaling": {
+        "core_journals": [
+            "Cell", "Molecular Cell", "Nature Cell Biology", "Cell Reports",
+            "EMBO Journal", "Journal of Cell Biology", "Science Signaling",
+            "Journal of Biological Chemistry", "Cell Communication and Signaling"
+        ],
+        "tier_2_journals": [
+            "Cellular and Molecular Life Sciences", "eLife", "PLOS Biology"
+        ],
+        "avoid_keywords": [],
+    },
+    "oxidative_stress": {
+        "core_journals": [
+            "Free Radical Biology and Medicine", "Redox Biology",
+            "Antioxidants and Redox Signaling", "Oxidative Medicine and Cellular Longevity",
+            "Antioxidants", "Free Radical Research"
+        ],
+        "tier_2_journals": [
+            "Cell Death and Disease", "Journal of Biological Chemistry",
+            "Aging Cell", "Biochimica et Biophysica Acta - Molecular Basis of Disease"
+        ],
+        "avoid_keywords": ["environmental toxicology"],
+    },
+    "metabolism": {
+        "core_journals": [
+            "Cell Metabolism", "Nature Metabolism", "Molecular Metabolism",
+            "Diabetes", "Journal of Clinical Investigation", "Cell Reports",
+            "Molecular Cell", "EMBO Journal"
+        ],
+        "tier_2_journals": [
+            "Diabetologia", "Metabolism", "Journal of Lipid Research",
+            "Biochimica et Biophysica Acta - Molecular Basis of Disease"
+        ],
+        "avoid_keywords": [],
+    },
+    "epigenetics": {
+        "core_journals": [
+            "Nature Genetics", "Molecular Cell", "Genes and Development",
+            "Genome Research", "Cell", "Nature", "Nucleic Acids Research",
+            "Epigenetics and Chromatin", "Genome Biology"
+        ],
+        "tier_2_journals": [
+            "Cell Reports", "eLife", "EMBO Journal", "Nature Communications"
+        ],
+        "avoid_keywords": [],
+    },
+    "proteomics": {
+        "core_journals": [
+            "Molecular and Cellular Proteomics", "Journal of Proteome Research",
+            "Proteomics", "Journal of Proteomics", "Nature Methods",
+            "Analytical Chemistry", "Mass Spectrometry Reviews"
+        ],
+        "tier_2_journals": [
+            "Molecular Cell", "Cell Reports", "EMBO Journal"
+        ],
+        "avoid_keywords": [],
+    },
+    "genomics": {
+        "core_journals": [
+            "Nature Genetics", "Genome Research", "Genome Biology",
+            "Nucleic Acids Research", "Nature Methods", "Cell",
+            "American Journal of Human Genetics"
+        ],
+        "tier_2_journals": [
+            "PLOS Genetics", "Nature Communications", "Genetics"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Neuroscience ──────────────────────────────────────────────────────────
+    "neurodegeneration": {
+        "core_journals": [
+            "Acta Neuropathologica", "Brain", "Annals of Neurology",
+            "Neurobiology of Disease", "Neurobiology of Aging",
+            "Journal of Neuroscience", "Molecular Neurodegeneration",
+            "Alzheimer's and Dementia", "Movement Disorders"
+        ],
+        "tier_2_journals": [
+            "Neurology", "JAMA Neurology", "Lancet Neurology",
+            "Cell Death and Disease", "Autophagy"
+        ],
+        "avoid_keywords": ["environmental", "ecology"],
+    },
+    "synaptic_biology": {
+        "core_journals": [
+            "Neuron", "Nature Neuroscience", "Journal of Neuroscience",
+            "eLife", "Cell Reports", "EMBO Journal", "Current Biology"
+        ],
+        "tier_2_journals": [
+            "Journal of Neurophysiology", "Cerebral Cortex",
+            "Brain Structure and Function"
+        ],
+        "avoid_keywords": [],
+    },
+    "glia": {
+        "core_journals": [
+            "Glia", "Nature Neuroscience", "Journal of Neuroscience",
+            "Neuron", "Brain Behavior and Immunity", "Acta Neuropathologica"
+        ],
+        "tier_2_journals": [
+            "Journal of Neuroinflammation", "Neurobiology of Disease"
+        ],
+        "avoid_keywords": [],
+    },
+    # ── Clinical Neurology ─────────────────────────────────────────────────────
+    "clinical_neurology": {
+        "core_journals": [
+            "Neurology", "JAMA Neurology", "Lancet Neurology", "Brain",
+            "Annals of Neurology", "Journal of Neurology Neurosurgery and Psychiatry",
+            "European Journal of Neurology", "Journal of the Neurological Sciences",
+            "Neurology Clinical Practice", "Frontiers in Neurology"
+        ],
+        "tier_2_journals": [
+            "Journal of Neurology", "Neurological Sciences", "BMC Neurology",
+            "Acta Neurologica Scandinavica", "Clinical Neurology and Neurosurgery"
+        ],
+        "safe_journals": [
+            "Frontiers in Neurology", "Neurology Research", "Neurology International"
+        ],
+        "avoid_keywords": ["cancer", "oncology", "tumor", "hepatology", "liver"],
+    },
+    "autonomic_neurology": {
+        "core_journals": [
+            "Autonomic Neuroscience", "Clinical Autonomic Research",
+            "Neurology", "Brain", "Annals of Neurology", "JAMA Neurology",
+            "Journal of Neurology Neurosurgery and Psychiatry",
+            "Movement Disorders", "Journal of the Neurological Sciences"
+        ],
+        "tier_2_journals": [
+            "European Journal of Neurology", "Frontiers in Neurology",
+            "Parkinsonism and Related Disorders", "Journal of Neurology"
+        ],
+        "safe_journals": [
+            "Frontiers in Neurology", "Neurology Research", "BMC Neurology"
+        ],
+        "avoid_keywords": ["cancer", "oncology", "tumor", "hepatology", "liver", "Chinese medicine"],
+    },
+    "cerebrovascular": {
+        "core_journals": [
+            "Stroke", "Journal of Cerebral Blood Flow and Metabolism",
+            "International Journal of Stroke", "Journal of Stroke",
+            "Lancet Neurology", "Brain", "Annals of Neurology",
+            "Journal of Stroke and Cerebrovascular Diseases", "Neurology"
+        ],
+        "tier_2_journals": [
+            "European Stroke Journal", "Frontiers in Neurology",
+            "Journal of the Neurological Sciences", "Cerebrovascular Diseases"
+        ],
+        "safe_journals": [
+            "Frontiers in Neurology", "BMC Neurology", "Neurology Research"
+        ],
+        "avoid_keywords": ["cancer", "oncology", "tumor", "hepatology", "Chinese medicine"],
+    },
+    "multiple_sclerosis": {
+        "core_journals": [
+            "Multiple Sclerosis Journal", "Lancet Neurology", "Brain",
+            "Annals of Neurology", "JAMA Neurology", "Neurology",
+            "Journal of Neuroimmunology", "Multiple Sclerosis and Related Disorders"
+        ],
+        "tier_2_journals": [
+            "Journal of Neurology Neurosurgery and Psychiatry",
+            "European Journal of Neurology", "Frontiers in Neurology"
+        ],
+        "avoid_keywords": ["cancer", "oncology", "hepatology"],
+    },
+
+    # ── Immunology ────────────────────────────────────────────────────────────
+    "immunology": {
+        "core_journals": [
+            "Immunity", "Nature Immunology", "Journal of Experimental Medicine",
+            "Journal of Immunology", "Cell Host and Microbe", "Mucosal Immunology",
+            "European Journal of Immunology", "Frontiers in Immunology"
+        ],
+        "tier_2_journals": [
+            "Cell Reports", "eLife", "PLOS Pathogens"
+        ],
+        "avoid_keywords": [],
+    },
+    "inflammation": {
+        "core_journals": [
+            "Nature Immunology", "Immunity", "Journal of Clinical Investigation",
+            "Journal of Experimental Medicine", "Cell Host and Microbe",
+            "Inflammation", "Journal of Inflammation"
+        ],
+        "tier_2_journals": [
+            "Frontiers in Immunology", "Journal of Immunology", "Cell Reports"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Cancer Biology ────────────────────────────────────────────────────────
+    "cancer_biology": {
+        "core_journals": [
+            "Cancer Cell", "Nature Cancer", "Cancer Discovery", "Oncogene",
+            "Cancer Research", "Molecular Cancer Research", "Clinical Cancer Research",
+            "Cell", "Nature", "Science"
+        ],
+        "tier_2_journals": [
+            "British Journal of Cancer", "International Journal of Cancer",
+            "Carcinogenesis", "Neoplasia", "Molecular Cancer"
+        ],
+        "avoid_keywords": ["environmental epidemiology", "public health policy"],
+    },
+    "tumor_microenvironment": {
+        "core_journals": [
+            "Cancer Cell", "Cancer Discovery", "Cancer Research",
+            "Cell", "Nature", "Immunity", "Journal of Clinical Investigation"
+        ],
+        "tier_2_journals": [
+            "Molecular Cancer Research", "Clinical Cancer Research",
+            "Journal of Experimental Medicine"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Structural Biology & Biochemistry ─────────────────────────────────────
+    "structural_biology": {
+        "core_journals": [
+            "Nature Structural and Molecular Biology", "Structure",
+            "Journal of Molecular Biology", "eLife", "Nature Communications",
+            "PNAS", "Nucleic Acids Research"
+        ],
+        "tier_2_journals": [
+            "Proteins", "Journal of Structural Biology", "Acta Crystallographica"
+        ],
+        "avoid_keywords": [],
+    },
+    "enzymology": {
+        "core_journals": [
+            "Biochemistry", "Journal of Biological Chemistry",
+            "ACS Catalysis", "Nature Chemical Biology", "Biochemical Journal",
+            "FEBS Journal", "FEBS Letters"
+        ],
+        "tier_2_journals": [
+            "Archives of Biochemistry and Biophysics", "Biochimica et Biophysica Acta"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Microbiology ──────────────────────────────────────────────────────────
+    "microbiology": {
+        "core_journals": [
+            "mBio", "Nature Microbiology", "Cell Host and Microbe",
+            "ISME Journal", "Microbiome", "PLOS Pathogens",
+            "Infection and Immunity", "Applied and Environmental Microbiology"
+        ],
+        "tier_2_journals": [
+            "Microbiology Spectrum", "Journal of Bacteriology",
+            "Frontiers in Microbiology"
+        ],
+        "avoid_keywords": [],
+    },
+    "virology": {
+        "core_journals": [
+            "Cell Host and Microbe", "PLOS Pathogens", "Nature Microbiology",
+            "Journal of Virology", "Viruses", "mBio", "Antiviral Research"
+        ],
+        "tier_2_journals": [
+            "Virology", "Archives of Virology", "Virus Research"
+        ],
+        "avoid_keywords": [],
+    },
+    "microbiome": {
+        "core_journals": [
+            "Microbiome", "Cell Host and Microbe", "Nature Microbiology",
+            "ISME Journal", "Gut Microbes", "mBio"
+        ],
+        "tier_2_journals": [
+            "Applied and Environmental Microbiology", "Frontiers in Microbiology",
+            "FEMS Microbiology Reviews"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Cardiovascular ────────────────────────────────────────────────────────
+    "cardiovascular": {
+        "core_journals": [
+            "Circulation", "Circulation Research", "European Heart Journal",
+            "JACC", "Cardiovascular Research", "Arteriosclerosis Thrombosis and Vascular Biology",
+            "Journal of Clinical Investigation"
+        ],
+        "tier_2_journals": [
+            "Basic Research in Cardiology", "Journal of Molecular and Cellular Cardiology",
+            "Heart Rhythm"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Developmental Biology ─────────────────────────────────────────────────
+    "developmental_biology": {
+        "core_journals": [
+            "Development", "Developmental Cell", "Genes and Development",
+            "eLife", "Nature Cell Biology", "Current Biology", "Cell Reports"
+        ],
+        "tier_2_journals": [
+            "Developmental Biology", "Mechanisms of Development",
+            "Genesis"
+        ],
+        "avoid_keywords": [],
+    },
+    "stem_cells": {
+        "core_journals": [
+            "Cell Stem Cell", "Stem Cell Reports", "Stem Cells",
+            "Cell", "Nature Cell Biology", "Developmental Cell"
+        ],
+        "tier_2_journals": [
+            "Stem Cells and Development", "Cell Proliferation",
+            "Journal of Cell Science"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Plant Biology ─────────────────────────────────────────────────────────
+    "plant_biology": {
+        "core_journals": [
+            "Plant Cell", "Nature Plants", "Plant Physiology",
+            "New Phytologist", "Molecular Plant", "Current Biology",
+            "Plant Journal", "PNAS"
+        ],
+        "tier_2_journals": [
+            "Plant and Cell Physiology", "Journal of Experimental Botany",
+            "Frontiers in Plant Science"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Aging ─────────────────────────────────────────────────────────────────
+    "aging": {
+        "core_journals": [
+            "Aging Cell", "Nature Aging", "Journals of Gerontology",
+            "Ageing Research Reviews", "GeroScience",
+            "Cell Metabolism", "Cell"
+        ],
+        "tier_2_journals": [
+            "Mechanisms of Ageing and Development", "Experimental Gerontology",
+            "Biogerontology"
+        ],
+        "avoid_keywords": [],
+    },
+
+    # ── Drug Discovery ────────────────────────────────────────────────────────
+    "drug_discovery": {
+        "core_journals": [
+            "Nature Reviews Drug Discovery", "Drug Discovery Today",
+            "Journal of Medicinal Chemistry", "ACS Chemical Biology",
+            "Cell Chemical Biology", "European Journal of Medicinal Chemistry"
+        ],
+        "tier_2_journals": [
+            "Bioorganic and Medicinal Chemistry", "Molecular Pharmaceutics",
+            "Journal of Pharmacology and Experimental Therapeutics"
+        ],
+        "avoid_keywords": [],
+    },
+}
+
+# ── TIER 1 CORE DISCIPLINE IDENTIFIERS ───────────────────────────────────────
+# Keywords that strongly indicate the paper's CORE discipline (what the paper IS about)
+# These should drive journal selection above all else
+TIER1_DISCIPLINE_MARKERS = {
+    "bioenergetics": ["bioenergetics", "mitochondrial respiration", "oxidative phosphorylation", "electron transport chain", "ATP synthesis", "proton motive force", "mitochondrial membrane potential", "respiratory chain", "Complex I", "Complex II", "Complex III", "Complex IV", "cytochrome c"],
+    "mitochondria": ["mitochondria", "mitochondrial", "mitophagy", "mitochondrial dynamics", "mitochondrial fission", "mitochondrial fusion", "mitochondrial DNA", "mtDNA", "mitochondrial biogenesis", "PGC-1alpha", "TFAM", "Drp1", "Mfn1", "Mfn2", "OPA1"],
+    "autophagy": ["autophagy", "autophagosome", "LC3", "Atg", "AMPK", "mTOR", "mTORC1", "ULK1", "Beclin-1", "p62", "SQSTM1", "autophagic flux", "macroautophagy", "selective autophagy"],
+    "ferroptosis": ["ferroptosis", "lipid peroxidation", "GPX4", "iron-dependent", "ferrostatin", "liproxstatin", "System Xc-", "glutathione peroxidase 4", "phospholipid hydroperoxide"],
+    "apoptosis": ["apoptosis", "apoptotic", "caspase", "Bcl-2", "Bax", "Bak", "cytochrome c release", "MOMP", "extrinsic apoptosis", "intrinsic apoptosis", "TRAIL", "Fas"],
+    "oxidative_stress": ["oxidative stress", "reactive oxygen species", "ROS", "antioxidant", "superoxide", "hydrogen peroxide", "glutathione", "redox", "Nrf2", "SOD", "catalase", "thioredoxin"],
+    "cell_signaling": ["signal transduction", "kinase", "phosphorylation", "receptor", "MAPK", "ERK", "JNK", "p38", "Akt", "PI3K", "NF-kB", "JAK-STAT", "Wnt", "Notch", "Hedgehog"],
+    "metabolism": ["metabolic", "glycolysis", "fatty acid oxidation", "lipid metabolism", "glucose metabolism", "metabolomics", "TCA cycle", "Krebs cycle", "insulin signaling", "AMPK"],
+    "epigenetics": ["epigenetic", "histone modification", "DNA methylation", "chromatin", "histone acetylation", "histone methylation", "CpG", "DNMT", "HDAC", "HAT", "PRC2", "H3K4me3", "H3K27me3"],
+    "proteomics": ["proteomics", "mass spectrometry", "LC-MS/MS", "protein identification", "phosphoproteomics", "interactome", "protein-protein interaction", "co-immunoprecipitation"],
+    "genomics": ["genomics", "whole genome sequencing", "GWAS", "genome-wide", "RNA-seq", "ChIP-seq", "ATAC-seq", "single-cell RNA-seq", "scRNA-seq", "transcriptomics"],
+    "neurodegeneration": ["neurodegeneration", "neurodegenerative", "Alzheimer", "Parkinson", "ALS", "Huntington", "tau", "amyloid", "alpha-synuclein", "TDP-43", "neuronal death"],
+    "clinical_neurology": ["neurological disorder", "neurological disease", "clinical neurology", "neurological symptoms", "neurological examination", "brain disorder", "nervous system disorder", "dementia", "epilepsy", "migraine", "neuropathy"],
+    "autonomic_neurology": ["autonomic dysfunction", "autonomic nervous system", "autonomic failure", "dysautonomia", "orthostatic hypotension", "heart rate variability", "sympathetic", "parasympathetic", "vagal", "baroreceptor", "sudomotor", "cardiovascular autonomic"],
+    "cerebrovascular": ["stroke", "cerebrovascular", "ischemic stroke", "hemorrhagic stroke", "cerebral ischemia", "brain infarction", "cerebral blood flow", "reperfusion injury", "thrombolysis", "thrombectomy", "transient ischemic attack", "TIA"],
+    "multiple_sclerosis": ["multiple sclerosis", "MS", "demyelination", "demyelinating", "myelin", "oligodendrocyte", "relapsing-remitting", "progressive MS", "neuroimmunology", "EAE", "experimental autoimmune encephalomyelitis"],
+    "immunology": ["immune", "T cell", "B cell", "macrophage", "dendritic cell", "cytokine", "inflammation", "adaptive immunity", "innate immunity", "antigen", "MHC", "TCR"],
+    "cancer_biology": ["cancer", "tumor", "oncogene", "tumor suppressor", "metastasis", "carcinogenesis", "oncogenic", "malignant", "p53", "Ras", "EGFR", "HER2"],
+    "structural_biology": ["crystal structure", "cryo-EM", "NMR structure", "protein structure", "X-ray crystallography", "structural determination", "molecular dynamics"],
+    "microbiology": ["bacterial", "microbial", "pathogen", "infection", "host-pathogen", "biofilm", "antibiotic resistance", "virulence"],
+    "cardiovascular": ["cardiac", "heart", "cardiovascular", "cardiomyocyte", "vascular", "atherosclerosis", "myocardial", "arrhythmia", "hypertension"],
+    "developmental_biology": ["embryonic", "developmental", "morphogenesis", "cell fate", "differentiation", "organogenesis", "gastrulation", "patterning"],
+    "stem_cells": ["stem cell", "pluripotent", "iPSC", "ESC", "self-renewal", "differentiation potential", "stemness", "reprogramming"],
+    "aging": ["aging", "senescence", "lifespan", "longevity", "cellular senescence", "SASP", "telomere", "age-related"],
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 1A & 2B: JOURNAL ACCEPTANCE PROFILES (Paper Type Hard Constraints)
+# ══════════════════════════════════════════════════════════════════════════════
+# These define HARD FILTERS - journals that don't accept a paper type are
+# eliminated BEFORE any scoring begins. This is critical for review papers.
+
+# Journals that ONLY publish invited/commissioned reviews - HARD REJECT for unsolicited reviews
+INVITED_ONLY_REVIEW_JOURNALS = {
+    # Nature Reviews family - overwhelmingly commission reviews
+    "nature reviews cancer",
+    "nature reviews immunology",
+    "nature reviews drug discovery",
+    "nature reviews molecular cell biology",
+    "nature reviews neuroscience",
+    "nature reviews genetics",
+    "nature reviews microbiology",
+    "nature reviews clinical oncology",
+    "nature reviews cardiology",
+    "nature reviews nephrology",
+    "nature reviews gastroenterology & hepatology",
+    "nature reviews endocrinology",
+    "nature reviews rheumatology",
+    "nature reviews urology",
+    "nature reviews disease primers",
+    "nature reviews chemistry",
+    "nature reviews physics",
+    "nature reviews materials",
+    "nature reviews methods primers",
+    # Annual Reviews - all commissioned
+    "annual review of biochemistry",
+    "annual review of cell and developmental biology",
+    "annual review of genetics",
+    "annual review of immunology",
+    "annual review of medicine",
+    "annual review of microbiology",
+    "annual review of neuroscience",
+    "annual review of pathology",
+    "annual review of pharmacology and toxicology",
+    "annual review of physiology",
+    "annual review of plant biology",
+    # Other invite-only review journals
+    "physiological reviews",
+    "pharmacological reviews",
+    "microbiology and molecular biology reviews",
+    "clinical microbiology reviews",
+    "endocrine reviews",
+    "nutrition reviews",
+    "epidemiologic reviews",
+    "psychological review",
+    "chemical reviews",
+}
+
+# Journals that primarily publish EXPERIMENTAL/PRIMARY research (reviews rare or never)
+PRIMARY_RESEARCH_ONLY_JOURNALS = {
+    # High-impact primary research journals
+    "cell",
+    "nature",
+    "science",
+    "nature medicine",
+    "nature genetics",
+    "nature immunology",
+    "nature neuroscience",
+    "nature cell biology",
+    "nature chemical biology",
+    "nature structural & molecular biology",
+    "nature metabolism",
+    "nature microbiology",
+    "nature communications",  # Some reviews but primarily research
+    # Cell Press research journals
+    "molecular cell",
+    "developmental cell",
+    "cell stem cell",
+    "cell host & microbe",
+    "cell metabolism",
+    "cell reports",
+    "cell chemical biology",
+    "current biology",
+    # EMBO journals
+    "embo journal",
+    "embo reports",
+    "embo molecular medicine",
+    # JBC and related
+    "journal of biological chemistry",
+    "journal of cell biology",
+    "journal of experimental medicine",
+    # PNAS
+    "proceedings of the national academy of sciences",
+    "pnas",
+    # eLife
+    "elife",
+    # Science journals
+    "science advances",
+    "science signaling",
+    "science immunology",
+    "science translational medicine",
+}
+
+# Journals that ACCEPT unsolicited reviews
+ACCEPTS_UNSOLICITED_REVIEWS = {
+    # Specialty review journals that accept submissions
+    "autophagy",
+    "cell death and differentiation",
+    "cell death and disease",
+    "free radical biology and medicine",
+    "redox biology",
+    "antioxidants and redox signaling",
+    "biochimica et biophysica acta",
+    "biochimica et biophysica acta - bioenergetics",
+    "biochimica et biophysica acta - molecular cell research",
+    "biochimica et biophysica acta - molecular basis of disease",
+    "mitochondrion",
+    "trends in biochemical sciences",
+    "trends in cell biology",
+    "trends in molecular medicine",
+    "trends in immunology",
+    "trends in neurosciences",
+    "trends in microbiology",
+    "trends in genetics",
+    "current opinion in cell biology",
+    "current opinion in chemical biology",
+    "current opinion in genetics & development",
+    "current opinion in immunology",
+    "current opinion in microbiology",
+    "current opinion in neurobiology",
+    "seminars in cell & developmental biology",
+    "seminars in cancer biology",
+    "seminars in immunology",
+    "progress in neurobiology",
+    "progress in lipid research",
+    "ageing research reviews",
+    "neuroscience and biobehavioral reviews",
+    "molecular aspects of medicine",
+    "frontiers in immunology",
+    "frontiers in cell and developmental biology",
+    "frontiers in molecular biosciences",
+    "frontiers in microbiology",
+    "international journal of molecular sciences",
+    "cells",
+    "biomolecules",
+}
+
+# Paper type compatibility matrix
+# Format: journal_pattern -> set of accepted paper types
+JOURNAL_PAPER_TYPE_COMPATIBILITY = {
+    # Journals that accept ALL types
+    "plos one": {"experimental", "review", "meta_analysis", "case_report", "protocol"},
+    "scientific reports": {"experimental", "review", "meta_analysis", "case_report", "protocol"},
+    "frontiers in": {"experimental", "review", "meta_analysis", "protocol"},
+
+    # Review-focused journals (accept reviews + some experimental)
+    "trends in": {"review", "experimental"},
+    "current opinion in": {"review"},
+    "seminars in": {"review", "experimental"},
+    "progress in": {"review"},
+    "ageing research reviews": {"review", "meta_analysis"},
+
+    # Methods/protocol journals
+    "nature protocols": {"protocol"},
+    "star protocols": {"protocol"},
+    "jove": {"protocol"},
+    "bio-protocol": {"protocol"},
+    "methods in molecular biology": {"protocol"},
+    "current protocols": {"protocol"},
+    "nature methods": {"protocol", "experimental"},
+
+    # Meta-analysis friendly
+    "cochrane database": {"meta_analysis", "review"},
+    "systematic reviews": {"meta_analysis", "review"},
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 1D: CONTRIBUTION LEVEL CALIBRATION
+# ══════════════════════════════════════════════════════════════════════════════
+# Maps contribution level to appropriate journal impact factor ranges
+CONTRIBUTION_TO_IF_RANGE = {
+    "paradigm_shifting": (20, 100),   # Cell, Nature, Science
+    "substantial_synthesis": (8, 25),  # Strong specialty journals
+    "competent_summary": (3, 12),      # Mid-tier journals
+    "incremental_update": (1, 6),      # Specialty/lower-tier journals
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 3A: DISCIPLINE OVERLAP THRESHOLDS
+# ══════════════════════════════════════════════════════════════════════════════
+# Minimum percentage of tier1 keyword overlap required to consider a journal
+MIN_DISCIPLINE_OVERLAP_THRESHOLD = 0.15  # 15% of journal's papers must match tier1 keywords
+
+# Journals that are NEVER appropriate for certain fields (hard exclusions)
+FIELD_JOURNAL_EXCLUSIONS = {
+    "biomedical": ["environmental", "ecology", "geological", "earth science", "marine biology"],
+    "biology": ["environmental", "geology", "earth science", "atmospheric"],
+    "chemistry": ["environmental", "ecology"],
+    "neuroscience": ["environmental", "ecology", "botanical"],
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DISCIPLINE-SPECIFIC JOURNAL EXCLUSIONS
+# For basic science papers, exclude clinical/applied journals from wrong fields
+# These exclusions are applied when the paper's CORE discipline doesn't match
+# ══════════════════════════════════════════════════════════════════════════════
+DISCIPLINE_JOURNAL_EXCLUSIONS = {
+    "bioenergetics": [
+        "oncology", "cancer", "tumor", "carcinoma", "leukemia",  # Cancer journals
+        "immunology", "immune", "inflammation", "allergy",  # Immunology journals
+        "pharmacology", "drug", "therapeutic", "clinical trial",  # Pharmacology
+        "neurology", "neurological", "brain disorder",  # Clinical neurology
+        "translational", "clinical medicine",  # Translational/clinical
+    ],
+    "mitochondria": [
+        "oncology", "cancer", "tumor",  # Cancer journals (unless cancer IS the focus)
+        "immunology", "immune", "inflammation",  # Immunology journals
+        "pharmacology", "drug", "therapeutic",  # Pharmacology journals
+        "clinical trial", "translational medicine",  # Clinical journals
+    ],
+    "autophagy": [
+        "immunology", "immune",  # Unless autophagy-immune IS the focus
+        "pharmacology", "drug discovery",  # Unless targeting autophagy
+        "oncology", "cancer",  # Unless cancer-autophagy IS the focus
+    ],
+    "oxidative_stress": [
+        "immunology", "inflammation",  # Unless ROS-immune IS the focus
+        "clinical trial", "patient cohort",  # Clinical journals
+    ],
+}
+
 MAX_FEATURE_CHARS = 100000  # max chars sent for feature extraction (~25K tokens)
 CONSISTENCY_CHUNK = 12000   # chars sent for each consistency run (cheaper)
 CONSISTENCY_RUNS = 3        # number of scoring runs for consistency
@@ -627,12 +1455,26 @@ class JournalScorerService:
 
             keywords = field_result.get("keywords", [])
 
+            # Extract tiered keywords (new system) — critical for proper journal matching
+            tier1_keywords = field_result.get("tier1_keywords", keywords[:6] if keywords else [])
+            tier2_keywords = field_result.get("tier2_keywords", keywords[6:14] if len(keywords) > 6 else [])
+            tier3_keywords = field_result.get("tier3_keywords", keywords[14:] if len(keywords) > 14 else [])
+            core_discipline = field_result.get("core_discipline", "general")
+
+            # Phase 1D: Contribution/Novelty Assessment for prestige calibration
+            contribution_level = field_result.get("contribution_level", "competent_summary")
+            target_if_range = field_result.get("target_if_range", (3, 12))
+
             yield _sse("field_detected", {
                 "field": field,
                 "field_label": field_config["label"],
                 "confidence": field_result["confidence"],
-                "subfield": field_result["subfield"],
-                "keywords": keywords,
+                "subfield": field_result.get("subfield", core_discipline),
+                "core_discipline": core_discipline,
+                "tier1_keywords": tier1_keywords,
+                "tier2_keywords": tier2_keywords,
+                "tier3_keywords": tier3_keywords,
+                "keywords": keywords,  # backward compatibility
                 "reasoning": field_result["reasoning"],
             })
 
@@ -960,10 +1802,39 @@ class JournalScorerService:
                     print(f"[JournalScorer] Figure analysis failed (non-critical): {e}")
                     yield _sse("figure_analysis", {"figures": [], "summary": f"Figure analysis unavailable: {e}", "total_figures": 0})
 
-            # ── Step 6: Match Journals (keyword-based via OpenAlex) ──
-            yield _sse("progress", {"step": 6, "message": "Finding relevant journals by keywords...", "percent": 58})
+            # ── Step 5.9: Pre-extract citation network for journal matching boost (Phase 3C) ──
+            citation_journal_counts = {}
+            try:
+                yield _sse("progress", {"step": 5, "message": "Analyzing citation network...", "percent": 56})
 
-            journals = self._match_journals_by_keywords(keywords, field, tier, paper_type=paper_type, paper_score=overall_score)
+                # Extract DOIs from text
+                doi_pattern = r'10\.\d{4,}/[^\s\)\]\}]+'
+                dois = list(set(re.findall(doi_pattern, text)))[:20]  # Dedupe and cap
+
+                if dois:
+                    # Count journals cited by the manuscript
+                    citation_journal_counts = self._count_citation_journals(dois)
+                    if citation_journal_counts:
+                        print(f"[JournalScorer] Citation network: found {len(citation_journal_counts)} journals, top cited: {list(citation_journal_counts.items())[:3]}")
+            except Exception as e:
+                print(f"[JournalScorer] Citation network pre-extraction failed (non-critical): {e}")
+
+            # ── Step 6: Match Journals (TIERED keyword-based via OpenAlex) ──
+            yield _sse("progress", {"step": 6, "message": "Finding relevant journals by core discipline...", "percent": 58})
+
+            journals = self._match_journals_by_keywords(
+                tier1_keywords=tier1_keywords,
+                tier2_keywords=tier2_keywords,
+                tier3_keywords=tier3_keywords,
+                core_discipline=core_discipline,
+                field=field,
+                tier=tier,
+                paper_type=paper_type,
+                paper_score=overall_score,
+                contribution_level=contribution_level,
+                target_if_range=target_if_range,
+                citation_journal_counts=citation_journal_counts,
+            )
             yield _sse("journals", journals)
 
             # ── Step 7: Landscape Position ──────────────────────────────
@@ -1106,32 +1977,102 @@ class JournalScorerService:
     # ── Private Methods ─────────────────────────────────────────────────────
 
     def _detect_field(self, text_excerpt: str) -> dict:
+        """
+        Detect field and extract TIERED keywords from manuscript using INVERSE POSITION WEIGHTING.
+
+        PHASE 1B: INVERSE POSITION WEIGHTING
+        =====================================
+        Different parts of a paper carry different signals about its true discipline:
+        - INTRODUCTION/MOTIVATION (first 1-2 sentences): LOW weight — disease names, clinical relevance
+        - CORE CONTENT (middle sentences 3-8): HIGH weight — actual mechanistic content
+        - CONCLUSION (last 1-2 sentences): LOW weight — mirrors intro's broad framing
+
+        TIERED KEYWORD HIERARCHY (critical for proper journal matching):
+        - Tier 1: Core discipline terms — what the paper IS fundamentally about
+                  (e.g., "bioenergetics", "mitochondrial respiration", "autophagy")
+                  These DRIVE journal selection.
+        - Tier 2: Substantial secondary terms — topics the paper discusses in depth
+                  (e.g., specific techniques, pathways, molecules)
+                  These REFINE journal selection.
+        - Tier 3: Contextual terms — mentioned only as motivation/application
+                  (e.g., "cancer" in a bioenergetics paper about mitochondria)
+                  These should NOT drive journal selection.
+
+        PHASE 1D: CONTRIBUTION ASSESSMENT
+        ==================================
+        Also assesses the paper's contribution level to calibrate journal ambition:
+        - paradigm_shifting: Fundamentally new framework (Cell, Nature, Science)
+        - substantial_synthesis: Meaningful novel synthesis (IF 8-25)
+        - competent_summary: Solid summary of established area (IF 3-12)
+        - incremental_update: Incremental addition to known topic (IF 1-6)
+        """
         field_list = "\n".join(f"- {key}" for key in FIELD_CONFIGS.keys())
 
+        # List available disciplines for the LLM to identify
+        discipline_list = ", ".join(DISCIPLINE_JOURNAL_MAPPINGS.keys())
+
         prompt = (
-            "You are an academic field classifier and keyword extractor. "
-            "Classify this manuscript excerpt into exactly one field AND extract specific research keywords.\n\n"
+            "You are an academic field classifier specializing in distinguishing what a paper IS about "
+            "versus what it merely MENTIONS. This distinction is CRITICAL for journal matching.\n\n"
+            "=== INVERSE POSITION WEIGHTING ===\n"
+            "When analyzing the text, apply INVERSE weighting based on position:\n"
+            "- FIRST 1-2 sentences: LOW weight (motivation/framing - often mentions diseases, broad impact)\n"
+            "- MIDDLE sentences (3-8): HIGH weight (actual core content - the real discipline)\n"
+            "- LAST 1-2 sentences: LOW weight (conclusions - often mirrors intro's broad claims)\n"
+            "Keywords from the MIDDLE are what the paper IS about. Keywords from the EDGES are context.\n\n"
             f"FIELDS:\n{field_list}\n\n"
-            "Respond ONLY in valid JSON:\n"
-            '{"field": "...", "confidence": 0.0-1.0, "subfield": "specific subfield", '
-            '"keywords": ["kw1", "kw2", "kw3", "...", "kw20"], '
-            '"reasoning": "one sentence"}\n\n'
-            "KEYWORD RULES:\n"
-            "- Extract exactly 20 specific research keywords/phrases from the manuscript\n"
-            "- Include a mix of: specific techniques (e.g. 'LC-MS/MS', 'CRISPR-Cas9', 'Western blot'), "
-            "biological targets/pathways (e.g. 'iron metabolism', 'p53', 'mTOR signaling'), "
-            "disease areas (e.g. 'pancreatic cancer', 'ferroptosis', 'glioblastoma'), "
-            "methodologies (e.g. 'proteomics', 'single-cell RNA-seq', 'xenograft model'), "
-            "and key molecules/genes/proteins studied in the paper\n"
-            "- Do NOT use generic terms like 'biology', 'research', 'analysis' — be specific\n"
-            "- These keywords will be used to find top professors and their publishing venues\n\n"
+            f"KNOWN RESEARCH DISCIPLINES:\n{discipline_list}\n\n"
+            "Respond ONLY in valid JSON with this structure:\n"
+            "{\n"
+            '  "field": "one of the fields above",\n'
+            '  "confidence": 0.0-1.0,\n'
+            '  "core_discipline": "the specific subdiscipline this paper IS about (e.g., bioenergetics, autophagy, neurodegeneration)",\n'
+            '  "paper_type": "experimental|review|meta_analysis|case_report|protocol|computational|theoretical",\n'
+            '  "contribution_level": "paradigm_shifting|substantial_synthesis|competent_summary|incremental_update",\n'
+            '  "tier1_keywords": ["5-8 CORE terms from MIDDLE of text that define what this paper IS fundamentally about"],\n'
+            '  "tier2_keywords": ["8-12 SUBSTANTIAL terms the paper discusses in depth — techniques, pathways, molecules"],\n'
+            '  "tier3_keywords": ["5-8 CONTEXTUAL terms from INTRO/CONCLUSION mentioned only as motivation — do NOT let these drive journal selection"],\n'
+            '  "motivation_keywords": ["terms from first 1-2 sentences — these are CONTEXT, not core"],\n'
+            '  "conclusion_keywords": ["terms from last 1-2 sentences — these are FRAMING, not core"],\n'
+            '  "reasoning": "one sentence explaining why you classified it this way"\n'
+            "}\n\n"
+            "=== CONTRIBUTION LEVEL GUIDELINES ===\n"
+            "- paradigm_shifting: Proposes fundamentally new framework or paradigm. Rare. Cell/Nature/Science level.\n"
+            "- substantial_synthesis: Provides substantial novel synthesis connecting previously separate fields. Good specialty journals.\n"
+            "- competent_summary: Competent summary of an established area. Mid-tier journals.\n"
+            "- incremental_update: Incremental update to a known topic. Specialty/lower-tier journals.\n\n"
+            "CRITICAL RULES FOR TIERED KEYWORDS:\n"
+            "1. TIER 1 (Core — DRIVES journal selection):\n"
+            "   - Extract from MIDDLE of the abstract (sentences 3-8)\n"
+            "   - What is this paper fundamentally ABOUT? What would experts call it?\n"
+            "   - If it's about mitochondrial bioenergetics, tier 1 = ['bioenergetics', 'mitochondria', 'oxidative phosphorylation']\n"
+            "   - If it's about autophagy mechanisms, tier 1 = ['autophagy', 'LC3', 'autophagosome']\n"
+            "   - These terms should match the paper's core identity, not its applications\n\n"
+            "2. TIER 2 (Substantial — REFINES journal selection):\n"
+            "   - Specific techniques used (e.g., 'LC-MS/MS', 'Western blot', 'CRISPR')\n"
+            "   - Specific pathways studied (e.g., 'mTOR signaling', 'p53 pathway')\n"
+            "   - Specific molecules/genes/proteins (e.g., 'GPX4', 'Drp1', 'cytochrome c')\n\n"
+            "3. TIER 3 (Contextual — mentioned but NOT core to paper's identity):\n"
+            "   - Disease names IF the paper is not primarily a disease study\n"
+            "     (e.g., 'cancer' in a bioenergetics paper studying mitochondrial metabolism)\n"
+            "   - Application areas mentioned only in introduction/discussion\n"
+            "   - Organisms/models used (e.g., 'mouse', 'HeLa cells') — context, not core topic\n"
+            "   - THESE MUST NOT DRIVE JOURNAL SELECTION\n\n"
+            "EXAMPLE - Review about mitochondrial bioenergetics mentioning cancer applications:\n"
+            "  core_discipline: 'bioenergetics'\n"
+            "  contribution_level: 'substantial_synthesis'\n"
+            "  tier1_keywords: ['bioenergetics', 'mitochondrial respiration', 'oxidative phosphorylation', 'ATP synthesis', 'mitophagy']\n"
+            "  tier2_keywords: ['electron transport chain', 'Complex I', 'mtDNA', 'PGC-1alpha', 'mitochondrial dynamics']\n"
+            "  tier3_keywords: ['cancer', 'neurodegeneration', 'cardiovascular disease']  # These are CONTEXT from intro!\n"
+            "  motivation_keywords: ['cardiovascular disease', 'diabetes', 'aging']  # From intro - LOW weight\n"
+            "  conclusion_keywords: ['therapeutic potential', 'clinical implications']  # From conclusion - LOW weight\n\n"
             f"MANUSCRIPT EXCERPT:\n{text_excerpt}"
         )
 
         resp = self.openai.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=600,
+            max_tokens=1200,
         )
         raw = resp.choices[0].message.content.strip()
         json_match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -1139,16 +2080,301 @@ class JournalScorerService:
             try:
                 result = json.loads(json_match.group())
             except json.JSONDecodeError:
-                return {"field": "economics", "confidence": 0.5, "subfield": "General", "keywords": ["general"], "reasoning": "JSON parse error in field detection"}
+                return self._default_field_result("JSON parse error in field detection")
+
             # Validate the field is in our config
             if result.get("field") not in FIELD_CONFIGS:
-                result["field"] = "economics"
+                result["field"] = "biology"  # Better default than economics for science papers
                 result["confidence"] = 0.5
-            # Ensure keywords exist and have enough
-            if not result.get("keywords") or not isinstance(result["keywords"], list):
-                result["keywords"] = [result.get("subfield", "general")]
+
+            # Ensure all tiers exist
+            if not result.get("tier1_keywords") or not isinstance(result["tier1_keywords"], list):
+                result["tier1_keywords"] = [result.get("core_discipline", "general")]
+            if not result.get("tier2_keywords") or not isinstance(result["tier2_keywords"], list):
+                result["tier2_keywords"] = []
+            if not result.get("tier3_keywords") or not isinstance(result["tier3_keywords"], list):
+                result["tier3_keywords"] = []
+
+            # Ensure contribution_level exists and is valid
+            valid_contribution_levels = {"paradigm_shifting", "substantial_synthesis", "competent_summary", "incremental_update"}
+            if result.get("contribution_level") not in valid_contribution_levels:
+                result["contribution_level"] = "competent_summary"  # Safe default
+
+            # Store motivation and conclusion keywords for debugging/transparency
+            result["motivation_keywords"] = result.get("motivation_keywords", [])
+            result["conclusion_keywords"] = result.get("conclusion_keywords", [])
+
+            # Also populate legacy 'keywords' field for backward compatibility (all tiers combined)
+            result["keywords"] = result["tier1_keywords"] + result["tier2_keywords"] + result["tier3_keywords"]
+
+            # ALWAYS normalize core_discipline to match our discipline mapping keys
+            # The LLM might output "autonomic dysfunction" but we need "autonomic_neurology"
+            llm_discipline = result.get("core_discipline", "")
+            result["core_discipline"] = self._normalize_discipline(llm_discipline, result["tier1_keywords"])
+
+            # Get appropriate IF range based on contribution level
+            contribution_level = result.get("contribution_level", "competent_summary")
+            result["target_if_range"] = CONTRIBUTION_TO_IF_RANGE.get(contribution_level, (3, 12))
+
+            print(f"[Journal] === PAPER DECOMPOSITION COMPLETE ===")
+            print(f"  Core discipline: {result.get('core_discipline', 'unknown')}")
+            print(f"  Contribution level: {contribution_level} → target IF: {result['target_if_range']}")
+            print(f"  Tier 1 (core, HIGH weight): {result.get('tier1_keywords', [])[:5]}")
+            print(f"  Tier 2 (substantial, MED weight): {result.get('tier2_keywords', [])[:5]}")
+            print(f"  Tier 3 (contextual, LOW weight): {result.get('tier3_keywords', [])[:5]}")
+            print(f"  Motivation keywords (IGNORE): {result.get('motivation_keywords', [])[:3]}")
+
             return result
-        return {"field": "economics", "confidence": 0.5, "subfield": "General", "keywords": ["general"], "reasoning": "Could not classify — defaulting to Economics"}
+        return self._default_field_result("Could not classify — defaulting")
+
+    def _default_field_result(self, reason: str) -> dict:
+        """Return a safe default field detection result."""
+        return {
+            "field": "biology",
+            "confidence": 0.5,
+            "core_discipline": "general",
+            "paper_type": "experimental",
+            "tier1_keywords": ["general"],
+            "tier2_keywords": [],
+            "tier3_keywords": [],
+            "keywords": ["general"],
+            "reasoning": reason,
+        }
+
+    def _normalize_discipline(self, llm_discipline: str, tier1_keywords: list) -> str:
+        """Normalize LLM-provided discipline to match our DISCIPLINE_JOURNAL_MAPPINGS keys.
+
+        The LLM might output "autonomic dysfunction" but we need "autonomic_neurology".
+        This function first tries exact match, then fuzzy match, then falls back to inference.
+        """
+        if not llm_discipline:
+            return self._infer_core_discipline(tier1_keywords)
+
+        llm_lower = llm_discipline.lower().strip().replace(" ", "_").replace("-", "_")
+
+        # Direct match
+        if llm_lower in DISCIPLINE_JOURNAL_MAPPINGS:
+            return llm_lower
+
+        # Alias mapping: LLM output -> our key
+        DISCIPLINE_ALIASES = {
+            "autonomic_dysfunction": "autonomic_neurology",
+            "autonomic_nervous_system": "autonomic_neurology",
+            "dysautonomia": "autonomic_neurology",
+            "stroke": "cerebrovascular",
+            "cerebral_ischemia": "cerebrovascular",
+            "ischemic_stroke": "cerebrovascular",
+            "ms": "multiple_sclerosis",
+            "demyelination": "multiple_sclerosis",
+            "neurology": "clinical_neurology",
+            "neurological": "clinical_neurology",
+            "clinical_neurology": "clinical_neurology",
+            "mitochondrial": "mitochondria",
+            "mitochondrial_biology": "mitochondria",
+            "oxidative_phosphorylation": "bioenergetics",
+            "cellular_bioenergetics": "bioenergetics",
+            "energy_metabolism": "bioenergetics",
+            "cell_death": "apoptosis",
+            "programmed_cell_death": "apoptosis",
+            "iron_dependent_cell_death": "ferroptosis",
+            "lipid_peroxidation": "ferroptosis",
+            "ros": "oxidative_stress",
+            "reactive_oxygen_species": "oxidative_stress",
+            "redox": "oxidative_stress",
+            "alzheimers": "neurodegeneration",
+            "alzheimer": "neurodegeneration",
+            "parkinsons": "neurodegeneration",
+            "parkinson": "neurodegeneration",
+            "dementia": "neurodegeneration",
+            "als": "neurodegeneration",
+            "huntingtons": "neurodegeneration",
+        }
+
+        if llm_lower in DISCIPLINE_ALIASES:
+            return DISCIPLINE_ALIASES[llm_lower]
+
+        # Try partial matching
+        for alias, mapped in DISCIPLINE_ALIASES.items():
+            if alias in llm_lower or llm_lower in alias:
+                return mapped
+
+        # Fall back to inference from keywords
+        inferred = self._infer_core_discipline(tier1_keywords)
+        if inferred != "general":
+            return inferred
+
+        # Last resort: check if LLM output contains any known discipline keyword
+        for discipline in DISCIPLINE_JOURNAL_MAPPINGS.keys():
+            if discipline.replace("_", " ") in llm_discipline.lower():
+                return discipline
+
+        return "general"
+
+    def _infer_core_discipline(self, tier1_keywords: list) -> str:
+        """Infer the core discipline from tier 1 keywords by matching against known discipline markers."""
+        tier1_lower = [kw.lower() for kw in tier1_keywords]
+        tier1_text = " ".join(tier1_lower)
+
+        best_match = None
+        best_score = 0
+
+        for discipline, markers in TIER1_DISCIPLINE_MARKERS.items():
+            score = 0
+            for marker in markers:
+                if marker.lower() in tier1_text:
+                    score += 3  # Strong match
+                for kw in tier1_lower:
+                    if marker.lower() in kw or kw in marker.lower():
+                        score += 1  # Partial match
+            if score > best_score:
+                best_score = score
+                best_match = discipline
+
+        return best_match if best_match and best_score >= 2 else "general"
+
+    def _discover_safe_journals_dynamically(self, core_discipline: str, broad_field: str, tier1_keywords: list) -> list:
+        """
+        Dynamically discover lower-prestige safe journals for ANY discipline using OpenAlex.
+
+        This ensures the system works for disciplines without hardcoded safe_journals lists.
+        We query OpenAlex for journals in the same field with citedness < 3.0 (lower barrier).
+
+        Args:
+            core_discipline: The detected core discipline (e.g., "bioenergetics", "proteomics")
+            broad_field: The broad academic field (e.g., "biology", "biomedical")
+            tier1_keywords: Keywords from the paper to help find relevant journals
+
+        Returns:
+            List of journal names that are topically appropriate but lower-prestige
+        """
+        import requests as req
+
+        safe_journals = []
+
+        # Get OpenAlex concepts for this field
+        field_config = FIELD_TO_OPENALEX_CONCEPTS.get(broad_field, {})
+        concepts = field_config.get("concepts", [])
+
+        if not concepts:
+            print(f"[Journal] No OpenAlex concepts for field '{broad_field}', skipping dynamic safe journal discovery")
+            return []
+
+        # Build search query combining concepts with discipline keywords
+        concept_filter = "|".join(concepts)
+
+        # Use top tier1 keywords to narrow down relevance
+        search_terms = tier1_keywords[:3] if tier1_keywords else [core_discipline]
+        search_query = " ".join(search_terms)
+
+        try:
+            # Query OpenAlex for journals (sources) in this field
+            # Filter for:
+            # - Active journals (has recent works)
+            # - Lower citedness (< 3.0 for safe tier)
+            # - Type: journal (not repository, conference, etc.)
+            search_url = (
+                f"{OPENALEX_BASE}/sources"
+                f"?filter=type:journal,concepts.id:{concept_filter}"
+                f"&search={req.utils.quote(search_query)}"
+                f"&sort=cited_by_count:desc"
+                f"&per_page=50"
+                f"&mailto={OPENALEX_EMAIL}"
+            )
+
+            print(f"[Journal] Dynamically discovering safe journals for '{core_discipline}' in '{broad_field}'...")
+
+            response = req.get(search_url, timeout=15)
+            if response.status_code != 200:
+                print(f"[Journal] OpenAlex query failed: {response.status_code}")
+                return []
+
+            data = response.json()
+            results = data.get("results", [])
+
+            for src in results:
+                name = src.get("display_name", "")
+                summary = src.get("summary_stats", {})
+                citedness = summary.get("2yr_mean_citedness", 0.0) or 0.0
+                h_index = summary.get("h_index", 0) or 0
+                works_count = src.get("works_count", 0) or 0
+
+                # Safe journals: citedness < 3.0, but still legitimate (h_index > 10, works > 500)
+                # This ensures they're real journals, just lower prestige
+                if citedness < 3.0 and citedness > 0.3 and h_index > 10 and works_count > 500:
+                    # Exclude mega-journals and clearly off-topic
+                    name_lower = name.lower()
+                    skip = any(excl in name_lower for excl in [
+                        "plos one", "scientific reports", "frontiers in",
+                        "nature communications", "proceedings of the national academy",
+                        "lancet", "jama", "bmj", "new england journal"
+                    ])
+                    if not skip:
+                        safe_journals.append(name)
+                        if len(safe_journals) >= 6:  # Cap at 6 safe options
+                            break
+
+            if safe_journals:
+                print(f"[Journal] Dynamically discovered {len(safe_journals)} safe journals: {safe_journals[:3]}...")
+            else:
+                print(f"[Journal] No safe journals found dynamically for '{core_discipline}'")
+
+        except Exception as e:
+            print(f"[Journal] Dynamic safe journal discovery failed: {e}")
+
+        return safe_journals
+
+    def _get_journal_name_variants(self, journal_name: str) -> list:
+        """
+        Dynamically get name variants for a journal from OpenAlex metadata.
+
+        OpenAlex stores alternate names for journals which helps with matching.
+        This is essential for journals like "BBA - Bioenergetics" which may appear
+        under different names in different contexts.
+
+        Args:
+            journal_name: The canonical journal name
+
+        Returns:
+            List of alternate names for this journal
+        """
+        import requests as req
+
+        variants = [journal_name]  # Always include the original
+
+        try:
+            search_url = (
+                f"{OPENALEX_BASE}/sources"
+                f"?search={req.utils.quote(journal_name)}"
+                f"&per_page=1"
+                f"&mailto={OPENALEX_EMAIL}"
+            )
+
+            response = req.get(search_url, timeout=10)
+            if response.status_code != 200:
+                return variants
+
+            data = response.json()
+            results = data.get("results", [])
+
+            if results:
+                src = results[0]
+                # Get alternate names from OpenAlex
+                alt_names = src.get("alternate_titles", [])
+                abbrev_title = src.get("abbreviated_title")
+                display_name = src.get("display_name", "")
+
+                if abbrev_title and abbrev_title not in variants:
+                    variants.append(abbrev_title)
+                if display_name and display_name not in variants:
+                    variants.append(display_name)
+                for alt in alt_names:
+                    if alt and alt not in variants:
+                        variants.append(alt)
+
+        except Exception as e:
+            pass  # Silently fail - variants are optional
+
+        return variants
 
     def _extract_features(self, text_excerpt: str, field: str, field_config: dict, paper_type: str = 'experimental', manuscript_title: str = '') -> dict:
         feature_list = "\n".join(
@@ -1375,12 +2601,53 @@ class JournalScorerService:
         "heliyon", "ieee access", "sage open", "peerj",
     }
 
-    def _match_journals_by_keywords(self, keywords: list, field: str, tier: int, paper_type: str = 'experimental', paper_score: int = 50) -> dict:
-        """Professor-based journal discovery pipeline:
-        1) Extract 20 keywords from paper (done upstream)
-        2) Find top-cited papers matching keywords → extract top 100 authors
-        3) Find where those top authors publish (recent 3 years)
-        4) Rank journals by citedness, split into Target (5 top + 5 niche) / Stretch / Safe
+    def _match_journals_by_keywords(
+        self,
+        tier1_keywords: list = None,
+        tier2_keywords: list = None,
+        tier3_keywords: list = None,
+        core_discipline: str = None,
+        field: str = None,
+        tier: int = 2,
+        paper_type: str = 'experimental',
+        paper_score: int = 50,
+        contribution_level: str = 'competent_summary',
+        target_if_range: tuple = None,
+        keywords: list = None,  # Legacy fallback
+        citation_journal_counts: dict = None,  # Phase 3C: {journal_name: citation_count}
+    ) -> dict:
+        """
+        TIERED KEYWORD journal discovery pipeline with HARD FILTERS.
+
+        PHASE 3A: HARD FILTERS (applied BEFORE any scoring)
+        ====================================================
+        1. Paper Type Compatibility — eliminates journals that don't accept this paper type
+           - Reviews to invited-only journals → HARD REJECT
+           - Experimental papers to review-only journals → HARD REJECT
+        2. Discipline Overlap Threshold — 15% of journal's papers must match tier1 keywords
+
+        The key insight: A paper's CORE DISCIPLINE (Tier 1 keywords) should DRIVE journal selection,
+        not peripheral disease mentions (Tier 3 keywords).
+
+        KEYWORD WEIGHTING (Phase 3B):
+        - Tier 1 (Core): 10x weight — what the paper IS fundamentally about (60% of score)
+        - Tier 2 (Substantial): 3x weight — topics discussed in depth (30% of score)
+        - Tier 3 (Contextual): 0.5x weight — mentioned as motivation (10% of score, should NOT drive selection)
+
+        PRESTIGE AS TIEBREAKER (Phase 3D):
+        - Impact factor/prestige is applied LAST, not first
+        - Only used to rank among topically well-matched journals
+
+        DISCIPLINE BOOST:
+        - If core_discipline matches a known discipline in DISCIPLINE_JOURNAL_MAPPINGS,
+          journals in that mapping get a significant boost.
+
+        Pipeline:
+        1) Search by Tier 1 keywords (HEAVILY weighted) → find core discipline authors
+        2) Search by Tier 2 keywords (moderate weight) → refine author pool
+        3) Apply discipline-specific journal boost from DISCIPLINE_JOURNAL_MAPPINGS
+        4) Find where these authors publish → rank journals
+        5) Filter out journals that ONLY match Tier 3 keywords
         """
         import requests as req
         from collections import Counter
@@ -1396,48 +2663,165 @@ class JournalScorerService:
         def _is_mega(name: str) -> bool:
             return name.lower().strip() in self.MEGA_JOURNALS
 
+        # Handle legacy calls with just 'keywords' parameter
+        if tier1_keywords is None and keywords:
+            tier1_keywords = keywords[:6]
+            tier2_keywords = keywords[6:14] if len(keywords) > 6 else []
+            tier3_keywords = keywords[14:] if len(keywords) > 14 else []
+        tier1_keywords = tier1_keywords or []
+        tier2_keywords = tier2_keywords or []
+        tier3_keywords = tier3_keywords or []
+        core_discipline = core_discipline or "general"
+
+        # Combine keywords for legacy compatibility
+        all_keywords = tier1_keywords + tier2_keywords + tier3_keywords
+
         try:
-            # ── Step 1: Find top-cited papers matching keywords ─────────
-            # Use multiple keyword combinations for broad coverage
-            all_author_ids = Counter()  # author_id -> total citations across matches
+            print(f"[Journal] === TIERED KEYWORD MATCHING ===")
+            print(f"[Journal] Core discipline: {core_discipline}")
+            print(f"[Journal] Tier 1 (CORE, 10x): {tier1_keywords[:5]}")
+            print(f"[Journal] Tier 2 (Substantial, 3x): {tier2_keywords[:5]}")
+            print(f"[Journal] Tier 3 (Contextual, 0.5x): {tier3_keywords[:5]}")
+
+            # ── Get discipline-specific journal mappings ─────────────────────
+            discipline_mapping = DISCIPLINE_JOURNAL_MAPPINGS.get(core_discipline, {})
+            core_journals = discipline_mapping.get("core_journals", [])
+            tier2_discipline_journals = discipline_mapping.get("tier_2_journals", [])
+            avoid_keywords = discipline_mapping.get("avoid_keywords", [])
+
+            if core_journals:
+                print(f"[Journal] Discipline '{core_discipline}' maps to core journals: {core_journals[:5]}")
+            else:
+                # ══════════════════════════════════════════════════════════════
+                # DYNAMIC CORE JOURNAL DISCOVERY for unmapped disciplines
+                # ══════════════════════════════════════════════════════════════
+                # If no hardcoded core_journals exist, we dynamically discover them
+                # by querying OpenAlex for high-prestige journals in this field.
+                # This ensures the system works for ANY discipline, not just mapped ones.
+                print(f"[Journal] No hardcoded core_journals for '{core_discipline}', will rely on author search + dynamic discovery")
+
+            # ── Step 1: Find authors using TIERED keyword approach ───────────
+            tier1_author_ids = Counter()   # Authors from Tier 1 (core) search
+            tier2_author_ids = Counter()   # Authors from Tier 2 (substantial) search
+            tier3_author_ids = Counter()   # Authors from Tier 3 (contextual) - penalized
 
             # Use paper-type-aware filter from JOURNAL_TARGETS_BY_TYPE
             type_target = JOURNAL_TARGETS_BY_TYPE.get(paper_type, JOURNAL_TARGETS_BY_TYPE["experimental"])
             type_filter = type_target["filter"]
 
-            search_queries = [
-                " ".join(keywords[:8]),   # broad combined
-                " ".join(keywords[:4]),   # tighter combo
-                " ".join(keywords[4:10]), # middle keywords
-            ]
-            # Add 2-3 individual specific keywords
-            for kw in keywords[:3]:
-                search_queries.append(kw)
+            # Get field-specific concepts
+            field_config = FIELD_TO_OPENALEX_CONCEPTS.get(field, {})
+            field_concepts = field_config.get("concepts", [])
+            exclude_concepts = field_config.get("exclude_concepts", [])
 
-            for query in search_queries:
+            exclude_filter = ""
+            if exclude_concepts:
+                exclude_filter = "," + ",".join(f"concepts.id:!{c}" for c in exclude_concepts)
+
+            concept_filter_clause = ""
+            if field_concepts:
+                concept_filter_clause = f",concepts.id:{('|'.join(field_concepts))}"
+
+            # ── Step 1a: TIER 1 SEARCH (Core discipline) - 10x weight ─────────
+            # This is THE MOST IMPORTANT search — defines what the paper IS about
+            if tier1_keywords:
+                tier1_queries = [
+                    " ".join(tier1_keywords),  # All core terms together
+                    " ".join(tier1_keywords[:4]),  # Top 4 core terms
+                ]
+                # Add individual important terms for precision
+                for kw in tier1_keywords[:3]:
+                    if len(kw) > 5:  # Skip very short terms
+                        tier1_queries.append(kw)
+
+                for query in tier1_queries[:5]:
+                    url = (
+                        f"{OPENALEX_BASE}/works"
+                        f"?search={req.utils.quote(query)}"
+                        f"&filter={type_filter},publication_year:2020-2026{concept_filter_clause}{exclude_filter}"
+                        f"&sort=cited_by_count:desc"
+                        f"&per_page=50"
+                        f"&select=id,authorships,cited_by_count"
+                        f"&mailto={OPENALEX_EMAIL}"
+                    )
+                    data = _api_get(url)
+                    if not data:
+                        continue
+                    for work in data.get("results", []):
+                        cited = work.get("cited_by_count", 0)
+                        for authorship in work.get("authorships", [])[:5]:
+                            author = authorship.get("author", {})
+                            aid = author.get("id", "")
+                            if aid:
+                                tier1_author_ids[aid] += cited * 10  # 10x weight for CORE discipline
+
+            print(f"[Journal] Tier 1 (core) search found {len(tier1_author_ids)} authors")
+
+            # ── Step 1b: TIER 2 SEARCH (Substantial topics) - 3x weight ───────
+            if tier2_keywords:
+                tier2_queries = [
+                    " ".join(tier2_keywords[:6]),
+                    " ".join(tier2_keywords[:3]),
+                ]
+
+                for query in tier2_queries[:3]:
+                    url = (
+                        f"{OPENALEX_BASE}/works"
+                        f"?search={req.utils.quote(query)}"
+                        f"&filter={type_filter},publication_year:2020-2026{concept_filter_clause}{exclude_filter}"
+                        f"&sort=cited_by_count:desc"
+                        f"&per_page=30"
+                        f"&select=id,authorships,cited_by_count"
+                        f"&mailto={OPENALEX_EMAIL}"
+                    )
+                    data = _api_get(url)
+                    if not data:
+                        continue
+                    for work in data.get("results", []):
+                        cited = work.get("cited_by_count", 0)
+                        for authorship in work.get("authorships", [])[:5]:
+                            author = authorship.get("author", {})
+                            aid = author.get("id", "")
+                            if aid:
+                                tier2_author_ids[aid] += cited * 3  # 3x weight for substantial topics
+
+            print(f"[Journal] Tier 2 (substantial) search found {len(tier2_author_ids)} authors")
+
+            # ── Step 1c: TIER 3 SEARCH (Contextual) - 0.5x weight (penalized) ─
+            # IMPORTANT: Tier 3 keywords should NOT drive journal selection
+            # We still search to understand the landscape, but heavily discount these
+            if tier3_keywords:
+                tier3_query = " ".join(tier3_keywords[:4])
                 url = (
                     f"{OPENALEX_BASE}/works"
-                    f"?search={req.utils.quote(query)}"
+                    f"?search={req.utils.quote(tier3_query)}"
                     f"&filter={type_filter},publication_year:2020-2026"
                     f"&sort=cited_by_count:desc"
-                    f"&per_page=50"
+                    f"&per_page=20"
                     f"&select=id,authorships,cited_by_count"
                     f"&mailto={OPENALEX_EMAIL}"
                 )
                 data = _api_get(url)
-                if not data:
-                    continue
-                for work in data.get("results", []):
-                    cited = work.get("cited_by_count", 0)
-                    for authorship in work.get("authorships", [])[:5]:  # top 5 authors per paper
-                        author = authorship.get("author", {})
-                        aid = author.get("id", "")
-                        if aid:
-                            all_author_ids[aid] += cited
+                if data:
+                    for work in data.get("results", []):
+                        cited = work.get("cited_by_count", 0)
+                        for authorship in work.get("authorships", [])[:3]:
+                            author = authorship.get("author", {})
+                            aid = author.get("id", "")
+                            if aid:
+                                tier3_author_ids[aid] += cited * 0.5  # 0.5x weight - minimal contribution
+
+            print(f"[Journal] Tier 3 (contextual) search found {len(tier3_author_ids)} authors")
+
+            # ── Combine authors with weighted tiers ──────────────────────────
+            all_author_ids = Counter()
+            all_author_ids.update(tier1_author_ids)  # Already weighted 10x
+            all_author_ids.update(tier2_author_ids)  # Already weighted 3x
+            all_author_ids.update(tier3_author_ids)  # Already weighted 0.5x
 
             if not all_author_ids:
-                print(f"[Journal] No authors found from keyword search, falling back")
-                return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
+                print(f"[Journal] No authors found, falling back to DB")
+                return self._match_journals_from_db(field, tier, keywords=all_keywords, paper_type=paper_type)
 
             # ── Step 2: Take top 100 authors by citation weight ─────────
             top_authors = [aid for aid, _ in all_author_ids.most_common(100)]
@@ -1474,7 +2858,7 @@ class JournalScorerService:
 
             if not journal_counts:
                 print(f"[Journal] No journals found from author publications, falling back")
-                return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
+                return self._match_journals_from_db(field, tier, keywords=all_keywords, paper_type=paper_type)
 
             print(f"[Journal] Top authors publish in {len(journal_counts)} journals")
 
@@ -1548,18 +2932,399 @@ class JournalScorerService:
 
             if not enriched:
                 print(f"[Journal] No enriched journals, falling back")
-                return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
+                return self._match_journals_from_db(field, tier, keywords=all_keywords, paper_type=paper_type)
+
+            # ══════════════════════════════════════════════════════════════════
+            # CRITICAL FIX: INJECT CORE DISCIPLINE JOURNALS DIRECTLY
+            # ══════════════════════════════════════════════════════════════════
+            # These specialty journals (Mitochondrion, Autophagy, Free Radical Biology
+            # and Medicine, etc.) may not appear in the OpenAlex author-publication
+            # search because:
+            # 1. Authors who study bioenergetics ALSO publish in broad journals (Cancer, Immunology)
+            # 2. The author search inherits ALL their publications, not topic-specific ones
+            #
+            # We MUST inject these journals directly to ensure they enter the candidate pool.
+            # This is the fix for the "disease keyword trap" - ensuring specialty journals
+            # appear even when authors publish broadly across many fields.
+            # ══════════════════════════════════════════════════════════════════
+            existing_names = {j["name"].lower() for j in enriched}
+            injected_count = 0
+
+            # Get safe journals for this discipline (hardcoded OR dynamically discovered)
+            safe_journals_list = discipline_mapping.get("safe_journals", [])
+
+            # ══════════════════════════════════════════════════════════════════
+            # DYNAMIC SAFE JOURNAL DISCOVERY (works for ANY discipline)
+            # ══════════════════════════════════════════════════════════════════
+            # If no hardcoded safe_journals exist, dynamically discover them
+            # This ensures the system works equally well for ALL disciplines,
+            # not just the ones we've manually curated.
+            if not safe_journals_list:
+                print(f"[Journal] No hardcoded safe_journals for '{core_discipline}', discovering dynamically...")
+                safe_journals_list = self._discover_safe_journals_dynamically(
+                    core_discipline=core_discipline,
+                    broad_field=field,
+                    tier1_keywords=tier1_keywords
+                )
+
+            # Include core, tier2, AND safe journals for injection
+            all_discipline_journals = (core_journals or []) + (tier2_discipline_journals or []) + safe_journals_list
+            if all_discipline_journals:
+                print(f"[Journal] Checking {len(all_discipline_journals)} discipline-specific journals for injection (including {len(safe_journals_list)} safe options)...")
+
+                for journal_name in all_discipline_journals:
+                    # Skip if already in pool
+                    if any(journal_name.lower() in existing.lower() or existing.lower() in journal_name.lower()
+                           for existing in existing_names):
+                        continue
+
+                    # Look up journal in OpenAlex by name
+                    search_url = (
+                        f"{OPENALEX_BASE}/sources"
+                        f"?search={req.utils.quote(journal_name)}"
+                        f"&per_page=1"
+                        f"&mailto={OPENALEX_EMAIL}"
+                    )
+                    data = _api_get(search_url)
+                    if not data or not data.get("results"):
+                        print(f"[Journal] Could not find '{journal_name}' in OpenAlex")
+                        continue
+
+                    src = data["results"][0]
+                    found_name = src.get("display_name", "").lower()
+
+                    # Verify name matches reasonably (fuzzy match)
+                    if not (journal_name.lower() in found_name or found_name in journal_name.lower()):
+                        # Try partial match for complex names
+                        name_words = set(journal_name.lower().split())
+                        found_words = set(found_name.split())
+                        overlap = len(name_words & found_words)
+                        if overlap < 2:
+                            print(f"[Journal] Name mismatch: searched '{journal_name}', found '{found_name}'")
+                            continue
+
+                    oa_id = src.get("id", "")
+                    summary = src.get("summary_stats", {})
+                    h_index = summary.get("h_index", 0) or 0
+                    citedness = summary.get("2yr_mean_citedness", 0.0) or 0.0
+                    works = src.get("works_count", 0) or 0
+
+                    # Add to enriched list - DO NOT apply h_index/works filters for core journals
+                    # These are specialty journals that may be smaller but are the RIGHT venue
+                    enriched.append({
+                        "name": src.get("display_name", journal_name),
+                        "openalex_id": oa_id,
+                        "h_index": h_index,
+                        "citedness_2yr": round(citedness, 2),
+                        "works_count": works,
+                        "impact_factor": round(citedness, 1),
+                        "sjr_quartile": None,
+                        "composite_score": 0,
+                        "homepage_url": src.get("homepage_url") or "",
+                        "publisher": src.get("host_organization_name") or "",
+                        "prof_papers": 0,
+                        "injected_core_journal": True,  # Mark as directly injected
+                    })
+                    existing_names.add(found_name)
+                    injected_count += 1
+                    print(f"[Journal] ✓ INJECTED core journal: {src.get('display_name', journal_name)} (citedness={citedness:.1f})")
+
+                print(f"[Journal] Injected {injected_count} discipline-specific journals into candidate pool")
+
+            # ══════════════════════════════════════════════════════════════════
+            # PHASE 3A: HARD FILTERS (applied BEFORE any scoring)
+            # These eliminate journals that are categorically inappropriate
+            # ══════════════════════════════════════════════════════════════════
+
+            # Track anti-recommendations (journals that seem relevant but aren't)
+            anti_recommendations = []
+
+            # ── HARD FILTER 1: Paper Type Compatibility ───────────────────────
+            # For REVIEW papers: eliminate invited-only review journals
+            # This is THE MOST CRITICAL filter - Nature Reviews, Annual Reviews, etc.
+            # overwhelmingly commission their reviews, you can't submit unsolicited
+            if paper_type in ('review', 'meta_analysis'):
+                paper_type_filtered = []
+                for j in enriched:
+                    name_lower = j["name"].lower()
+
+                    # Check if journal is in invited-only list
+                    is_invited_only = any(invited_j in name_lower for invited_j in INVITED_ONLY_REVIEW_JOURNALS)
+
+                    if is_invited_only:
+                        anti_recommendations.append({
+                            "name": j["name"],
+                            "reason": f"This journal only publishes INVITED/COMMISSIONED reviews. You cannot submit unsolicited reviews here.",
+                            "filter_type": "paper_type_incompatibility",
+                        })
+                        print(f"[Journal] HARD FILTER (invited-only): '{j['name']}' rejected - only publishes commissioned reviews")
+                    else:
+                        paper_type_filtered.append(j)
+
+                print(f"[Journal] After paper type filter: {len(paper_type_filtered)} journals remain ({len(enriched) - len(paper_type_filtered)} invited-only rejected)")
+                enriched = paper_type_filtered
+
+            # For EXPERIMENTAL papers: warn about review-only journals (soft filter)
+            elif paper_type == 'experimental':
+                paper_type_filtered = []
+                for j in enriched:
+                    name_lower = j["name"].lower()
+
+                    # Check if journal primarily publishes reviews (Trends, Current Opinion, etc.)
+                    is_review_focused = any(
+                        pattern in name_lower
+                        for pattern in ['trends in', 'current opinion', 'annual review', 'nature reviews', 'reviews in']
+                    )
+
+                    if is_review_focused:
+                        anti_recommendations.append({
+                            "name": j["name"],
+                            "reason": f"This journal primarily publishes reviews, not primary research. Your experimental paper may not be appropriate here.",
+                            "filter_type": "paper_type_mismatch",
+                        })
+                        print(f"[Journal] HARD FILTER (review-focused): '{j['name']}' rejected for experimental paper")
+                    else:
+                        paper_type_filtered.append(j)
+
+                enriched = paper_type_filtered
+
+            # ── HARD FILTER 2: Primary Research Only Journals ─────────────────
+            # For REVIEW papers: eliminate journals that only publish primary research
+            if paper_type in ('review', 'meta_analysis'):
+                research_only_filtered = []
+                for j in enriched:
+                    name_lower = j["name"].lower()
+
+                    # Check if journal is in primary-research-only list
+                    is_research_only = any(rj in name_lower for rj in PRIMARY_RESEARCH_ONLY_JOURNALS)
+
+                    if is_research_only:
+                        anti_recommendations.append({
+                            "name": j["name"],
+                            "reason": f"This journal primarily publishes original research, not reviews. Consider submitting your review elsewhere.",
+                            "filter_type": "paper_type_incompatibility",
+                        })
+                        print(f"[Journal] HARD FILTER (research-only): '{j['name']}' rejected - primarily publishes original research")
+                    else:
+                        research_only_filtered.append(j)
+
+                print(f"[Journal] After research-only filter: {len(research_only_filtered)} remain")
+                enriched = research_only_filtered
+
+            # ── HARD FILTER 3: Contribution Level / IF Range ──────────────────
+            # Apply prestige calibration based on contribution level
+            # A "competent_summary" review shouldn't target Cell/Nature/Science
+            if target_if_range:
+                min_if, max_if = target_if_range
+                prestige_filtered = []
+                aspirational = []  # Keep a few aspirational options
+
+                for j in enriched:
+                    journal_if = j.get("citedness_2yr", 0) or j.get("impact_factor", 0) or 0
+
+                    if journal_if > max_if * 2:  # Way above target range
+                        anti_recommendations.append({
+                            "name": j["name"],
+                            "reason": f"Journal IF ({journal_if:.1f}) is significantly above your paper's target range ({min_if}-{max_if}). Based on contribution level '{contribution_level}', this would likely be a desk rejection.",
+                            "filter_type": "prestige_mismatch",
+                        })
+                        # Keep top 2 as aspirational stretch goals
+                        if len(aspirational) < 2:
+                            aspirational.append(j)
+                            j["is_aspirational"] = True
+                        else:
+                            print(f"[Journal] PRESTIGE FILTER: '{j['name']}' (IF={journal_if:.1f}) above target range ({min_if}-{max_if})")
+                    else:
+                        prestige_filtered.append(j)
+
+                # Add aspirational journals back but mark them
+                enriched = prestige_filtered + aspirational
+                print(f"[Journal] After prestige filter: {len(prestige_filtered)} in range, {len(aspirational)} aspirational")
+
+            if not enriched:
+                print(f"[Journal] All journals filtered out, falling back")
+                return self._match_journals_from_db(field, tier, keywords=all_keywords, paper_type=paper_type)
+
+            # ══════════════════════════════════════════════════════════════════
+            # END HARD FILTERS - Now apply soft scoring and boosting
+            # ══════════════════════════════════════════════════════════════════
+
+            # ── Step 4a: DISCIPLINE-BASED JOURNAL BOOSTING ───────────────────
+            # This is the KEY NEW FEATURE: boost journals that are natural fits for the core discipline
+            # A bioenergetics paper should get Mitochondrion, Autophagy, etc. boosted to the top
+
+            # Get name variants from hardcoded mapping OR dynamically fetch them
+            name_variants = discipline_mapping.get("name_variants", {})
+
+            # Use the safe_journals_list we computed earlier (may be dynamic or hardcoded)
+            # This ensures consistency between injection and boosting
+            safe_journals = safe_journals_list  # Use the list from injection phase (may be dynamic)
+
+            if core_journals or tier2_discipline_journals or safe_journals:
+                print(f"[Journal] Applying discipline boost for '{core_discipline}'")
+
+                # Build a list of all core journal names including variants
+                # For hardcoded variants, use the mapping
+                # For any core journal without variants, dynamically fetch them
+                all_core_names = list(core_journals) if core_journals else []
+                for canonical, variants in name_variants.items():
+                    all_core_names.extend(variants)
+
+                # Dynamically add variants for core journals not in the hardcoded mapping
+                for core_j in (core_journals or []):
+                    if core_j not in name_variants:
+                        # Dynamically get variants from OpenAlex
+                        dynamic_variants = self._get_journal_name_variants(core_j)
+                        for v in dynamic_variants:
+                            if v not in all_core_names:
+                                all_core_names.append(v)
+
+                for j in enriched:
+                    name_lower = j["name"].lower()
+
+                    # Check if journal matches core journals (including name variants)
+                    core_match = any(
+                        cj.lower() in name_lower or name_lower in cj.lower()
+                        for cj in all_core_names
+                    )
+                    tier2_match = any(
+                        t2j.lower() in name_lower or name_lower in t2j.lower()
+                        for t2j in (tier2_discipline_journals or [])
+                    )
+                    safe_match = any(
+                        sj.lower() in name_lower or name_lower in sj.lower()
+                        for sj in safe_journals
+                    )
+
+                    if core_match:
+                        j["discipline_boost"] = 100  # Massive boost for core discipline journals
+                        j["discipline_match"] = "core"
+                        print(f"[Journal] DISCIPLINE BOOST (core): '{j['name']}' matches '{core_discipline}' core journals")
+                    elif tier2_match:
+                        j["discipline_boost"] = 50   # Good boost for tier 2 discipline journals
+                        j["discipline_match"] = "tier2"
+                        print(f"[Journal] DISCIPLINE BOOST (tier2): '{j['name']}' matches '{core_discipline}' tier2 journals")
+                    elif safe_match:
+                        j["discipline_boost"] = 25   # Modest boost for safe discipline journals
+                        j["discipline_match"] = "safe"
+                        print(f"[Journal] DISCIPLINE BOOST (safe): '{j['name']}' matches '{core_discipline}' safe journals")
+                    else:
+                        j["discipline_boost"] = 0
+                        j["discipline_match"] = None
+
+            # ── Step 4a.4: CITATION NETWORK BOOST (Phase 3C) ─────────────────
+            # Boost journals that appear frequently in the manuscript's references
+            # This signals that the author already views these journals as relevant
+            if citation_journal_counts:
+                CITATION_BOOST_THRESHOLD = 3  # Must appear at least 3 times
+                CITATION_BOOST_VALUE = 15     # +15 points for citation network match
+
+                for j in enriched:
+                    name_lower = j["name"].lower()
+                    # Check for fuzzy match against citation journals
+                    for cited_journal, count in citation_journal_counts.items():
+                        cited_lower = cited_journal.lower()
+                        if count >= CITATION_BOOST_THRESHOLD:
+                            if cited_lower in name_lower or name_lower in cited_lower:
+                                j["citation_boost"] = CITATION_BOOST_VALUE
+                                j["citation_count"] = count
+                                print(f"[Journal] CITATION BOOST: '{j['name']}' cited {count}x in references (+{CITATION_BOOST_VALUE})")
+                                break
+                    else:
+                        j["citation_boost"] = 0
+                        j["citation_count"] = 0
+
+            # ── Step 4a.5: AVOID KEYWORD FILTERING ───────────────────────────
+            # Remove journals that contain keywords we should avoid for this discipline
+            if avoid_keywords:
+                avoid_filtered = []
+                for j in enriched:
+                    name_lower = j["name"].lower()
+                    avoided = False
+                    for avoid_kw in avoid_keywords:
+                        if avoid_kw.lower() in name_lower:
+                            print(f"[Journal] DISCIPLINE AVOID: '{j['name']}' excluded (contains '{avoid_kw}' but discipline is '{core_discipline}')")
+                            avoided = True
+                            break
+                    if not avoided:
+                        avoid_filtered.append(j)
+                enriched = avoid_filtered
+                print(f"[Journal] After avoid keyword filtering: {len(enriched)} journals remain")
+
+            # ── Step 4a.6: FIELD EXCLUSION - Remove journals from wrong fields ──
+            field_exclusions = FIELD_JOURNAL_EXCLUSIONS.get(field, [])
+            if field_exclusions:
+                field_filtered = []
+                for j in enriched:
+                    name_lower = j["name"].lower()
+                    excluded = False
+                    for exc in field_exclusions:
+                        if exc.lower() in name_lower:
+                            print(f"[Journal] FIELD EXCLUSION: '{j['name']}' excluded (contains '{exc}' but field is '{field}')")
+                            excluded = True
+                            break
+                    if not excluded:
+                        field_filtered.append(j)
+                enriched = field_filtered
+                print(f"[Journal] After field exclusion: {len(enriched)} journals remain")
+
+            # ── Step 4a.7: DISCIPLINE-SPECIFIC EXCLUSIONS ─────────────────────
+            # For basic science papers (bioenergetics, mitochondria, autophagy),
+            # exclude clinical/applied journals from unrelated fields.
+            # This prevents cancer/immunology/pharmacology journals appearing for
+            # a basic science review just because it mentions disease applications.
+            discipline_exclusions = DISCIPLINE_JOURNAL_EXCLUSIONS.get(core_discipline, [])
+            if discipline_exclusions:
+                discipline_filtered = []
+                for j in enriched:
+                    name_lower = j["name"].lower()
+                    # Skip exclusion check for core discipline journals (they're definitionally appropriate)
+                    if j.get("discipline_boost", 0) >= 100 or j.get("injected_core_journal"):
+                        discipline_filtered.append(j)
+                        continue
+
+                    excluded = False
+                    for exc in discipline_exclusions:
+                        if exc.lower() in name_lower:
+                            anti_recommendations.append({
+                                "name": j["name"],
+                                "reason": f"This {exc}-focused journal is not appropriate for a {core_discipline} paper. Your paper mentions {exc} topics peripherally but is fundamentally about {core_discipline}.",
+                                "filter_type": "discipline_mismatch",
+                            })
+                            print(f"[Journal] DISCIPLINE EXCLUSION: '{j['name']}' excluded (contains '{exc}' but core discipline is '{core_discipline}')")
+                            excluded = True
+                            break
+                    if not excluded:
+                        discipline_filtered.append(j)
+                enriched = discipline_filtered
+                print(f"[Journal] After discipline exclusion: {len(enriched)} journals remain")
 
             # ── Step 4b: Validate top journals against recent publications ──
             # Verify each journal actually publishes papers of this type
             # in this subject area (prevents subfield mismatches)
+            #
+            # CRITICAL FIX: Use ONLY tier1_keywords for validation
+            # Using broader keywords (tier2) creates false positives because terms
+            # like "ROS" or "oxidative stress" appear in hundreds of journals.
+            # We need the CORE discipline terms to validate true fit.
             validated_enriched = []
             for j in enriched[:25]:  # Validate top 25 to keep API calls reasonable
+                # Discipline-matched journals get automatic validation (they're definitionally appropriate)
+                if j.get("discipline_boost", 0) >= 100 or j.get("injected_core_journal"):
+                    j["validation"] = {
+                        "validated": True,
+                        "confidence": "high",
+                        "reason": "Core discipline journal for this paper's topic",
+                    }
+                    validated_enriched.append(j)
+                    continue
+
                 validation = self._validate_journal_fit(
                     journal_name=j["name"],
                     journal_oa_id=j.get("openalex_id", ""),
                     paper_type=paper_type,
-                    keywords=keywords,
+                    keywords=tier1_keywords[:6],  # Use ONLY top tier1 keywords (core discipline)
+                    field=field,
                 )
                 j["validation"] = validation
                 if validation.get("validated", True):
@@ -1582,32 +3347,106 @@ class JournalScorerService:
             include_kws = type_target.get("include_keywords", [])
             exclude_kws = type_target.get("exclude_keywords", [])
 
-            # Boost journals matching include keywords
+            # Boost journals matching include keywords AND discipline + citation network
             for j in quality:
                 name_lower = j["name"].lower()
                 boost = sum(1 for kw in include_kws if kw.lower() in name_lower)
                 demote = sum(1 for kw in exclude_kws if kw.lower() in name_lower)
-                j["type_relevance_boost"] = boost - demote
+                # Combine all boosts: discipline + citation network + paper type relevance
+                j["type_relevance_boost"] = (
+                    boost - demote +
+                    j.get("discipline_boost", 0) +
+                    j.get("citation_boost", 0)  # Phase 3C: Citation network boost
+                )
 
-            # Sort quality journals by type relevance then citedness (quality indicator)
-            quality.sort(key=lambda j: (j.get("type_relevance_boost", 0), j["citedness_2yr"]), reverse=True)
+            # Sort quality journals by DISCIPLINE BOOST FIRST, then citation network, then type relevance, then citedness
+            # This ensures core discipline journals rise to the top, with citation network as secondary signal
+            quality.sort(key=lambda j: (
+                j.get("discipline_boost", 0),      # 1. Discipline match (most important!)
+                j.get("citation_boost", 0),        # 2. Citation network match (Phase 3C)
+                j.get("type_relevance_boost", 0),  # 3. Paper type match
+                j.get("citedness_2yr", 0)          # 4. Quality indicator (prestige as tiebreaker per Phase 3D)
+            ), reverse=True)
 
-            # Quality-aware tier split based on paper score
-            # High-scoring papers get more ambitious stretch targets
-            if paper_score >= 80:
-                stretch_count, target_count = 5, 10
-            elif paper_score >= 60:
-                stretch_count, target_count = 3, 10
-            else:
-                stretch_count, target_count = 2, 8
+            # ══════════════════════════════════════════════════════════════════
+            # FIT-FIRST TIER ASSIGNMENT (Phase 4A) - REVISED
+            # ══════════════════════════════════════════════════════════════════
+            # The correct tiering for academic journal recommendations:
+            #
+            # STRETCH = High fit + HIGH prestige (aspirational but appropriate)
+            #   Example: Cell Metabolism for a bioenergetics review
+            #   These are journals where the paper COULD be published if it's excellent
+            #
+            # PRIMARY = High fit + MODERATE prestige (realistic primary targets)
+            #   Example: Autophagy, Redox Biology for a mitophagy review
+            #   These are the natural homes for this paper
+            #
+            # SAFE = High fit + LOWER prestige (accessible fallbacks)
+            #   Example: Cells, IJMS for broad molecular biology coverage
+            #   These are backup options with lower acceptance barriers
+            #
+            # KEY INSIGHT: ALL tiers should be discipline-appropriate!
+            # Non-matched journals should generally be EXCLUDED, not promoted.
+            # ══════════════════════════════════════════════════════════════════
 
-            stretch = quality[:stretch_count]
-            target = quality[stretch_count:stretch_count + target_count]
+            # Split discipline-matched journals by prestige tier
+            discipline_matched = [j for j in quality if j.get("discipline_boost", 0) > 0]
+            non_matched = [j for j in quality if j.get("discipline_boost", 0) == 0]
 
-            # Safe = capped mega-journals (max 2) + lower-ranked quality
-            safe = megas[:2]
-            remaining = quality[stretch_count + target_count:]
-            safe.extend(remaining[:3])
+            print(f"[Journal] Tier assignment: {len(discipline_matched)} discipline-matched, {len(non_matched)} non-matched")
+
+            # Define prestige thresholds
+            HIGH_PRESTIGE_THRESHOLD = 8.0    # Cell Metabolism, Nature journals, etc.
+            MODERATE_PRESTIGE_MIN = 3.0      # Good specialty journals
+
+            # Categorize discipline-matched journals by prestige
+            stretch_pool = []  # High fit + high prestige
+            primary_pool = []  # High fit + moderate prestige
+            safe_pool = []     # High fit + lower prestige (or lower barrier)
+
+            for j in discipline_matched:
+                citedness = j.get("citedness_2yr", 0) or 0
+                if citedness >= HIGH_PRESTIGE_THRESHOLD:
+                    stretch_pool.append(j)
+                elif citedness >= MODERATE_PRESTIGE_MIN:
+                    primary_pool.append(j)
+                else:
+                    safe_pool.append(j)
+
+            # Sort each pool by citedness (within-tier ranking)
+            stretch_pool.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+            primary_pool.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+            safe_pool.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+
+            print(f"[Journal] Pools: {len(stretch_pool)} stretch, {len(primary_pool)} primary, {len(safe_pool)} safe")
+
+            # If stretch pool is empty, promote top primary journals
+            if not stretch_pool and primary_pool:
+                # Take top 2 from primary as aspirational
+                stretch_pool = primary_pool[:2]
+                primary_pool = primary_pool[2:]
+
+            # If primary pool is small, fill from safe pool
+            if len(primary_pool) < 5 and safe_pool:
+                needed = 5 - len(primary_pool)
+                primary_pool.extend(safe_pool[:needed])
+                safe_pool = safe_pool[needed:]
+
+            # Final tier assignment
+            stretch = stretch_pool[:5]
+            target = primary_pool[:10]
+
+            # Safe = discipline-appropriate lower-prestige + mega-journals as last resort
+            safe = safe_pool[:3]
+            if len(safe) < 3:
+                safe.extend(megas[:2])  # Add mega-journals only if needed
+
+            # Add remaining non-matched only if we still need more (unlikely)
+            all_used = set(j["name"].lower() for j in stretch + target + safe)
+            if len(target) < 5:
+                remaining_non_matched = [j for j in non_matched if j["name"].lower() not in all_used]
+                remaining_non_matched.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+                target.extend(remaining_non_matched[:5 - len(target)])
 
             # Deduplicate across tiers
             seen_names = set()
@@ -1624,36 +3463,71 @@ class JournalScorerService:
             target = _dedup(target)
             safe = _dedup(safe)
 
-            # Add quality-aware reasoning to each journal
+            # Add quality-aware reasoning to each journal with discipline matching info
             score_label = "high-scoring" if paper_score >= 75 else "mid-range" if paper_score >= 50 else "developing"
+
+            def _build_reason(j, base_reason: str) -> str:
+                """Build journal reason with discipline and citation network match info.
+
+                Phase 4B: Fit Justifications
+                - Include WHY this journal fits based on discipline match
+                - Include citation network evidence if applicable
+                """
+                parts = []
+
+                # Discipline match indicator
+                discipline_match = j.get("discipline_match")
+                if discipline_match == "core":
+                    parts.append(f"🎯 Core {core_discipline} journal")
+                elif discipline_match == "tier2":
+                    parts.append(f"✓ Natural fit for {core_discipline} research")
+
+                # Citation network match indicator (Phase 3C)
+                citation_count = j.get("citation_count", 0)
+                if citation_count >= 3:
+                    parts.append(f"📚 Cited {citation_count}x in your references")
+
+                # Build prefix from parts
+                if parts:
+                    prefix = " — ".join(parts) + " — "
+                else:
+                    prefix = ""
+
+                return prefix + base_reason
 
             for j in stretch:
                 pp = j.get("prof_papers", 0)
                 cite = j.get("citedness_2yr", 0)
                 validation = j.get("validation", {})
                 evidence = validation.get("evidence", "")
-                j["reason"] = (
+                base_reason = (
                     f"Top-cited researchers in your field publish here — "
                     f"{pp} recent papers by leading authors. "
                     f"Citedness ({cite}) is aspirational for a {score_label} manuscript."
                 )
+                j["reason"] = _build_reason(j, base_reason)
                 if evidence:
                     j["reason"] += f" Verified: {evidence}"
                 j["verified"] = validation.get("validated", False)
+                j["core_discipline"] = core_discipline
+                j["fit_tier"] = "stretch"  # Phase 4A: Explicit fit tier label
 
             for j in target:
                 pp = j.get("prof_papers", 0)
                 cite = j.get("citedness_2yr", 0)
                 validation = j.get("validation", {})
                 evidence = validation.get("evidence", "")
-                j["reason"] = (
+                base_reason = (
                     f"Frequently chosen by experts in your area — "
                     f"{pp} recent papers by top authors. "
                     f"Citedness of {cite} suggests a realistic match for your paper."
                 )
+                j["reason"] = _build_reason(j, base_reason)
                 if evidence:
                     j["reason"] += f" Verified: {evidence}"
                 j["verified"] = validation.get("validated", False)
+                j["core_discipline"] = core_discipline
+                j["fit_tier"] = "best_fit"  # Phase 4A: These are the primary recommended
 
             for j in safe:
                 pp = j.get("prof_papers", 0)
@@ -1661,38 +3535,52 @@ class JournalScorerService:
                 validation = j.get("validation", {})
                 evidence = validation.get("evidence", "")
                 if _is_mega(j["name"]):
-                    j["reason"] = (
+                    base_reason = (
                         f"High-volume journal that publishes broadly. "
                         f"Good fallback with {pp} papers from authors in your area."
                     )
                 else:
-                    j["reason"] = (
+                    base_reason = (
                         f"Accessible venue where researchers in your area publish. "
                         f"Citedness {cite} with {pp} recent papers from top authors."
                     )
+                j["reason"] = _build_reason(j, base_reason)
                 if evidence:
                     j["reason"] += f" Verified: {evidence}"
                 j["verified"] = validation.get("validated", False)
+                j["core_discipline"] = core_discipline
+                j["fit_tier"] = "safe"  # Phase 4A: Fallback/safe options
 
             return {
                 "primary_matches": target,
                 "stretch_matches": stretch,
                 "safe_matches": safe[:5],
+                # Phase 4C: Anti-recommendations (journals that SEEM relevant but aren't)
+                "anti_recommendations": anti_recommendations[:5] if anti_recommendations else [],
+                # Phase 1D/3D: Include contribution level for prestige calibration context
+                "contribution_level": contribution_level,
+                "target_if_range": target_if_range,
             }
         except Exception as e:
-            print(f"[Journal] Professor-based journal matching failed: {e}")
-            return self._match_journals_from_db(field, tier, keywords=keywords, paper_type=paper_type)
+            import traceback
+            traceback.print_exc()
+            print(f"[Journal] Tiered journal matching failed: {e}")
+            return self._match_journals_from_db(field, tier, keywords=all_keywords, paper_type=paper_type)
 
     def _validate_journal_fit(self, journal_name: str, journal_oa_id: str,
-                               paper_type: str, keywords: list) -> dict:
+                               paper_type: str, keywords: list, field: str = None) -> dict:
         """Validate that a journal actually publishes papers of this type in this area.
 
-        Searches OpenAlex for recent papers in this journal matching the paper's
-        keywords and type. Returns concrete evidence of fit.
+        Phase 5A: Table of Contents Validation Test
+        ============================================
+        1. Sample 5-10 recent papers from the journal's TOC
+        2. Calculate keyword overlap with user's paper
+        3. Flag if overlap < 25% threshold
 
         This prevents recommending journals that exist but don't publish in the
         user's specific subfield or paper type.
         """
+        TOC_OVERLAP_THRESHOLD = 0.25  # 25% minimum keyword overlap required
         import requests as req
         OPENALEX_EMAIL = "prmogathala@gmail.com"
         HEADERS = {"User-Agent": f"2ndBrain/1.0 (mailto:{OPENALEX_EMAIL})", "Accept": "application/json"}
@@ -1706,9 +3594,30 @@ class JournalScorerService:
         }
         work_type = type_map.get(paper_type, "article")
 
+        # ── Field exclusion check (quick, no API call) ──────────────────────
+        if field:
+            field_exclusions = FIELD_JOURNAL_EXCLUSIONS.get(field, [])
+            name_lower = journal_name.lower()
+            for exc in field_exclusions:
+                if exc.lower() in name_lower:
+                    return {
+                        "validated": False,
+                        "confidence": "high",
+                        "reason": f"Journal '{journal_name}' is {exc}-focused but paper field is {field}",
+                    }
+
         try:
-            # Search for recent papers in this journal matching keywords
+            # ── Search for recent papers in this journal matching keywords + field ──
             kw_query = " ".join(keywords[:5]) if keywords else ""
+
+            # Add field-specific keywords to search to ensure field relevance
+            if field:
+                field_config = FIELD_TO_OPENALEX_CONCEPTS.get(field, {})
+                field_keywords = field_config.get("field_keywords", [])
+                if field_keywords:
+                    # Add top field keyword to search for better field specificity
+                    kw_query = f"{kw_query} {field_keywords[0]}"
+
             source_filter = f"primary_location.source.id:{journal_oa_id}" if journal_oa_id else f"primary_location.source.display_name.search:{req.utils.quote(journal_name)}"
 
             url = (
@@ -1734,21 +3643,63 @@ class JournalScorerService:
                 return {
                     "validated": False,
                     "confidence": "low",
-                    "reason": f"No recent {paper_type} papers matching your keywords found in {journal_name}",
+                    "keyword_overlap": 0.0,
+                    "reason": f"No recent {paper_type} papers matching your keywords in {field or 'your field'} found in {journal_name}",
+                }
+
+            # ── Phase 5A: Calculate keyword overlap from TOC samples ──────────
+            # CRITICAL FIX: More stringent validation to prevent false positives
+            # The previous logic allowed validation if total >= 5 papers matched,
+            # but those papers might only match on broad terms like "ROS".
+            # We now require MULTIPLE core keywords to match in the TOC.
+            keywords_lower = [kw.lower() for kw in keywords[:6]] if keywords else []
+            matched_keywords = set()
+
+            # Count papers that match MULTIPLE keywords (not just one)
+            papers_with_strong_match = 0
+            for paper in results[:10]:  # Sample up to 10 papers
+                title = (paper.get("title") or "").lower()
+                paper_matches = [kw for kw in keywords_lower if kw in title]
+                for kw in paper_matches:
+                    matched_keywords.add(kw)
+                if len(paper_matches) >= 2:  # Require 2+ keywords per paper for "strong match"
+                    papers_with_strong_match += 1
+
+            keyword_overlap = len(matched_keywords) / len(keywords_lower) if keywords_lower else 0.0
+
+            # More stringent validation criteria:
+            # 1. At least 33% keyword overlap (was 25%)
+            # 2. OR at least 3 papers with strong matches (2+ keywords each)
+            # 3. Remove the "total >= 5 papers" escape hatch
+            MIN_OVERLAP = 0.33  # 33% of keywords must match
+            MIN_STRONG_MATCHES = 3  # Need 3+ papers with 2+ keyword matches
+
+            if keyword_overlap < MIN_OVERLAP and papers_with_strong_match < MIN_STRONG_MATCHES:
+                return {
+                    "validated": False,
+                    "confidence": "moderate",
+                    "keyword_overlap": keyword_overlap,
+                    "total_similar_papers": total,
+                    "papers_with_strong_match": papers_with_strong_match,
+                    "reason": f"Weak content alignment with {journal_name}: only {keyword_overlap:.0%} keyword overlap and {papers_with_strong_match} papers with strong matches. This journal may publish broadly on related topics but is not focused on your paper's core discipline.",
+                    "matched_keywords": list(matched_keywords),
                 }
 
             # Build evidence from top match
             top = results[0]
             return {
                 "validated": True,
-                "confidence": "high" if total >= 5 else "moderate",
+                "confidence": "high" if papers_with_strong_match >= 5 else "moderate",
+                "keyword_overlap": keyword_overlap,
                 "total_similar_papers": total,
+                "papers_with_strong_match": papers_with_strong_match,
                 "evidence": f"Published {total} similar papers (2022-2026), e.g. \"{top.get('title', '')}\" ({top.get('cited_by_count', 0)} citations)",
                 "example_paper": {
                     "title": top.get("title", ""),
                     "year": top.get("publication_year"),
                     "citations": top.get("cited_by_count", 0),
                 },
+                "matched_keywords": list(matched_keywords),
             }
         except Exception as e:
             print(f"[Journal] Validation error for {journal_name}: {e}")
@@ -2580,6 +4531,46 @@ Respond in JSON format:
         except Exception as e:
             print(f"[JournalScorer] Paper-type-aware suggestions failed: {e}")
             return []
+
+    def _count_citation_journals(self, dois: list) -> dict:
+        """Count which journals appear most frequently in the manuscript's references.
+
+        Phase 3C: Citation Network Analysis
+        - Extract DOIs from references section
+        - Lookup in OpenAlex to find source journals
+        - Returns dict of {journal_name: citation_count}
+
+        Journals cited ≥3 times get a citation network boost in journal matching.
+        """
+        import requests as req
+        OPENALEX_EMAIL = "prmogathala@gmail.com"
+        HEADERS = {"User-Agent": f"2ndBrain/1.0 (mailto:{OPENALEX_EMAIL})", "Accept": "application/json"}
+
+        journal_counts = {}
+
+        for doi in dois[:20]:  # Cap at 20 DOIs for speed
+            try:
+                # Clean DOI
+                doi = doi.strip().rstrip('.,;')
+                if not doi.startswith('10.'):
+                    continue
+
+                # Look up this DOI in OpenAlex
+                url = f"https://api.openalex.org/works/doi:{doi}?mailto={OPENALEX_EMAIL}"
+                resp = req.get(url, headers=HEADERS, timeout=5)
+                if resp.status_code != 200:
+                    continue
+
+                data = resp.json()
+                source = data.get("primary_location", {}).get("source", {})
+                journal_name = source.get("display_name", "")
+
+                if journal_name and len(journal_name) > 2:
+                    journal_counts[journal_name] = journal_counts.get(journal_name, 0) + 1
+            except Exception:
+                continue
+
+        return journal_counts
 
     def _find_citation_neighbor_journals(self, references: list, field: str) -> list:
         """Find journals that frequently publish papers in the same citation neighborhood.
