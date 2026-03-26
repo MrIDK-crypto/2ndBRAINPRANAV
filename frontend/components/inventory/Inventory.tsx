@@ -841,18 +841,43 @@ export default function Inventory() {
               const taupeColors = ['#C9A598', '#B8948A', '#A68379', '#D4B5AA', '#E2CCC4'];
               const dotColor = taupeColors[index % taupeColors.length];
               return (
-              <div key={cat.id} style={styles.card}>
+              <div
+                key={cat.id}
+                style={{
+                  ...styles.card,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onClick={() => {
+                  setFilterCategory(cat.id)
+                  setActiveTab('items')
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#C9A598'
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(201, 165, 152, 0.15)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#F0EEEC'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                       <div style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: dotColor }} />
                       <span style={{ fontWeight: 600, fontSize: '16px', color: '#2D2D2D' }}>{cat.name}</span>
                     </div>
                     <p style={{ fontSize: '13px', color: '#6B6B6B', margin: '0 0 8px 0' }}>{cat.description || 'No description'}</p>
-                    <span style={styles.badge('default')}>{cat.item_count} items</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={styles.badge('default')}>{cat.item_count} items</span>
+                      <span style={{ fontSize: '12px', color: '#C9A598' }}>Click to view</span>
+                    </div>
                   </div>
                   <button
-                    onClick={() => handleDeleteCategory(cat.id)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteCategory(cat.id)
+                    }}
                     style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#D97B7B' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -887,19 +912,44 @@ export default function Inventory() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
             {locations.map(loc => (
-              <div key={loc.id} style={styles.card}>
+              <div
+                key={loc.id}
+                style={{
+                  ...styles.card,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onClick={() => {
+                  setFilterLocation(loc.id)
+                  setActiveTab('items')
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#C9A598'
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(201, 165, 152, 0.15)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#F0EEEC'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: '16px', color: '#2D2D2D', marginBottom: '8px' }}>{loc.name}</div>
                     {(loc.building || loc.room) && (
                       <p style={{ fontSize: '13px', color: '#6B6B6B', margin: '0 0 8px 0' }}>
                         {[loc.building, loc.room].filter(Boolean).join(' - ')}
                       </p>
                     )}
-                    <span style={styles.badge('default')}>{loc.item_count} items</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={styles.badge('default')}>{loc.item_count} items</span>
+                      <span style={{ fontSize: '12px', color: '#C9A598' }}>Click to view</span>
+                    </div>
                   </div>
                   <button
-                    onClick={() => handleDeleteLocation(loc.id)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteLocation(loc.id)
+                    }}
                     style={{ padding: '6px', background: 'none', border: 'none', cursor: 'pointer', color: '#D97B7B' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
