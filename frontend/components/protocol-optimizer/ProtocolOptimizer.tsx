@@ -993,7 +993,16 @@ export default function ProtocolOptimizer() {
                       </div>
                       {issue.literature_evidence.slice(0, 2).map((lit, j) => (
                         <div key={j} style={{ fontSize: 12, color: theme.textSecondary, fontFamily: font, marginBottom: 4, paddingLeft: 18 }}>
-                          • {lit.title} {lit.finding && <span style={{ color: theme.textMuted }}>— {lit.finding}</span>}
+                          • {lit.url ? (
+                            <a
+                              href={lit.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: theme.primary, textDecoration: 'underline', cursor: 'pointer' }}
+                            >
+                              {lit.title}
+                            </a>
+                          ) : lit.title} {lit.finding && <span style={{ color: theme.textMuted }}>— {lit.finding}</span>}
                         </div>
                       ))}
                     </div>

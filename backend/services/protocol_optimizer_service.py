@@ -703,7 +703,7 @@ Return JSON:
                 "typical_value_in_corpus": "what similar protocols use"
             },
             "literature_evidence": [
-                {"title": "Paper title", "finding": "What the paper says"}
+                {"title": "Paper title", "url": "https://pubmed.ncbi.nlm.nih.gov/12345/", "finding": "What the paper says"}
             ],
             "failed_experiment_warning": "relevant failure if any",
             "suggested_optimization": "Exact change to make",
@@ -763,21 +763,29 @@ Analyze each step and identify issues. Be specific about what to change and why.
                 for reagent, data in list(corpus["typical_parameters"].items())[:3]:
                     parts.append(f"    {reagent}: {data}")
 
-        # Literature evidence
+        # Literature evidence - include URLs for citation linking
         literature = evidence.get("literature", {})
         pubmed = literature.get("pubmed", [])
         if pubmed:
-            parts.append("\nLITERATURE EVIDENCE (PubMed):")
+            parts.append("\nLITERATURE EVIDENCE (PubMed) - USE THESE EXACT URLs IN YOUR RESPONSE:")
             for paper in pubmed[:5]:
-                parts.append(f"  - {paper.get('title', 'Unknown')} ({paper.get('year', 'N/A')})")
+                url = paper.get('url', '')
+                parts.append(f"  - Title: {paper.get('title', 'Unknown')}")
+                parts.append(f"    Year: {paper.get('year', 'N/A')}")
+                parts.append(f"    URL: {url}")
                 if paper.get("abstract"):
                     parts.append(f"    Abstract: {paper['abstract'][:200]}...")
 
         openalex = literature.get("openalex", [])
         if openalex:
-            parts.append("\nLITERATURE EVIDENCE (OpenAlex):")
+            parts.append("\nLITERATURE EVIDENCE (OpenAlex) - USE THESE EXACT URLs IN YOUR RESPONSE:")
             for paper in openalex[:3]:
-                parts.append(f"  - {paper.get('title', 'Unknown')} ({paper.get('year', 'N/A')}) - {paper.get('cited_by_count', 0)} citations")
+                url = paper.get('url', '') or paper.get('doi', '')
+                if url and not url.startswith('http'):
+                    url = f"https://doi.org/{url}" if url.startswith('10.') else url
+                parts.append(f"  - Title: {paper.get('title', 'Unknown')}")
+                parts.append(f"    Year: {paper.get('year', 'N/A')}, Citations: {paper.get('cited_by_count', 0)}")
+                parts.append(f"    URL: {url}")
 
         # Failed experiments
         failures = evidence.get("failed_experiments", [])
