@@ -182,7 +182,7 @@ export default function CompetitorFinderPage() {
         </div>
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 600, color: theme.text, margin: 0 }}>
-            Find My Competitors
+            Peer Labs
           </h1>
           <p style={{ fontSize: 12, color: theme.textMuted, margin: 0 }}>
             Discover labs, preprints, and grants in your research area
@@ -292,7 +292,7 @@ export default function CompetitorFinderPage() {
                 cursor: analyzing ? 'not-allowed' : 'pointer',
               }}
             >
-              {analyzing ? `${progress.message} (${progress.percent}%)` : 'Find Competitors'}
+              {analyzing ? `${progress.message} (${progress.percent}%)` : 'Find Peer Labs'}
             </button>
 
             {error && (
@@ -426,7 +426,7 @@ export default function CompetitorFinderPage() {
                       <div>
                         <h4 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: theme.text }}>
                           {lab.name} Lab
-                          {i === 0 && <span style={{ color: theme.warning, marginLeft: 8, fontSize: 12 }}>Top Competitor</span>}
+                          {i === 0 && <span style={{ color: theme.warning, marginLeft: 8, fontSize: 12 }}>Most Active</span>}
                         </h4>
                         <p style={{ margin: '4px 0', fontSize: 12, color: theme.textMuted }}>
                           {lab.key_authors?.slice(0, 3).join(', ')}

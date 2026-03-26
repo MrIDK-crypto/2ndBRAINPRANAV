@@ -85,8 +85,8 @@ export default function LandingPage() {
               </Link>
               <Link href="/competitor-finder" className="nav-dropdown-item">
                 <div>
-                  <span className="nav-dropdown-label">Competitor Intelligence</span>
-                  <span className="nav-dropdown-desc">Track competitor publications and grants</span>
+                  <span className="nav-dropdown-label">Peer Labs</span>
+                  <span className="nav-dropdown-desc">Discover labs working in your research area</span>
                 </div>
               </Link>
               <Link href="/reproducibility-archive" className="nav-dropdown-item">
@@ -380,8 +380,8 @@ export default function LandingPage() {
             </svg>
             <div className="agent-card-content">
               <span className="bento-num">05</span>
-              <h3 className="bento-name">competitor intelligence</h3>
-              <p className="bento-desc">track competitor labs, their publications, funding, and research directions. stay ahead of the field.</p>
+              <h3 className="bento-name">peer labs</h3>
+              <p className="bento-desc">discover labs working in your research area. find potential collaborators, see their publications, and identify funding opportunities.</p>
             </div>
           </div>
 
