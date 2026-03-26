@@ -3475,28 +3475,47 @@ class JournalScorerService:
 
             print(f"[Journal] Tier assignment: {len(discipline_matched)} discipline-matched, {len(non_matched)} non-matched")
 
-            # Define prestige thresholds
-            HIGH_PRESTIGE_THRESHOLD = 8.0    # Cell Metabolism, Nature journals, etc.
-            MODERATE_PRESTIGE_MIN = 3.0      # Good specialty journals
+            # ══════════════════════════════════════════════════════════════════
+            # CONTENT-FIRST RANKING: Prioritize discipline match over metrics
+            # ══════════════════════════════════════════════════════════════════
+            #
+            # Step 1: Group by CONTENT FIT (discipline_match quality)
+            # Step 2: Within each group, sort by citedness as secondary factor
+            # Step 3: Core matches go to PRIMARY (they're the best fit!)
+            # Step 4: High-citedness within core = stretch (aspirational)
+            # ══════════════════════════════════════════════════════════════════
 
-            # Categorize discipline-matched journals by prestige
-            stretch_pool = []  # High fit + high prestige
-            primary_pool = []  # High fit + moderate prestige
-            safe_pool = []     # High fit + lower prestige (or lower barrier)
+            HIGH_PRESTIGE_THRESHOLD = 8.0    # Aspirational threshold
+
+            # Group by discipline match quality (CONTENT FIRST)
+            core_matches = []      # discipline_match == "core" -> BEST FIT
+            tier2_matches = []     # discipline_match == "tier2" -> GOOD FIT
+            weak_matches = []      # discipline_match == "safe" or None -> FALLBACK
 
             for j in discipline_matched:
-                citedness = j.get("citedness_2yr", 0) or 0
-                if citedness >= HIGH_PRESTIGE_THRESHOLD:
-                    stretch_pool.append(j)
-                elif citedness >= MODERATE_PRESTIGE_MIN:
-                    primary_pool.append(j)
+                dm = j.get("discipline_match")
+                if dm == "core":
+                    core_matches.append(j)
+                elif dm == "tier2":
+                    tier2_matches.append(j)
                 else:
-                    safe_pool.append(j)
+                    weak_matches.append(j)
 
-            # Sort each pool by citedness (within-tier ranking)
-            stretch_pool.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
-            primary_pool.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
-            safe_pool.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+            # Sort within each group by citedness (secondary ranking factor)
+            core_matches.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+            tier2_matches.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+            weak_matches.sort(key=lambda j: j.get("citedness_2yr", 0), reverse=True)
+
+            print(f"[Journal] Content-first grouping: {len(core_matches)} core, {len(tier2_matches)} tier2, {len(weak_matches)} weak")
+
+            # Stretch = ONLY high-citedness journals from core matches (aspirational)
+            stretch_pool = [j for j in core_matches if j.get("citedness_2yr", 0) >= HIGH_PRESTIGE_THRESHOLD]
+
+            # Primary = remaining core matches + tier2 matches (BEST FITS regardless of citedness)
+            primary_pool = [j for j in core_matches if j.get("citedness_2yr", 0) < HIGH_PRESTIGE_THRESHOLD] + tier2_matches
+
+            # Safe = weak matches only (journals with lower content fit)
+            safe_pool = weak_matches
 
             print(f"[Journal] Pools: {len(stretch_pool)} stretch, {len(primary_pool)} primary, {len(safe_pool)} safe")
 
