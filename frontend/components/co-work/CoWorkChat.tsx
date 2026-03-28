@@ -562,7 +562,14 @@ export default function CoWorkChat({
               accumulatedText += parsedData.content || ''
               setIsLoading(false)
               setIsStreaming(true)
-              setStreamingText(accumulatedText)
+              // Hide trailing incomplete bracket citations during streaming
+              // e.g., "[Source" without closing "]" would break markdown rendering
+              let displayText = accumulatedText
+              const lastBracket = displayText.lastIndexOf('[')
+              if (lastBracket !== -1 && displayText.indexOf(']', lastBracket) === -1) {
+                displayText = displayText.substring(0, lastBracket)
+              }
+              setStreamingText(displayText)
 
             } else if (eventType === 'done') {
               streamDone = true

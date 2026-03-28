@@ -1832,11 +1832,19 @@ def search_stream():
         def hardcoded_gen():
             answer = _hardcoded['answer']
             yield f"event: search_complete\ndata: {json.dumps({'sources': []})}\n\n"
-            # Stream word by word for natural feel
-            words = answer.split(' ')
-            for i, word in enumerate(words):
-                chunk = word if i == 0 else ' ' + word
-                yield f"event: chunk\ndata: {json.dumps({'content': chunk})}\n\n"
+            # Stream in small chunks, keeping citations intact
+            import re
+            tokens = re.findall(r'\[(?:Source\s*)?\d+(?:\s*,\s*\d+)*\]|\S+', answer)
+            buffer = ""
+            for i, token in enumerate(tokens):
+                if i > 0:
+                    buffer += " "
+                buffer += token
+                if (i + 1) % 5 == 0 or i == len(tokens) - 1:
+                    yield f"event: chunk\ndata: {json.dumps({'content': buffer})}\n\n"
+                    buffer = ""
+            if buffer:
+                yield f"event: chunk\ndata: {json.dumps({'content': buffer})}\n\n"
             yield f"event: done\ndata: {json.dumps({'answer': answer, 'sources': []})}\n\n"
         return Response(hardcoded_gen(), mimetype='text/event-stream',
                        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
@@ -2143,14 +2151,25 @@ def search_stream():
                     enriched.append(source_entry)
                 return enriched
 
-            # Helper: stream a markdown string word-by-word as chunk events
+            # Helper: stream a markdown string in small chunks as chunk events
             def _stream_markdown(text):
-                """Yield chunk events for a markdown string, word by word."""
-                words = text.split(' ')
+                """Yield chunk events for a markdown string, keeping citations intact."""
+                import re
+                # Split into tokens: bracketed citations stay whole, words split normally
+                # Pattern matches [Source N], [N], [Source N, M], or regular words
+                tokens = re.findall(r'\[(?:Source\s*)?\d+(?:\s*,\s*\d+)*\]|\S+', text)
                 chunks = []
-                for i, word in enumerate(words):
-                    chunk = word if i == 0 else ' ' + word
-                    chunks.append(f"event: chunk\ndata: {json.dumps({'content': chunk})}\n\n")
+                buffer = ""
+                for i, token in enumerate(tokens):
+                    if i > 0:
+                        buffer += " "
+                    buffer += token
+                    # Flush buffer every ~5 tokens for natural streaming feel
+                    if (i + 1) % 5 == 0 or i == len(tokens) - 1:
+                        chunks.append(f"event: chunk\ndata: {json.dumps({'content': buffer})}\n\n")
+                        buffer = ""
+                if buffer:
+                    chunks.append(f"event: chunk\ndata: {json.dumps({'content': buffer})}\n\n")
                 return chunks
 
             _intent_handled = False  # Flag: if True, skip standard RAG flow
