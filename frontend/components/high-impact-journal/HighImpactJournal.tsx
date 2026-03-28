@@ -1629,7 +1629,7 @@ export default function HighImpactJournal() {
               <div style={{
                 padding: 18,
                 borderRadius: 14,
-                background: theme.amberBg,
+                background: theme.amberBgSubtle,
                 border: `1px solid ${theme.amberBorder}`,
                 marginBottom: 24,
               }}>
