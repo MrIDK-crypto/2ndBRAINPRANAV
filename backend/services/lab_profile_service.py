@@ -364,31 +364,48 @@ Be conservative - only include items you're confident about from the documents. 
         """Build a map of field names to their source documents."""
         sources = {}
 
-        # Add equipment sources
-        if 'equipment_sources' in equipment_methods:
+        # Build general sources FIRST from all documents (these are always available)
+        general_sources = []
+        for doc in documents[:15]:  # Sample up to 15 documents
+            title = doc.get('metadata', {}).get('title', doc.get('title', 'Unknown'))
+            source_type = doc.get('metadata', {}).get('source_type', 'document')
+            if title and title != 'Unknown':
+                general_sources.append({
+                    'title': title[:60],
+                    'source_type': source_type,
+                })
+
+        # Always add general sources to main fields
+        sources['research_focus_areas'] = general_sources[:4]
+        sources['expertise_areas'] = general_sources[:4]
+        sources['model_systems'] = general_sources[:3]
+        sources['general'] = general_sources[:6]  # Add a "general" category
+
+        # Add equipment-specific sources if found
+        if 'equipment_sources' in equipment_methods and equipment_methods['equipment_sources']:
             all_eq_sources = []
             for eq, src_list in equipment_methods['equipment_sources'].items():
                 all_eq_sources.extend(src_list[:1])  # Top source per equipment
-            sources['equipment'] = all_eq_sources[:5]  # Top 5 overall
+            if all_eq_sources:
+                sources['equipment'] = all_eq_sources[:5]
+            else:
+                sources['equipment'] = general_sources[:3]  # Fallback
+        else:
+            sources['equipment'] = general_sources[:3]  # Fallback
 
-        # Add methodology sources
-        if 'methods_sources' in equipment_methods:
+        # Add methodology-specific sources if found
+        if 'methods_sources' in equipment_methods and equipment_methods['methods_sources']:
             all_method_sources = []
             for method, src_list in equipment_methods['methods_sources'].items():
                 all_method_sources.extend(src_list[:1])
-            sources['methodologies'] = all_method_sources[:5]
+            if all_method_sources:
+                sources['methodologies'] = all_method_sources[:5]
+            else:
+                sources['methodologies'] = general_sources[:3]  # Fallback
+        else:
+            sources['methodologies'] = general_sources[:3]  # Fallback
 
-        # Add general sources from documents used
-        general_sources = []
-        for doc in documents[:10]:
-            general_sources.append({
-                'title': doc.get('metadata', {}).get('title', doc.get('title', 'Unknown'))[:50],
-                'source_type': doc.get('metadata', {}).get('source_type', 'document'),
-            })
-
-        sources['research_focus_areas'] = general_sources[:3]
-        sources['expertise_areas'] = general_sources[:3]
-        sources['model_systems'] = general_sources[:3]
+        print(f"[LabProfile] Built sources map with fields: {list(sources.keys())}, total sources: {sum(len(v) for v in sources.values())}", flush=True)
 
         return sources
 

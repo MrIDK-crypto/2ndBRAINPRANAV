@@ -712,8 +712,23 @@ def analyze_manuscript_with_context():
                 # Generate and emit detailed context analysis with sources
                 try:
                     yield f"event: progress\ndata: {json.dumps({'step': 0, 'message': 'Analyzing lab profile against manuscript...', 'percent': 8})}\n\n"
+
+                    # Debug: Log sources from profile
+                    profile_sources = profile.get('sources', {})
+                    print(f"[Journal] Profile sources available: {list(profile_sources.keys()) if profile_sources else 'NONE'}", flush=True)
+                    if profile_sources:
+                        for field, src_list in profile_sources.items():
+                            print(f"[Journal]   {field}: {len(src_list) if src_list else 0} sources", flush=True)
+
                     context_analysis = _generate_journal_context_analysis(profile, parsed_text[:3000])
                     context_analysis['has_context'] = True
+
+                    # ALWAYS ensure sources are included from profile
+                    if 'sources' not in context_analysis or not context_analysis.get('sources'):
+                        context_analysis['sources'] = profile_sources
+                        print(f"[Journal] Added sources from profile to context_analysis", flush=True)
+
+                    print(f"[Journal] Final context_analysis sources: {list(context_analysis.get('sources', {}).keys())}", flush=True)
                     yield f"event: context_analysis\ndata: {json.dumps(context_analysis)}\n\n"
                 except Exception as e:
                     print(f"[Journal] Context analysis failed: {e}")
