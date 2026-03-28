@@ -1443,6 +1443,11 @@ class JournalScorerService:
             has_abstract = bool(re.search(r'\babstract\b', text[:3000], re.IGNORECASE))
             has_tables = bool(re.search(r'\btable\s+\d+\b|\btable\s+[ivx]+\b', text, re.IGNORECASE))
 
+            # Extract lab profile if present (from context-aware endpoint)
+            lab_profile = self._extract_lab_profile_from_text(text)
+            if lab_profile.get("has_context"):
+                print(f"[JournalScorer] Context-aware mode: found lab profile with {len(lab_profile.get('research_focus_areas', []))} focus areas")
+
             # Extract the paper's own publication year (for date-relative checks)
             # User-provided year takes priority over auto-detected
             if user_publication_year:
@@ -1862,6 +1867,32 @@ class JournalScorerService:
                 target_if_range=target_if_range,
                 citation_journal_counts=citation_journal_counts,
             )
+
+            # ── Step 6.5: Context-Aware Analysis (if lab profile present) ──
+            context_analysis_result = None
+            if lab_profile.get("has_context"):
+                try:
+                    yield _sse("progress", {"step": 6, "message": "Analyzing manuscript against your lab profile...", "percent": 60})
+
+                    # Boost journals from lab's publication history
+                    journals = self._boost_journals_from_profile(journals, lab_profile)
+
+                    # Generate context-aware insights
+                    context_analysis_result = self._generate_context_analysis(
+                        lab_profile=lab_profile,
+                        manuscript_text=text,
+                        field=field,
+                        score=overall_score,
+                        tier=tier
+                    )
+
+                    yield _sse("context_analysis", context_analysis_result)
+                    print(f"[JournalScorer] Context analysis complete: profile match = {context_analysis_result.get('profile_match', {}).get('score', 'N/A')}")
+
+                except Exception as e:
+                    print(f"[JournalScorer] Context analysis failed (non-critical): {e}")
+                    yield _sse("context_analysis", {"has_context": False, "error": str(e)})
+
             yield _sse("journals", journals)
 
             # ── Step 7: Landscape Position ──────────────────────────────
@@ -1991,6 +2022,8 @@ class JournalScorerService:
                 "experiment_suggestions_count": len(experiment_suggestions) if experiment_suggestions else 0,
                 "related_literature_count": len(related_literature) if related_literature else 0,
                 "related_protocols_count": len(related_protocols) if related_protocols else 0,
+                "context_aware": lab_profile.get("has_context", False),
+                "lab_profile_confidence": lab_profile.get("confidence", 0) if lab_profile.get("has_context") else None,
             }
             if manuscript_url:
                 done_data["manuscript_url"] = manuscript_url
@@ -2002,6 +2035,146 @@ class JournalScorerService:
             yield _sse("error", {"error": str(e)})
 
     # ── Private Methods ─────────────────────────────────────────────────────
+
+    def _extract_lab_profile_from_text(self, text: str) -> dict:
+        """Extract lab profile data if present in the text (from context-aware endpoint)."""
+        profile = {}
+
+        # Check for lab profile section
+        if "=== LAB PROFILE ===" not in text:
+            return profile
+
+        try:
+            # Extract the profile section
+            start = text.find("=== LAB PROFILE ===")
+            end = text.find("=== END LAB PROFILE ===")
+            if start == -1 or end == -1:
+                return profile
+
+            profile_text = text[start:end]
+
+            # Parse key fields
+            lines = profile_text.split('\n')
+            for line in lines:
+                if "Research Focus Areas:" in line:
+                    areas = line.split(":", 1)[1].strip()
+                    profile["research_focus_areas"] = [a.strip() for a in areas.split(",")]
+                elif "Common Methodologies:" in line:
+                    methods = line.split(":", 1)[1].strip()
+                    profile["methodologies"] = [m.strip() for m in methods.split(",")]
+                elif "Preferred Journals:" in line:
+                    journals = line.split(":", 1)[1].strip()
+                    profile["preferred_journals"] = [j.strip() for j in journals.split(",") if j.strip()]
+                elif "Typical Publication Tier:" in line:
+                    tier_match = re.search(r'Tier\s*(\d+)', line)
+                    if tier_match:
+                        profile["typical_tier"] = int(tier_match.group(1))
+                elif "Confidence in Profile:" in line:
+                    conf_match = re.search(r'(\d+)%', line)
+                    if conf_match:
+                        profile["confidence"] = int(conf_match.group(1)) / 100
+
+            profile["has_context"] = bool(profile.get("research_focus_areas") or profile.get("preferred_journals"))
+
+        except Exception as e:
+            print(f"[JournalScorer] Error parsing lab profile: {e}")
+
+        return profile
+
+    def _generate_context_analysis(self, lab_profile: dict, manuscript_text: str, field: str, score: int, tier: int) -> dict:
+        """Generate explicit context-aware analysis comparing manuscript to lab profile."""
+        if not lab_profile.get("has_context"):
+            return {"has_context": False}
+
+        # Use LLM to generate insights
+        profile_summary = json.dumps(lab_profile, indent=2)
+
+        prompt = f"""You are analyzing a manuscript in the context of a researcher's lab profile.
+
+LAB PROFILE:
+{profile_summary}
+
+MANUSCRIPT FIELD: {field}
+MANUSCRIPT SCORE: {score}/100 (Tier {tier})
+
+MANUSCRIPT (first 3000 chars):
+{manuscript_text[manuscript_text.find("=== MANUSCRIPT/RESEARCH TO ANALYZE ==="):][40:3000]}
+
+Provide a context-aware analysis. Be specific and actionable.
+
+Return JSON:
+{{
+    "profile_match": {{
+        "score": 0-100,
+        "assessment": "How well does this manuscript fit the lab's research profile?",
+        "consistency": "Is this consistent with their usual work or a new direction?"
+    }},
+    "publication_strategy": {{
+        "recommendation": "Based on their publication history, what tier should they target?",
+        "rationale": "Why this recommendation based on their track record",
+        "preferred_journal_fit": ["List any of their preferred journals that fit this manuscript"]
+    }},
+    "leveraging_history": [
+        "Specific suggestion 1 based on their past work",
+        "Specific suggestion 2 based on their expertise"
+    ],
+    "potential_concerns": [
+        "Any concerns based on comparing this to their profile"
+    ],
+    "competitive_advantage": "What unique advantage does this lab have for this specific manuscript?"
+}}"""
+
+        try:
+            response = self.openai.chat_completion(
+                messages=[
+                    {"role": "system", "content": "You are a publication strategist helping researchers leverage their lab's track record. Be specific and evidence-based."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=1500,
+                response_format={"type": "json_object"}
+            )
+
+            result = json.loads(response.choices[0].message.content)
+            result["has_context"] = True
+            result["lab_profile_summary"] = {
+                "focus_areas": lab_profile.get("research_focus_areas", []),
+                "methodologies": lab_profile.get("methodologies", []),
+                "preferred_journals": lab_profile.get("preferred_journals", []),
+                "typical_tier": lab_profile.get("typical_tier"),
+                "confidence": lab_profile.get("confidence", 0)
+            }
+            return result
+
+        except Exception as e:
+            print(f"[JournalScorer] Context analysis generation failed: {e}")
+            return {
+                "has_context": True,
+                "error": str(e),
+                "lab_profile_summary": lab_profile
+            }
+
+    def _boost_journals_from_profile(self, journals: dict, lab_profile: dict) -> dict:
+        """Boost journals that appear in the lab's preferred journals list."""
+        if not lab_profile.get("preferred_journals"):
+            return journals
+
+        preferred = [j.lower().strip() for j in lab_profile.get("preferred_journals", [])]
+
+        for category in ["primary_matches", "stretch_matches", "safe_matches"]:
+            for journal in journals.get(category, []):
+                journal_name = journal.get("name", "").lower().strip()
+                # Check if this journal is in their preferred list
+                for pref in preferred:
+                    if pref in journal_name or journal_name in pref:
+                        journal["from_lab_history"] = True
+                        journal["lab_history_note"] = "Previously published here"
+                        # Add a boost to existing scores if present
+                        if "composite_score" in journal:
+                            journal["composite_score"] = min(100, journal["composite_score"] + 10)
+                        break
+
+        return journals
 
     def _detect_field(self, text_excerpt: str) -> dict:
         """
@@ -2047,6 +2220,13 @@ class JournalScorerService:
             "- MIDDLE sentences (3-8): HIGH weight (actual core content - the real discipline)\n"
             "- LAST 1-2 sentences: LOW weight (conclusions - often mirrors intro's broad claims)\n"
             "Keywords from the MIDDLE are what the paper IS about. Keywords from the EDGES are context.\n\n"
+            "=== CRITICAL FIELD DISAMBIGUATION ===\n"
+            "DO NOT confuse these:\n"
+            "- Proteomics, mass spectrometry, LC-MS/MS, TMT labeling = BIOLOGY or BIOMEDICAL, NOT cs_data_science\n"
+            "- Cancer cell lines, iron metabolism, FAC/DFO treatment = BIOLOGY or BIOMEDICAL\n"
+            "- 'Data analysis' in context of lab experiments = BIOLOGY, NOT data science\n"
+            "- Only classify as cs_data_science if it's ACTUALLY about algorithms, machine learning models, neural networks, computational methods AS THE CORE TOPIC\n"
+            "- A paper analyzing proteomics DATA is still a biology paper, not a data science paper\n\n"
             f"FIELDS:\n{field_list}\n\n"
             f"KNOWN RESEARCH DISCIPLINES:\n{discipline_list}\n\n"
             "Respond ONLY in valid JSON with this structure:\n"

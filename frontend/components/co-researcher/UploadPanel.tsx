@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 
 // Wellspring Warm theme - matching 2nd Brain design system
 const theme = {
@@ -45,6 +46,7 @@ const SAMPLE_PAPERS = [
 ]
 
 export default function UploadPanel({ onUpload }: UploadPanelProps) {
+  const { user } = useAuth()
   const [researchDescription, setResearchDescription] = useState('')
   const [targetFile, setTargetFile] = useState<File | null>(null)
   const [inputMode, setInputMode] = useState<'describe' | 'upload'>('describe')
@@ -58,8 +60,153 @@ export default function UploadPanel({ onUpload }: UploadPanelProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [showExamples, setShowExamples] = useState(false)
 
+  // Context auto-populate state
+  const [researchContext, setResearchContext] = useState<any>(null)
+  const [showAutoPopulate, setShowAutoPopulate] = useState(false)
+  const [canGenerateContext, setCanGenerateContext] = useState(false)
+  const [generatingContext, setGeneratingContext] = useState(false)
+
   const targetRef = useRef<HTMLInputElement>(null)
   const paperRef = useRef<HTMLInputElement>(null)
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isMountedRef = useRef(true)
+
+  // API base for main backend
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'
+
+  // Check and fetch research context
+  const fetchResearchContext = async (isPolling = false) => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return false
+
+    try {
+      const response = await fetch(`${API_BASE}/api/journal/research-summary`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.suggested_description) {
+          setResearchContext(data)
+          setShowAutoPopulate(true)
+          setCanGenerateContext(false)
+          setGeneratingContext(false)
+          // Clear the generating flag from localStorage
+          localStorage.removeItem('research_context_generating')
+          return true
+        } else if (!isPolling) {
+          // No summary yet, show generate button
+          setCanGenerateContext(true)
+        }
+      } else if (!isPolling) {
+        setCanGenerateContext(true)
+      }
+    } catch (error) {
+      console.error('Failed to fetch research context:', error)
+      if (!isPolling) {
+        setCanGenerateContext(true)
+      }
+    }
+    return false
+  }
+
+  // Fetch research context when logged in + check if generation was in progress
+  useEffect(() => {
+    if (!user) return
+
+    // Reset mounted ref on mount
+    isMountedRef.current = true
+
+    // Check if generation was in progress when we navigated away
+    const wasGenerating = localStorage.getItem('research_context_generating')
+
+    if (wasGenerating) {
+      setGeneratingContext(true)
+      // Poll for result every 2 seconds
+      const poll = async () => {
+        const found = await fetchResearchContext(true)
+        if (found) {
+          // Found the result, stop polling
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+        }
+      }
+
+      // Start polling
+      poll() // immediate check
+      pollIntervalRef.current = setInterval(poll, 2000)
+
+      // Stop polling after 60 seconds max
+      setTimeout(() => {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+          setGeneratingContext(false)
+          localStorage.removeItem('research_context_generating')
+          setCanGenerateContext(true)
+        }
+      }, 60000)
+    } else {
+      fetchResearchContext()
+    }
+
+    // Cleanup on unmount
+    return () => {
+      isMountedRef.current = false
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+    }
+  }, [user, API_BASE])
+
+  // Generate research context
+  const generateContext = async () => {
+    const token = localStorage.getItem('access_token')
+    if (!token) return
+
+    setGeneratingContext(true)
+    // Store flag so we can resume if user navigates away
+    localStorage.setItem('research_context_generating', 'true')
+
+    try {
+      const response = await fetch(`${API_BASE}/api/journal/research-summary/refresh`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+
+      // Only update state if component is still mounted
+      if (!isMountedRef.current) return
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.suggested_description) {
+          setResearchContext(data)
+          setShowAutoPopulate(true)
+          setCanGenerateContext(false)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate research context:', error)
+    } finally {
+      // Only clear localStorage and state if component is still mounted
+      // If user navigated away, keep the flag so polling can resume
+      if (isMountedRef.current) {
+        setGeneratingContext(false)
+        localStorage.removeItem('research_context_generating')
+      }
+    }
+  }
+
+  // Apply context to research description
+  const applyContext = () => {
+    if (researchContext?.suggested_description) {
+      setResearchDescription(researchContext.suggested_description)
+      setShowAutoPopulate(false)
+    }
+  }
 
   const ACCEPTED = '.pdf,.docx,.doc'
   const isAccepted = (name: string) => /\.(pdf|docx|doc)$/i.test(name)
@@ -172,6 +319,128 @@ export default function UploadPanel({ onUpload }: UploadPanelProps) {
           Describe your research, add papers to learn from, and get actionable insights tailored to your work.
         </p>
       </div>
+
+      {/* Context auto-populate banner */}
+      {user && (showAutoPopulate || canGenerateContext) && (
+        <div style={{
+          marginBottom: sp(6),
+          padding: sp(4),
+          borderRadius: 12,
+          background: theme.primaryLight,
+          border: `1px solid ${theme.primary}40`,
+        }}>
+          {showAutoPopulate && researchContext ? (
+            <div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: sp(2),
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: sp(2) }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                  </svg>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: theme.textPrimary }}>
+                    Research context available
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: sp(2) }}>
+                  <button
+                    onClick={applyContext}
+                    style={{
+                      padding: `${sp(1.5)}px ${sp(4)}px`,
+                      borderRadius: 8,
+                      background: theme.primary,
+                      border: 'none',
+                      color: '#fff',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      fontFamily: font,
+                    }}
+                  >
+                    Use this
+                  </button>
+                  <button
+                    onClick={() => setShowAutoPopulate(false)}
+                    style={{
+                      padding: `${sp(1.5)}px ${sp(4)}px`,
+                      borderRadius: 8,
+                      background: 'transparent',
+                      border: `1px solid ${theme.border}`,
+                      color: theme.textSecondary,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      fontFamily: font,
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+              <p style={{
+                fontSize: 12,
+                color: theme.textSecondary,
+                margin: 0,
+                lineHeight: 1.5,
+              }}>
+                {researchContext.suggested_description?.slice(0, 150)}
+                {researchContext.suggested_description?.length > 150 ? '...' : ''}
+              </p>
+            </div>
+          ) : canGenerateContext ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: sp(2) }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
+                <span style={{ fontSize: 13, color: theme.textSecondary }}>
+                  Auto-populate from your synced documents
+                </span>
+              </div>
+              <button
+                onClick={generateContext}
+                disabled={generatingContext}
+                style={{
+                  padding: `${sp(1.5)}px ${sp(4)}px`,
+                  borderRadius: 8,
+                  background: generatingContext ? theme.border : theme.primary,
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: generatingContext ? 'not-allowed' : 'pointer',
+                  fontFamily: font,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: sp(2),
+                }}
+              >
+                {generatingContext ? (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
+                      <path d="M21 12a9 9 0 11-6.219-8.56" />
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  'Generate'
+                )}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Step 1: Your Research */}
       <div style={{ marginBottom: sp(8) }}>
@@ -643,6 +912,13 @@ export default function UploadPanel({ onUpload }: UploadPanelProps) {
           </div>
         )}
       </div>
+
+      {/* Spin animation for loading */}
+      <style jsx global>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   )
 }

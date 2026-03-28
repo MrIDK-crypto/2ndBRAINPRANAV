@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import TopNav from '../shared/TopNav'
 import { theme, font, fontDisplay, fontMono, tierColors, fieldColors, severityColors } from './theme'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002'
@@ -250,6 +251,7 @@ export default function HighImpactJournal() {
   const [researchGaps, setResearchGaps] = useState<ResearchGapsInfo | null>(null)
   const [reviewMethodology, setReviewMethodology] = useState<ReviewMethodologyInfo | null>(null)
   const [figureAnalysis, setFigureAnalysis] = useState<any>(null)
+  const [contextAnalysis, setContextAnalysis] = useState<any>(null)
   const [error, setError] = useState('')
   const [publicationYear, setPublicationYear] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -272,7 +274,78 @@ export default function HighImpactJournal() {
   const [ideaLoading, setIdeaLoading] = useState(false)
 
   // Auth for paper-to-code (requires login)
-  const { token: authToken } = useAuth()
+  const { token: authToken, user } = useAuth()
+
+  // Auto-populate research description from knowledge base
+  const [autoPopulateLoading, setAutoPopulateLoading] = useState(false)
+  const [researchSummary, setResearchSummary] = useState<{
+    suggested_description?: string
+    research_areas?: string[]
+    methodologies?: string[]
+    recent_focus?: string
+    document_count?: number
+  } | null>(null)
+  const [showAutoPopulate, setShowAutoPopulate] = useState(false)
+
+  // State for when no cached summary exists
+  const [canGenerateSummary, setCanGenerateSummary] = useState(false)
+  const [generatingSummary, setGeneratingSummary] = useState(false)
+
+  // Fetch research summary when user is logged in and on describe tab
+  useEffect(() => {
+    if (authToken && inputMode === 'describe' && !researchText && !autoPopulateLoading && !researchSummary) {
+      setAutoPopulateLoading(true)
+      fetch(`${API_URL}/api/journal/research-summary`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.has_research && data.suggested_description) {
+            setResearchSummary(data)
+            setShowAutoPopulate(true)
+          } else if (data.success && !data.has_research && !data.cached) {
+            // No cached summary - show "Generate" option
+            setCanGenerateSummary(true)
+          }
+        })
+        .catch(err => console.error('Failed to fetch research summary:', err))
+        .finally(() => setAutoPopulateLoading(false))
+    }
+  }, [authToken, inputMode, researchText, autoPopulateLoading, researchSummary])
+
+  // Generate research summary on demand
+  const generateResearchSummary = useCallback(async () => {
+    if (!authToken) return
+    setGeneratingSummary(true)
+    setCanGenerateSummary(false)
+    try {
+      const res = await fetch(`${API_URL}/api/journal/research-summary/refresh`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+      const data = await res.json()
+      if (data.success && data.has_research && data.suggested_description) {
+        setResearchSummary(data)
+        setShowAutoPopulate(true)
+      }
+    } catch (err) {
+      console.error('Failed to generate research summary:', err)
+      setCanGenerateSummary(true)
+    } finally {
+      setGeneratingSummary(false)
+    }
+  }, [authToken])
+
+  const applyAutoPopulate = useCallback(() => {
+    if (researchSummary?.suggested_description) {
+      setResearchText(researchSummary.suggested_description)
+      setShowAutoPopulate(false)
+    }
+  }, [researchSummary])
+
+  const dismissAutoPopulate = useCallback(() => {
+    setShowAutoPopulate(false)
+  }, [])
 
   const reset = useCallback(() => {
     setState('idle')
@@ -293,9 +366,12 @@ export default function HighImpactJournal() {
     setResearchGaps(null)
     setReviewMethodology(null)
     setFigureAnalysis(null)
+    setContextAnalysis(null)
     setError('')
     setResearchText('')
     setPublicationYear('')
+    setResearchSummary(null)
+    setShowAutoPopulate(false)
     setCodeGenResult(null)
     setCodeGenLoading(false)
     setCodeGenProgress('')
@@ -374,6 +450,9 @@ export default function HighImpactJournal() {
               case 'figure_analysis':
                 setFigureAnalysis(data)
                 break
+              case 'context_analysis':
+                setContextAnalysis(data)
+                break
               case 'recommendations':
                 setRecommendations(prev => prev + data.content)
                 break
@@ -421,16 +500,27 @@ export default function HighImpactJournal() {
 
     setError('')
     setState('analyzing')
-    setProgress({ step: 1, message: 'Uploading...', percent: 2 })
+    setProgress({ step: 1, message: authToken ? 'Uploading with lab context...' : 'Uploading...', percent: 2 })
 
     const formData = new FormData()
     formData.append('file', selectedFile)
     formData.append('publication_year', publicationYear)
 
+    // Use context-aware endpoint if user is logged in
+    const endpoint = authToken
+      ? `${API_URL}/api/journal/analyze-with-context`
+      : `${API_URL}/api/journal/analyze`
+
+    const headers: HeadersInit = {}
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`
+    }
+
     try {
-      const response = await fetch(`${API_URL}/api/journal/analyze`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
+        headers,
       })
 
       if (!response.ok || !response.body) {
@@ -444,7 +534,7 @@ export default function HighImpactJournal() {
       setError('Connection failed. Please check your network and try again.')
       setState('idle')
     }
-  }, [selectedFile, processSSEStream, publicationYear])
+  }, [selectedFile, processSSEStream, publicationYear, authToken])
 
   const handleTextSubmit = useCallback(async () => {
     const wordCount = researchText.trim().split(/\s+/).filter(Boolean).length
@@ -459,16 +549,27 @@ export default function HighImpactJournal() {
 
     setError('')
     setState('analyzing')
-    setProgress({ step: 1, message: 'Analyzing your research description...', percent: 2 })
+    setProgress({ step: 1, message: authToken ? 'Analyzing with lab context...' : 'Analyzing your research description...', percent: 2 })
 
     const formData = new FormData()
     formData.append('text', researchText.trim())
     if (publicationYear) formData.append('publication_year', publicationYear)
 
+    // Use context-aware endpoint if user is logged in
+    const endpoint = authToken
+      ? `${API_URL}/api/journal/analyze-with-context`
+      : `${API_URL}/api/journal/analyze`
+
+    const headers: HeadersInit = {}
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`
+    }
+
     try {
-      const response = await fetch(`${API_URL}/api/journal/analyze`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
+        headers,
       })
 
       if (!response.ok || !response.body) {
@@ -482,7 +583,7 @@ export default function HighImpactJournal() {
       setError('Connection failed. Please check your network and try again.')
       setState('idle')
     }
-  }, [researchText, processSSEStream, publicationYear])
+  }, [researchText, processSSEStream, publicationYear, authToken])
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -766,8 +867,11 @@ export default function HighImpactJournal() {
       backgroundColor: theme.pageBg,
       fontFamily: font,
       color: theme.textPrimary,
+      display: 'flex',
+      flexDirection: 'column',
     }}>
-      <main style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
+      <TopNav userName={user?.full_name?.split(' ')[0] || 'Researcher'} />
+      <main style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px', flex: 1 }}>
         {error && (
           <div style={{
             padding: '12px 16px',
@@ -943,6 +1047,160 @@ export default function HighImpactJournal() {
               <>
                 {/* Describe Research Text Area */}
                 <div style={{ maxWidth: 520, margin: '0 auto', textAlign: 'left' }}>
+                  {/* Auto-populate banner */}
+                  <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+                  {/* Generating summary spinner */}
+                  {generatingSummary && (
+                    <div style={{
+                      padding: '16px 20px',
+                      marginBottom: 16,
+                      backgroundColor: `${theme.primary}10`,
+                      border: `1px solid ${theme.primary}30`,
+                      borderRadius: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}>
+                      <div style={{
+                        width: 20,
+                        height: 20,
+                        border: `2px solid ${theme.primary}`,
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                      }} />
+                      <span style={{ fontSize: 14, color: theme.textSecondary, fontFamily: font }}>
+                        Generating research summary from your documents...
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Option to generate summary if none cached */}
+                  {canGenerateSummary && !generatingSummary && (
+                    <div style={{
+                      padding: '16px 20px',
+                      marginBottom: 16,
+                      backgroundColor: `${theme.primary}08`,
+                      border: `1px solid ${theme.primary}20`,
+                      borderRadius: 12,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <span style={{ fontSize: 14, fontWeight: 500, color: theme.textPrimary, fontFamily: font }}>
+                            Auto-fill from your research
+                          </span>
+                          <p style={{ fontSize: 12, color: theme.textMuted, margin: '4px 0 0', fontFamily: font }}>
+                            Generate a research description from your synced documents
+                          </p>
+                        </div>
+                        <button
+                          onClick={generateResearchSummary}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: 8,
+                            border: 'none',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            fontFamily: font,
+                            cursor: 'pointer',
+                            backgroundColor: theme.primary,
+                            color: '#FFFFFF',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          Generate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {showAutoPopulate && researchSummary && (
+                    <div style={{
+                      padding: '16px 20px',
+                      marginBottom: 16,
+                      backgroundColor: `${theme.success}08`,
+                      border: `1px solid ${theme.success}30`,
+                      borderRadius: 12,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <span style={{ fontSize: 18 }}>✨</span>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, fontFamily: font }}>
+                          We found {researchSummary.document_count} research documents in your knowledge base
+                        </span>
+                      </div>
+
+                      {researchSummary.research_areas && researchSummary.research_areas.length > 0 && (
+                        <div style={{ marginBottom: 10 }}>
+                          <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: font }}>Research Areas: </span>
+                          {researchSummary.research_areas.map((area, i) => (
+                            <span key={i} style={{
+                              display: 'inline-block',
+                              padding: '2px 8px',
+                              marginRight: 6,
+                              marginBottom: 4,
+                              backgroundColor: `${theme.primary}15`,
+                              borderRadius: 6,
+                              fontSize: 12,
+                              color: theme.primary,
+                              fontFamily: font,
+                            }}>{area}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      <p style={{
+                        fontSize: 13,
+                        color: theme.textSecondary,
+                        lineHeight: 1.6,
+                        marginBottom: 14,
+                        fontFamily: font,
+                        maxHeight: 80,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}>
+                        {researchSummary.suggested_description?.slice(0, 200)}...
+                      </p>
+
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <button
+                          onClick={applyAutoPopulate}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: 8,
+                            border: 'none',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            fontFamily: font,
+                            cursor: 'pointer',
+                            backgroundColor: theme.success,
+                            color: '#FFFFFF',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          Use This Description
+                        </button>
+                        <button
+                          onClick={dismissAutoPopulate}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: 8,
+                            border: `1px solid ${theme.border}`,
+                            fontSize: 13,
+                            fontWeight: 500,
+                            fontFamily: font,
+                            cursor: 'pointer',
+                            backgroundColor: 'transparent',
+                            color: theme.textSecondary,
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          Write My Own
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <textarea
                     value={researchText}
                     onChange={e => setResearchText(e.target.value)}
@@ -1363,6 +1621,192 @@ export default function HighImpactJournal() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {/* Context-Aware Insights - Fallback (no lab profile) */}
+            {contextAnalysis && contextAnalysis.has_context === false && (
+              <div style={{
+                padding: 18,
+                borderRadius: 14,
+                background: theme.amberBg,
+                border: `1px solid ${theme.amberBorder}`,
+                marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={theme.amber} strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4M12 8h.01" />
+                  </svg>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#6B5010', fontFamily: font, marginBottom: 6 }}>
+                      Limited Personalization Available
+                    </div>
+                    <div style={{ fontSize: 13, color: '#6B5010', fontFamily: font, lineHeight: 1.6, marginBottom: 8 }}>
+                      {contextAnalysis.no_context_reason || 'No relevant lab context found for this manuscript.'}
+                    </div>
+                    {contextAnalysis.tip && (
+                      <div style={{ fontSize: 12, color: '#8B6914', fontFamily: font, fontStyle: 'italic' }}>
+                        Tip: {contextAnalysis.tip}
+                      </div>
+                    )}
+                    {contextAnalysis.documents_searched !== undefined && (
+                      <div style={{ fontSize: 11, color: '#8B6914', fontFamily: font, marginTop: 6 }}>
+                        Documents searched: {contextAnalysis.documents_searched}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Context-Aware Insights (when lab profile is used) */}
+            {contextAnalysis && contextAnalysis.has_context && (
+              <div style={{
+                padding: 24,
+                borderRadius: 16,
+                background: `linear-gradient(135deg, ${theme.primaryLight} 0%, ${theme.cardBg} 100%)`,
+                border: `2px solid ${theme.primary}40`,
+                marginBottom: 24,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 8, background: theme.primary,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                      <path d="M2 17l10 5 10-5" />
+                      <path d="M2 12l10 5 10-5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: 17, fontWeight: 600, color: theme.textPrimary, margin: 0 }}>
+                      Context-Aware Analysis
+                    </h3>
+                    <p style={{ fontSize: 12, color: theme.textSecondary, margin: 0 }}>
+                      Personalized insights based on your lab's research profile
+                    </p>
+                  </div>
+                </div>
+
+                {/* Profile Match */}
+                {contextAnalysis.profile_match && (
+                  <div style={{ marginBottom: 16, padding: 16, borderRadius: 12, background: theme.cardBg }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary }}>Profile Match</span>
+                      <span style={{
+                        fontSize: 13, fontWeight: 600, fontFamily: fontMono,
+                        color: contextAnalysis.profile_match.score >= 70 ? theme.success : contextAnalysis.profile_match.score >= 40 ? theme.amber : theme.textSecondary
+                      }}>
+                        {contextAnalysis.profile_match.score}%
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0, lineHeight: 1.5 }}>
+                      {contextAnalysis.profile_match.assessment}
+                    </p>
+                    {contextAnalysis.profile_match.consistency && (
+                      <p style={{ fontSize: 12, color: theme.textMuted, margin: '8px 0 0 0', fontStyle: 'italic' }}>
+                        {contextAnalysis.profile_match.consistency}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Publication Strategy */}
+                {contextAnalysis.publication_strategy && (
+                  <div style={{ marginBottom: 16, padding: 16, borderRadius: 12, background: theme.cardBg }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, display: 'block', marginBottom: 8 }}>
+                      Publication Strategy
+                    </span>
+                    <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0, lineHeight: 1.5 }}>
+                      {contextAnalysis.publication_strategy.recommendation}
+                    </p>
+                    {contextAnalysis.publication_strategy.rationale && (
+                      <p style={{ fontSize: 12, color: theme.textMuted, margin: '8px 0 0 0' }}>
+                        <strong>Rationale:</strong> {contextAnalysis.publication_strategy.rationale}
+                      </p>
+                    )}
+                    {contextAnalysis.publication_strategy.preferred_journal_fit?.length > 0 && (
+                      <div style={{ marginTop: 12 }}>
+                        <span style={{ fontSize: 12, color: theme.textMuted }}>From your publication history:</span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                          {contextAnalysis.publication_strategy.preferred_journal_fit.map((j: string, i: number) => (
+                            <span key={i} style={{
+                              padding: '4px 10px', borderRadius: 12, fontSize: 12,
+                              background: `${theme.primary}20`, color: theme.primary, fontWeight: 500
+                            }}>
+                              {j}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Competitive Advantage */}
+                {contextAnalysis.competitive_advantage && (
+                  <div style={{ padding: 16, borderRadius: 12, background: `${theme.success}10`, border: `1px solid ${theme.success}30` }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: theme.success, display: 'block', marginBottom: 4 }}>
+                      Your Competitive Advantage
+                    </span>
+                    <p style={{ fontSize: 13, color: theme.textSecondary, margin: 0 }}>
+                      {contextAnalysis.competitive_advantage}
+                    </p>
+                  </div>
+                )}
+
+                {/* Leveraging History */}
+                {contextAnalysis.leveraging_history?.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: theme.textPrimary, display: 'block', marginBottom: 8 }}>
+                      Suggestions Based on Your Lab's History
+                    </span>
+                    <ul style={{ margin: 0, paddingLeft: 20 }}>
+                      {contextAnalysis.leveraging_history.map((item: string, i: number) => (
+                        <li key={i} style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 4 }}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Source Citations */}
+                {contextAnalysis.sources && Object.keys(contextAnalysis.sources).length > 0 && (
+                  <div style={{
+                    marginTop: 16, padding: 12, borderRadius: 8,
+                    background: theme.pageBg, border: `1px dashed ${theme.border}`
+                  }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8
+                    }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                        <path d="M14 2v6h6" />
+                      </svg>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Sources Used
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {Object.entries(contextAnalysis.sources).slice(0, 3).flatMap(([field, sources]: [string, any]) =>
+                        (sources || []).slice(0, 2).map((src: any, i: number) => (
+                          <span key={`${field}-${i}`} style={{
+                            padding: '3px 8px', borderRadius: 6, fontSize: 11,
+                            background: theme.cardBg, border: `1px solid ${theme.border}`,
+                            color: theme.textSecondary,
+                          }}>
+                            <span style={{ color: theme.primary, fontWeight: 500 }}>
+                              {src.source_type || 'doc'}:
+                            </span>{' '}
+                            {src.title?.slice(0, 30) || 'Unknown'}
+                            {src.title?.length > 30 && '...'}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -3142,7 +3586,23 @@ function JournalColumn({ title, journals, accent }: { title: string; journals: J
             borderBottom: i < journals.length - 1 ? `1px solid ${theme.border}` : 'none',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={{ fontSize: 13, color: url ? '#4338CA' : theme.textPrimary, fontWeight: 500 }}>{j.name}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13, color: url ? '#4338CA' : theme.textPrimary, fontWeight: 500 }}>{j.name}</span>
+                {(j as any).from_lab_history && (
+                  <span style={{
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    fontSize: 9,
+                    fontWeight: 600,
+                    background: `${theme.primary}20`,
+                    color: theme.primary,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                  }}>
+                    Published Here
+                  </span>
+                )}
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                 {url && (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4338CA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>

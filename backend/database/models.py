@@ -230,6 +230,10 @@ class Tenant(Base):
     # Settings
     settings = Column(JSON, default=dict)
 
+    # Pre-computed research summary (updated during document sync)
+    research_summary = Column(JSON, nullable=True)  # {suggested_description, research_areas, methodologies, etc.}
+    research_summary_updated_at = Column(DateTime(timezone=True))
+
     # Audit
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

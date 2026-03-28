@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import TopNav from '../shared/TopNav'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -193,7 +193,7 @@ const CopyIcon = () => (
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function ProtocolOptimizer() {
-  const { user } = useAuth()
+  const { user, token: authToken } = useAuth()
 
   // State
   const [state, setState] = useState<'input' | 'analyzing' | 'results'>('input')
@@ -215,9 +215,155 @@ export default function ProtocolOptimizer() {
   const [score, setScore] = useState<number>(0)
   const [scoreAfter, setScoreAfter] = useState<number>(0)
   const [optimizedProtocol, setOptimizedProtocol] = useState('')
+  const [contextAnalysis, setContextAnalysis] = useState<{
+    has_context?: boolean
+    no_context_reason?: string
+    documents_searched?: number
+    tip?: string
+    equipment_match?: { score: number; assessment: string; matched_equipment?: string[] }
+    past_protocol_insights?: { summary: string; relevant_protocols?: string[] }
+    risk_warnings?: string[]
+    optimization_strategy?: { approach: string; rationale: string }
+    competitive_advantage?: string
+    sources?: Record<string, Array<{ title?: string; source_type?: string; excerpt?: string }>>
+  } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const contextFileInputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-populate research context
+  const [researchContext, setResearchContext] = useState<{
+    research_description?: string
+    research_areas?: string[]
+    methodologies?: string[]
+  } | null>(null)
+  const [showAutoPopulate, setShowAutoPopulate] = useState(false)
+  const [canGenerateContext, setCanGenerateContext] = useState(false)
+  const [generatingContext, setGeneratingContext] = useState(false)
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isMountedRef = useRef(true)
+
+  // Fetch research context
+  const fetchResearchContext = useCallback(async (isPolling = false) => {
+    if (!authToken) return false
+
+    try {
+      const res = await fetch(`${API_URL}/api/protocol/research-context`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+      const data = await res.json()
+      if (data.success && data.has_context && data.research_description) {
+        setResearchContext(data)
+        setShowAutoPopulate(true)
+        setGeneratingContext(false)
+        localStorage.removeItem('protocol_context_generating')
+        return true
+      } else if (data.success && !data.has_context && !isPolling) {
+        setCanGenerateContext(true)
+      }
+    } catch (err) {
+      console.error('Failed to fetch research context:', err)
+      if (!isPolling) setCanGenerateContext(true)
+    }
+    return false
+  }, [authToken])
+
+  // Fetch research context when logged in + check if generation was in progress
+  useEffect(() => {
+    if (!authToken || state !== 'input' || contextText || researchContext) return
+
+    // Reset mounted ref on mount
+    isMountedRef.current = true
+
+    const wasGenerating = localStorage.getItem('protocol_context_generating')
+
+    if (wasGenerating) {
+      setGeneratingContext(true)
+      // Poll for result every 2 seconds
+      const poll = async () => {
+        const found = await fetchResearchContext(true)
+        if (found && pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+        }
+      }
+
+      poll() // immediate check
+      pollIntervalRef.current = setInterval(poll, 2000)
+
+      // Stop polling after 60 seconds
+      setTimeout(() => {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+          setGeneratingContext(false)
+          localStorage.removeItem('protocol_context_generating')
+          setCanGenerateContext(true)
+        }
+      }, 60000)
+    } else {
+      fetchResearchContext()
+    }
+
+    return () => {
+      isMountedRef.current = false
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+    }
+  }, [authToken, state, contextText, researchContext, fetchResearchContext])
+
+  const applyAutoPopulate = useCallback(() => {
+    if (researchContext?.research_description) {
+      setContextText(researchContext.research_description)
+      setShowAutoPopulate(false)
+    }
+  }, [researchContext])
+
+  const dismissAutoPopulate = useCallback(() => {
+    setShowAutoPopulate(false)
+  }, [])
+
+  // Generate context via journal refresh endpoint
+  const generateContext = useCallback(async () => {
+    if (!authToken) return
+    setGeneratingContext(true)
+    setCanGenerateContext(false)
+    localStorage.setItem('protocol_context_generating', 'true')
+
+    try {
+      const res = await fetch(`${API_URL}/api/journal/research-summary/refresh`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      })
+
+      // Only update state if component is still mounted
+      if (!isMountedRef.current) return
+
+      const data = await res.json()
+      if (data.success && data.has_research && data.suggested_description) {
+        setResearchContext({
+          research_description: data.suggested_description,
+          research_areas: data.research_areas,
+          methodologies: data.methodologies
+        })
+        setShowAutoPopulate(true)
+      }
+    } catch (err) {
+      console.error('Failed to generate context:', err)
+      if (isMountedRef.current) {
+        setCanGenerateContext(true)
+      }
+    } finally {
+      // Only clear localStorage and state if component is still mounted
+      // If user navigated away, keep the flag so polling can resume
+      if (isMountedRef.current) {
+        setGeneratingContext(false)
+        localStorage.removeItem('protocol_context_generating')
+      }
+    }
+  }, [authToken])
 
   const reset = useCallback(() => {
     setState('input')
@@ -231,11 +377,15 @@ export default function ProtocolOptimizer() {
     setScore(0)
     setScoreAfter(0)
     setOptimizedProtocol('')
+    setContextAnalysis(null)
     setError('')
     setContextText('')
     setContextFile(null)
     setProtocolText('')
     setSelectedFile(null)
+    setResearchContext(null)
+    setShowAutoPopulate(false)
+    setCanGenerateContext(false)
   }, [])
 
   const processSSEStream = useCallback(async (response: Response) => {
@@ -277,6 +427,9 @@ export default function ProtocolOptimizer() {
               case 'score_calculated':
                 setScore(data.current_score)
                 setScoreAfter(data.potential_score)
+                break
+              case 'context_analysis':
+                setContextAnalysis(data)
                 break
               case 'complete':
                 setResult(data)
@@ -350,7 +503,7 @@ export default function ProtocolOptimizer() {
 
     setError('')
     setState('analyzing')
-    setProgress({ step: 1, message: 'Starting analysis...', percent: 2 })
+    setProgress({ step: 1, message: authToken ? 'Analyzing with lab context...' : 'Starting analysis...', percent: 2 })
 
     const formData = new FormData()
     formData.append('context', contextText.trim())
@@ -366,11 +519,22 @@ export default function ProtocolOptimizer() {
       formData.append('protocol', protocolText.trim())
     }
 
+    // Use context-aware endpoint if user is logged in
+    const endpoint = authToken
+      ? `${API_URL}/api/protocol/optimize-with-context`
+      : `${API_URL}/api/protocol/optimize`
+
+    const headers: HeadersInit = {}
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`
+    }
+
     try {
-      const response = await fetch(`${API_URL}/api/protocol/optimize`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        headers,
       })
 
       if (!response.ok || !response.body) {
@@ -386,7 +550,7 @@ export default function ProtocolOptimizer() {
       setError(`Connection failed: ${errMsg}`)
       setState('input')
     }
-  }, [contextText, contextFile, protocolText, selectedFile, processSSEStream])
+  }, [contextText, contextFile, protocolText, selectedFile, processSSEStream, authToken])
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(optimizedProtocol)
@@ -449,6 +613,154 @@ export default function ProtocolOptimizer() {
             Describe your organism, tissue type, what you're trying to do, and any issues you're experiencing.
             You can also upload a reference paper to provide additional context.
           </p>
+
+          {/* Auto-populate from knowledge base */}
+          <style>{`@keyframes protocol-spin { to { transform: rotate(360deg); } }`}</style>
+
+          {generatingContext && (
+            <div style={{
+              padding: '12px 16px',
+              marginBottom: 12,
+              backgroundColor: `${theme.primary}10`,
+              border: `1px solid ${theme.primary}30`,
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}>
+              <div style={{
+                width: 16,
+                height: 16,
+                border: `2px solid ${theme.primary}`,
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'protocol-spin 1s linear infinite',
+              }} />
+              <span style={{ fontSize: 13, color: theme.textSecondary, fontFamily: font }}>
+                Generating research context from your documents...
+              </span>
+            </div>
+          )}
+
+          {canGenerateContext && !generatingContext && (
+            <div style={{
+              padding: '12px 16px',
+              marginBottom: 12,
+              backgroundColor: `${theme.primary}08`,
+              border: `1px solid ${theme.primary}20`,
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: theme.textPrimary, fontFamily: font }}>
+                  Auto-fill from your research
+                </span>
+                <p style={{ fontSize: 11, color: theme.textMuted, margin: '2px 0 0', fontFamily: font }}>
+                  Generate context from your synced documents
+                </p>
+              </div>
+              <button
+                onClick={generateContext}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  border: 'none',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: font,
+                  cursor: 'pointer',
+                  backgroundColor: theme.primary,
+                  color: '#FFFFFF',
+                }}
+              >
+                Generate
+              </button>
+            </div>
+          )}
+
+          {showAutoPopulate && researchContext && (
+            <div style={{
+              padding: '12px 16px',
+              marginBottom: 12,
+              backgroundColor: `${theme.success}08`,
+              border: `1px solid ${theme.success}30`,
+              borderRadius: 8,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 14 }}>✨</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: theme.textPrimary, fontFamily: font }}>
+                  Research context available
+                </span>
+              </div>
+
+              {researchContext.methodologies && researchContext.methodologies.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: theme.textMuted, fontFamily: font }}>Techniques: </span>
+                  {researchContext.methodologies.map((m, i) => (
+                    <span key={i} style={{
+                      display: 'inline-block',
+                      padding: '1px 6px',
+                      marginRight: 4,
+                      backgroundColor: `${theme.primary}15`,
+                      borderRadius: 4,
+                      fontSize: 11,
+                      color: theme.primary,
+                      fontFamily: font,
+                    }}>{m}</span>
+                  ))}
+                </div>
+              )}
+
+              <p style={{
+                fontSize: 12,
+                color: theme.textSecondary,
+                lineHeight: 1.5,
+                marginBottom: 10,
+                fontFamily: font,
+                maxHeight: 60,
+                overflow: 'hidden',
+              }}>
+                {researchContext.research_description?.slice(0, 150)}...
+              </p>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={applyAutoPopulate}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: font,
+                    cursor: 'pointer',
+                    backgroundColor: theme.success,
+                    color: '#FFFFFF',
+                  }}
+                >
+                  Use This
+                </button>
+                <button
+                  onClick={dismissAutoPopulate}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: `1px solid ${theme.border}`,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    fontFamily: font,
+                    cursor: 'pointer',
+                    backgroundColor: 'transparent',
+                    color: theme.textSecondary,
+                  }}
+                >
+                  Write My Own
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Context file upload */}
           <div style={{ marginBottom: 12 }}>
@@ -889,6 +1201,272 @@ export default function ProtocolOptimizer() {
                     {m.message}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Context-Aware Analysis Card - NEW */}
+      {contextAnalysis && (
+        <div style={{
+          background: `linear-gradient(135deg, ${theme.primaryLight} 0%, ${theme.cardBg} 100%)`,
+          border: `1px solid ${theme.primaryBorder}`,
+          borderRadius: 12,
+          overflow: 'hidden',
+          marginBottom: 16,
+        }}>
+          <div style={{
+            padding: '14px 18px',
+            borderBottom: `1px solid ${theme.border}`,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+            <span style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, fontFamily: font }}>
+              Lab Context Analysis
+            </span>
+            <span style={{
+              marginLeft: 'auto',
+              padding: '2px 8px',
+              background: contextAnalysis.has_context === false ? theme.amber : theme.primary,
+              borderRadius: 10,
+              fontSize: 10,
+              fontWeight: 600,
+              color: '#fff',
+            }}>
+              {contextAnalysis.has_context === false ? 'LIMITED' : 'PERSONALIZED'}
+            </span>
+          </div>
+          <div style={{ padding: 18 }}>
+            {/* No Context Fallback */}
+            {contextAnalysis.has_context === false && (
+              <div style={{
+                padding: 16,
+                background: theme.amberBg,
+                borderRadius: 8,
+                border: `1px solid ${theme.amberBorder}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={theme.amber} strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4M12 8h.01" />
+                  </svg>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6B5010', fontFamily: font, marginBottom: 4 }}>
+                      Limited Personalization Available
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#6B5010', fontFamily: font, lineHeight: 1.5, marginBottom: 8 }}>
+                      {contextAnalysis.no_context_reason || 'No relevant lab context found for this protocol.'}
+                    </div>
+                    {contextAnalysis.tip && (
+                      <div style={{ fontSize: 12, color: '#8B6914', fontFamily: font, fontStyle: 'italic' }}>
+                        Tip: {contextAnalysis.tip}
+                      </div>
+                    )}
+                    {contextAnalysis.documents_searched !== undefined && (
+                      <div style={{ fontSize: 11, color: '#8B6914', fontFamily: font, marginTop: 6 }}>
+                        Documents searched: {contextAnalysis.documents_searched}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Equipment Match */}
+            {contextAnalysis.equipment_match && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <div style={{
+                    width: 40, height: 40,
+                    borderRadius: 20,
+                    background: contextAnalysis.equipment_match.score >= 70
+                      ? theme.successBg
+                      : contextAnalysis.equipment_match.score >= 40
+                        ? theme.amberBg
+                        : theme.errorBg,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: contextAnalysis.equipment_match.score >= 70
+                      ? riskColors.low.text
+                      : contextAnalysis.equipment_match.score >= 40
+                        ? '#8B6914'
+                        : riskColors.high.text,
+                    fontFamily: font,
+                  }}>
+                    {contextAnalysis.equipment_match.score}%
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: font }}>
+                      Equipment Match
+                    </div>
+                    <div style={{ fontSize: 13, color: theme.textPrimary, fontFamily: font }}>
+                      {contextAnalysis.equipment_match.assessment}
+                    </div>
+                  </div>
+                </div>
+                {contextAnalysis.equipment_match.matched_equipment && contextAnalysis.equipment_match.matched_equipment.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginLeft: 48 }}>
+                    {contextAnalysis.equipment_match.matched_equipment.map((eq, i) => (
+                      <span key={i} style={{
+                        padding: '3px 10px',
+                        background: theme.successBg,
+                        border: `1px solid ${theme.successBorder}`,
+                        borderRadius: 12,
+                        fontSize: 11,
+                        color: riskColors.low.text,
+                        fontFamily: font,
+                      }}>
+                        ✓ {eq}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Past Protocol Insights */}
+            {contextAnalysis.past_protocol_insights && (
+              <div style={{
+                padding: 14,
+                background: theme.cardBg,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 8,
+                marginBottom: 16,
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: font, marginBottom: 6 }}>
+                  Insights from Your Lab's Protocols
+                </div>
+                <div style={{ fontSize: 13, color: theme.textPrimary, fontFamily: font, lineHeight: 1.6 }}>
+                  {contextAnalysis.past_protocol_insights.summary}
+                </div>
+                {contextAnalysis.past_protocol_insights.relevant_protocols && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: theme.textMuted, fontFamily: font }}>
+                    Based on: {contextAnalysis.past_protocol_insights.relevant_protocols.slice(0, 3).join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Risk Warnings */}
+            {contextAnalysis.risk_warnings && contextAnalysis.risk_warnings.length > 0 && (
+              <div style={{
+                padding: 14,
+                background: theme.amberBg,
+                border: `1px solid ${theme.amberBorder}`,
+                borderRadius: 8,
+                marginBottom: 16,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.amber} strokeWidth="2" strokeLinecap="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#8B6914', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: font }}>
+                    Risk Warnings from Lab History
+                  </span>
+                </div>
+                {contextAnalysis.risk_warnings.map((warning, i) => (
+                  <div key={i} style={{ fontSize: 12.5, color: '#6B5010', fontFamily: font, lineHeight: 1.5, marginBottom: i < contextAnalysis.risk_warnings!.length - 1 ? 6 : 0 }}>
+                    • {warning}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Optimization Strategy */}
+            {contextAnalysis.optimization_strategy && (
+              <div style={{
+                padding: 14,
+                background: theme.successBg,
+                border: `1px solid ${theme.successBorder}`,
+                borderRadius: 8,
+                marginBottom: 16,
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: riskColors.low.text, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: font, marginBottom: 6 }}>
+                  Recommended Strategy for Your Lab
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: riskColors.low.text, fontFamily: font, marginBottom: 4 }}>
+                  {contextAnalysis.optimization_strategy.approach}
+                </div>
+                <div style={{ fontSize: 12.5, color: theme.textSecondary, fontFamily: font, lineHeight: 1.5 }}>
+                  {contextAnalysis.optimization_strategy.rationale}
+                </div>
+              </div>
+            )}
+
+            {/* Competitive Advantage */}
+            {contextAnalysis.competitive_advantage && (
+              <div style={{
+                padding: 14,
+                background: `linear-gradient(135deg, ${theme.primaryLight} 0%, ${theme.cardBg} 100%)`,
+                border: `1px solid ${theme.primaryBorder}`,
+                borderRadius: 8,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.primary} strokeWidth="2" strokeLinecap="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: theme.primary, textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: font }}>
+                    Your Lab's Advantage
+                  </span>
+                </div>
+                <div style={{ fontSize: 13, color: theme.textPrimary, fontFamily: font, lineHeight: 1.6 }}>
+                  {contextAnalysis.competitive_advantage}
+                </div>
+              </div>
+            )}
+
+            {/* Source Citations */}
+            {contextAnalysis.sources && Object.keys(contextAnalysis.sources).length > 0 && (
+              <div style={{
+                marginTop: 16,
+                padding: 12,
+                borderRadius: 8,
+                background: theme.pageBg,
+                border: `1px dashed ${theme.border}`,
+              }}>
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: theme.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  fontFamily: font,
+                }}>
+                  Sources Used
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {Object.entries(contextAnalysis.sources).slice(0, 3).flatMap(([field, sources]) =>
+                    (sources || []).slice(0, 2).map((src, i) => (
+                      <span
+                        key={`${field}-${i}`}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: 6,
+                          background: theme.cardBg,
+                          border: `1px solid ${theme.border}`,
+                          fontSize: 11,
+                          color: theme.textSecondary,
+                          fontFamily: font,
+                        }}
+                      >
+                        <span style={{ color: theme.primary, fontWeight: 500 }}>
+                          {src.source_type || 'doc'}:
+                        </span>{' '}
+                        {src.title?.slice(0, 30) || 'Unknown'}
+                      </span>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </div>

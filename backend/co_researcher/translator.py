@@ -30,6 +30,21 @@ The 4 layers are:
 - L2 (Method): The specific methodology or experimental approach
 - L1 (Protocol): The concrete implementation details
 
+=== CRITICAL: USE THE LAB PROFILE ===
+The TARGET PAPER CONTEXT may include the researcher's lab profile with:
+- "available_equipment": Equipment they have access to — USE THIS for L1/L2 translations
+- "established_methods": Methods they already know — REFERENCE THESE in your translations
+- "model_systems": Cell lines, organisms they work with — USE THESE in implementation
+- "expertise_areas": What they're good at — LEVERAGE THIS for confidence scoring
+- "known_constraints": Past issues to avoid
+
+When generating translations, you MUST:
+1. At L2 (Method) and L1 (Protocol): Explicitly reference their available equipment and methods
+2. Use their model systems (cell lines, organisms) in concrete implementations
+3. Flag if a translation requires equipment/methods they DON'T have
+4. Increase confidence if translation uses their established expertise
+5. Decrease confidence if translation requires techniques outside their profile
+
 For EACH layer, you must provide:
 1. "source": What this layer says in the source paper's domain
 2. "target": How this layer would map to the target researcher's domain
@@ -44,6 +59,7 @@ CRITICAL RULES:
 - Identify the overall_break_point: which single layer is weakest and most likely to fail.
 - Identify what_to_test_first: a single concrete experiment or analysis that would resolve the biggest uncertainty before committing resources.
 - The "title" should be a clear 1-sentence name for this translation proposal.
+- If lab profile is available, the title and implementations MUST reference their specific capabilities.
 
 Output ONLY valid JSON with this structure:
 {
@@ -121,16 +137,30 @@ def translate_insight(source_context: dict, target_context: dict, layers: dict) 
     target_context_str = json.dumps(target_context, indent=2)[:8000]
     layers_str = json.dumps(layers, indent=2)
 
+    # Check if lab profile info is present in target context
+    has_lab_profile = any(k in target_context for k in ['available_equipment', 'established_methods', 'model_systems', 'expertise_areas'])
+
+    lab_profile_instruction = ""
+    if has_lab_profile:
+        lab_profile_instruction = """
+IMPORTANT: The target context includes the researcher's LAB PROFILE with their equipment, methods, and expertise.
+You MUST use this information when generating translations:
+- Reference their specific equipment in L1/L2 implementations
+- Leverage their established methods
+- Use their model systems (cell lines, etc.) in protocols
+- Explain HOW their expertise helps or where gaps exist
+"""
+
     user_prompt = f"""## SOURCE PAPER CONTEXT (the paper the insight comes from)
 {source_context_str}
 
 ## TARGET PAPER CONTEXT (the researcher's domain to translate INTO)
 {target_context_str}
-
+{lab_profile_instruction}
 ## DECOMPOSED INSIGHT LAYERS (from source paper)
 {layers_str}
 
-Translate each layer from the source domain into the target domain. Be honest about where the mapping is strong and where it breaks."""
+Translate each layer from the source domain into the target domain. Be honest about where the mapping is strong and where it breaks.{' USE THE LAB PROFILE to make translations specific to their capabilities.' if has_lab_profile else ''}"""
 
     response = client.chat.completions.create(
         model=AZURE_CHAT_DEPLOYMENT,

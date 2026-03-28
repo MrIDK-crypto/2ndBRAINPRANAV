@@ -5,8 +5,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { theme, font } from './theme'
 
-// Co-researcher has its own dedicated backend on port 5010
-const API_BASE = (process.env.NEXT_PUBLIC_CO_RESEARCHER_URL || 'http://localhost:5010') + '/api/co-researcher'
+// Co-researcher routes are now integrated into main backend on port 5002
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002') + '/api/co-researcher'
 
 // Wellspring Warm Design System - matches 2nd Brain
 const t = {

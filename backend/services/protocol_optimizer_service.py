@@ -163,6 +163,10 @@ class ProtocolOptimizerService:
                 steps, all_evidence, protocol_text
             )
 
+            # Sort issues by risk level: high → medium → low
+            risk_order = {"high": 0, "medium": 1, "low": 2}
+            issues = sorted(issues, key=lambda x: risk_order.get(x.get("risk_level", "low"), 3))
+
             yield _sse("issues_generated", {
                 "num_issues": len(issues),
                 "high_risk": len([i for i in issues if i.get("risk_level") == "high"]),
