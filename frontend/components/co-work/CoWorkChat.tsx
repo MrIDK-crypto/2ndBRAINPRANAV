@@ -379,9 +379,32 @@ export default function CoWorkChat({
   }
 
   // ── Send message ──
+  // Quick client-side keyword check for power auto-detection
+  const detectPowerIntent = (msg: string): string | null => {
+    const lower = msg.toLowerCase()
+    const patterns: [string, RegExp[]][] = [
+      ['hij', [/\bscore\b.*\b(paper|manuscript)\b/, /\bmanuscript\b/, /\bjournal\s+match/, /\breview\s+my\s+paper\b/, /\bwhere\s+should\s+i\s+submit\b/]],
+      ['competitor_finder', [/\bcompetitor/, /\bcompeting\s+lab/, /\bwho\s+else\s+(is|are)\s+working/, /\bsimilar\s+research\b/]],
+      ['idea_reality', [/\bvalidate\s+(my\s+)?idea\b/, /\bis\s+this\s+novel\b/, /\breality\s+check\b/, /\bhas\s+anyone\s+done\b/]],
+      ['co_researcher', [/\bhypothes[ie]s\b/, /\bbrainstorm\s+research\b/, /\bco[\-\s]?research/, /\bresearch\s+direction/]],
+    ]
+    for (const [power, regexes] of patterns) {
+      for (const re of regexes) {
+        if (re.test(lower)) return power
+      }
+    }
+    return null
+  }
+
   const handleSend = async () => {
     if (activePowerHint || powerFile) {
       handlePowerSend(inputValue, activePowerHint, powerFile)
+      return
+    }
+    // Auto-detect power intent from message keywords
+    const detectedPower = detectPowerIntent(inputValue)
+    if (detectedPower) {
+      handlePowerSend(inputValue, detectedPower, null)
       return
     }
     if ((!inputValue.trim() && attachedFiles.length === 0) || isLoading || isStreaming) return
