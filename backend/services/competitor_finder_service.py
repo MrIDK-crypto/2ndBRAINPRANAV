@@ -294,6 +294,19 @@ Return JSON:
             "very_recent_preprints": len(very_recent)
         }
 
+    def find_competitors(self, manuscript_text: str, field: str = None, keywords: List[str] = None) -> Generator[str, None, None]:
+        """
+        Find competing labs, preprints, and grants. Alias for analyze_stream with additional params.
+
+        Args:
+            manuscript_text: The research paper/manuscript text
+            field: Optional field/domain override
+            keywords: Optional keyword list override
+        """
+        # For now, delegate to analyze_stream (field/keywords will be extracted from text)
+        # TODO: Use field/keywords overrides if provided
+        yield from self.analyze_stream(manuscript_text)
+
     def analyze_stream(self, manuscript_text: str) -> Generator[str, None, None]:
         """Stream competitor analysis results."""
 
