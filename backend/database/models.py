@@ -239,6 +239,11 @@ class Tenant(Base):
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     is_active = Column(Boolean, default=True, nullable=False)
 
+    # Research profile (cached, lazy-built)
+    research_profile = Column(JSON, nullable=True)
+    profile_updated_at = Column(DateTime(timezone=True), nullable=True)
+    profile_building = Column(Boolean, default=False)
+
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="tenant", cascade="all, delete-orphan")
@@ -1609,6 +1614,7 @@ class ChatMessage(Base):
 
     # Message content
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
+    message_type = Column(String(20), default='text')  # 'text' or 'power_result'
     content = Column(Text, nullable=False)
 
     # Sources for assistant messages
@@ -1636,6 +1642,7 @@ class ChatMessage(Base):
             "id": self.id,
             "conversation_id": self.conversation_id,
             "role": self.role,
+            "message_type": self.message_type or "text",
             "content": self.content,
             "sources": self.sources,
             "metadata": self.extra_data,  # Return as 'metadata' for API compatibility
