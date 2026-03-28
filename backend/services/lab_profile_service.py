@@ -260,43 +260,67 @@ Be conservative - only include items you're confident about from the documents. 
             r'appeared in ([A-Z][a-zA-Z\s&]+)',
             r'([A-Z][a-zA-Z\s&]+)\s*\(\d{4}\)',
             r'Journal:\s*([A-Za-z\s&]+)',
+            r'([A-Z][a-zA-Z\s&]+)\.\s+\d{4}',  # "Journal Name. 2024"
         ]
 
         year_pattern = r'\b(20\d{2}|19\d{2})\b'
 
+        # Publication source types - including PubMed!
+        publication_source_types = ('paper', 'publication', 'article', 'pubmed', 'zotero')
+
         for doc in documents:
             content = doc.get('content', '')
-            title = doc.get('metadata', {}).get('title', '')
+            title = doc.get('metadata', {}).get('title', doc.get('title', ''))
+            metadata = doc.get('metadata', {})
 
             # Check if this document IS a publication
-            source_type = doc.get('metadata', {}).get('source_type', '')
-            if source_type in ('paper', 'publication', 'article'):
-                # Try to extract journal name
-                for pattern in journal_patterns:
-                    match = re.search(pattern, content[:3000])
-                    if match:
-                        journal = match.group(1).strip()
-                        year_match = re.search(year_pattern, content[:1000])
-                        year = year_match.group(1) if year_match else None
+            source_type = metadata.get('source_type', '')
+            if source_type in publication_source_types:
+                journal = None
+                year = None
 
-                        publications.append({
-                            'journal': journal,
-                            'year': year,
-                            'topic': title[:100] if title else 'Unknown',
-                            'impact_tier': self._estimate_journal_tier(journal)
-                        })
-                        break
+                # PRIORITY 1: Check metadata directly (PubMed stores journal here)
+                if metadata.get('journal'):
+                    journal = metadata['journal']
+                    # Extract year from content or metadata
+                    year_match = re.search(year_pattern, content[:1000])
+                    year = year_match.group(1) if year_match else None
+
+                # PRIORITY 2: Try regex patterns on content
+                if not journal:
+                    for pattern in journal_patterns:
+                        match = re.search(pattern, content[:3000])
+                        if match:
+                            journal = match.group(1).strip()
+                            year_match = re.search(year_pattern, content[:1000])
+                            year = year_match.group(1) if year_match else None
+                            break
+
+                # Add publication if we found a journal
+                if journal:
+                    publications.append({
+                        'journal': journal,
+                        'year': year,
+                        'topic': title[:100] if title else 'Unknown',
+                        'impact_tier': self._estimate_journal_tier(journal),
+                        'source_type': source_type,
+                        'pmid': metadata.get('pmid'),
+                        'authors': metadata.get('authors', [])[:3]  # First 3 authors
+                    })
+                    print(f"[LabProfile] Found publication: {journal} ({year}) - {title[:50]}", flush=True)
+
+        print(f"[LabProfile] Extracted {len(publications)} publications from {len(documents)} documents", flush=True)
 
         # Deduplicate
         seen = set()
         unique_pubs = []
         for pub in publications:
-            key = (pub.get('journal', ''), pub.get('year', ''))
+            key = (pub.get('journal', ''), pub.get('year', ''), pub.get('topic', '')[:30])
             if key not in seen:
                 seen.add(key)
                 unique_pubs.append(pub)
 
-        return unique_pubs[:10]  # Top 10
+        return unique_pubs[:15]  # Top 15
 
     def _extract_equipment_methods(self, documents: List[Dict]) -> Dict:
         """Extract equipment and methods mentioned in documents with source tracking."""
@@ -563,7 +587,8 @@ Be conservative - only include items you're confident about from the documents. 
             all_documents = []
 
             # Prioritize certain source types for richer context
-            priority_order = ['file', 'document', 'paper', 'protocol', 'email', 'message', 'slack', 'drive', 'box']
+            # PubMed and Zotero papers should be HIGH priority for publication history!
+            priority_order = ['pubmed', 'zotero', 'paper', 'file', 'document', 'protocol', 'email', 'message', 'slack', 'drive', 'box']
 
             # Sort source types by priority (prioritized first, then alphabetically)
             def sort_key(st):
