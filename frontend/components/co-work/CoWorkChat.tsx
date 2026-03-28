@@ -3,6 +3,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import PowersTrigger from './PowersTrigger'
+import PowerResultCard from './PowerResultCard'
+import PowerLoadingCard from './PowerLoadingCard'
 
 // ── Design tokens ──
 const COLORS = {
@@ -37,6 +40,7 @@ interface Message {
     sources_used: number
     confidence_label: 'high' | 'medium' | 'low'
   }
+  powerResult?: any  // Orchestrated power result data
 }
 
 export interface PlanStep {
@@ -98,6 +102,12 @@ export default function CoWorkChat({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [conversationId, setConversationId] = useState<string | null>(propConversationId || null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [activePowerHint, setActivePowerHint] = useState<string | null>(null)
+  const [powerFile, setPowerFile] = useState<File | null>(null)
+  const [isPowerLoading, setIsPowerLoading] = useState(false)
+  const [powerServices, setPowerServices] = useState<string[]>([])
+  const [powerCompletedServices, setPowerCompletedServices] = useState<Record<string, string>>({})
+  const [powerThinkingStep, setPowerThinkingStep] = useState<string>('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -261,8 +271,118 @@ export default function CoWorkChat({
     )
   }
 
+  // ── Orchestrated power send ──
+  const handlePowerSend = async (message: string, powerHint: string | null, file: File | null) => {
+    if (!message.trim() && !file) return
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      text: message,
+      isUser: true,
+    }
+    setMessages(prev => [...prev, userMsg])
+    setInputValue('')
+    setIsPowerLoading(true)
+    setPowerServices([])
+    setPowerCompletedServices({})
+    setPowerThinkingStep('Analyzing your request...')
+
+    try {
+      const formData = new FormData()
+      formData.append('message', message)
+      formData.append('metadata', JSON.stringify({
+        conversation_id: conversationId,
+        power_hint: powerHint,
+      }))
+      if (file) formData.append('files', file)
+
+      const response = await fetch(`${apiBase}/chat/orchestrated`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      })
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let sseBuffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        sseBuffer += decoder.decode(value, { stream: true })
+        const events = sseBuffer.split('\n\n')
+        sseBuffer = events.pop() || ''
+
+        for (const eventStr of events) {
+          if (!eventStr.trim()) continue
+          let eventType = 'message'
+          let eventData: any = {}
+
+          for (const line of eventStr.split('\n')) {
+            if (line.startsWith('event:')) eventType = line.slice(6).trim()
+            else if (line.startsWith('data:')) {
+              try { eventData = JSON.parse(line.slice(5).trim()) }
+              catch { eventData = line.slice(5).trim() }
+            }
+          }
+
+          switch (eventType) {
+            case 'thinking':
+              setPowerThinkingStep(eventData.step || '')
+              break
+            case 'fallback':
+              setIsPowerLoading(false)
+              setPowerFile(null)
+              setActivePowerHint(null)
+              setMessages(prev => prev.filter(m => m.id !== userMsg.id))
+              setInputValue(message)
+              setTimeout(() => handleSend(), 0)
+              return
+            case 'context_loaded':
+              setPowerThinkingStep(`Context loaded: ${eventData.chunks_found} relevant documents found`)
+              break
+            case 'services_started':
+              setPowerServices(eventData.services || [])
+              break
+            case 'service_complete':
+              setPowerCompletedServices(prev => ({ ...prev, [eventData.service]: eventData.status }))
+              break
+            case 'file_needed':
+              setMessages(prev => [...prev, { id: Date.now().toString(), text: eventData.message || 'Please attach a file to continue.', isUser: false }])
+              setIsPowerLoading(false)
+              return
+            case 'result':
+              setMessages(prev => [...prev, { id: Date.now().toString(), text: '', isUser: false, powerResult: eventData }])
+              break
+            case 'error':
+              setMessages(prev => [...prev, { id: Date.now().toString(), text: `Error: ${eventData.message || 'Something went wrong'}`, isUser: false }])
+              break
+            case 'done':
+              break
+          }
+        }
+      }
+    } catch (err: any) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), text: `Error: ${err.message || 'Connection failed'}`, isUser: false }])
+    } finally {
+      setIsPowerLoading(false)
+      setPowerFile(null)
+      setActivePowerHint(null)
+      setPowerServices([])
+      setPowerCompletedServices({})
+      setPowerThinkingStep('')
+    }
+  }
+
   // ── Send message ──
   const handleSend = async () => {
+    if (activePowerHint || powerFile) {
+      handlePowerSend(inputValue, activePowerHint, powerFile)
+      return
+    }
     if ((!inputValue.trim() && attachedFiles.length === 0) || isLoading || isStreaming) return
 
     const userMessage: Message = {
@@ -893,6 +1013,15 @@ export default function CoWorkChat({
                         })}
                     </div>
                   )}
+
+                  {/* Power result card */}
+                  {message.powerResult && (
+                    <PowerResultCard
+                      tabs={message.powerResult.tabs || []}
+                      followup_suggestions={message.powerResult.followup_suggestions || []}
+                      onFollowupClick={(suggestion) => setInputValue(suggestion)}
+                    />
+                  )}
                 </div>
               </div>
             ))}
@@ -952,6 +1081,37 @@ export default function CoWorkChat({
           </>
         )}
       </div>
+
+      {/* Power loading indicator */}
+      {isPowerLoading && powerServices.length > 0 && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <PowerLoadingCard
+            services={powerServices}
+            completedServices={powerCompletedServices}
+            thinkingStep={powerThinkingStep}
+          />
+        </div>
+      )}
+
+      {/* Active power indicator */}
+      {activePowerHint && (
+        <div style={{
+          padding: '6px 16px', display: 'flex', alignItems: 'center', gap: '6px',
+          fontSize: '12px', color: '#C9A598', fontFamily: "Avenir, 'Avenir Next', 'DM Sans', system-ui, sans-serif",
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          <span>
+            {activePowerHint === 'hij' ? 'Score Manuscript' :
+             activePowerHint === 'competitor_finder' ? 'Find Competitors' :
+             activePowerHint === 'idea_reality' ? 'Validate Idea' : 'Co-Researcher'} mode active
+          </span>
+          {powerFile && <span style={{ color: '#6B6B6B' }}>• {powerFile.name}</span>}
+          <button onClick={() => { setActivePowerHint(null); setPowerFile(null) }}
+            style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#6B6B6B', fontSize: '14px', padding: '0 4px' }}>✕</button>
+        </div>
+      )}
 
       {/* Input area */}
       <div style={{
@@ -1053,6 +1213,15 @@ export default function CoWorkChat({
               height: '24px',
               maxHeight: '120px',
             }}
+          />
+
+          {/* Powers trigger */}
+          <PowersTrigger
+            onSelectPower={(powerId: string, file?: File) => {
+              setActivePowerHint(powerId)
+              if (file) setPowerFile(file)
+            }}
+            disabled={isLoading || isStreaming || isPowerLoading}
           />
 
           {/* Send button */}
