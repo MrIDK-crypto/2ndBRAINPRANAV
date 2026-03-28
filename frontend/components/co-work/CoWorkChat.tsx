@@ -139,6 +139,7 @@ export default function CoWorkChat({
           text: m.content,
           isUser: m.role === 'user',
           sources: m.sources || [],
+          powerResult: m.message_type === 'power_result' ? m.extra_data : undefined,
         }))
         setMessages(loaded)
       }
