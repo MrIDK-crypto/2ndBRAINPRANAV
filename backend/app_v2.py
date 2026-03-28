@@ -174,6 +174,10 @@ def ensure_missing_columns():
     migrations = [
         ("documents", "feedback_score", "ALTER TABLE documents ADD COLUMN feedback_score FLOAT DEFAULT 0.0"),
         ("projects", "color", "ALTER TABLE projects ADD COLUMN color VARCHAR(7)"),
+        ("tenants", "research_profile", "ALTER TABLE tenants ADD COLUMN research_profile JSON"),
+        ("tenants", "profile_updated_at", "ALTER TABLE tenants ADD COLUMN profile_updated_at TIMESTAMP WITH TIME ZONE"),
+        ("tenants", "profile_building", "ALTER TABLE tenants ADD COLUMN profile_building BOOLEAN DEFAULT FALSE"),
+        ("chat_messages", "message_type", "ALTER TABLE chat_messages ADD COLUMN message_type VARCHAR(20) DEFAULT 'text'"),
     ]
     try:
         with engine.connect() as conn:
