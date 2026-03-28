@@ -265,8 +265,18 @@ Be conservative - only include items you're confident about from the documents. 
 
         year_pattern = r'\b(20\d{2}|19\d{2})\b'
 
-        # Publication source types - including PubMed!
-        publication_source_types = ('paper', 'publication', 'article', 'pubmed', 'zotero')
+        # ALL supported integration/source types that could contain publications
+        # From ConnectorType enum: gmail, slack, box, github, onedrive, google_drive,
+        # google_docs, google_sheets, google_slides, google_calendar, notion, pubmed,
+        # webscraper, firecrawl, zotero, quartzy
+        publication_source_types = (
+            # Direct publication sources
+            'pubmed', 'zotero', 'paper', 'publication', 'article', 'research_paper',
+            # Document sources that might contain publications
+            'google_docs', 'google_drive', 'onedrive', 'box', 'notion', 'github',
+            # Generic types
+            'file', 'document', 'pdf'
+        )
 
         for doc in documents:
             content = doc.get('content', '')
@@ -388,16 +398,27 @@ Be conservative - only include items you're confident about from the documents. 
         """Build a map of field names to their source documents."""
         sources = {}
 
+        print(f"[LabProfile] Building sources map from {len(documents)} documents", flush=True)
+
         # Build general sources FIRST from all documents (these are always available)
         general_sources = []
         for doc in documents[:15]:  # Sample up to 15 documents
-            title = doc.get('metadata', {}).get('title', doc.get('title', 'Unknown'))
+            title = doc.get('metadata', {}).get('title', doc.get('title', ''))
             source_type = doc.get('metadata', {}).get('source_type', 'document')
-            if title and title != 'Unknown':
+
+            # Accept any title that's not empty or a placeholder
+            if title and title.lower() not in ('unknown', 'untitled', ''):
                 general_sources.append({
                     'title': title[:60],
                     'source_type': source_type,
                 })
+            elif source_type:  # If no title but has source type, use a descriptive name
+                general_sources.append({
+                    'title': f'{source_type.capitalize()} Document',
+                    'source_type': source_type,
+                })
+
+        print(f"[LabProfile] Built {len(general_sources)} general sources", flush=True)
 
         # Always add general sources to main fields
         sources['research_focus_areas'] = general_sources[:4]
@@ -586,9 +607,21 @@ Be conservative - only include items you're confident about from the documents. 
 
             all_documents = []
 
-            # Prioritize certain source types for richer context
-            # PubMed and Zotero papers should be HIGH priority for publication history!
-            priority_order = ['pubmed', 'zotero', 'paper', 'file', 'document', 'protocol', 'email', 'message', 'slack', 'drive', 'box']
+            # Prioritize ALL integration source types for comprehensive profile
+            # Order: Publications > Documents > Communication
+            priority_order = [
+                # Publications (highest priority for research context)
+                'pubmed', 'zotero', 'paper', 'publication', 'article', 'research_paper',
+                # Rich document sources
+                'google_docs', 'google_drive', 'onedrive', 'box', 'notion', 'github',
+                'file', 'document', 'pdf', 'protocol',
+                # Google workspace
+                'google_sheets', 'google_slides', 'google_calendar',
+                # Lab management
+                'quartzy', 'firecrawl', 'webscraper',
+                # Communication (lower priority but still useful)
+                'gmail', 'email', 'slack', 'message'
+            ]
 
             # Sort source types by priority (prioritized first, then alphabetically)
             def sort_key(st):
