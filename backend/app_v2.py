@@ -293,6 +293,8 @@ app.register_blueprint(paper_analysis_bp)
 app.register_blueprint(paper_to_code_bp)
 app.register_blueprint(competitor_finder_bp)
 app.register_blueprint(idea_reality_bp)
+from api.orchestrator_routes import orchestrator_bp
+app.register_blueprint(orchestrator_bp)
 # share_bp removed - invitation system lives in auth_bp
 
 print("✓ API blueprints registered")
