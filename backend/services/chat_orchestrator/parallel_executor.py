@@ -6,8 +6,8 @@ from typing import Dict, Any, List, Optional, Callable
 
 logger = logging.getLogger(__name__)
 
-PER_SERVICE_TIMEOUT = 90
-TOTAL_TIMEOUT = 120
+PER_SERVICE_TIMEOUT = 300   # 5 min per service (HIJ pipeline is 10+ LLM calls)
+TOTAL_TIMEOUT = 360         # 6 min total wall-clock
 
 _ADAPTER_REGISTRY: Dict[str, Callable] = {}
 
