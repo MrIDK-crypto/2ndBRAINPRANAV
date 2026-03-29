@@ -1834,7 +1834,7 @@ def search_stream():
             yield f"event: search_complete\ndata: {json.dumps({'sources': []})}\n\n"
             # Stream in small chunks, keeping citations intact
             import re
-            tokens = re.findall(r'\[(?:Source\s*)?\d+(?:\s*,\s*\d+)*\]|\S+', answer)
+            tokens = re.findall(r'\[[^\]]*\]|\S+', answer)
             buffer = ""
             for i, token in enumerate(tokens):
                 if i > 0:
@@ -2155,9 +2155,9 @@ def search_stream():
             def _stream_markdown(text):
                 """Yield chunk events for a markdown string, keeping citations intact."""
                 import re
-                # Split into tokens: bracketed citations stay whole, words split normally
-                # Pattern matches [Source N], [N], [Source N, M], or regular words
-                tokens = re.findall(r'\[(?:Source\s*)?\d+(?:\s*,\s*\d+)*\]|\S+', text)
+                # Split into tokens: ANY bracketed content stays whole (citations, links, etc.)
+                # Matches [...] of any content, or regular non-whitespace words
+                tokens = re.findall(r'\[[^\]]*\]|\S+', text)
                 chunks = []
                 buffer = ""
                 for i, token in enumerate(tokens):
