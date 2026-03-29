@@ -2459,11 +2459,23 @@ CURRENT QUESTION: {query}
                 **stream_kwargs
             )
 
+            # Buffer tokens to keep bracketed citations intact during streaming
+            # Without this, "[Source 1]" arrives as separate tokens "[", "Source", " 1", "]"
+            # and ReactMarkdown treats incomplete "[Source" as malformed link syntax
+            _stream_buffer = ""
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     full_answer += content
-                    yield {'type': 'chunk', 'content': content}
+                    _stream_buffer += content
+                    # Hold buffer if it contains an unclosed bracket
+                    if '[' in _stream_buffer and ']' not in _stream_buffer.split('[')[-1]:
+                        continue  # Wait for closing bracket
+                    yield {'type': 'chunk', 'content': _stream_buffer}
+                    _stream_buffer = ""
+            # Flush any remaining buffer
+            if _stream_buffer:
+                yield {'type': 'chunk', 'content': _stream_buffer}
 
             # After streaming, run validation
             hallucination_check = None
