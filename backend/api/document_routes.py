@@ -811,6 +811,13 @@ def upload_batch():
                     except Exception as e:
                         print(f"[Upload] Session extraction error: {e}", flush=True)
 
+                    # Reload documents after extraction (session may have been committed/expired)
+                    all_docs = bg_db.query(Document).filter(
+                        Document.tenant_id == tid,
+                        Document.source_type == 'manual_upload',
+                        text("doc_metadata->>'upload_session_id' = :sid").bindparams(sid=session_id)
+                    ).all()
+
                     # Embed
                     try:
                         embedding_service = get_embedding_service()
@@ -818,6 +825,7 @@ def upload_batch():
                             documents=all_docs, tenant_id=tid,
                             db=bg_db, force_reembed=False
                         )
+                        print(f"[Upload] Embedded {len(all_docs)} docs from session {session_id}", flush=True)
                     except Exception as e:
                         print(f"[Upload] Session embedding error: {e}", flush=True)
                 except Exception as e:
