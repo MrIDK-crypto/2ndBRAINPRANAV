@@ -272,7 +272,12 @@ export default function DragDropUploadPage() {
   const BATCH_SIZE = 50
 
   const handleUpload = useCallback(async () => {
-    if (files.length === 0 || !token) return
+    if (files.length === 0) return
+
+    if (!token) {
+      setUploadError('Your session has expired. Please log out and log back in to upload files.')
+      return
+    }
 
     setPhase('uploading')
     setUploadError(null)
