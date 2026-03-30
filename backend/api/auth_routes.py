@@ -1644,3 +1644,37 @@ def admin_reset_password():
         return jsonify({"success": False, "error": str(e)}), 500
     finally:
         db.close()
+
+
+@auth_bp.route('/admin-verify-email', methods=['POST'])
+def admin_verify_email():
+    """Mark a user's email as verified. Protected by server secret key."""
+    import os
+    from database.models import utc_now
+    db = SessionLocal()
+    try:
+        data = request.get_json() or {}
+        email = data.get('email', '').strip()
+        secret = data.get('secret', '')
+
+        jwt_secret = os.environ.get('JWT_SECRET_KEY', '')
+        if not secret or secret != jwt_secret[:16]:
+            return jsonify({"success": False, "error": "Invalid secret"}), 403
+
+        if not email:
+            return jsonify({"success": False, "error": "email required"}), 400
+
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        user.email_verified = True
+        user.updated_at = utc_now()
+        db.commit()
+
+        return jsonify({"success": True, "message": f"Email verified for {email}"})
+    except Exception as e:
+        db.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        db.close()
